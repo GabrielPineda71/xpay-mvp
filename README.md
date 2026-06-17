@@ -110,6 +110,50 @@ En Swagger UI (`/swagger`), hacer clic en **Authorize** e ingresar el token JWT 
 
 ---
 
+## Configuración QA / Azure App Service
+
+El backend acepta configuración por variables de entorno usando la notación `__` (doble guión bajo) de .NET como separador de jerarquía.
+
+### Variables de entorno esperadas
+
+| Variable de entorno | Equivalente en appsettings | Descripción |
+|---------------------|---------------------------|-------------|
+| `ConnectionStrings__XpayConnection` | `ConnectionStrings.XpayConnection` | Cadena de conexión SQL Server |
+| `Jwt__Key` | `Jwt.Key` | Llave secreta HS256 (mínimo 32 caracteres) |
+| `Jwt__Issuer` | `Jwt.Issuer` | Emisor del token (ej. `Xpay.Api`) |
+| `Jwt__Audience` | `Jwt.Audience` | Audiencia del token (ej. `Xpay.App`) |
+| `Jwt__ExpirationHours` | `Jwt.ExpirationHours` | Horas de validez del token (ej. `8`) |
+| `Api__Name` | `Api.Name` | Nombre de la API en `/api/version` |
+| `Api__Version` | `Api.Version` | Versión de la API en `/api/version` |
+| `Cors__AllowedOrigins__0` | `Cors.AllowedOrigins[0]` | Primer origen permitido para CORS |
+| `Cors__AllowedOrigins__1` | `Cors.AllowedOrigins[1]` | Segundo origen permitido para CORS |
+
+### Ejemplo de configuración QA en Azure App Service
+
+```
+ConnectionStrings__XpayConnection = Server=xpay-sql-qa.database.windows.net;Database=XPAY_MVP_QA;User Id=xpay_app;Password=<secret>;TrustServerCertificate=True;
+Jwt__Key          = <llave-secreta-qa-minimo-32-chars>
+Jwt__Issuer       = Xpay.Api
+Jwt__Audience     = Xpay.App
+Jwt__ExpirationHours = 8
+Api__Name         = XPAY API
+Api__Version      = 0.1.0-mvp
+Cors__AllowedOrigins__0 = http://localhost:3000
+Cors__AllowedOrigins__1 = http://localhost:5173
+Cors__AllowedOrigins__2 = https://xpay-frontend-qa.azurewebsites.net
+```
+
+### URLs frontend soportadas en CORS
+
+| Ambiente | URL |
+|----------|-----|
+| Local React / Vite | `http://localhost:5173` |
+| Local React CRA | `http://localhost:3000` |
+| Local HTTPS | `https://localhost:3000`, `https://localhost:5173` |
+| QA Azure (futuro) | `https://xpay-frontend-qa.azurewebsites.net` |
+
+---
+
 ## Estado actual del MVP
 
 | Fase | Contenido | Estado |
@@ -123,10 +167,11 @@ En Swagger UI (`/swagger`), hacer clic en **Authorize** e ingresar el token JWT 
 | 7 | Consultas y reportes transaccionales (4 endpoints) | Completa |
 | 8 | Seguridad JWT: `[Authorize]`, 401 sin token, roles | Completa |
 | 9 | Health check, versión API, Swagger con JWT Bearer | Completa |
+| 10 | CORS para frontend, configuración por ambiente, preparación QA | Completa |
 
 ---
 
 ## Validación CI
 
 El flujo completo está validado automáticamente en GitHub Actions mediante `scripts/validate-backend.sh`.
-Cada push a `main` ejecuta SQL Server en Docker, aplica las 7 migraciones, corre el backend y valida todos los endpoints de Fases 1 a 9.
+Cada push a `main` ejecuta SQL Server en Docker, aplica las 7 migraciones, corre el backend y valida todos los endpoints de Fases 1 a 10.

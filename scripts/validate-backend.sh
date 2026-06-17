@@ -597,4 +597,63 @@ echo "$SWAGGER_JSON" | grep -qi "bearer" \
 ok "GET /swagger/v1/swagger.json → 200 / contiene definición Bearer ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 9: health, versión, Swagger JWT y todos los endpoints OK ═══"
+
+# ════════════════════════════════════════════════════
+# FASE 10 — CORS, configuración por ambiente, preparación QA
+# ════════════════════════════════════════════════════
+phase "FASE 10: CORS para frontend y preparación QA"
+
+# 10.1 Preflight CORS: OPTIONS /api/version con Origin: http://localhost:5173
+info "OPTIONS /api/version con Origin: http://localhost:5173 → debe retornar 200/204 + Allow-Origin"
+CORS_RESPONSE=$(curl -si -X OPTIONS \
+  -H "Origin: http://localhost:5173" \
+  -H "Access-Control-Request-Method: GET" \
+  --max-time 15 \
+  "$API_URL/api/version")
+CORS_STATUS=$(echo "$CORS_RESPONSE" | head -1 | awk '{print $2}')
+[[ "$CORS_STATUS" == "204" || "$CORS_STATUS" == "200" ]] \
+  || fail "Preflight CORS esperado 200 o 204, obtenido $CORS_STATUS"
+ok "Preflight CORS → HTTP $CORS_STATUS ✓"
+
+CORS_ALLOW_ORIGIN=$(echo "$CORS_RESPONSE" | grep -i "access-control-allow-origin:" \
+  | tr -d '\r' | awk '{print $2}')
+[[ "$CORS_ALLOW_ORIGIN" == "http://localhost:5173" ]] \
+  || fail "Access-Control-Allow-Origin esperado 'http://localhost:5173', obtenido '$CORS_ALLOW_ORIGIN'"
+ok "Access-Control-Allow-Origin → $CORS_ALLOW_ORIGIN ✓"
+
+# 10.2 GET /api/version sigue público y devuelve name + version no vacíos
+info "GET /api/version sigue público con datos desde config"
+VERS_10=$(get_json "$API_URL/api/version") \
+  || fail "GET /api/version no respondió en Fase 10"
+assert_ok "$VERS_10" "GET /api/version (Fase 10)"
+API_NAME_10=$(echo "$VERS_10" | jq -r '.data.name')
+API_VER_10=$(echo "$VERS_10"  | jq -r '.data.version')
+[[ -n "$API_NAME_10" && "$API_NAME_10" != "null" ]] \
+  || fail "data.name vacío en /api/version"
+[[ -n "$API_VER_10"  && "$API_VER_10"  != "null" ]] \
+  || fail "data.version vacío en /api/version"
+ok "GET /api/version → name=$API_NAME_10  version=$API_VER_10 ✓"
+
+# 10.3 GET /health sigue público
+info "GET /health sigue público tras agregar CORS"
+STATUS_HEALTH_10=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/health")
+[[ "$STATUS_HEALTH_10" == "200" ]] \
+  || fail "GET /health esperado 200, obtenido $STATUS_HEALTH_10"
+ok "GET /health → $STATUS_HEALTH_10 ✓"
+
+# 10.4 Endpoint protegido sin token sigue dando 401
+STATUS_401_10=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/wallets/persona/$ID_PERSONA_A")
+[[ "$STATUS_401_10" == "401" ]] \
+  || fail "Endpoint protegido sin token esperado 401, obtenido $STATUS_401_10"
+ok "Endpoint protegido sin token → 401 ✓"
+
+# 10.5 El mismo endpoint protegido con token sigue funcionando
+RESP_AUTH_10=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/persona/$ID_PERSONA_A") \
+  || fail "Endpoint protegido con token no respondió"
+assert_ok "$RESP_AUTH_10" "endpoint protegido con token (Fase 10)"
+ok "Endpoint protegido con token → success=true ✓"
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 10: CORS, configuración QA y todos los endpoints OK ═══"

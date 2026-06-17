@@ -7,8 +7,13 @@ namespace Xpay.Api.Controllers;
 public class VersionController : ControllerBase
 {
     private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration      _config;
 
-    public VersionController(IWebHostEnvironment env) => _env = env;
+    public VersionController(IWebHostEnvironment env, IConfiguration config)
+    {
+        _env    = env;
+        _config = config;
+    }
 
     [HttpGet("version")]
     public IActionResult Version() => Ok(new
@@ -16,8 +21,8 @@ public class VersionController : ControllerBase
         success = true,
         data = new
         {
-            name        = "XPAY API",
-            version     = "0.1.0-mvp",
+            name        = _config["Api:Name"]    ?? "XPAY API",
+            version     = _config["Api:Version"] ?? "0.1.0-mvp",
             environment = _env.EnvironmentName
         }
     });

@@ -21,6 +21,17 @@ builder.Services.AddScoped<LiquidacionComercioService>();
 builder.Services.AddScoped<RetiroComercioService>();
 builder.Services.AddScoped<ReportesService>();
 
+// CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? Array.Empty<string>();
+
+builder.Services.AddCors(options =>
+    options.AddPolicy("FrontendCorsPolicy", policy =>
+        policy.WithOrigins(allowedOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod()));
+
 var jwtSection = builder.Configuration.GetSection("Jwt");
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -79,6 +90,7 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseHttpsRedirection();
+app.UseCors("FrontendCorsPolicy");   // antes de autenticación — requerido para preflight
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
