@@ -15,6 +15,7 @@ builder.Services.AddScoped<WalletOperacionService>();
 builder.Services.AddScoped<PagoQrService>();
 builder.Services.AddScoped<LiquidacionComercioService>();
 builder.Services.AddScoped<RetiroComercioService>();
+builder.Services.AddScoped<ReportesService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

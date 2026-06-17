@@ -415,5 +415,95 @@ check_sql_value \
   "SELECT CASE WHEN SUM(CASE WHEN lm.naturaleza='D' THEN lm.valor ELSE 0 END) = SUM(CASE WHEN lm.naturaleza='C' THEN lm.valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos lm INNER JOIN ledger_transacciones lt ON lm.id_transaccion_ledger = lt.id_transaccion_ledger WHERE lt.tipo_transaccion = 'RETIRO_COMERCIO_RECHAZADO'" \
   "OK"
 
+# ════════════════════════════════════════════════════
+# FASE 7 — Consultas y reportes transaccionales
+# ════════════════════════════════════════════════════
+phase "FASE 7: Consultas y reportes transaccionales"
+
+# 7.1 Estado de cuenta wallet usuario Carlos
+info "GET /api/reportes/wallet/$ID_WALLET_A/estado-cuenta"
+EC_USUARIO=$(get_json "$API_URL/api/reportes/wallet/$ID_WALLET_A/estado-cuenta") \
+  || fail "GET estado-cuenta wallet usuario no respondió"
+echo "$EC_USUARIO" | jq .
+assert_ok "$EC_USUARIO" "estado-cuenta wallet usuario"
+assert_saldo "$EC_USUARIO" 45000 "Estado cuenta carlos"
+
+echo "$EC_USUARIO" | jq -e '.data.movimientos | length >= 3' > /dev/null \
+  || fail "movimientos wallet usuario esperado >=3, obtenido $(echo "$EC_USUARIO" | jq '.data.movimientos | length')"
+ok "Estado cuenta carlos → movimientos=$(echo "$EC_USUARIO" | jq '.data.movimientos | length') (>=3) ✓"
+
+# 7.2 Estado de cuenta wallet comercio
+info "GET /api/reportes/wallet/$ID_WALLET_COMERCIO/estado-cuenta"
+EC_COMERCIO=$(get_json "$API_URL/api/reportes/wallet/$ID_WALLET_COMERCIO/estado-cuenta") \
+  || fail "GET estado-cuenta wallet comercio no respondió"
+echo "$EC_COMERCIO" | jq .
+assert_ok "$EC_COMERCIO" "estado-cuenta wallet comercio"
+assert_saldo "$EC_COMERCIO" 10000 "Estado cuenta comercio"
+
+echo "$EC_COMERCIO" | jq -e '.data.movimientos | length >= 3' > /dev/null \
+  || fail "movimientos wallet comercio esperado >=3, obtenido $(echo "$EC_COMERCIO" | jq '.data.movimientos | length')"
+ok "Estado cuenta comercio → movimientos=$(echo "$EC_COMERCIO" | jq '.data.movimientos | length') (>=3) ✓"
+
+# 7.3 Resumen del comercio
+info "GET /api/reportes/comercios/$ID_COMERCIO/resumen"
+RESUMEN_COMERCIO=$(get_json "$API_URL/api/reportes/comercios/$ID_COMERCIO/resumen") \
+  || fail "GET resumen comercio no respondió"
+echo "$RESUMEN_COMERCIO" | jq .
+assert_ok "$RESUMEN_COMERCIO" "resumen comercio"
+
+echo "$RESUMEN_COMERCIO" | jq -e '.data.saldoDisponible == 10000' > /dev/null \
+  || fail "saldoDisponible comercio esperado 10000, obtenido $(echo "$RESUMEN_COMERCIO" | jq '.data.saldoDisponible')"
+ok "Resumen comercio → saldoDisponible=10000 ✓"
+
+echo "$RESUMEN_COMERCIO" | jq -e '.data.ventasQr.total >= 1' > /dev/null \
+  || fail "ventasQr.total esperado >=1"
+ok "Resumen comercio → ventasQr.total=$(echo "$RESUMEN_COMERCIO" | jq '.data.ventasQr.total') ✓"
+
+echo "$RESUMEN_COMERCIO" | jq -e '.data.ventasQr.liquidadas >= 1' > /dev/null \
+  || fail "ventasQr.liquidadas esperado >=1"
+ok "Resumen comercio → ventasQr.liquidadas=$(echo "$RESUMEN_COMERCIO" | jq '.data.ventasQr.liquidadas') ✓"
+
+echo "$RESUMEN_COMERCIO" | jq -e '.data.retiros.pagados >= 1' > /dev/null \
+  || fail "retiros.pagados esperado >=1"
+ok "Resumen comercio → retiros.pagados=$(echo "$RESUMEN_COMERCIO" | jq '.data.retiros.pagados') ✓"
+
+echo "$RESUMEN_COMERCIO" | jq -e '.data.retiros.rechazados >= 1' > /dev/null \
+  || fail "retiros.rechazados esperado >=1"
+ok "Resumen comercio → retiros.rechazados=$(echo "$RESUMEN_COMERCIO" | jq '.data.retiros.rechazados') ✓"
+
+# 7.4 Ledger por transacción (pago QR)
+info "GET /api/reportes/ledger/transaccion/$ID_TRANSACCION_Q"
+LEDGER_TX=$(get_json "$API_URL/api/reportes/ledger/transaccion/$ID_TRANSACCION_Q") \
+  || fail "GET ledger transaccion QR no respondió"
+echo "$LEDGER_TX" | jq .
+assert_ok "$LEDGER_TX" "ledger transaccion QR"
+
+echo "$LEDGER_TX" | jq -e '.data.balanceado == true' > /dev/null \
+  || fail "balanceado esperado true"
+ok "Ledger transaccion QR → balanceado=true ✓"
+
+echo "$LEDGER_TX" | jq -e '.data.totalDebitos == .data.totalCreditos' > /dev/null \
+  || fail "totalDebitos ($(echo "$LEDGER_TX" | jq '.data.totalDebitos')) != totalCreditos ($(echo "$LEDGER_TX" | jq '.data.totalCreditos'))"
+ok "Ledger transaccion QR → totalDebitos=$(echo "$LEDGER_TX" | jq '.data.totalDebitos') == totalCreditos ✓"
+
+# 7.5 Resumen general
+info "GET /api/reportes/operaciones/resumen-general"
+RESUMEN_GEN=$(get_json "$API_URL/api/reportes/operaciones/resumen-general") \
+  || fail "GET resumen-general no respondió"
+echo "$RESUMEN_GEN" | jq .
+assert_ok "$RESUMEN_GEN" "resumen general"
+
+echo "$RESUMEN_GEN" | jq -e '.data.wallets.total >= 3' > /dev/null \
+  || fail "wallets.total esperado >=3, obtenido $(echo "$RESUMEN_GEN" | jq '.data.wallets.total')"
+ok "Resumen general → wallets.total=$(echo "$RESUMEN_GEN" | jq '.data.wallets.total') (>=3) ✓"
+
+echo "$RESUMEN_GEN" | jq -e '.data.ledger.transacciones >= 8' > /dev/null \
+  || fail "ledger.transacciones esperado >=8, obtenido $(echo "$RESUMEN_GEN" | jq '.data.ledger.transacciones')"
+ok "Resumen general → ledger.transacciones=$(echo "$RESUMEN_GEN" | jq '.data.ledger.transacciones') (>=8) ✓"
+
+echo "$RESUMEN_GEN" | jq -e '.data.auditoria.eventos >= 10' > /dev/null \
+  || fail "auditoria.eventos esperado >=10, obtenido $(echo "$RESUMEN_GEN" | jq '.data.auditoria.eventos')"
+ok "Resumen general → auditoria.eventos=$(echo "$RESUMEN_GEN" | jq '.data.auditoria.eventos') (>=10) ✓"
+
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 6: todos los endpoints y tablas OK ═══"
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 7: todos los endpoints y tablas OK ═══"
