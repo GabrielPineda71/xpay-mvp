@@ -24,6 +24,7 @@ public class XpayDbContext : DbContext
     public DbSet<VentaQr> VentasQr => Set<VentaQr>();
     public DbSet<LiquidacionComercio> LiquidacionesComercios => Set<LiquidacionComercio>();
     public DbSet<LiquidacionComercioDetalle> LiquidacionComercioDetalles => Set<LiquidacionComercioDetalle>();
+    public DbSet<RetiroComercio> RetirosComercio => Set<RetiroComercio>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +45,7 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<VentaQr>(e => { e.ToTable("ventas_qr"); e.HasKey(x => x.IdVentaQr); MapVentaQr(e); });
         modelBuilder.Entity<LiquidacionComercio>(e => { e.ToTable("liquidaciones_comercio"); e.HasKey(x => x.IdLiquidacion); MapLiquidacionComercio(e); });
         modelBuilder.Entity<LiquidacionComercioDetalle>(e => { e.ToTable("liquidacion_comercio_detalle"); e.HasKey(x => x.IdDetalle); MapLiquidacionComercioDetalle(e); });
+        modelBuilder.Entity<RetiroComercio>(e => { e.ToTable("retiros_comercio"); e.HasKey(x => x.IdRetiro); MapRetiroComercio(e); });
     }
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)
@@ -84,4 +86,6 @@ public class XpayDbContext : DbContext
     { e.Property(x => x.IdLiquidacion).HasColumnName("id_liquidacion"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.IdComercio).HasColumnName("id_comercio"); e.Property(x => x.IdWalletComercio).HasColumnName("id_wallet_comercio"); e.Property(x => x.IdTransaccionLedger).HasColumnName("id_transaccion_ledger"); e.Property(x => x.ValorBruto).HasColumnName("valor_bruto"); e.Property(x => x.ValorComision).HasColumnName("valor_comision"); e.Property(x => x.ValorIvaComision).HasColumnName("valor_iva_comision"); e.Property(x => x.ValorNeto).HasColumnName("valor_neto"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaLiquidacion).HasColumnName("fecha_liquidacion"); e.Property(x => x.CreadoPor).HasColumnName("creado_por"); }
     private static void MapLiquidacionComercioDetalle(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<LiquidacionComercioDetalle> e)
     { e.Property(x => x.IdDetalle).HasColumnName("id_detalle"); e.Property(x => x.IdLiquidacion).HasColumnName("id_liquidacion"); e.Property(x => x.IdVentaQr).HasColumnName("id_venta_qr"); e.Property(x => x.ValorBruto).HasColumnName("valor_bruto"); e.Property(x => x.ValorComision).HasColumnName("valor_comision"); e.Property(x => x.ValorIvaComision).HasColumnName("valor_iva_comision"); e.Property(x => x.ValorNeto).HasColumnName("valor_neto"); }
+    private static void MapRetiroComercio(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<RetiroComercio> e)
+    { e.Property(x => x.IdRetiro).HasColumnName("id_retiro"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.IdComercio).HasColumnName("id_comercio"); e.Property(x => x.IdWalletComercio).HasColumnName("id_wallet_comercio"); e.Property(x => x.IdTransaccionLedger).HasColumnName("id_transaccion_ledger"); e.Property(x => x.Valor).HasColumnName("valor"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.MedioRetiro).HasColumnName("medio_retiro"); e.Property(x => x.Banco).HasColumnName("banco"); e.Property(x => x.TipoCuenta).HasColumnName("tipo_cuenta"); e.Property(x => x.NumeroCuenta).HasColumnName("numero_cuenta"); e.Property(x => x.TitularCuenta).HasColumnName("titular_cuenta"); e.Property(x => x.DocumentoTitular).HasColumnName("documento_titular"); e.Property(x => x.Observacion).HasColumnName("observacion"); e.Property(x => x.CreadoPor).HasColumnName("creado_por"); e.Property(x => x.FechaSolicitud).HasColumnName("fecha_solicitud"); }
 }

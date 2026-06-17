@@ -9,7 +9,13 @@ namespace Xpay.Api.Controllers;
 public class ComerciosController : ControllerBase
 {
     private readonly LiquidacionComercioService _liquidacionService;
-    public ComerciosController(LiquidacionComercioService liquidacionService) => _liquidacionService = liquidacionService;
+    private readonly RetiroComercioService _retiroService;
+
+    public ComerciosController(LiquidacionComercioService liquidacionService, RetiroComercioService retiroService)
+    {
+        _liquidacionService = liquidacionService;
+        _retiroService      = retiroService;
+    }
 
     [HttpPost("liquidar-venta-qr")]
     public async Task<IActionResult> LiquidarVentaQr([FromBody] LiquidarVentaQrRequest request)
@@ -34,5 +40,29 @@ public class ComerciosController : ControllerBase
         }
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno procesando la liquidación." }); }
+    }
+
+    [HttpPost("solicitar-retiro")]
+    public async Task<IActionResult> SolicitarRetiro([FromBody] SolicitarRetiroComercioRequest request)
+    {
+        try
+        {
+            var retiro = await _retiroService.SolicitarRetiroAsync(request);
+            return Ok(new
+            {
+                success = true,
+                message = "Solicitud de retiro creada exitosamente.",
+                data = new
+                {
+                    idRetiro         = retiro.IdRetiro,
+                    idComercio       = retiro.IdComercio,
+                    idWalletComercio = retiro.IdWalletComercio,
+                    valor            = retiro.Valor,
+                    estado           = retiro.Estado
+                }
+            });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno procesando la solicitud de retiro." }); }
     }
 }

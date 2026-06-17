@@ -79,6 +79,9 @@ jobs:
           echo "--- Ejecutando 004_liquidacion_qr.sql ---"
           sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
             -i database/004_liquidacion_qr.sql
+          echo "--- Ejecutando 005_retiros_comercio.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/005_retiros_comercio.sql
           echo "Migraciones aplicadas."
 
       - name: dotnet restore

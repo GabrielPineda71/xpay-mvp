@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Valida los endpoints del backend XPAY MVP — Fases 1, 2, 3 y 4.
+# Valida los endpoints del backend XPAY MVP — Fases 1, 2, 3, 4 y 5.
 # Variables: API_URL, DB_HOST, DB_NAME, SA_PASSWORD
 set -euo pipefail
 
@@ -190,7 +190,6 @@ assert_saldo "$SALDO_B_POST_T" 25000 "Saldo maria tras transferencia"
 # ════════════════════════════════════════════════════
 phase "FASE 3: Pago a comercio por QR"
 
-# carlos tiene 75.000 → paga 30.000 con QR → debe quedar 45.000
 info "POST /api/qr/pagar (30.000: wallet $ID_WALLET_A → QR-DEMO-XPAY-001)"
 PAGO_QR=$(post_json "$API_URL/api/qr/pagar" \
   "{\"codigoQr\": \"QR-DEMO-XPAY-001\", \"idWalletUsuario\": $ID_WALLET_A, \"valor\": 30000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Pago QR CI fase 3\"}") \
@@ -198,9 +197,9 @@ PAGO_QR=$(post_json "$API_URL/api/qr/pagar" \
 echo "$PAGO_QR" | jq .
 assert_ok "$PAGO_QR" "pago QR"
 
-ID_VENTA_QR=$(echo "$PAGO_QR"     | jq -r '.data.idVentaQr')
+ID_VENTA_QR=$(echo "$PAGO_QR"      | jq -r '.data.idVentaQr')
 ID_TRANSACCION_Q=$(echo "$PAGO_QR" | jq -r '.data.idTransaccion')
-ESTADO_QR=$(echo "$PAGO_QR"       | jq -r '.data.estado')
+ESTADO_QR=$(echo "$PAGO_QR"        | jq -r '.data.estado')
 
 [[ "$ESTADO_QR" == "CONTINGENCIA" ]] || fail "estado esperado CONTINGENCIA, obtenido $ESTADO_QR"
 ok "Pago QR → idVentaQr=$ID_VENTA_QR  idTransaccion=$ID_TRANSACCION_Q  estado=$ESTADO_QR"
@@ -211,7 +210,6 @@ SALDO_A_POST_QR=$(get_json "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
 echo "$SALDO_A_POST_QR" | jq .
 assert_saldo "$SALDO_A_POST_QR" 45000 "Saldo carlos tras pago QR (100k - 25k transferencia - 30k QR)"
 
-# Verificar CONTINGENCIA en SQL antes de liquidar
 check_sql_value \
   "ventas_qr.estado = CONTINGENCIA antes de liquidar" \
   "SELECT TOP 1 estado FROM ventas_qr ORDER BY id_venta_qr DESC" \
@@ -231,52 +229,91 @@ assert_ok "$LIQUIDACION" "liquidacion QR"
 
 ID_LIQUIDACION=$(echo "$LIQUIDACION"     | jq -r '.data.idLiquidacion')
 ESTADO_VENTA_LIQ=$(echo "$LIQUIDACION"  | jq -r '.data.estadoVenta')
+ID_COMERCIO=$(echo "$LIQUIDACION"        | jq -r '.data.idComercio')
 ID_WALLET_COMERCIO=$(echo "$LIQUIDACION" | jq -r '.data.idWalletComercio')
-VALOR_NETO_LIQ=$(echo "$LIQUIDACION"    | jq -r '.data.valorNeto')
 
-[[ "$ESTADO_VENTA_LIQ" == "LIQUIDADA" ]] \
-  || fail "estadoVenta esperado LIQUIDADA, obtenido $ESTADO_VENTA_LIQ"
-ok "Liquidación → idLiquidacion=$ID_LIQUIDACION  idWalletComercio=$ID_WALLET_COMERCIO  valorNeto=$VALOR_NETO_LIQ  estadoVenta=$ESTADO_VENTA_LIQ"
+[[ "$ESTADO_VENTA_LIQ" == "LIQUIDADA" ]] || fail "estadoVenta esperado LIQUIDADA, obtenido $ESTADO_VENTA_LIQ"
+ok "Liquidación → idLiquidacion=$ID_LIQUIDACION  idComercio=$ID_COMERCIO  idWalletComercio=$ID_WALLET_COMERCIO  estadoVenta=$ESTADO_VENTA_LIQ"
 
-# Verificar que la liquidación no pueda aplicarse dos veces
-info "Doble liquidación debe retornar error 400"
+# Verificar doble liquidación rechazada
+info "Doble liquidación debe retornar error"
 DOBLE_LIQ=$(post_json "$API_URL/api/comercios/liquidar-venta-qr" \
   "{\"idVentaQr\": $ID_VENTA_QR, \"creadoPor\": $ID_USUARIO_A}") || true
 DOBLE_SUCCESS=$(echo "$DOBLE_LIQ" | jq -r '.success' 2>/dev/null || echo "false")
-[[ "$DOBLE_SUCCESS" != "true" ]] \
-  || fail "La doble liquidación debió fallar pero retornó success=true"
+[[ "$DOBLE_SUCCESS" != "true" ]] || fail "La doble liquidación debió fallar pero retornó success=true"
 ok "Doble liquidación rechazada correctamente ✓"
 
-# ════════════════════════════════════════════════════
-# Validaciones SQL — acumulado Fases 1 + 2 + 3 + 4
-# ════════════════════════════════════════════════════
-phase "Validaciones SQL — acumulado Fases 1 + 2 + 3 + 4"
+# Saldo wallet comercio = 30.000 después de liquidación, ANTES de retiro
+check_sql_value \
+  "Saldo wallet comercio tras liquidación (antes de retiro)" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "30000"
 
-# wallet_saldos: carlos + maria + wallet_comercio (creada en 004 seed)
+# ════════════════════════════════════════════════════
+# FASE 5 — Solicitud de retiro del comercio
+# ════════════════════════════════════════════════════
+phase "FASE 5: Solicitud de retiro del comercio"
+
+# El comercio tiene 30.000 → solicita retiro de 20.000 → debe quedar 10.000
+info "POST /api/comercios/solicitar-retiro (idComercio=$ID_COMERCIO, valor=20000)"
+RETIRO=$(post_json "$API_URL/api/comercios/solicitar-retiro" \
+  "{\"idComercio\": $ID_COMERCIO, \"valor\": 20000, \"medioRetiro\": \"TRANSFERENCIA_BANCARIA\", \"banco\": \"Banco Demo\", \"tipoCuenta\": \"AHORROS\", \"numeroCuenta\": \"1234567890\", \"titularCuenta\": \"Comercio Demo XPAY\", \"documentoTitular\": \"900123456\", \"observacion\": \"Retiro CI fase 5\", \"creadoPor\": $ID_USUARIO_A}") \
+  || fail "POST /api/comercios/solicitar-retiro no respondió"
+echo "$RETIRO" | jq .
+assert_ok "$RETIRO" "solicitar retiro"
+
+ID_RETIRO=$(echo "$RETIRO"       | jq -r '.data.idRetiro')
+ESTADO_RETIRO=$(echo "$RETIRO"   | jq -r '.data.estado')
+VALOR_RETIRO=$(echo "$RETIRO"    | jq -r '.data.valor')
+
+[[ "$ESTADO_RETIRO" == "PENDIENTE" ]] || fail "estado esperado PENDIENTE, obtenido $ESTADO_RETIRO"
+ok "Retiro → idRetiro=$ID_RETIRO  valor=$VALOR_RETIRO  estado=$ESTADO_RETIRO"
+
+# Validar saldo insuficiente (retiro mayor al saldo disponible restante)
+info "Retiro con saldo insuficiente debe retornar error"
+RETIRO_INVALIDO=$(post_json "$API_URL/api/comercios/solicitar-retiro" \
+  "{\"idComercio\": $ID_COMERCIO, \"valor\": 99999, \"creadoPor\": $ID_USUARIO_A}") || true
+RETIRO_INVALIDO_SUCCESS=$(echo "$RETIRO_INVALIDO" | jq -r '.success' 2>/dev/null || echo "false")
+[[ "$RETIRO_INVALIDO_SUCCESS" != "true" ]] || fail "El retiro con saldo insuficiente debió fallar pero retornó success=true"
+ok "Retiro con saldo insuficiente rechazado correctamente ✓"
+
+# ════════════════════════════════════════════════════
+# Validaciones SQL — acumulado Fases 1 + 2 + 3 + 4 + 5
+# ════════════════════════════════════════════════════
+phase "Validaciones SQL — acumulado Fases 1 + 2 + 3 + 4 + 5"
+
+# wallet_saldos: carlos + maria + wallet_comercio (seed 004)
 check_count "wallet_saldos"                3
-# wallet_movimientos: 1 recarga + 2 transferencia + 1 pago QR + 1 liquidación entrada comercio
-check_count "wallet_movimientos"           5
-# ledger_transacciones: 1 recarga + 1 transfer + 1 QR + 1 liquidacion
-check_count "ledger_transacciones"         4
-# ledger_movimientos: 2×recarga + 2×transfer + 2×QR + 2×liquidacion
-check_count "ledger_movimientos"           8
-# auditoria: 2 registro + 1 recarga + 1 transfer + 1 QR + 1 liquidacion
-check_count "auditoria"                    6
+# wallet_movimientos: 1 recarga + 2 transfer + 1 QR + 1 liquidación + 1 retiro
+check_count "wallet_movimientos"           6
+# ledger_transacciones: recarga + transfer + QR + liquidación + retiro
+check_count "ledger_transacciones"         5
+# ledger_movimientos: 2×recarga + 2×transfer + 2×QR + 2×liquidación + 2×retiro
+check_count "ledger_movimientos"          10
+# auditoria: 2 registro + 1 recarga + 1 transfer + 1 QR + 1 liquidación + 1 retiro
+check_count "auditoria"                    7
 check_count "ventas_qr"                    1
 check_count "liquidaciones_comercio"       1
 check_count "liquidacion_comercio_detalle" 1
+check_count "retiros_comercio"             1
 
-# Estado final de la venta QR = LIQUIDADA
+# Estado final venta QR = LIQUIDADA
 check_sql_value \
   "ventas_qr.estado final = LIQUIDADA" \
   "SELECT TOP 1 estado FROM ventas_qr ORDER BY id_venta_qr DESC" \
   "LIQUIDADA"
 
-# Saldo wallet comercio = 30.000 tras liquidación
+# Estado retiro = PENDIENTE
 check_sql_value \
-  "Saldo wallet comercio tras liquidación" \
+  "retiros_comercio.estado = PENDIENTE" \
+  "SELECT TOP 1 estado FROM retiros_comercio ORDER BY id_retiro DESC" \
+  "PENDIENTE"
+
+# Saldo wallet comercio = 10.000 tras retiro (30k liquidacion - 20k retiro)
+check_sql_value \
+  "Saldo wallet comercio tras retiro = 10000" \
   "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
-  "30000"
+  "10000"
 
 # Ledger PAGO_QR balanceado
 check_sql_value \
@@ -290,5 +327,11 @@ check_sql_value \
   "SELECT CASE WHEN SUM(CASE WHEN lm.naturaleza='D' THEN lm.valor ELSE 0 END) = SUM(CASE WHEN lm.naturaleza='C' THEN lm.valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos lm INNER JOIN ledger_transacciones lt ON lm.id_transaccion_ledger = lt.id_transaccion_ledger WHERE lt.tipo_transaccion = 'LIQUIDACION_QR'" \
   "OK"
 
+# Ledger RETIRO_COMERCIO_SOLICITADO balanceado
+check_sql_value \
+  "Ledger RETIRO_COMERCIO_SOLICITADO balanceado (DR = CR)" \
+  "SELECT CASE WHEN SUM(CASE WHEN lm.naturaleza='D' THEN lm.valor ELSE 0 END) = SUM(CASE WHEN lm.naturaleza='C' THEN lm.valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos lm INNER JOIN ledger_transacciones lt ON lm.id_transaccion_ledger = lt.id_transaccion_ledger WHERE lt.tipo_transaccion = 'RETIRO_COMERCIO_SOLICITADO'" \
+  "OK"
+
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1, 2, 3 y 4: todos los endpoints y tablas OK ═══"
+ok "═══ VALIDACIÓN COMPLETA FASES 1, 2, 3, 4 y 5: todos los endpoints y tablas OK ═══"
