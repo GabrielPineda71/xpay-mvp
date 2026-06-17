@@ -275,6 +275,39 @@ ESTADO_RETIRO=$(echo "$RETIRO" | jq -r '.data.estado')
 [[ "$ESTADO_RETIRO" == "PENDIENTE" ]] || fail "estado esperado PENDIENTE, obtenido $ESTADO_RETIRO"
 ok "Retiro → idRetiro=$ID_RETIRO  valor=20000  estado=$ESTADO_RETIRO"
 
+info "GET /api/comercios/retiros/$ID_RETIRO → debe retornar estado=PENDIENTE"
+RETIRO_GET=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/$ID_RETIRO") \
+  || fail "GET retiros/$ID_RETIRO no respondió"
+echo "$RETIRO_GET" | jq .
+assert_ok "$RETIRO_GET" "GET retiro por ID"
+RETIRO_GET_ESTADO=$(echo "$RETIRO_GET" | jq -r '.data.estado')
+[[ "$RETIRO_GET_ESTADO" == "PENDIENTE" ]] \
+  || fail "GET retiro estado esperado PENDIENTE, obtenido $RETIRO_GET_ESTADO"
+ok "GET /api/comercios/retiros/$ID_RETIRO → estado=$RETIRO_GET_ESTADO ✓"
+
+info "GET /api/comercios/retiros/0 → debe retornar 400 (ID inválido)"
+STATUS_RETIRO_INVALIDO=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_A" \
+  "$API_URL/api/comercios/retiros/0")
+[[ "$STATUS_RETIRO_INVALIDO" == "400" ]] \
+  || fail "GET retiros/0 esperado 400, obtenido $STATUS_RETIRO_INVALIDO"
+ok "GET retiros/0 → 400 (ID inválido) ✓"
+
+info "GET /api/comercios/retiros/99999 → debe retornar 400 (no existe)"
+STATUS_RETIRO_NO_EXISTE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_A" \
+  "$API_URL/api/comercios/retiros/99999")
+[[ "$STATUS_RETIRO_NO_EXISTE" == "400" ]] \
+  || fail "GET retiros/99999 esperado 400, obtenido $STATUS_RETIRO_NO_EXISTE"
+ok "GET retiros/99999 → 400 (no existe) ✓"
+
+info "GET /api/comercios/retiros/$ID_RETIRO sin token → debe retornar 401"
+STATUS_RETIRO_NO_AUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/comercios/retiros/$ID_RETIRO")
+[[ "$STATUS_RETIRO_NO_AUTH" == "401" ]] \
+  || fail "GET retiros sin token esperado 401, obtenido $STATUS_RETIRO_NO_AUTH"
+ok "GET retiros sin token → 401 ✓"
+
 info "Retiro con saldo insuficiente debe retornar error"
 RETIRO_INVALIDO=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/solicitar-retiro" \
   "{\"idComercio\": $ID_COMERCIO, \"valor\": 99999, \"creadoPor\": $ID_USUARIO_A}") || true
@@ -297,6 +330,17 @@ assert_ok "$CONFIRMAR" "confirmar pago"
 ESTADO_PAGADO=$(echo "$CONFIRMAR" | jq -r '.data.estado')
 [[ "$ESTADO_PAGADO" == "PAGADO" ]] || fail "estado esperado PAGADO, obtenido $ESTADO_PAGADO"
 ok "Retiro confirmado como PAGADO → idRetiro=$ID_RETIRO  estado=$ESTADO_PAGADO"
+
+info "GET /api/comercios/retiros/$ID_RETIRO tras confirmación → debe reflejar estado=PAGADO"
+RETIRO_GET_PAGADO=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/$ID_RETIRO") \
+  || fail "GET retiros/$ID_RETIRO tras confirmación no respondió"
+echo "$RETIRO_GET_PAGADO" | jq .
+assert_ok "$RETIRO_GET_PAGADO" "GET retiro pagado por ID"
+RETIRO_GET_ESTADO_PAGADO=$(echo "$RETIRO_GET_PAGADO" | jq -r '.data.estado')
+[[ "$RETIRO_GET_ESTADO_PAGADO" == "PAGADO" ]] \
+  || fail "GET retiro estado esperado PAGADO, obtenido $RETIRO_GET_ESTADO_PAGADO"
+RETIRO_GET_REF=$(echo "$RETIRO_GET_PAGADO" | jq -r '.data.referenciaPago // empty')
+ok "GET retiro/$ID_RETIRO → estado=$RETIRO_GET_ESTADO_PAGADO  referenciaPago=${RETIRO_GET_REF:-—} ✓"
 
 info "Doble confirmación debe retornar error"
 DOBLE_CONF=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/confirmar-pago" \
@@ -656,4 +700,4 @@ assert_ok "$RESP_AUTH_10" "endpoint protegido con token (Fase 10)"
 ok "Endpoint protegido con token → success=true ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 10: CORS, configuración QA y todos los endpoints OK ═══"
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 12: gestión de retiros, CORS, configuración QA y todos los endpoints OK ═══"

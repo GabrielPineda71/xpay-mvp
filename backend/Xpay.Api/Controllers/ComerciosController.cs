@@ -19,6 +19,18 @@ public class ComerciosController : ControllerBase
         _retiroService      = retiroService;
     }
 
+    [HttpGet("retiros/{idRetiro}")]
+    public async Task<IActionResult> GetRetiro(long idRetiro)
+    {
+        try
+        {
+            var data = await _retiroService.GetRetiroByIdAsync(idRetiro);
+            return Ok(new { success = true, data });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno consultando el retiro." }); }
+    }
+
     [HttpPost("liquidar-venta-qr")]
     public async Task<IActionResult> LiquidarVentaQr([FromBody] LiquidarVentaQrRequest request)
     {

@@ -10,6 +10,36 @@ public class RetiroComercioService
     private readonly XpayDbContext _db;
     public RetiroComercioService(XpayDbContext db) => _db = db;
 
+    public async Task<object> GetRetiroByIdAsync(long idRetiro)
+    {
+        if (idRetiro <= 0)
+            throw new InvalidOperationException("El identificador del retiro debe ser mayor a cero.");
+
+        var retiro = await _db.RetirosComercio.FirstOrDefaultAsync(r => r.IdRetiro == idRetiro)
+            ?? throw new InvalidOperationException($"No existe el retiro con id {idRetiro}.");
+
+        return new
+        {
+            idRetiro         = retiro.IdRetiro,
+            idComercio       = retiro.IdComercio,
+            idWalletComercio = retiro.IdWalletComercio,
+            valor            = retiro.Valor,
+            estado           = retiro.Estado,
+            medioRetiro      = retiro.MedioRetiro,
+            banco            = retiro.Banco,
+            tipoCuenta       = retiro.TipoCuenta,
+            numeroCuenta     = retiro.NumeroCuenta,
+            titularCuenta    = retiro.TitularCuenta,
+            documentoTitular = retiro.DocumentoTitular,
+            observacion      = retiro.Observacion,
+            fechaSolicitud   = retiro.FechaSolicitud,
+            fechaPago        = retiro.FechaPago,
+            referenciaPago   = retiro.ReferenciaPago,
+            fechaRechazo     = retiro.FechaRechazo,
+            motivoRechazo    = retiro.MotivoRechazo
+        };
+    }
+
     public async Task<RetiroComercio> SolicitarRetiroAsync(SolicitarRetiroComercioRequest request)
     {
         if (request.IdComercio <= 0)

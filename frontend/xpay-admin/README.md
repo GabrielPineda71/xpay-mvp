@@ -55,6 +55,8 @@ Los archivos estáticos quedan en `dist/`.
 | `/wallets/:idWallet` | Protegido | Estado de cuenta de una wallet |
 | `/comercios/:idComercio` | Protegido | Resumen financiero de un comercio |
 | `/ledger/:idTransaccion` | Protegido | Detalle de una transacción en el ledger |
+| `/retiros` | Protegido | Búsqueda de retiros por ID |
+| `/retiros/:idRetiro` | Protegido | Gestión de un retiro: consulta, confirmar pago o rechazar |
 
 Las rutas protegidas redirigen a `/login` si no hay sesión activa.
 

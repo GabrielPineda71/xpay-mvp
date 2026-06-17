@@ -7,6 +7,7 @@ import { DashboardPage } from './pages/DashboardPage.tsx';
 import { WalletPage } from './pages/WalletPage.tsx';
 import { ComercioPage } from './pages/ComercioPage.tsx';
 import { LedgerPage } from './pages/LedgerPage.tsx';
+import { RetiroPage } from './pages/RetiroPage.tsx';
 
 export default function App() {
   return (
@@ -24,6 +25,8 @@ export default function App() {
               <Route path="comercios/:idComercio" element={<ComercioPage />} />
               <Route path="ledger" element={<LedgerPage />} />
               <Route path="ledger/:idTransaccion" element={<LedgerPage />} />
+              <Route path="retiros" element={<RetiroPage />} />
+              <Route path="retiros/:idRetiro" element={<RetiroPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Route>
