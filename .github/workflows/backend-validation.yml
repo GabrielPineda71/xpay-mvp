@@ -73,6 +73,9 @@ jobs:
           echo "--- Ejecutando 002_wallet_ledger.sql ---"
           sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
             -i database/002_wallet_ledger.sql
+          echo "--- Ejecutando 003_comercios_qr.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/003_comercios_qr.sql
           echo "Migraciones aplicadas."
 
       - name: dotnet restore

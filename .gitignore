@@ -1,0 +1,17 @@
+# .NET build artifacts
+**/bin/
+**/obj/
+
+# IDE
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Config overrides
+appsettings.Development.json
+
+# OS
+.DS_Store
+Thumbs.db

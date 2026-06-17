@@ -18,6 +18,10 @@ public class XpayDbContext : DbContext
     public DbSet<LedgerTransaccion> LedgerTransacciones => Set<LedgerTransaccion>();
     public DbSet<LedgerMovimiento> LedgerMovimientos => Set<LedgerMovimiento>();
     public DbSet<Auditoria> Auditorias => Set<Auditoria>();
+    public DbSet<Comercio> Comercios => Set<Comercio>();
+    public DbSet<ComercioTienda> ComercioTiendas => Set<ComercioTienda>();
+    public DbSet<QrComercio> QrComercios => Set<QrComercio>();
+    public DbSet<VentaQr> VentasQr => Set<VentaQr>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,6 +36,10 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<LedgerTransaccion>(e => { e.ToTable("ledger_transacciones"); e.HasKey(x => x.IdTransaccionLedger); MapLedgerTransaccion(e); });
         modelBuilder.Entity<LedgerMovimiento>(e => { e.ToTable("ledger_movimientos"); e.HasKey(x => x.IdMovimientoLedger); MapLedgerMovimiento(e); });
         modelBuilder.Entity<Auditoria>(e => { e.ToTable("auditoria"); e.HasKey(x => x.IdAuditoria); MapAuditoria(e); });
+        modelBuilder.Entity<Comercio>(e => { e.ToTable("comercios"); e.HasKey(x => x.IdComercio); MapComercio(e); });
+        modelBuilder.Entity<ComercioTienda>(e => { e.ToTable("comercio_tiendas"); e.HasKey(x => x.IdTienda); MapComercioTienda(e); });
+        modelBuilder.Entity<QrComercio>(e => { e.ToTable("qr_comercios"); e.HasKey(x => x.IdQr); MapQrComercio(e); });
+        modelBuilder.Entity<VentaQr>(e => { e.ToTable("ventas_qr"); e.HasKey(x => x.IdVentaQr); MapVentaQr(e); });
     }
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)
@@ -60,4 +68,12 @@ public class XpayDbContext : DbContext
     { e.Property(x => x.IdMovimientoLedger).HasColumnName("id_movimiento_ledger"); e.Property(x => x.IdTransaccionLedger).HasColumnName("id_transaccion_ledger"); e.Property(x => x.IdCuenta).HasColumnName("id_cuenta"); e.Property(x => x.Naturaleza).HasColumnName("naturaleza"); e.Property(x => x.Valor).HasColumnName("valor"); e.Property(x => x.Concepto).HasColumnName("concepto"); e.Property(x => x.ReferenciaTipo).HasColumnName("referencia_tipo"); e.Property(x => x.ReferenciaId).HasColumnName("referencia_id"); e.Property(x => x.Descripcion).HasColumnName("descripcion"); e.Property(x => x.FechaMovimiento).HasColumnName("fecha_movimiento"); }
     private static void MapAuditoria(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Auditoria> e)
     { e.Property(x => x.IdAuditoria).HasColumnName("id_auditoria"); e.Property(x => x.IdUsuario).HasColumnName("id_usuario"); e.Property(x => x.IdPersona).HasColumnName("id_persona"); e.Property(x => x.Modulo).HasColumnName("modulo"); e.Property(x => x.Accion).HasColumnName("accion"); e.Property(x => x.Entidad).HasColumnName("entidad"); e.Property(x => x.IdEntidad).HasColumnName("id_entidad"); e.Property(x => x.ValorAnterior).HasColumnName("valor_anterior"); e.Property(x => x.ValorNuevo).HasColumnName("valor_nuevo"); e.Property(x => x.Ip).HasColumnName("ip"); e.Property(x => x.Dispositivo).HasColumnName("dispositivo"); e.Property(x => x.Resultado).HasColumnName("resultado"); e.Property(x => x.Observacion).HasColumnName("observacion"); e.Property(x => x.FechaEvento).HasColumnName("fecha_evento"); }
+    private static void MapComercio(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Comercio> e)
+    { e.Property(x => x.IdComercio).HasColumnName("id_comercio"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.NombreComercial).HasColumnName("nombre_comercial"); e.Property(x => x.RazonSocial).HasColumnName("razon_social"); e.Property(x => x.Nit).HasColumnName("nit"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); }
+    private static void MapComercioTienda(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<ComercioTienda> e)
+    { e.Property(x => x.IdTienda).HasColumnName("id_tienda"); e.Property(x => x.IdComercio).HasColumnName("id_comercio"); e.Property(x => x.NombreTienda).HasColumnName("nombre_tienda"); e.Property(x => x.Ciudad).HasColumnName("ciudad"); e.Property(x => x.Direccion).HasColumnName("direccion"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); }
+    private static void MapQrComercio(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<QrComercio> e)
+    { e.Property(x => x.IdQr).HasColumnName("id_qr"); e.Property(x => x.IdComercio).HasColumnName("id_comercio"); e.Property(x => x.IdTienda).HasColumnName("id_tienda"); e.Property(x => x.CodigoQr).HasColumnName("codigo_qr"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); }
+    private static void MapVentaQr(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<VentaQr> e)
+    { e.Property(x => x.IdVentaQr).HasColumnName("id_venta_qr"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.IdComercio).HasColumnName("id_comercio"); e.Property(x => x.IdTienda).HasColumnName("id_tienda"); e.Property(x => x.IdQr).HasColumnName("id_qr"); e.Property(x => x.IdWalletUsuario).HasColumnName("id_wallet_usuario"); e.Property(x => x.IdTransaccionLedger).HasColumnName("id_transaccion_ledger"); e.Property(x => x.ValorBruto).HasColumnName("valor_bruto"); e.Property(x => x.ValorComision).HasColumnName("valor_comision"); e.Property(x => x.ValorIvaComision).HasColumnName("valor_iva_comision"); e.Property(x => x.ValorNetoComercio).HasColumnName("valor_neto_comercio"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.Referencia).HasColumnName("referencia"); e.Property(x => x.Descripcion).HasColumnName("descripcion"); e.Property(x => x.FechaVenta).HasColumnName("fecha_venta"); }
 }

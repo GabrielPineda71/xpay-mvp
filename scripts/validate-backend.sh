@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Valida los endpoints del backend XPAY MVP — Fase 1 y Fase 2.
+# Valida los endpoints del backend XPAY MVP — Fases 1, 2 y 3.
 # Variables: API_URL, DB_HOST, DB_NAME, SA_PASSWORD
 set -euo pipefail
 
@@ -43,12 +43,35 @@ assert_saldo() {
   ok "$label → saldoDisponible=$esperado ✓"
 }
 
+check_count() {
+  local table="$1" min="${2:-1}"
+  local count
+  count=$("$SQLCMD" -S "$DB_HOST" -U sa -P "$SA_PASS" \
+    -d "$DB_NAME" -b -C \
+    -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM $table" \
+    -h -1 | tr -d ' \r\n')
+  [[ "$count" =~ ^[0-9]+$ ]] || fail "No se pudo obtener conteo de $table (resultado: '$count')"
+  [[ "$count" -ge "$min" ]] || fail "Tabla $table tiene $count registro(s), se esperaban >= $min"
+  ok "Tabla $table → $count registro(s) (esperado >= $min) ✓"
+}
+
+check_sql_value() {
+  local label="$1" query="$2" esperado="$3"
+  local resultado
+  resultado=$("$SQLCMD" -S "$DB_HOST" -U sa -P "$SA_PASS" \
+    -d "$DB_NAME" -b -C \
+    -Q "SET NOCOUNT ON; $query" \
+    -h -1 | tr -d ' \r\n')
+  [[ "$resultado" == "$esperado" ]] \
+    || fail "$label → esperado='$esperado', obtenido='$resultado'"
+  ok "$label → '$resultado' ✓"
+}
+
 # ════════════════════════════════════════════════════
 # FASE 1 — Registro, login, wallet, recarga
 # ════════════════════════════════════════════════════
 phase "FASE 1: Registro, login, wallet, recarga"
 
-# 1. Registro usuario origen (carlos)
 info "POST /api/usuarios/registro-final (carlos)"
 REGISTRO_A=$(post_json "$API_URL/api/usuarios/registro-final" '{
   "idUnidadNegocio": 1,
@@ -66,7 +89,6 @@ assert_ok "$REGISTRO_A" "registro carlos"
 ID_USUARIO_A=$(echo "$REGISTRO_A" | jq -r '.idUsuario')
 ok "Registro carlos → idUsuario=$ID_USUARIO_A"
 
-# 2. Login usuario origen
 info "POST /api/auth/login (carlos)"
 LOGIN_A=$(post_json "$API_URL/api/auth/login" '{
   "usuario": "carlos_ci_test",
@@ -77,7 +99,6 @@ assert_ok "$LOGIN_A" "login carlos"
 ID_PERSONA_A=$(echo "$LOGIN_A" | jq -r '.data.idPersona')
 ok "Login carlos → idPersona=$ID_PERSONA_A"
 
-# 3. Wallet usuario origen
 info "GET /api/wallets/persona/$ID_PERSONA_A"
 WALLET_A=$(get_json "$API_URL/api/wallets/persona/$ID_PERSONA_A") \
   || fail "GET wallet carlos no respondió"
@@ -86,16 +107,13 @@ assert_ok "$WALLET_A" "wallet carlos"
 ID_WALLET_A=$(echo "$WALLET_A" | jq -r '.data.idWallet')
 ok "Wallet carlos → idWallet=$ID_WALLET_A"
 
-# 4. Saldo inicial carlos (debe ser 0)
 info "GET /api/wallets/$ID_WALLET_A/saldo (inicial)"
 SALDO_A_INICIAL=$(get_json "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
   || fail "GET saldo carlos inicial no respondió"
-echo "$SALDO_A_INICIAL" | jq .
 assert_ok "$SALDO_A_INICIAL" "saldo carlos inicial"
 assert_saldo "$SALDO_A_INICIAL" 0 "Saldo inicial carlos"
 
-# 5. Recarga manual 100.000 a carlos
-info "POST /api/wallets/$ID_WALLET_A/recarga-manual"
+info "POST /api/wallets/$ID_WALLET_A/recarga-manual (100.000)"
 RECARGA=$(post_json "$API_URL/api/wallets/$ID_WALLET_A/recarga-manual" \
   "{\"valor\": 100000, \"creadoPor\": $ID_USUARIO_A, \"observacion\": \"Recarga CI fase 1\"}") \
   || fail "POST recarga carlos no respondió"
@@ -103,11 +121,9 @@ echo "$RECARGA" | jq .
 assert_ok "$RECARGA" "recarga carlos"
 ok "Recarga carlos 100.000 → OK"
 
-# 6. Verificar saldo tras recarga (debe ser 100.000)
 info "GET /api/wallets/$ID_WALLET_A/saldo (tras recarga)"
 SALDO_A_RECARGADO=$(get_json "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
   || fail "GET saldo carlos post-recarga no respondió"
-echo "$SALDO_A_RECARGADO" | jq .
 assert_saldo "$SALDO_A_RECARGADO" 100000 "Saldo carlos tras recarga"
 
 # ════════════════════════════════════════════════════
@@ -115,7 +131,6 @@ assert_saldo "$SALDO_A_RECARGADO" 100000 "Saldo carlos tras recarga"
 # ════════════════════════════════════════════════════
 phase "FASE 2: Transferencias XPAY a XPAY"
 
-# 7. Registro usuario destino (maria)
 info "POST /api/usuarios/registro-final (maria)"
 REGISTRO_B=$(post_json "$API_URL/api/usuarios/registro-final" '{
   "idUnidadNegocio": 1,
@@ -133,7 +148,6 @@ assert_ok "$REGISTRO_B" "registro maria"
 ID_USUARIO_B=$(echo "$REGISTRO_B" | jq -r '.idUsuario')
 ok "Registro maria → idUsuario=$ID_USUARIO_B"
 
-# 8. Login usuario destino
 info "POST /api/auth/login (maria)"
 LOGIN_B=$(post_json "$API_URL/api/auth/login" '{
   "usuario": "maria_ci_test",
@@ -144,7 +158,6 @@ assert_ok "$LOGIN_B" "login maria"
 ID_PERSONA_B=$(echo "$LOGIN_B" | jq -r '.data.idPersona')
 ok "Login maria → idPersona=$ID_PERSONA_B"
 
-# 9. Wallet usuario destino
 info "GET /api/wallets/persona/$ID_PERSONA_B"
 WALLET_B=$(get_json "$API_URL/api/wallets/persona/$ID_PERSONA_B") \
   || fail "GET wallet maria no respondió"
@@ -153,57 +166,80 @@ assert_ok "$WALLET_B" "wallet maria"
 ID_WALLET_B=$(echo "$WALLET_B" | jq -r '.data.idWallet')
 ok "Wallet maria → idWallet=$ID_WALLET_B"
 
-# 10. Transferencia 25.000: carlos → maria
-info "POST /api/wallets/transferencia (25.000: wallet $ID_WALLET_A → wallet $ID_WALLET_B)"
+info "POST /api/wallets/transferencia (25.000: $ID_WALLET_A → $ID_WALLET_B)"
 TRANSFERENCIA=$(post_json "$API_URL/api/wallets/transferencia" \
   "{\"idWalletOrigen\": $ID_WALLET_A, \"idWalletDestino\": $ID_WALLET_B, \"valor\": 25000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Transferencia CI fase 2\"}") \
   || fail "POST transferencia no respondió"
 echo "$TRANSFERENCIA" | jq .
 assert_ok "$TRANSFERENCIA" "transferencia"
-ID_TRANSACCION=$(echo "$TRANSFERENCIA" | jq -r '.data.idTransaccion')
-ok "Transferencia → idTransaccion=$ID_TRANSACCION"
+ID_TRANSACCION_T=$(echo "$TRANSFERENCIA" | jq -r '.data.idTransaccion')
+ok "Transferencia → idTransaccion=$ID_TRANSACCION_T"
 
-# 11. Verificar saldo origen tras transferencia (debe ser 75.000)
 info "GET /api/wallets/$ID_WALLET_A/saldo (tras transferencia)"
-SALDO_A_FINAL=$(get_json "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
+SALDO_A_POST_T=$(get_json "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
   || fail "GET saldo carlos tras transferencia no respondió"
-echo "$SALDO_A_FINAL" | jq .
-assert_saldo "$SALDO_A_FINAL" 75000 "Saldo carlos tras transferencia"
+assert_saldo "$SALDO_A_POST_T" 75000 "Saldo carlos tras transferencia"
 
-# 12. Verificar saldo destino tras transferencia (debe ser 25.000)
 info "GET /api/wallets/$ID_WALLET_B/saldo (tras transferencia)"
-SALDO_B_FINAL=$(get_json "$API_URL/api/wallets/$ID_WALLET_B/saldo") \
+SALDO_B_POST_T=$(get_json "$API_URL/api/wallets/$ID_WALLET_B/saldo") \
   || fail "GET saldo maria tras transferencia no respondió"
-echo "$SALDO_B_FINAL" | jq .
-assert_saldo "$SALDO_B_FINAL" 25000 "Saldo maria tras transferencia"
+assert_saldo "$SALDO_B_POST_T" 25000 "Saldo maria tras transferencia"
+
+# ════════════════════════════════════════════════════
+# FASE 3 — Pago a comercio por QR
+# ════════════════════════════════════════════════════
+phase "FASE 3: Pago a comercio por QR"
+
+# carlos tiene 75.000 → paga 30.000 con QR → debe quedar 45.000
+info "POST /api/qr/pagar (30.000: wallet $ID_WALLET_A → QR-DEMO-XPAY-001)"
+PAGO_QR=$(post_json "$API_URL/api/qr/pagar" \
+  "{\"codigoQr\": \"QR-DEMO-XPAY-001\", \"idWalletUsuario\": $ID_WALLET_A, \"valor\": 30000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Pago QR CI fase 3\"}") \
+  || fail "POST /api/qr/pagar no respondió"
+echo "$PAGO_QR" | jq .
+assert_ok "$PAGO_QR" "pago QR"
+
+ID_VENTA_QR=$(echo "$PAGO_QR"    | jq -r '.data.idVentaQr')
+ID_TRANSACCION_Q=$(echo "$PAGO_QR" | jq -r '.data.idTransaccion')
+ESTADO_QR=$(echo "$PAGO_QR"      | jq -r '.data.estado')
+
+[[ "$ESTADO_QR" == "CONTINGENCIA" ]] || fail "estado esperado CONTINGENCIA, obtenido $ESTADO_QR"
+ok "Pago QR → idVentaQr=$ID_VENTA_QR  idTransaccion=$ID_TRANSACCION_Q  estado=$ESTADO_QR"
+
+info "GET /api/wallets/$ID_WALLET_A/saldo (tras pago QR)"
+SALDO_A_POST_QR=$(get_json "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
+  || fail "GET saldo carlos tras pago QR no respondió"
+echo "$SALDO_A_POST_QR" | jq .
+assert_saldo "$SALDO_A_POST_QR" 45000 "Saldo carlos tras pago QR (100k - 25k transferencia - 30k QR)"
 
 # ════════════════════════════════════════════════════
 # Validaciones en base de datos
 # ════════════════════════════════════════════════════
-phase "Validaciones SQL en base de datos"
+phase "Validaciones SQL — acumulado Fases 1 + 2 + 3"
 
-check_count() {
-  local table="$1" min="${2:-1}"
-  local count
-  count=$("$SQLCMD" -S "$DB_HOST" -U sa -P "$SA_PASS" \
-    -d "$DB_NAME" -b -C \
-    -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM $table" \
-    -h -1 | tr -d ' \r\n')
-  [[ "$count" =~ ^[0-9]+$ ]] || fail "No se pudo obtener conteo de $table (resultado: '$count')"
-  [[ "$count" -ge "$min" ]] || fail "Tabla $table tiene $count registro(s), se esperaban >= $min"
-  ok "Tabla $table → $count registro(s) (esperado >= $min) ✓"
-}
+# Wallets
+check_count "wallet_saldos"          2   # carlos + maria
+# Movimientos wallet: 1 recarga + 2 transferencia + 1 pago QR
+check_count "wallet_movimientos"     4
+# Ledger: 1 recarga + 1 transferencia + 1 pago QR
+check_count "ledger_transacciones"   3
+# Movimientos ledger: 2 recarga + 2 transferencia + 2 pago QR
+check_count "ledger_movimientos"     6
+# Auditoría: 2 registro + 1 recarga + 1 transferencia + 1 pago QR
+check_count "auditoria"              5
+# Ventas QR: 1 pago
+check_count "ventas_qr"              1
 
-# 2 wallets registradas (carlos + maria)
-check_count "wallet_saldos"         2
-# 1 recarga + 2 movimientos de transferencia (débito origen + crédito destino)
-check_count "wallet_movimientos"    3
-# 1 transacción recarga + 1 transacción transferencia
-check_count "ledger_transacciones"  2
-# 2 movimientos ledger recarga + 2 movimientos ledger transferencia
-check_count "ledger_movimientos"    4
-# 2 registros de usuario + 1 recarga + 1 transferencia
-check_count "auditoria"             4
+# Estado CONTINGENCIA en la venta QR
+check_sql_value \
+  "ventas_qr.estado del último registro" \
+  "SELECT TOP 1 estado FROM ventas_qr ORDER BY id_venta_qr DESC" \
+  "CONTINGENCIA"
+
+# Ledger de la transacción QR debe estar balanceado
+check_sql_value \
+  "Ledger QR balanceado (DR = CR)" \
+  "SELECT CASE WHEN SUM(CASE WHEN naturaleza='D' THEN valor ELSE 0 END) = SUM(CASE WHEN naturaleza='C' THEN valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos WHERE id_transaccion_ledger = $ID_TRANSACCION_Q" \
+  "OK"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 y 2: todos los endpoints y tablas OK ═══"
+ok "═══ VALIDACIÓN COMPLETA FASES 1, 2 y 3: todos los endpoints y tablas OK ═══"
