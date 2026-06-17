@@ -532,4 +532,69 @@ assert_ok "$TEST_LOGIN" "login público accesible sin token"
 ok "Endpoints públicos siguen sin requerir token ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 8: JWT, autenticación y todos los endpoints OK ═══"
+
+# ════════════════════════════════════════════════════
+# FASE 9 — Health check, versión API y Swagger con JWT
+# ════════════════════════════════════════════════════
+phase "FASE 9: Health check, versión API y Swagger JWT"
+
+# 9.1 GET /health sin token → 200 + status=Healthy
+info "GET /health sin token → debe retornar 200"
+STATUS_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/health")
+[[ "$STATUS_HEALTH" == "200" ]] || fail "GET /health esperado 200, obtenido $STATUS_HEALTH"
+BODY_HEALTH=$(get_json "$API_URL/health") || fail "GET /health no respondió"
+echo "$BODY_HEALTH" | jq .
+HEALTH_STATUS=$(echo "$BODY_HEALTH" | jq -r '.status')
+[[ "$HEALTH_STATUS" == "Healthy" ]] || fail "/health → status esperado 'Healthy', obtenido '$HEALTH_STATUS'"
+ok "GET /health → 200 / status=Healthy ✓"
+
+# 9.2 GET /api/version sin token → 200 + success=true + version no vacía
+info "GET /api/version sin token → debe retornar 200"
+STATUS_VERSION=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/version")
+[[ "$STATUS_VERSION" == "200" ]] || fail "GET /api/version esperado 200, obtenido $STATUS_VERSION"
+BODY_VERSION=$(get_json "$API_URL/api/version") || fail "GET /api/version no respondió"
+echo "$BODY_VERSION" | jq .
+assert_ok "$BODY_VERSION" "GET /api/version"
+API_VERSION=$(echo "$BODY_VERSION" | jq -r '.data.version')
+[[ -n "$API_VERSION" && "$API_VERSION" != "null" ]] \
+  || fail "/api/version → campo version vacío"
+ok "GET /api/version → 200 / success=true / version=$API_VERSION ✓"
+
+# 9.3 /health no requiere token (ya probado sin él; validar que protegido tampoco lo exige)
+STATUS_HEALTH_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/health")
+[[ "$STATUS_HEALTH_NOAUTH" == "200" ]] \
+  || fail "/health sin token esperado 200 (no debe exigir JWT), obtenido $STATUS_HEALTH_NOAUTH"
+ok "/health es público (no requiere JWT) ✓"
+
+# 9.4 /api/version no requiere token
+STATUS_VERSION_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/version")
+[[ "$STATUS_VERSION_NOAUTH" == "200" ]] \
+  || fail "/api/version sin token esperado 200 (no debe exigir JWT), obtenido $STATUS_VERSION_NOAUTH"
+ok "/api/version es público (no requiere JWT) ✓"
+
+# 9.5 GET /swagger/index.html → 200
+info "GET /swagger/index.html → debe retornar 200"
+STATUS_SWAGGER_UI=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/swagger/index.html")
+[[ "$STATUS_SWAGGER_UI" == "200" ]] \
+  || fail "GET /swagger/index.html esperado 200, obtenido $STATUS_SWAGGER_UI"
+ok "GET /swagger/index.html → 200 ✓"
+
+# 9.6 GET /swagger/v1/swagger.json → 200 + contiene "Bearer"
+info "GET /swagger/v1/swagger.json → debe retornar 200 y contener definición Bearer"
+STATUS_SWAGGER_JSON=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/swagger/v1/swagger.json")
+[[ "$STATUS_SWAGGER_JSON" == "200" ]] \
+  || fail "GET /swagger/v1/swagger.json esperado 200, obtenido $STATUS_SWAGGER_JSON"
+SWAGGER_JSON=$(get_json "$API_URL/swagger/v1/swagger.json") \
+  || fail "GET /swagger/v1/swagger.json no respondió"
+echo "$SWAGGER_JSON" | grep -qi "bearer" \
+  || fail "swagger.json no contiene configuración Bearer"
+ok "GET /swagger/v1/swagger.json → 200 / contiene definición Bearer ✓"
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 9: health, versión, Swagger JWT y todos los endpoints OK ═══"

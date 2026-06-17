@@ -1,39 +1,132 @@
-# XPAY MVP
+# XPAY MVP — Backend API
 
-Este paquete ya contiene el primer backend base y los scripts SQL iniciales.
+Sistema de pagos digitales con wallets, QR, liquidaciones, retiros y reportes transaccionales.
 
-## Orden de ejecución
+---
 
-1. Crear base de datos SQL Server / Azure SQL llamada `XPAY_MVP`.
-2. Ejecutar `database/001_security_identity.sql`.
-3. Ejecutar `database/002_wallet_ledger.sql`.
-4. Ajustar la cadena de conexión en `backend/Xpay.Api/appsettings.json`.
-5. Ejecutar el backend:
+## Cómo correr el backend
+
+### Requisitos
+
+- .NET 8 SDK
+- SQL Server 2022 (local, Docker o Azure SQL)
+
+### Paso a paso
 
 ```bash
+# 1. Crear base de datos y ejecutar migraciones en orden
+sqlcmd -S localhost -U sa -P "<contraseña>" -Q "CREATE DATABASE XPAY_MVP"
+sqlcmd -S localhost -U sa -P "<contraseña>" -d XPAY_MVP -i database/001_security_identity.sql
+sqlcmd -S localhost -U sa -P "<contraseña>" -d XPAY_MVP -i database/002_wallet_ledger.sql
+sqlcmd -S localhost -U sa -P "<contraseña>" -d XPAY_MVP -i database/003_comercios_qr.sql
+sqlcmd -S localhost -U sa -P "<contraseña>" -d XPAY_MVP -i database/004_liquidacion_qr.sql
+sqlcmd -S localhost -U sa -P "<contraseña>" -d XPAY_MVP -i database/005_retiros_comercio.sql
+sqlcmd -S localhost -U sa -P "<contraseña>" -d XPAY_MVP -i database/006_gestion_retiros_comercio.sql
+sqlcmd -S localhost -U sa -P "<contraseña>" -d XPAY_MVP -i database/007_security_roles_jwt.sql
+
+# 2. Ajustar cadena de conexión en backend/Xpay.Api/appsettings.json
+
+# 3. Correr el backend
 cd backend/Xpay.Api
 dotnet restore
 dotnet run
 ```
 
-6. Abrir Swagger y probar:
+El backend queda disponible en `http://localhost:5000`.
+Swagger UI disponible en `http://localhost:5000/swagger`.
 
-- `POST /api/usuarios/registro-final`
-- `POST /api/auth/login`
-- `GET /api/wallets/persona/{idPersona}`
-- `GET /api/wallets/{idWallet}/saldo`
-- `POST /api/wallets/{idWallet}/recarga-manual`
+---
 
-## Primer flujo implementado
+## Endpoints públicos (sin autenticación)
 
-Crear persona + usuario + rol USUARIO_FINAL + wallet + saldo + auditoría.
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `POST` | `/api/usuarios/registro-final` | Registro de usuario final con wallet |
+| `POST` | `/api/auth/login` | Login — devuelve JWT |
+| `GET`  | `/health` | Health check del servicio |
+| `GET`  | `/api/version` | Versión y ambiente de la API |
 
-## Primera operación financiera implementada
+---
 
-Recarga manual de wallet con:
+## Cómo autenticarse
 
-- ledger_transacciones
-- ledger_movimientos
-- wallet_movimientos
-- wallet_saldos
-- auditoría
+```bash
+# 1. Registrar usuario
+curl -X POST http://localhost:5000/api/usuarios/registro-final \
+  -H "Content-Type: application/json" \
+  -d '{"tipoDocumento":"CC","numeroDocumento":"1099001234","primerNombre":"Carlos",
+       "primerApellido":"Gomez","celular":"3001112233","email":"carlos@demo.com",
+       "usuario":"carlos_demo","password":"Demo@2024!","idUnidadNegocio":1}'
+
+# 2. Login — copiar el campo data.token
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"usuario":"carlos_demo","password":"Demo@2024!"}'
+
+# 3. Usar el token en llamadas protegidas
+curl http://localhost:5000/api/wallets/persona/1 \
+  -H "Authorization: Bearer <token>"
+```
+
+En Swagger UI (`/swagger`), hacer clic en **Authorize** e ingresar el token JWT para probar todos los endpoints protegidos directamente desde el navegador.
+
+---
+
+## Endpoints protegidos principales (requieren `Authorization: Bearer {token}`)
+
+### Wallets
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `GET`  | `/api/wallets/persona/{idPersona}` | Wallet activa de un usuario |
+| `GET`  | `/api/wallets/{idWallet}/saldo` | Saldo disponible |
+| `GET`  | `/api/wallets/{idWallet}/movimientos` | Historial de movimientos |
+| `POST` | `/api/wallets/{idWallet}/recarga-manual` | Recarga manual de saldo |
+| `POST` | `/api/wallets/transferencia` | Transferencia entre wallets |
+
+### Pagos QR
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `POST` | `/api/qr/pagar` | Pago a comercio por código QR |
+
+### Comercios
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `POST` | `/api/comercios/liquidar-venta-qr` | Liquidar venta QR al comercio |
+| `POST` | `/api/comercios/solicitar-retiro` | Solicitar retiro de saldo del comercio |
+| `POST` | `/api/comercios/retiros/confirmar-pago` | Confirmar pago de un retiro |
+| `POST` | `/api/comercios/retiros/rechazar` | Rechazar un retiro pendiente |
+
+### Reportes
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `GET`  | `/api/reportes/wallet/{idWallet}/estado-cuenta` | Estado de cuenta de una wallet |
+| `GET`  | `/api/reportes/comercios/{idComercio}/resumen` | Resumen financiero de un comercio |
+| `GET`  | `/api/reportes/ledger/transaccion/{idTransaccion}` | Detalle de una transacción en el ledger |
+| `GET`  | `/api/reportes/operaciones/resumen-general` | Resumen global del sistema |
+
+---
+
+## Estado actual del MVP
+
+| Fase | Contenido | Estado |
+|------|-----------|--------|
+| 1 | Registro de usuario final, login, wallet, recarga manual | Completa |
+| 2 | Transferencias XPAY a XPAY entre wallets | Completa |
+| 3 | Pago a comercio por código QR | Completa |
+| 4 | Liquidación de ventas QR al wallet del comercio | Completa |
+| 5 | Solicitud de retiro de saldo del comercio | Completa |
+| 6 | Gestión de retiros: confirmar pago y rechazar | Completa |
+| 7 | Consultas y reportes transaccionales (4 endpoints) | Completa |
+| 8 | Seguridad JWT: `[Authorize]`, 401 sin token, roles | Completa |
+| 9 | Health check, versión API, Swagger con JWT Bearer | Completa |
+
+---
+
+## Validación CI
+
+El flujo completo está validado automáticamente en GitHub Actions mediante `scripts/validate-backend.sh`.
+Cada push a `main` ejecuta SQL Server en Docker, aplica las 7 migraciones, corre el backend y valida todos los endpoints de Fases 1 a 9.
