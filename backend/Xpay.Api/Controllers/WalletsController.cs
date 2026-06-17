@@ -45,4 +45,27 @@ public class WalletsController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno aplicando recarga manual." }); }
     }
+
+    [HttpPost("transferencia")]
+    public async Task<IActionResult> Transferir([FromBody] TransferenciaWalletRequest request)
+    {
+        try
+        {
+            var idTransaccion = await _walletOperacionService.TransferirWalletAsync(request);
+            return Ok(new
+            {
+                success = true,
+                message = "Transferencia realizada exitosamente.",
+                data = new
+                {
+                    idTransaccion,
+                    idWalletOrigen  = request.IdWalletOrigen,
+                    idWalletDestino = request.IdWalletDestino,
+                    valor           = request.Valor
+                }
+            });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno procesando la transferencia." }); }
+    }
 }
