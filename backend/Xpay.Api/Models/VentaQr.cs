@@ -17,4 +17,5 @@ public class VentaQr
     public string? Referencia { get; set; }
     public string? Descripcion { get; set; }
     public DateTime FechaVenta { get; set; }
+    public long? IdTransaccionLiquidacion { get; set; }
 }

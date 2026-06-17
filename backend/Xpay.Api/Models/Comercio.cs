@@ -9,4 +9,5 @@ public class Comercio
     public string? Nit { get; set; }
     public string Estado { get; set; } = "ACTIVO";
     public DateTime FechaCreacion { get; set; }
+    public long? IdWalletComercio { get; set; }
 }

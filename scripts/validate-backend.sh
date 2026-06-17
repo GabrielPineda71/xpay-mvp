@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Valida los endpoints del backend XPAY MVP — Fases 1, 2 y 3.
+# Valida los endpoints del backend XPAY MVP — Fases 1, 2, 3 y 4.
 # Variables: API_URL, DB_HOST, DB_NAME, SA_PASSWORD
 set -euo pipefail
 
@@ -198,9 +198,9 @@ PAGO_QR=$(post_json "$API_URL/api/qr/pagar" \
 echo "$PAGO_QR" | jq .
 assert_ok "$PAGO_QR" "pago QR"
 
-ID_VENTA_QR=$(echo "$PAGO_QR"    | jq -r '.data.idVentaQr')
+ID_VENTA_QR=$(echo "$PAGO_QR"     | jq -r '.data.idVentaQr')
 ID_TRANSACCION_Q=$(echo "$PAGO_QR" | jq -r '.data.idTransaccion')
-ESTADO_QR=$(echo "$PAGO_QR"      | jq -r '.data.estado')
+ESTADO_QR=$(echo "$PAGO_QR"       | jq -r '.data.estado')
 
 [[ "$ESTADO_QR" == "CONTINGENCIA" ]] || fail "estado esperado CONTINGENCIA, obtenido $ESTADO_QR"
 ok "Pago QR → idVentaQr=$ID_VENTA_QR  idTransaccion=$ID_TRANSACCION_Q  estado=$ESTADO_QR"
@@ -211,35 +211,84 @@ SALDO_A_POST_QR=$(get_json "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
 echo "$SALDO_A_POST_QR" | jq .
 assert_saldo "$SALDO_A_POST_QR" 45000 "Saldo carlos tras pago QR (100k - 25k transferencia - 30k QR)"
 
-# ════════════════════════════════════════════════════
-# Validaciones en base de datos
-# ════════════════════════════════════════════════════
-phase "Validaciones SQL — acumulado Fases 1 + 2 + 3"
-
-# Wallets
-check_count "wallet_saldos"          2   # carlos + maria
-# Movimientos wallet: 1 recarga + 2 transferencia + 1 pago QR
-check_count "wallet_movimientos"     4
-# Ledger: 1 recarga + 1 transferencia + 1 pago QR
-check_count "ledger_transacciones"   3
-# Movimientos ledger: 2 recarga + 2 transferencia + 2 pago QR
-check_count "ledger_movimientos"     6
-# Auditoría: 2 registro + 1 recarga + 1 transferencia + 1 pago QR
-check_count "auditoria"              5
-# Ventas QR: 1 pago
-check_count "ventas_qr"              1
-
-# Estado CONTINGENCIA en la venta QR
+# Verificar CONTINGENCIA en SQL antes de liquidar
 check_sql_value \
-  "ventas_qr.estado del último registro" \
+  "ventas_qr.estado = CONTINGENCIA antes de liquidar" \
   "SELECT TOP 1 estado FROM ventas_qr ORDER BY id_venta_qr DESC" \
   "CONTINGENCIA"
 
-# Ledger de la transacción QR debe estar balanceado
+# ════════════════════════════════════════════════════
+# FASE 4 — Liquidación de ventas QR al comercio
+# ════════════════════════════════════════════════════
+phase "FASE 4: Liquidación de ventas QR al comercio"
+
+info "POST /api/comercios/liquidar-venta-qr (idVentaQr=$ID_VENTA_QR)"
+LIQUIDACION=$(post_json "$API_URL/api/comercios/liquidar-venta-qr" \
+  "{\"idVentaQr\": $ID_VENTA_QR, \"creadoPor\": $ID_USUARIO_A, \"observacion\": \"Liquidacion CI fase 4\"}") \
+  || fail "POST liquidar-venta-qr no respondió"
+echo "$LIQUIDACION" | jq .
+assert_ok "$LIQUIDACION" "liquidacion QR"
+
+ID_LIQUIDACION=$(echo "$LIQUIDACION"     | jq -r '.data.idLiquidacion')
+ESTADO_VENTA_LIQ=$(echo "$LIQUIDACION"  | jq -r '.data.estadoVenta')
+ID_WALLET_COMERCIO=$(echo "$LIQUIDACION" | jq -r '.data.idWalletComercio')
+VALOR_NETO_LIQ=$(echo "$LIQUIDACION"    | jq -r '.data.valorNeto')
+
+[[ "$ESTADO_VENTA_LIQ" == "LIQUIDADA" ]] \
+  || fail "estadoVenta esperado LIQUIDADA, obtenido $ESTADO_VENTA_LIQ"
+ok "Liquidación → idLiquidacion=$ID_LIQUIDACION  idWalletComercio=$ID_WALLET_COMERCIO  valorNeto=$VALOR_NETO_LIQ  estadoVenta=$ESTADO_VENTA_LIQ"
+
+# Verificar que la liquidación no pueda aplicarse dos veces
+info "Doble liquidación debe retornar error 400"
+DOBLE_LIQ=$(post_json "$API_URL/api/comercios/liquidar-venta-qr" \
+  "{\"idVentaQr\": $ID_VENTA_QR, \"creadoPor\": $ID_USUARIO_A}") || true
+DOBLE_SUCCESS=$(echo "$DOBLE_LIQ" | jq -r '.success' 2>/dev/null || echo "false")
+[[ "$DOBLE_SUCCESS" != "true" ]] \
+  || fail "La doble liquidación debió fallar pero retornó success=true"
+ok "Doble liquidación rechazada correctamente ✓"
+
+# ════════════════════════════════════════════════════
+# Validaciones SQL — acumulado Fases 1 + 2 + 3 + 4
+# ════════════════════════════════════════════════════
+phase "Validaciones SQL — acumulado Fases 1 + 2 + 3 + 4"
+
+# wallet_saldos: carlos + maria + wallet_comercio (creada en 004 seed)
+check_count "wallet_saldos"                3
+# wallet_movimientos: 1 recarga + 2 transferencia + 1 pago QR + 1 liquidación entrada comercio
+check_count "wallet_movimientos"           5
+# ledger_transacciones: 1 recarga + 1 transfer + 1 QR + 1 liquidacion
+check_count "ledger_transacciones"         4
+# ledger_movimientos: 2×recarga + 2×transfer + 2×QR + 2×liquidacion
+check_count "ledger_movimientos"           8
+# auditoria: 2 registro + 1 recarga + 1 transfer + 1 QR + 1 liquidacion
+check_count "auditoria"                    6
+check_count "ventas_qr"                    1
+check_count "liquidaciones_comercio"       1
+check_count "liquidacion_comercio_detalle" 1
+
+# Estado final de la venta QR = LIQUIDADA
 check_sql_value \
-  "Ledger QR balanceado (DR = CR)" \
+  "ventas_qr.estado final = LIQUIDADA" \
+  "SELECT TOP 1 estado FROM ventas_qr ORDER BY id_venta_qr DESC" \
+  "LIQUIDADA"
+
+# Saldo wallet comercio = 30.000 tras liquidación
+check_sql_value \
+  "Saldo wallet comercio tras liquidación" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "30000"
+
+# Ledger PAGO_QR balanceado
+check_sql_value \
+  "Ledger PAGO_QR balanceado (DR = CR)" \
   "SELECT CASE WHEN SUM(CASE WHEN naturaleza='D' THEN valor ELSE 0 END) = SUM(CASE WHEN naturaleza='C' THEN valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos WHERE id_transaccion_ledger = $ID_TRANSACCION_Q" \
   "OK"
 
+# Ledger LIQUIDACION_QR balanceado
+check_sql_value \
+  "Ledger LIQUIDACION_QR balanceado (DR = CR)" \
+  "SELECT CASE WHEN SUM(CASE WHEN lm.naturaleza='D' THEN lm.valor ELSE 0 END) = SUM(CASE WHEN lm.naturaleza='C' THEN lm.valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos lm INNER JOIN ledger_transacciones lt ON lm.id_transaccion_ledger = lt.id_transaccion_ledger WHERE lt.tipo_transaccion = 'LIQUIDACION_QR'" \
+  "OK"
+
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1, 2 y 3: todos los endpoints y tablas OK ═══"
+ok "═══ VALIDACIÓN COMPLETA FASES 1, 2, 3 y 4: todos los endpoints y tablas OK ═══"

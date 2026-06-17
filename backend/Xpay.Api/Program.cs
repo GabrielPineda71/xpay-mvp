@@ -13,6 +13,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<WalletService>();
 builder.Services.AddScoped<WalletOperacionService>();
 builder.Services.AddScoped<PagoQrService>();
+builder.Services.AddScoped<LiquidacionComercioService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
