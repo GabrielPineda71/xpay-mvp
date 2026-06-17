@@ -1,0 +1,31 @@
+name: Frontend Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-frontend:
+    name: Build xpay-admin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: frontend/xpay-admin
+        run: npm install
+
+      - name: Build
+        working-directory: frontend/xpay-admin
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: http://localhost:5000

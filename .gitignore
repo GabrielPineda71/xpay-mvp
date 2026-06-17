@@ -15,3 +15,8 @@ appsettings.Development.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Frontend
+frontend/xpay-admin/node_modules/
+frontend/xpay-admin/dist/
+frontend/xpay-admin/.env
