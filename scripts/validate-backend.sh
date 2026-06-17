@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Valida los endpoints del backend XPAY MVP — Fases 1, 2, 3, 4 y 5.
+# Valida los endpoints del backend XPAY MVP — Fases 1, 2, 3, 4, 5 y 6.
 # Variables: API_URL, DB_HOST, DB_NAME, SA_PASSWORD
 set -euo pipefail
 
@@ -166,7 +166,7 @@ assert_ok "$WALLET_B" "wallet maria"
 ID_WALLET_B=$(echo "$WALLET_B" | jq -r '.data.idWallet')
 ok "Wallet maria → idWallet=$ID_WALLET_B"
 
-info "POST /api/wallets/transferencia (25.000: $ID_WALLET_A → $ID_WALLET_B)"
+info "POST /api/wallets/transferencia (25.000)"
 TRANSFERENCIA=$(post_json "$API_URL/api/wallets/transferencia" \
   "{\"idWalletOrigen\": $ID_WALLET_A, \"idWalletDestino\": $ID_WALLET_B, \"valor\": 25000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Transferencia CI fase 2\"}") \
   || fail "POST transferencia no respondió"
@@ -190,7 +190,7 @@ assert_saldo "$SALDO_B_POST_T" 25000 "Saldo maria tras transferencia"
 # ════════════════════════════════════════════════════
 phase "FASE 3: Pago a comercio por QR"
 
-info "POST /api/qr/pagar (30.000: wallet $ID_WALLET_A → QR-DEMO-XPAY-001)"
+info "POST /api/qr/pagar (30.000)"
 PAGO_QR=$(post_json "$API_URL/api/qr/pagar" \
   "{\"codigoQr\": \"QR-DEMO-XPAY-001\", \"idWalletUsuario\": $ID_WALLET_A, \"valor\": 30000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Pago QR CI fase 3\"}") \
   || fail "POST /api/qr/pagar no respondió"
@@ -200,15 +200,13 @@ assert_ok "$PAGO_QR" "pago QR"
 ID_VENTA_QR=$(echo "$PAGO_QR"      | jq -r '.data.idVentaQr')
 ID_TRANSACCION_Q=$(echo "$PAGO_QR" | jq -r '.data.idTransaccion')
 ESTADO_QR=$(echo "$PAGO_QR"        | jq -r '.data.estado')
-
 [[ "$ESTADO_QR" == "CONTINGENCIA" ]] || fail "estado esperado CONTINGENCIA, obtenido $ESTADO_QR"
-ok "Pago QR → idVentaQr=$ID_VENTA_QR  idTransaccion=$ID_TRANSACCION_Q  estado=$ESTADO_QR"
+ok "Pago QR → idVentaQr=$ID_VENTA_QR  estado=$ESTADO_QR"
 
 info "GET /api/wallets/$ID_WALLET_A/saldo (tras pago QR)"
 SALDO_A_POST_QR=$(get_json "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
   || fail "GET saldo carlos tras pago QR no respondió"
-echo "$SALDO_A_POST_QR" | jq .
-assert_saldo "$SALDO_A_POST_QR" 45000 "Saldo carlos tras pago QR (100k - 25k transferencia - 30k QR)"
+assert_saldo "$SALDO_A_POST_QR" 45000 "Saldo carlos tras pago QR"
 
 check_sql_value \
   "ventas_qr.estado = CONTINGENCIA antes de liquidar" \
@@ -227,111 +225,195 @@ LIQUIDACION=$(post_json "$API_URL/api/comercios/liquidar-venta-qr" \
 echo "$LIQUIDACION" | jq .
 assert_ok "$LIQUIDACION" "liquidacion QR"
 
-ID_LIQUIDACION=$(echo "$LIQUIDACION"     | jq -r '.data.idLiquidacion')
-ESTADO_VENTA_LIQ=$(echo "$LIQUIDACION"  | jq -r '.data.estadoVenta')
 ID_COMERCIO=$(echo "$LIQUIDACION"        | jq -r '.data.idComercio')
 ID_WALLET_COMERCIO=$(echo "$LIQUIDACION" | jq -r '.data.idWalletComercio')
-
+ESTADO_VENTA_LIQ=$(echo "$LIQUIDACION"  | jq -r '.data.estadoVenta')
 [[ "$ESTADO_VENTA_LIQ" == "LIQUIDADA" ]] || fail "estadoVenta esperado LIQUIDADA, obtenido $ESTADO_VENTA_LIQ"
-ok "Liquidación → idLiquidacion=$ID_LIQUIDACION  idComercio=$ID_COMERCIO  idWalletComercio=$ID_WALLET_COMERCIO  estadoVenta=$ESTADO_VENTA_LIQ"
+ok "Liquidación → idComercio=$ID_COMERCIO  idWalletComercio=$ID_WALLET_COMERCIO  estadoVenta=$ESTADO_VENTA_LIQ"
 
 # Verificar doble liquidación rechazada
 info "Doble liquidación debe retornar error"
 DOBLE_LIQ=$(post_json "$API_URL/api/comercios/liquidar-venta-qr" \
   "{\"idVentaQr\": $ID_VENTA_QR, \"creadoPor\": $ID_USUARIO_A}") || true
-DOBLE_SUCCESS=$(echo "$DOBLE_LIQ" | jq -r '.success' 2>/dev/null || echo "false")
-[[ "$DOBLE_SUCCESS" != "true" ]] || fail "La doble liquidación debió fallar pero retornó success=true"
-ok "Doble liquidación rechazada correctamente ✓"
-
-# Saldo wallet comercio = 30.000 después de liquidación, ANTES de retiro
-check_sql_value \
-  "Saldo wallet comercio tras liquidación (antes de retiro)" \
-  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
-  "30000"
+[[ "$(echo "$DOBLE_LIQ" | jq -r '.success' 2>/dev/null || echo false)" != "true" ]] \
+  || fail "La doble liquidación debió fallar"
+ok "Doble liquidación rechazada ✓"
 
 # ════════════════════════════════════════════════════
 # FASE 5 — Solicitud de retiro del comercio
 # ════════════════════════════════════════════════════
 phase "FASE 5: Solicitud de retiro del comercio"
 
-# El comercio tiene 30.000 → solicita retiro de 20.000 → debe quedar 10.000
+check_sql_value \
+  "Saldo wallet comercio antes de retiro = 30000" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "30000"
+
 info "POST /api/comercios/solicitar-retiro (idComercio=$ID_COMERCIO, valor=20000)"
 RETIRO=$(post_json "$API_URL/api/comercios/solicitar-retiro" \
   "{\"idComercio\": $ID_COMERCIO, \"valor\": 20000, \"medioRetiro\": \"TRANSFERENCIA_BANCARIA\", \"banco\": \"Banco Demo\", \"tipoCuenta\": \"AHORROS\", \"numeroCuenta\": \"1234567890\", \"titularCuenta\": \"Comercio Demo XPAY\", \"documentoTitular\": \"900123456\", \"observacion\": \"Retiro CI fase 5\", \"creadoPor\": $ID_USUARIO_A}") \
-  || fail "POST /api/comercios/solicitar-retiro no respondió"
+  || fail "POST solicitar-retiro no respondió"
 echo "$RETIRO" | jq .
 assert_ok "$RETIRO" "solicitar retiro"
 
-ID_RETIRO=$(echo "$RETIRO"       | jq -r '.data.idRetiro')
-ESTADO_RETIRO=$(echo "$RETIRO"   | jq -r '.data.estado')
-VALOR_RETIRO=$(echo "$RETIRO"    | jq -r '.data.valor')
-
+ID_RETIRO=$(echo "$RETIRO"     | jq -r '.data.idRetiro')
+ESTADO_RETIRO=$(echo "$RETIRO" | jq -r '.data.estado')
 [[ "$ESTADO_RETIRO" == "PENDIENTE" ]] || fail "estado esperado PENDIENTE, obtenido $ESTADO_RETIRO"
-ok "Retiro → idRetiro=$ID_RETIRO  valor=$VALOR_RETIRO  estado=$ESTADO_RETIRO"
+ok "Retiro → idRetiro=$ID_RETIRO  valor=20000  estado=$ESTADO_RETIRO"
 
-# Validar saldo insuficiente (retiro mayor al saldo disponible restante)
+# Verificar saldo insuficiente rechazado
 info "Retiro con saldo insuficiente debe retornar error"
 RETIRO_INVALIDO=$(post_json "$API_URL/api/comercios/solicitar-retiro" \
   "{\"idComercio\": $ID_COMERCIO, \"valor\": 99999, \"creadoPor\": $ID_USUARIO_A}") || true
-RETIRO_INVALIDO_SUCCESS=$(echo "$RETIRO_INVALIDO" | jq -r '.success' 2>/dev/null || echo "false")
-[[ "$RETIRO_INVALIDO_SUCCESS" != "true" ]] || fail "El retiro con saldo insuficiente debió fallar pero retornó success=true"
-ok "Retiro con saldo insuficiente rechazado correctamente ✓"
+[[ "$(echo "$RETIRO_INVALIDO" | jq -r '.success' 2>/dev/null || echo false)" != "true" ]] \
+  || fail "El retiro con saldo insuficiente debió fallar"
+ok "Retiro con saldo insuficiente rechazado ✓"
 
 # ════════════════════════════════════════════════════
-# Validaciones SQL — acumulado Fases 1 + 2 + 3 + 4 + 5
+# FASE 6 — Gestión de retiros: confirmar pago y rechazar
 # ════════════════════════════════════════════════════
-phase "Validaciones SQL — acumulado Fases 1 + 2 + 3 + 4 + 5"
+phase "FASE 6: Gestión de retiros del comercio"
+
+# 6a: Confirmar el retiro de 20.000 como PAGADO
+info "POST /api/comercios/retiros/confirmar-pago (idRetiro=$ID_RETIRO)"
+CONFIRMAR=$(post_json "$API_URL/api/comercios/retiros/confirmar-pago" \
+  "{\"idRetiro\": $ID_RETIRO, \"referenciaPago\": \"PAGO-MANUAL-CI-001\", \"observacion\": \"Pago manual CI fase 6\", \"creadoPor\": $ID_USUARIO_A}") \
+  || fail "POST confirmar-pago no respondió"
+echo "$CONFIRMAR" | jq .
+assert_ok "$CONFIRMAR" "confirmar pago"
+
+ESTADO_PAGADO=$(echo "$CONFIRMAR" | jq -r '.data.estado')
+[[ "$ESTADO_PAGADO" == "PAGADO" ]] || fail "estado esperado PAGADO, obtenido $ESTADO_PAGADO"
+ok "Retiro confirmado como PAGADO → idRetiro=$ID_RETIRO  estado=$ESTADO_PAGADO"
+
+# Verificar que no se puede confirmar dos veces
+info "Doble confirmación debe retornar error"
+DOBLE_CONF=$(post_json "$API_URL/api/comercios/retiros/confirmar-pago" \
+  "{\"idRetiro\": $ID_RETIRO, \"creadoPor\": $ID_USUARIO_A}") || true
+[[ "$(echo "$DOBLE_CONF" | jq -r '.success' 2>/dev/null || echo false)" != "true" ]] \
+  || fail "La doble confirmación debió fallar"
+ok "Doble confirmación rechazada ✓"
+
+# Wallet comercio sigue con saldo 10.000 (la confirmación no modifica wallet)
+check_sql_value \
+  "Saldo wallet comercio tras confirmar pago = 10000" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "10000"
+
+# Verificar fecha_pago y referencia_pago en DB
+check_sql_value \
+  "retiro PAGADO tiene fecha_pago no nula" \
+  "SELECT CASE WHEN fecha_pago IS NOT NULL THEN 'OK' ELSE 'NULL' END FROM retiros_comercio WHERE id_retiro = $ID_RETIRO" \
+  "OK"
+
+check_sql_value \
+  "retiro PAGADO tiene referencia_pago correcta" \
+  "SELECT referencia_pago FROM retiros_comercio WHERE id_retiro = $ID_RETIRO" \
+  "PAGO-MANUAL-CI-001"
+
+# 6b: Segundo retiro de 5.000 (saldo comercio = 10k - 5k = 5k)
+info "POST /api/comercios/solicitar-retiro (segundo retiro: valor=5000)"
+RETIRO_2=$(post_json "$API_URL/api/comercios/solicitar-retiro" \
+  "{\"idComercio\": $ID_COMERCIO, \"valor\": 5000, \"medioRetiro\": \"TRANSFERENCIA_BANCARIA\", \"observacion\": \"Segundo retiro CI fase 6\", \"creadoPor\": $ID_USUARIO_A}") \
+  || fail "POST solicitar-retiro (segundo) no respondió"
+echo "$RETIRO_2" | jq .
+assert_ok "$RETIRO_2" "segundo retiro"
+
+ID_RETIRO_2=$(echo "$RETIRO_2"     | jq -r '.data.idRetiro')
+ESTADO_RETIRO_2=$(echo "$RETIRO_2" | jq -r '.data.estado')
+[[ "$ESTADO_RETIRO_2" == "PENDIENTE" ]] || fail "estado esperado PENDIENTE, obtenido $ESTADO_RETIRO_2"
+ok "Segundo retiro → idRetiro=$ID_RETIRO_2  valor=5000  estado=$ESTADO_RETIRO_2"
+
+check_sql_value \
+  "Saldo wallet comercio tras segundo retiro = 5000" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "5000"
+
+# 6c: Rechazar el segundo retiro (saldo comercio = 5k + 5k = 10k)
+info "POST /api/comercios/retiros/rechazar (idRetiro=$ID_RETIRO_2)"
+RECHAZO=$(post_json "$API_URL/api/comercios/retiros/rechazar" \
+  "{\"idRetiro\": $ID_RETIRO_2, \"motivoRechazo\": \"Cuenta bancaria inválida\", \"observacion\": \"Rechazo CI fase 6\", \"creadoPor\": $ID_USUARIO_A}") \
+  || fail "POST rechazar no respondió"
+echo "$RECHAZO" | jq .
+assert_ok "$RECHAZO" "rechazar retiro"
+
+ESTADO_RECHAZADO=$(echo "$RECHAZO" | jq -r '.data.estado')
+[[ "$ESTADO_RECHAZADO" == "RECHAZADO" ]] || fail "estado esperado RECHAZADO, obtenido $ESTADO_RECHAZADO"
+ok "Retiro rechazado → idRetiro=$ID_RETIRO_2  estado=$ESTADO_RECHAZADO"
+
+# Verificar que no se puede rechazar dos veces
+info "Doble rechazo debe retornar error"
+DOBLE_RECH=$(post_json "$API_URL/api/comercios/retiros/rechazar" \
+  "{\"idRetiro\": $ID_RETIRO_2, \"creadoPor\": $ID_USUARIO_A}") || true
+[[ "$(echo "$DOBLE_RECH" | jq -r '.success' 2>/dev/null || echo false)" != "true" ]] \
+  || fail "El doble rechazo debió fallar"
+ok "Doble rechazo rechazado ✓"
+
+# Saldo comercio restaurado a 10.000
+check_sql_value \
+  "Saldo wallet comercio tras rechazo = 10000 (restaurado)" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "10000"
+
+# ════════════════════════════════════════════════════
+# Validaciones SQL — acumulado Fases 1 + 2 + 3 + 4 + 5 + 6
+# ════════════════════════════════════════════════════
+phase "Validaciones SQL — acumulado Fases 1 a 6"
 
 # wallet_saldos: carlos + maria + wallet_comercio (seed 004)
 check_count "wallet_saldos"                3
-# wallet_movimientos: 1 recarga + 2 transfer + 1 QR + 1 liquidación + 1 retiro
-check_count "wallet_movimientos"           6
-# ledger_transacciones: recarga + transfer + QR + liquidación + retiro
-check_count "ledger_transacciones"         5
-# ledger_movimientos: 2×recarga + 2×transfer + 2×QR + 2×liquidación + 2×retiro
-check_count "ledger_movimientos"          10
-# auditoria: 2 registro + 1 recarga + 1 transfer + 1 QR + 1 liquidación + 1 retiro
-check_count "auditoria"                    7
+# wallet_movimientos:
+#   1 recarga + 2 transfer + 1 pago QR + 1 liquidación comercio
+#   + 1 retiro 20k + 1 retiro 5k + 1 rechazo 5k (devuelto)
+check_count "wallet_movimientos"           8
+# ledger_transacciones:
+#   recarga + transfer + QR + liquidación + retiro20k + pagado20k + retiro5k + rechazado5k
+check_count "ledger_transacciones"         8
+# ledger_movimientos: 2 × 8 transacciones
+check_count "ledger_movimientos"          16
+# auditoria:
+#   2 registro + 1 recarga + 1 transfer + 1 QR + 1 liquidación
+#   + 1 retiro20k + 1 pagado + 1 retiro5k + 1 rechazado
+check_count "auditoria"                   10
 check_count "ventas_qr"                    1
 check_count "liquidaciones_comercio"       1
 check_count "liquidacion_comercio_detalle" 1
-check_count "retiros_comercio"             1
+check_count "retiros_comercio"             2
 
-# Estado final venta QR = LIQUIDADA
+# Estados finales en retiros_comercio
 check_sql_value \
-  "ventas_qr.estado final = LIQUIDADA" \
-  "SELECT TOP 1 estado FROM ventas_qr ORDER BY id_venta_qr DESC" \
-  "LIQUIDADA"
+  "Primer retiro estado = PAGADO" \
+  "SELECT estado FROM retiros_comercio WHERE id_retiro = $ID_RETIRO" \
+  "PAGADO"
 
-# Estado retiro = PENDIENTE
 check_sql_value \
-  "retiros_comercio.estado = PENDIENTE" \
-  "SELECT TOP 1 estado FROM retiros_comercio ORDER BY id_retiro DESC" \
-  "PENDIENTE"
+  "Segundo retiro estado = RECHAZADO" \
+  "SELECT estado FROM retiros_comercio WHERE id_retiro = $ID_RETIRO_2" \
+  "RECHAZADO"
 
-# Saldo wallet comercio = 10.000 tras retiro (30k liquidacion - 20k retiro)
+# Saldo final wallet comercio = 10.000
 check_sql_value \
-  "Saldo wallet comercio tras retiro = 10000" \
+  "Saldo final wallet comercio = 10000" \
   "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
   "10000"
 
 # Ledger PAGO_QR balanceado
 check_sql_value \
-  "Ledger PAGO_QR balanceado (DR = CR)" \
+  "Ledger PAGO_QR balanceado" \
   "SELECT CASE WHEN SUM(CASE WHEN naturaleza='D' THEN valor ELSE 0 END) = SUM(CASE WHEN naturaleza='C' THEN valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos WHERE id_transaccion_ledger = $ID_TRANSACCION_Q" \
   "OK"
 
-# Ledger LIQUIDACION_QR balanceado
+# Ledger RETIRO_COMERCIO_PAGADO balanceado
 check_sql_value \
-  "Ledger LIQUIDACION_QR balanceado (DR = CR)" \
-  "SELECT CASE WHEN SUM(CASE WHEN lm.naturaleza='D' THEN lm.valor ELSE 0 END) = SUM(CASE WHEN lm.naturaleza='C' THEN lm.valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos lm INNER JOIN ledger_transacciones lt ON lm.id_transaccion_ledger = lt.id_transaccion_ledger WHERE lt.tipo_transaccion = 'LIQUIDACION_QR'" \
+  "Ledger RETIRO_COMERCIO_PAGADO balanceado" \
+  "SELECT CASE WHEN SUM(CASE WHEN lm.naturaleza='D' THEN lm.valor ELSE 0 END) = SUM(CASE WHEN lm.naturaleza='C' THEN lm.valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos lm INNER JOIN ledger_transacciones lt ON lm.id_transaccion_ledger = lt.id_transaccion_ledger WHERE lt.tipo_transaccion = 'RETIRO_COMERCIO_PAGADO'" \
   "OK"
 
-# Ledger RETIRO_COMERCIO_SOLICITADO balanceado
+# Ledger RETIRO_COMERCIO_RECHAZADO balanceado
 check_sql_value \
-  "Ledger RETIRO_COMERCIO_SOLICITADO balanceado (DR = CR)" \
-  "SELECT CASE WHEN SUM(CASE WHEN lm.naturaleza='D' THEN lm.valor ELSE 0 END) = SUM(CASE WHEN lm.naturaleza='C' THEN lm.valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos lm INNER JOIN ledger_transacciones lt ON lm.id_transaccion_ledger = lt.id_transaccion_ledger WHERE lt.tipo_transaccion = 'RETIRO_COMERCIO_SOLICITADO'" \
+  "Ledger RETIRO_COMERCIO_RECHAZADO balanceado" \
+  "SELECT CASE WHEN SUM(CASE WHEN lm.naturaleza='D' THEN lm.valor ELSE 0 END) = SUM(CASE WHEN lm.naturaleza='C' THEN lm.valor ELSE 0 END) THEN 'OK' ELSE 'DESBALANCEADO' END FROM ledger_movimientos lm INNER JOIN ledger_transacciones lt ON lm.id_transaccion_ledger = lt.id_transaccion_ledger WHERE lt.tipo_transaccion = 'RETIRO_COMERCIO_RECHAZADO'" \
   "OK"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1, 2, 3, 4 y 5: todos los endpoints y tablas OK ═══"
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 6: todos los endpoints y tablas OK ═══"

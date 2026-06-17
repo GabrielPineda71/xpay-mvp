@@ -18,4 +18,9 @@ public class RetiroComercio
     public string? Observacion { get; set; }
     public long? CreadoPor { get; set; }
     public DateTime FechaSolicitud { get; set; }
+    public DateTime? FechaPago { get; set; }
+    public string? ReferenciaPago { get; set; }
+    public DateTime? FechaRechazo { get; set; }
+    public string? MotivoRechazo { get; set; }
+    public long? IdTransaccionGestion { get; set; }
 }

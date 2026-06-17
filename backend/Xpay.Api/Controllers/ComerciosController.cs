@@ -9,7 +9,7 @@ namespace Xpay.Api.Controllers;
 public class ComerciosController : ControllerBase
 {
     private readonly LiquidacionComercioService _liquidacionService;
-    private readonly RetiroComercioService _retiroService;
+    private readonly RetiroComercioService      _retiroService;
 
     public ComerciosController(LiquidacionComercioService liquidacionService, RetiroComercioService retiroService)
     {
@@ -64,5 +64,49 @@ public class ComerciosController : ControllerBase
         }
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno procesando la solicitud de retiro." }); }
+    }
+
+    [HttpPost("retiros/confirmar-pago")]
+    public async Task<IActionResult> ConfirmarPago([FromBody] ConfirmarRetiroComercioRequest request)
+    {
+        try
+        {
+            var retiro = await _retiroService.ConfirmarRetiroPagadoAsync(request);
+            return Ok(new
+            {
+                success = true,
+                message = "Retiro marcado como pagado exitosamente.",
+                data = new
+                {
+                    idRetiro = retiro.IdRetiro,
+                    estado   = retiro.Estado,
+                    valor    = retiro.Valor
+                }
+            });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno confirmando el pago del retiro." }); }
+    }
+
+    [HttpPost("retiros/rechazar")]
+    public async Task<IActionResult> RechazarRetiro([FromBody] RechazarRetiroComercioRequest request)
+    {
+        try
+        {
+            var retiro = await _retiroService.RechazarRetiroAsync(request);
+            return Ok(new
+            {
+                success = true,
+                message = "Retiro rechazado exitosamente.",
+                data = new
+                {
+                    idRetiro = retiro.IdRetiro,
+                    estado   = retiro.Estado,
+                    valor    = retiro.Valor
+                }
+            });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno rechazando el retiro." }); }
     }
 }
