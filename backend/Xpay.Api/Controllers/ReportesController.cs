@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/reportes")]
 public class ReportesController : ControllerBase
 {

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
@@ -5,6 +6,7 @@ using Xpay.Api.Services;
 namespace Xpay.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/wallets")]
 public class WalletsController : ControllerBase
 {

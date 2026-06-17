@@ -85,6 +85,9 @@ jobs:
           echo "--- Ejecutando 006_gestion_retiros_comercio.sql ---"
           sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
             -i database/006_gestion_retiros_comercio.sql
+          echo "--- Ejecutando 007_security_roles_jwt.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/007_security_roles_jwt.sql
           echo "Migraciones aplicadas."
 
       - name: dotnet restore
