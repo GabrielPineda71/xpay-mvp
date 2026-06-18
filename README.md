@@ -191,6 +191,14 @@ Declara formalmente que XPAY MVP QA Candidate v0.1 está listo para despliegue Q
 
 ---
 
+## Runbook despliegue QA
+
+**[docs/QA_DEPLOYMENT_RUNBOOK.md](docs/QA_DEPLOYMENT_RUNBOOK.md)**
+
+Guía operativa paso a paso para ejecutar el despliegue real de XPAY QA Candidate v0.1 en Azure: recursos a crear, variables de entorno, orden de scripts SQL, despliegue backend y frontend, smoke test y rollback básico.
+
+---
+
 ## Pruebas QA
 
 | Documento | Propósito |

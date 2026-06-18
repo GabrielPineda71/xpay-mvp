@@ -212,3 +212,11 @@ Para conocer qué funcionalidades incluye esta versión, qué está excluido del
 **[`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md)**
 - Si se sospecha compromiso de la clave JWT, rotarla inmediatamente en Azure App Settings y reiniciar el App Service (los tokens existentes quedarán inválidos).
 - Considerar Azure Key Vault para manejo de secretos en ambientes productivos.
+
+---
+
+## Runbook de despliegue QA
+
+Para ejecutar el despliegue paso a paso con comandos exactos, checklist de recursos, orden de scripts SQL, smoke test y rollback básico, ver:
+
+**[`docs/QA_DEPLOYMENT_RUNBOOK.md`](QA_DEPLOYMENT_RUNBOOK.md)**

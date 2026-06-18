@@ -329,6 +329,7 @@ Completar y firmar el acta de la sección 8. Este documento es el registro forma
 | [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md) | Declaración formal de la versión QA Candidate: alcance, riesgos y criterios de aprobación |
 | [`README.md`](../README.md) | Descripción del backend: endpoints, configuración, estado del MVP |
 | [`frontend/xpay-admin/README.md`](../frontend/xpay-admin/README.md) | Configuración del frontend: instalación, rutas, autenticación, errores |
+| [`docs/QA_DEPLOYMENT_RUNBOOK.md`](QA_DEPLOYMENT_RUNBOOK.md) | Runbook operativo: recursos Azure, variables, scripts SQL, smoke test y rollback |
 
 ---
 

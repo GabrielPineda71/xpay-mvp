@@ -288,6 +288,7 @@ Seguir este orden garantiza que los errores se detecten en la etapa más tempran
 | [`docs/QA_DEPLOYMENT.md`](QA_DEPLOYMENT.md) | Guía paso a paso de despliegue en Azure QA |
 | [`docs/QA_MANUAL_TESTING.md`](QA_MANUAL_TESTING.md) | 35 casos de prueba manuales, prerrequisitos y criterios de aprobación |
 | [`docs/QA_EXECUTION_TEMPLATE.md`](QA_EXECUTION_TEMPLATE.md) | Plantilla de registro de ejecución, evidencias, bugs y acta de cierre |
+| [`docs/QA_DEPLOYMENT_RUNBOOK.md`](QA_DEPLOYMENT_RUNBOOK.md) | Runbook operativo: recursos Azure, variables, scripts SQL, smoke test y rollback |
 
 ---
 
