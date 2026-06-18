@@ -499,7 +499,8 @@ Firma responsable técnico:  _________________
 | [`docs/QA_INTERNAL_CYCLE_01.md`](QA_INTERNAL_CYCLE_01.md) | Paquete de ejecución del primer ciclo QA interno: identificación, roles, plan, resultados y acta |
 | [`docs/QA_INTERNAL_USERS_ONBOARDING.md`](QA_INTERNAL_USERS_ONBOARDING.md) | Guía de onboarding de usuarios internos QA: perfiles, reglas, habilitación, reportes y controles |
 | [`docs/QA_INTERNAL_ISSUES_TRACKING.md`](QA_INTERNAL_ISSUES_TRACKING.md) | Registro y seguimiento de incidencias QA: estados, severidades, flujo de atención y criterios de cierre |
+| [`docs/QA_EXIT_CRITERIA_AND_PILOT_READINESS.md`](QA_EXIT_CRITERIA_AND_PILOT_READINESS.md) | Criterios de salida QA y piloto controlado: el smoke test de Fase 6 es criterio 7 de este documento |
 
 ---
 
-*Este checklist cubre el MVP XPAY — Fases 1 a 31. Actualizar cuando se agreguen nuevos módulos, flujos o criterios de aprobación.*
+*Este checklist cubre el MVP XPAY — Fases 1 a 32. Actualizar cuando se agreguen nuevos módulos, flujos o criterios de aprobación.*

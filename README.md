@@ -319,6 +319,17 @@ Guía operativa para registrar, clasificar y dar seguimiento a incidencias repor
 
 ---
 
+## Salida QA interno y piloto controlado
+
+**[docs/QA_EXIT_CRITERIA_AND_PILOT_READINESS.md](docs/QA_EXIT_CRITERIA_AND_PILOT_READINESS.md)**
+
+Documento de decisión para determinar cuándo el MVP puede pasar de QA interno a un piloto controlado limitado. Define 12 criterios obligatorios de salida, 12 criterios bloqueantes, alcance permitido/no permitido del piloto, matriz de decisión (avanzar/restricciones/no avanzar), controles de seguridad y financieros, criterios de suspensión y acta de decisión diligenciable.
+
+- Requiere firma del responsable técnico y del responsable de negocio.
+- **No autoriza producción, dinero real ni clientes masivos automáticamente.**
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

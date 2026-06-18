@@ -325,6 +325,7 @@ Firma Aprobador:            _________________   Fecha: __________
 | [`README.md`](../README.md) | Descripción del backend: endpoints, configuración, ecosistema QA completo |
 | [`docs/QA_INTERNAL_USERS_ONBOARDING.md`](QA_INTERNAL_USERS_ONBOARDING.md) | Siguiente paso si el ciclo es aprobado: guía para habilitar usuarios internos QA |
 | [`docs/QA_INTERNAL_ISSUES_TRACKING.md`](QA_INTERNAL_ISSUES_TRACKING.md) | Registro y seguimiento de incidencias QA: estados, severidades, flujo de atención y criterios de cierre |
+| [`docs/QA_EXIT_CRITERIA_AND_PILOT_READINESS.md`](QA_EXIT_CRITERIA_AND_PILOT_READINESS.md) | Siguiente etapa si el ciclo es aprobado: criterios formales para avanzar a piloto controlado |
 
 ---
 

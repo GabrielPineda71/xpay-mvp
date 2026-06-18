@@ -381,7 +381,8 @@ Verificar antes de compartir cualquier reporte de incidencias con personas fuera
 | [`docs/QA_MANUAL_TESTING.md`](QA_MANUAL_TESTING.md) | Define los 35 casos formales; criterios para clasificar un resultado como bug |
 | [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md) | Riesgos conocidos de la versión; incidencias que coincidan con riesgos conocidos se documentan como confirmados |
 | [`README.md`](../README.md) | Descripción del proyecto: endpoints, configuración y ecosistema QA completo |
+| [`docs/QA_EXIT_CRITERIA_AND_PILOT_READINESS.md`](QA_EXIT_CRITERIA_AND_PILOT_READINESS.md) | Criterios de salida QA: el estado de incidencias en este tracker es entrada directa para la evaluación de criterios 4 y 5 |
 
 ---
 
-*Esta guía cubre el MVP XPAY — Fases 1 a 31. Actualizar si se adopta herramienta formal de tickets, si cambian las severidades o si se agregan nuevos módulos al alcance QA.*
+*Esta guía cubre el MVP XPAY — Fases 1 a 32. Actualizar si se adopta herramienta formal de tickets, si cambian las severidades o si se agregan nuevos módulos al alcance QA.*

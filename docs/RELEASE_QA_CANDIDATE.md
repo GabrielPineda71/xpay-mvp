@@ -297,6 +297,7 @@ Seguir este orden garantiza que los errores se detecten en la etapa más tempran
 | [`docs/QA_INTERNAL_CYCLE_01.md`](QA_INTERNAL_CYCLE_01.md) | Paquete de ejecución del primer ciclo QA interno: identificación, roles, resultados y acta de cierre |
 | [`docs/QA_INTERNAL_USERS_ONBOARDING.md`](QA_INTERNAL_USERS_ONBOARDING.md) | Guía de onboarding de usuarios internos QA: perfiles, reglas, habilitación y controles |
 | [`docs/QA_INTERNAL_ISSUES_TRACKING.md`](QA_INTERNAL_ISSUES_TRACKING.md) | Registro y seguimiento de incidencias QA: estados, severidades, flujo de atención y criterios de cierre |
+| [`docs/QA_EXIT_CRITERIA_AND_PILOT_READINESS.md`](QA_EXIT_CRITERIA_AND_PILOT_READINESS.md) | Criterios de salida QA y preparación de piloto controlado: decisión formal de avanzar más allá del QA interno |
 
 ---
 
