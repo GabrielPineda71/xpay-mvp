@@ -28,21 +28,50 @@ Para apuntar a un ambiente QA o producción, cambiar el valor de `VITE_API_BASE_
 
 ## Correr en desarrollo
 
+### Contra backend local
+
 ```bash
+# .env debe contener:
+# VITE_API_BASE_URL=http://localhost:5000
 npm run dev
 ```
 
-La app queda disponible en `http://localhost:5173`.
+La app queda disponible en `http://localhost:5173`. El backend debe estar corriendo en `http://localhost:5000`.
 
-El backend debe estar corriendo en `VITE_API_BASE_URL` (por defecto `http://localhost:5000`) y tener CORS configurado para aceptar `http://localhost:5173`.
+### Contra backend QA
 
-## Build de producción
+```bash
+# Copiar el ejemplo de configuración QA y ajustar si el nombre del App Service difiere
+cp .env.qa.example .env
+# El archivo contiene: VITE_API_BASE_URL=https://xpay-api-qa.azurewebsites.net
+npm run dev
+```
+
+El backend QA debe tener CORS configurado para aceptar `http://localhost:5173`.
+
+## Build QA
+
+```bash
+cp .env.qa.example .env
+# Verificar que VITE_API_BASE_URL apunta al backend QA correcto
+npm run build
+# Los archivos estáticos quedan en dist/ — desplegarlo en Azure App Service o Static Web App
+```
+
+## Build de producción / genérico
 
 ```bash
 npm run build
 ```
 
 Los archivos estáticos quedan en `dist/`.
+
+## Configurar VITE_API_BASE_URL en Azure
+
+Si se usa **Azure Static Web Apps**, definir la variable de entorno `VITE_API_BASE_URL` en:
+> Portal Azure → Static Web App → Configuration → Application settings
+
+Si se usa **Azure App Service** para el frontend (servir los estáticos con un servidor), generar el build localmente con el `.env` correcto antes de desplegar `dist/`, ya que Vite inyecta el valor en tiempo de compilación.
 
 ---
 

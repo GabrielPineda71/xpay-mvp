@@ -171,6 +171,16 @@ Cors__AllowedOrigins__2 = https://xpay-frontend-qa.azurewebsites.net
 
 ---
 
+## Despliegue QA
+
+Para preparar y verificar un ambiente QA en Azure App Service, ver la guía completa:
+
+**[docs/QA_DEPLOYMENT.md](docs/QA_DEPLOYMENT.md)**
+
+Incluye arquitectura propuesta, variables de entorno, orden de despliegue, checklist de verificación y troubleshooting.
+
+---
+
 ## Validación CI
 
 El flujo completo está validado automáticamente en GitHub Actions mediante `scripts/validate-backend.sh`.
