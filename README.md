@@ -181,13 +181,12 @@ Incluye arquitectura propuesta, variables de entorno, orden de despliegue, check
 
 ---
 
-## Manual de pruebas QA
+## Pruebas QA
 
-Para validar el MVP de punta a punta antes de pruebas con usuarios internos:
-
-**[docs/QA_MANUAL_TESTING.md](docs/QA_MANUAL_TESTING.md)**
-
-Incluye 35 casos de prueba distribuidos en 10 módulos, criterios de aprobación, plantilla de reporte de bug y checklist de salida a QA.
+| Documento | Propósito |
+|-----------|-----------|
+| **[docs/QA_MANUAL_TESTING.md](docs/QA_MANUAL_TESTING.md)** | 35 casos de prueba, prerrequisitos, orden de ejecución, criterios de aprobación y checklist de salida |
+| **[docs/QA_EXECUTION_TEMPLATE.md](docs/QA_EXECUTION_TEMPLATE.md)** | Plantilla para registrar cada ciclo de pruebas: responsable, estado, evidencias, bugs y acta de cierre |
 
 ---
 

@@ -388,4 +388,16 @@ Marcar todos los puntos antes de abrir el ambiente a pruebas con usuarios intern
 
 ---
 
-*Este documento cubre el MVP XPAY — Fases 1 a 18. Actualizar en cada fase que agregue módulos o modifique flujos existentes.*
+*Este documento cubre el MVP XPAY — Fases 1 a 19. Actualizar en cada fase que agregue módulos o modifique flujos existentes.*
+
+---
+
+## 11. Plantilla de ejecución QA
+
+Este manual define **qué probar** y cuál es el resultado esperado en cada caso.
+
+Para registrar **la ejecución real** — quién lo ejecutó, qué ocurrió, qué evidencias se capturaron, qué bugs se encontraron y cuál fue la decisión final — usar la plantilla de ejecución:
+
+**[`docs/QA_EXECUTION_TEMPLATE.md`](QA_EXECUTION_TEMPLATE.md)**
+
+La plantilla incluye la matriz de los 35 casos con columnas de responsable, fecha, estado, evidencia y bug relacionado; el registro de evidencias y bugs; los criterios de decisión final; y el acta de cierre QA.
