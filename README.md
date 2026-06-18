@@ -330,6 +330,17 @@ Documento de decisión para determinar cuándo el MVP puede pasar de QA interno 
 
 ---
 
+## Plan operativo piloto controlado
+
+**[docs/PILOT_CONTROLLED_OPERATING_PLAN.md](docs/PILOT_CONTROLLED_OPERATING_PLAN.md)**
+
+Plan operativo para ejecutar el piloto controlado de XPAY MVP después de cumplir los criterios de salida QA. Define identificación del piloto, participantes permitidos (5 perfiles), alcance funcional (10 funcionalidades), datos permitidos/prohibidos, reglas operativas, soporte y monitoreo, 10 criterios de éxito, 10 criterios de suspensión, registro por sesión y acta de cierre.
+
+- Usar solo después de que `docs/QA_EXIT_CRITERIA_AND_PILOT_READINESS.md` esté aprobado con firma doble.
+- **No es producción. No autoriza dinero real. No es lanzamiento comercial.**
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

@@ -325,7 +325,8 @@ Este documento se usa **después** de `docs/QA_INTERNAL_CYCLE_01.md`:
 | [`README.md`](../README.md) | Descripción del proyecto: endpoints, configuración y ecosistema QA completo |
 | [`docs/QA_INTERNAL_ISSUES_TRACKING.md`](QA_INTERNAL_ISSUES_TRACKING.md) | Registro y seguimiento de incidencias QA: estados, severidades, flujo de atención y criterios de cierre |
 | [`docs/QA_EXIT_CRITERIA_AND_PILOT_READINESS.md`](QA_EXIT_CRITERIA_AND_PILOT_READINESS.md) | Criterios de salida QA y piloto controlado: decisión formal posterior al onboarding interno |
+| [`docs/PILOT_CONTROLLED_OPERATING_PLAN.md`](PILOT_CONTROLLED_OPERATING_PLAN.md) | Plan operativo del piloto: la inducción de este documento aplica a los participantes del piloto |
 
 ---
 
-*Esta guía cubre el MVP XPAY — Fases 1 a 32. Actualizar si cambian los perfiles de usuarios internos, las reglas de uso o los controles de seguridad del ambiente QA.*
+*Esta guía cubre el MVP XPAY — Fases 1 a 33. Actualizar si cambian los perfiles de usuarios internos, las reglas de uso o los controles de seguridad del ambiente QA.*

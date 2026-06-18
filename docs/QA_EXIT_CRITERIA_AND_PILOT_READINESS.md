@@ -303,7 +303,8 @@ Firma Responsable negocio:     _________________   Fecha: __________
 | [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Smoke test (Fase 6) que se verifica en el criterio 7; señales de bloqueo |
 | [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md) | Declaración formal de la versión: alcance, riesgos conocidos y criterios de aprobación |
 | [`README.md`](../README.md) | Descripción del proyecto: endpoints, configuración y ecosistema QA completo |
+| [`docs/PILOT_CONTROLLED_OPERATING_PLAN.md`](PILOT_CONTROLLED_OPERATING_PLAN.md) | Siguiente paso si la decisión es avanzar: plan operativo completo del piloto controlado |
 
 ---
 
-*Este documento cubre el MVP XPAY — Fases 1 a 32. Actualizar si cambian los criterios de salida, el alcance del piloto o las condiciones de seguridad y financieras requeridas.*
+*Este documento cubre el MVP XPAY — Fases 1 a 33. Actualizar si cambian los criterios de salida, el alcance del piloto o las condiciones de seguridad y financieras requeridas.*
