@@ -276,3 +276,34 @@ tr:hover td { background: #f7fafc; }
 .error    { color: #c53030; font-size: 0.875rem; }
 .empty    { color: #a0aec0; font-style: italic; padding: 2rem; text-align: center; }
 .hint     { color: #a0aec0; text-align: center; padding: 3rem; font-size: 0.95rem; }
+
+/* ── DASHBOARD ── */
+.dashboard-subtitle { color: #718096; font-size: 0.95rem; margin-top: -0.75rem; margin-bottom: 1.5rem; }
+
+.quick-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.75rem; }
+.quick-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.7rem 1.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #2b6cb0;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  transition: background 0.15s, box-shadow 0.15s;
+  font-family: inherit;
+}
+.quick-card:hover { background: #ebf8ff; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+
+.dashboard-section { margin-top: 2rem; }
+.dashboard-section h3 {
+  font-size: 0.85rem;
+  color: #718096;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.compact-table td, .compact-table th { padding: 0.5rem 0.9rem; font-size: 0.82rem; }

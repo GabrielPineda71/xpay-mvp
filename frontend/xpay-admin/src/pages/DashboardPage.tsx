@@ -1,21 +1,46 @@
-import { useEffect, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { get } from '../api/client.ts';
-import { fmtMoney, fmtNum } from '../utils.ts';
+import { fmtDate, fmtMoney, fmtNum } from '../utils.ts';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ResumenGeneral {
-  wallets:  { total: number; saldoUsuarios: number; saldoComercios: number };
-  ventasQr: { total: number; contingencia: number; liquidadas: number };
-  retiros:  { pendientes: number; pagados: number; rechazados: number };
-  ledger:   { transacciones: number };
-  auditoria:{ eventos: number };
+  wallets:   { total: number; saldoUsuarios: number; saldoComercios: number };
+  ventasQr:  { total: number; contingencia: number; liquidadas: number };
+  retiros:   { pendientes: number; pagados: number; rechazados: number };
+  ledger:    { transacciones: number };
+  auditoria: { eventos: number };
 }
 
-interface ApiResp {
-  success: boolean;
-  data: ResumenGeneral;
+interface RetiroItem {
+  idRetiro:       number;
+  idComercio:     number;
+  valor:          number;
+  estado:         string;
+  fechaSolicitud: string;
 }
 
-function Card({ label, value }: { label: string; value: string | number }) {
+interface VentaQrItem {
+  idVentaQr:  number;
+  idComercio: number;
+  valorBruto: number;
+  estado:     string;
+  fechaVenta: string;
+}
+
+interface LedgerTxItem {
+  idTransaccionLedger: number;
+  tipoTransaccion:     string;
+  valorTotal:          number;
+  fechaTransaccion:    string;
+}
+
+interface Paged<T> { items: T[] }
+
+// ── Small helpers ─────────────────────────────────────────────────────────────
+
+function Card({ label, value }: { label: string; value: string }) {
   return (
     <div className="card">
       <div className="card-label">{label}</div>
@@ -24,35 +49,223 @@ function Card({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function QuickCard({ label, to, onNav }: { label: string; to: string; onNav: (p: string) => void }) {
+  return (
+    <button className="quick-card" onClick={() => onNav(to)}>{label}</button>
+  );
+}
+
+function Section({
+  title, loading, error, children,
+}: { title: string; loading: boolean; error: string; children: ReactNode }) {
+  return (
+    <div className="dashboard-section">
+      <h3>{title}</h3>
+      {loading && <div className="loading">Cargando...</div>}
+      {!loading && error && <div className="error-msg">Error: {error}</div>}
+      {!loading && !error && children}
+    </div>
+  );
+}
+
+function estadoBadge(estado: string) {
+  const cls =
+    estado === 'PAGADO'   || estado === 'LIQUIDADA'    ? 'badge-ok'   :
+    estado === 'PENDIENTE'|| estado === 'CONTINGENCIA' ? 'badge-info' : 'badge-warn';
+  return <span className={`badge ${cls}`}>{estado}</span>;
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+
 export function DashboardPage() {
-  const [data, setData] = useState<ResumenGeneral | null>(null);
-  const [error, setError] = useState('');
+  const navigate = useNavigate();
+
+  const [resumen,     setResumen]     = useState<ResumenGeneral | null>(null);
+  const [resumenLoad, setResumenLoad] = useState(true);
+  const [resumenErr,  setResumenErr]  = useState('');
+
+  const [retiros,     setRetiros]     = useState<RetiroItem[]>([]);
+  const [retirosLoad, setRetirosLoad] = useState(true);
+  const [retirosErr,  setRetirosErr]  = useState('');
+
+  const [ventas,      setVentas]      = useState<VentaQrItem[]>([]);
+  const [ventasLoad,  setVentasLoad]  = useState(true);
+  const [ventasErr,   setVentasErr]   = useState('');
+
+  const [ledger,      setLedger]      = useState<LedgerTxItem[]>([]);
+  const [ledgerLoad,  setLedgerLoad]  = useState(true);
+  const [ledgerErr,   setLedgerErr]   = useState('');
 
   useEffect(() => {
-    get<ApiResp>('/api/reportes/operaciones/resumen-general')
-      .then(r => setData(r.data))
-      .catch(err => setError((err as Error).message));
-  }, []);
+    get<{ success: boolean; data: ResumenGeneral }>('/api/reportes/operaciones/resumen-general')
+      .then(r => setResumen(r.data))
+      .catch(err => setResumenErr((err as Error).message))
+      .finally(() => setResumenLoad(false));
 
-  if (error) return <div className="error-msg">Error: {error}</div>;
-  if (!data)  return <div className="loading">Cargando...</div>;
+    get<{ success: boolean; data: Paged<RetiroItem> }>('/api/comercios/retiros?page=1&pageSize=5')
+      .then(r => setRetiros(r.data.items))
+      .catch(err => setRetirosErr((err as Error).message))
+      .finally(() => setRetirosLoad(false));
+
+    get<{ success: boolean; data: Paged<VentaQrItem> }>('/api/admin/ventas-qr?page=1&pageSize=5')
+      .then(r => setVentas(r.data.items))
+      .catch(err => setVentasErr((err as Error).message))
+      .finally(() => setVentasLoad(false));
+
+    get<{ success: boolean; data: Paged<LedgerTxItem> }>('/api/admin/ledger-transacciones?page=1&pageSize=5')
+      .then(r => setLedger(r.data.items))
+      .catch(err => setLedgerErr((err as Error).message))
+      .finally(() => setLedgerLoad(false));
+  }, []);
 
   return (
     <div className="page">
-      <h2>Dashboard</h2>
-      <div className="cards">
-        <Card label="Total Wallets"      value={fmtNum(data.wallets.total)} />
-        <Card label="Saldo Usuarios"     value={fmtMoney(data.wallets.saldoUsuarios)} />
-        <Card label="Saldo Comercios"    value={fmtMoney(data.wallets.saldoComercios)} />
-        <Card label="Ventas QR"          value={fmtNum(data.ventasQr.total)} />
-        <Card label="QR Liquidadas"      value={fmtNum(data.ventasQr.liquidadas)} />
-        <Card label="QR Contingencia"    value={fmtNum(data.ventasQr.contingencia)} />
-        <Card label="Retiros Pagados"    value={fmtNum(data.retiros.pagados)} />
-        <Card label="Retiros Pendientes" value={fmtNum(data.retiros.pendientes)} />
-        <Card label="Retiros Rechazados" value={fmtNum(data.retiros.rechazados)} />
-        <Card label="Txs Ledger"         value={fmtNum(data.ledger.transacciones)} />
-        <Card label="Auditoría Eventos"  value={fmtNum(data.auditoria.eventos)} />
+      <h2>Dashboard operativo XPAY</h2>
+      <p className="dashboard-subtitle">Resumen de operación y accesos rápidos</p>
+
+      {/* ── Accesos rápidos ── */}
+      <div className="quick-actions">
+        <QuickCard label="Wallets"   to="/wallets/listado"   onNav={navigate} />
+        <QuickCard label="Comercios" to="/comercios/listado" onNav={navigate} />
+        <QuickCard label="Retiros"   to="/retiros/listado"   onNav={navigate} />
+        <QuickCard label="Ventas QR" to="/ventas-qr/listado" onNav={navigate} />
+        <QuickCard label="Ledger"    to="/ledger/listado"    onNav={navigate} />
       </div>
+
+      {/* ── Métricas ── */}
+      {resumenLoad && <div className="loading">Cargando métricas...</div>}
+      {!resumenLoad && resumenErr && (
+        <div className="error-msg" style={{ marginBottom: '1.5rem' }}>
+          Error cargando métricas: {resumenErr}
+        </div>
+      )}
+      {!resumenLoad && !resumenErr && resumen && (
+        <div className="cards">
+          <Card label="Total Wallets"      value={fmtNum(resumen.wallets.total)} />
+          <Card label="Saldo Usuarios"     value={fmtMoney(resumen.wallets.saldoUsuarios)} />
+          <Card label="Saldo Comercios"    value={fmtMoney(resumen.wallets.saldoComercios)} />
+          <Card label="Ventas QR"          value={fmtNum(resumen.ventasQr.total)} />
+          <Card label="QR Liquidadas"      value={fmtNum(resumen.ventasQr.liquidadas)} />
+          <Card label="QR Contingencia"    value={fmtNum(resumen.ventasQr.contingencia)} />
+          <Card label="Retiros Pagados"    value={fmtNum(resumen.retiros.pagados)} />
+          <Card label="Retiros Pendientes" value={fmtNum(resumen.retiros.pendientes)} />
+          <Card label="Retiros Rechazados" value={fmtNum(resumen.retiros.rechazados)} />
+          <Card label="Txs Ledger"         value={fmtNum(resumen.ledger.transacciones)} />
+          <Card label="Auditoría Eventos"  value={fmtNum(resumen.auditoria.eventos)} />
+        </div>
+      )}
+
+      {/* ── Últimos retiros ── */}
+      <Section title="Últimos retiros" loading={retirosLoad} error={retirosErr}>
+        {retiros.length === 0 ? (
+          <div className="empty">Sin registros.</div>
+        ) : (
+          <div className="table-wrapper">
+            <table className="compact-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Comercio</th>
+                  <th>Valor</th>
+                  <th>Estado</th>
+                  <th>Fecha solicitud</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {retiros.map(r => (
+                  <tr key={r.idRetiro}>
+                    <td className="mono">{r.idRetiro}</td>
+                    <td className="mono">{r.idComercio}</td>
+                    <td>{fmtMoney(r.valor)}</td>
+                    <td>{estadoBadge(r.estado)}</td>
+                    <td className="mono">{fmtDate(r.fechaSolicitud)}</td>
+                    <td>
+                      <button className="btn-link" onClick={() => navigate(`/retiros/${r.idRetiro}`)}>
+                        Ver
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      {/* ── Últimas ventas QR ── */}
+      <Section title="Últimas ventas QR" loading={ventasLoad} error={ventasErr}>
+        {ventas.length === 0 ? (
+          <div className="empty">Sin registros.</div>
+        ) : (
+          <div className="table-wrapper">
+            <table className="compact-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Comercio</th>
+                  <th>Valor bruto</th>
+                  <th>Estado</th>
+                  <th>Fecha venta</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {ventas.map(v => (
+                  <tr key={v.idVentaQr}>
+                    <td className="mono">{v.idVentaQr}</td>
+                    <td className="mono">{v.idComercio}</td>
+                    <td className="credit">{fmtMoney(v.valorBruto)}</td>
+                    <td>{estadoBadge(v.estado)}</td>
+                    <td className="mono">{fmtDate(v.fechaVenta)}</td>
+                    <td>
+                      <button className="btn-link" onClick={() => navigate(`/comercios/${v.idComercio}`)}>
+                        Ver comercio
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      {/* ── Últimas transacciones ledger ── */}
+      <Section title="Últimas transacciones ledger" loading={ledgerLoad} error={ledgerErr}>
+        {ledger.length === 0 ? (
+          <div className="empty">Sin registros.</div>
+        ) : (
+          <div className="table-wrapper">
+            <table className="compact-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Tipo</th>
+                  <th>Valor total</th>
+                  <th>Fecha</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {ledger.map(t => (
+                  <tr key={t.idTransaccionLedger}>
+                    <td className="mono">{t.idTransaccionLedger}</td>
+                    <td>{t.tipoTransaccion}</td>
+                    <td className="credit">{fmtMoney(t.valorTotal)}</td>
+                    <td className="mono">{fmtDate(t.fechaTransaccion)}</td>
+                    <td>
+                      <button className="btn-link" onClick={() => navigate(`/ledger/${t.idTransaccionLedger}`)}>
+                        Ver detalle
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
     </div>
   );
 }

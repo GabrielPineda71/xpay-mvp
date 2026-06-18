@@ -51,7 +51,7 @@ Los archivos estáticos quedan en `dist/`.
 | Ruta | Acceso | Descripción |
 |------|--------|-------------|
 | `/login` | Público | Inicio de sesión |
-| `/dashboard` | Protegido | Resumen general del sistema |
+| `/dashboard` | Protegido | Dashboard operativo: accesos rápidos, métricas generales y últimos retiros, ventas QR y transacciones ledger |
 | `/wallets/listado` | Protegido | Listado de wallets con filtros (tipo, estado, persona) |
 | `/wallets/:idWallet` | Protegido | Estado de cuenta de una wallet |
 | `/comercios/listado` | Protegido | Listado de comercios con filtros (estado, nombre/NIT) |
