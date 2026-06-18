@@ -9,6 +9,8 @@ import { ComercioPage } from './pages/ComercioPage.tsx';
 import { LedgerPage } from './pages/LedgerPage.tsx';
 import { RetiroPage } from './pages/RetiroPage.tsx';
 import { RetirosListPage } from './pages/RetirosListPage.tsx';
+import { WalletsListPage } from './pages/WalletsListPage.tsx';
+import { ComerciosListPage } from './pages/ComerciosListPage.tsx';
 
 export default function App() {
   return (
@@ -20,8 +22,10 @@ export default function App() {
             <Route element={<Layout />}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
+              <Route path="wallets/listado" element={<WalletsListPage />} />
               <Route path="wallets" element={<WalletPage />} />
               <Route path="wallets/:idWallet" element={<WalletPage />} />
+              <Route path="comercios/listado" element={<ComerciosListPage />} />
               <Route path="comercios" element={<ComercioPage />} />
               <Route path="comercios/:idComercio" element={<ComercioPage />} />
               <Route path="ledger" element={<LedgerPage />} />

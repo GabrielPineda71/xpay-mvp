@@ -52,7 +52,9 @@ Los archivos estáticos quedan en `dist/`.
 |------|--------|-------------|
 | `/login` | Público | Inicio de sesión |
 | `/dashboard` | Protegido | Resumen general del sistema |
+| `/wallets/listado` | Protegido | Listado de wallets con filtros (tipo, estado, persona) |
 | `/wallets/:idWallet` | Protegido | Estado de cuenta de una wallet |
+| `/comercios/listado` | Protegido | Listado de comercios con filtros (estado, nombre/NIT) |
 | `/comercios/:idComercio` | Protegido | Resumen financiero de un comercio |
 | `/ledger/:idTransaccion` | Protegido | Detalle de una transacción en el ledger |
 | `/retiros` | Protegido | Búsqueda de retiros por ID |

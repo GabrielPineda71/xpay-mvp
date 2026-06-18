@@ -750,4 +750,88 @@ assert_ok "$RESP_AUTH_10" "endpoint protegido con token (Fase 10)"
 ok "Endpoint protegido con token → success=true ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 13: listado de retiros, gestión, CORS, configuración QA y todos los endpoints OK ═══"
+
+# ════════════════════════════════════════════════════
+# FASE 14 — Listados administrativos: wallets y comercios
+# ════════════════════════════════════════════════════
+phase "FASE 14: Listados administrativos de wallets y comercios"
+
+# 14.1 GET /api/admin/wallets → success=true, al menos 1 item
+info "GET /api/admin/wallets (listado sin filtros) → success=true, items >= 1"
+WALLETS_LIST=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/wallets") \
+  || fail "GET /api/admin/wallets no respondió"
+echo "$WALLETS_LIST" | jq .
+assert_ok "$WALLETS_LIST" "GET listado de wallets"
+WALLETS_TOTAL=$(echo "$WALLETS_LIST" | jq -r '.data.total')
+[[ "$WALLETS_TOTAL" -ge 1 ]] \
+  || fail "Listado wallets: total esperado >= 1, obtenido $WALLETS_TOTAL"
+WALLETS_ITEMS=$(echo "$WALLETS_LIST" | jq '.data.items | length')
+[[ "$WALLETS_ITEMS" -ge 1 ]] \
+  || fail "Listado wallets: items esperado >= 1, obtenido $WALLETS_ITEMS"
+ok "GET /api/admin/wallets → total=$WALLETS_TOTAL  items=$WALLETS_ITEMS ✓"
+
+# 14.2 Filtro tipoWallet=PERSONA
+info "GET /api/admin/wallets?tipoWallet=PERSONA → items >= 1"
+WALLETS_PERS=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/wallets?tipoWallet=PERSONA") \
+  || fail "GET wallets?tipoWallet=PERSONA no respondió"
+echo "$WALLETS_PERS" | jq .
+assert_ok "$WALLETS_PERS" "GET wallets filtro PERSONA"
+WALLETS_PERS_ITEMS=$(echo "$WALLETS_PERS" | jq '.data.items | length')
+[[ "$WALLETS_PERS_ITEMS" -ge 1 ]] \
+  || fail "Listado wallets PERSONA: items esperado >= 1, obtenido $WALLETS_PERS_ITEMS"
+ok "GET wallets?tipoWallet=PERSONA → items=$WALLETS_PERS_ITEMS ✓"
+
+# 14.3 Filtro tipoWallet=COMERCIO
+info "GET /api/admin/wallets?tipoWallet=COMERCIO → items >= 1"
+WALLETS_COM=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/wallets?tipoWallet=COMERCIO") \
+  || fail "GET wallets?tipoWallet=COMERCIO no respondió"
+echo "$WALLETS_COM" | jq .
+assert_ok "$WALLETS_COM" "GET wallets filtro COMERCIO"
+WALLETS_COM_ITEMS=$(echo "$WALLETS_COM" | jq '.data.items | length')
+[[ "$WALLETS_COM_ITEMS" -ge 1 ]] \
+  || fail "Listado wallets COMERCIO: items esperado >= 1, obtenido $WALLETS_COM_ITEMS"
+ok "GET wallets?tipoWallet=COMERCIO → items=$WALLETS_COM_ITEMS ✓"
+
+# 14.4 Sin token → 401
+info "GET /api/admin/wallets sin token → 401"
+STATUS_WALLETS_401=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/admin/wallets")
+[[ "$STATUS_WALLETS_401" == "401" ]] \
+  || fail "GET wallets sin token esperado 401, obtenido $STATUS_WALLETS_401"
+ok "GET /api/admin/wallets sin token → 401 ✓"
+
+# 14.5 GET /api/admin/comercios → success=true, al menos 1 item
+info "GET /api/admin/comercios (listado sin filtros) → success=true, items >= 1"
+COMERCIOS_LIST=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/comercios") \
+  || fail "GET /api/admin/comercios no respondió"
+echo "$COMERCIOS_LIST" | jq .
+assert_ok "$COMERCIOS_LIST" "GET listado de comercios"
+COMERCIOS_TOTAL=$(echo "$COMERCIOS_LIST" | jq -r '.data.total')
+[[ "$COMERCIOS_TOTAL" -ge 1 ]] \
+  || fail "Listado comercios: total esperado >= 1, obtenido $COMERCIOS_TOTAL"
+COMERCIOS_ITEMS=$(echo "$COMERCIOS_LIST" | jq '.data.items | length')
+[[ "$COMERCIOS_ITEMS" -ge 1 ]] \
+  || fail "Listado comercios: items esperado >= 1, obtenido $COMERCIOS_ITEMS"
+ok "GET /api/admin/comercios → total=$COMERCIOS_TOTAL  items=$COMERCIOS_ITEMS ✓"
+
+# 14.6 Filtro texto=Demo (seed: "Comercio Demo XPAY")
+info "GET /api/admin/comercios?texto=Demo → items >= 1"
+COMERCIOS_DEMO=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/comercios?texto=Demo") \
+  || fail "GET comercios?texto=Demo no respondió"
+echo "$COMERCIOS_DEMO" | jq .
+assert_ok "$COMERCIOS_DEMO" "GET comercios filtro texto"
+COMERCIOS_DEMO_ITEMS=$(echo "$COMERCIOS_DEMO" | jq '.data.items | length')
+[[ "$COMERCIOS_DEMO_ITEMS" -ge 1 ]] \
+  || fail "Listado comercios texto=Demo: items esperado >= 1, obtenido $COMERCIOS_DEMO_ITEMS"
+ok "GET comercios?texto=Demo → items=$COMERCIOS_DEMO_ITEMS ✓"
+
+# 14.7 Sin token → 401
+info "GET /api/admin/comercios sin token → 401"
+STATUS_COMS_401=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/admin/comercios")
+[[ "$STATUS_COMS_401" == "401" ]] \
+  || fail "GET comercios sin token esperado 401, obtenido $STATUS_COMS_401"
+ok "GET /api/admin/comercios sin token → 401 ✓"
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 14: listados admin wallets/comercios, retiros, gestión, CORS, configuración QA y todos los endpoints OK ═══"

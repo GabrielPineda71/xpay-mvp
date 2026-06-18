@@ -16,8 +16,10 @@ export function Layout() {
         <span className="nav-brand">XPAY Admin</span>
         <div className="nav-links">
           <Link to="/dashboard">Dashboard</Link>
-          <Link to="/wallets">Wallet</Link>
-          <Link to="/comercios">Comercio</Link>
+          <Link to="/wallets/listado">Wallets</Link>
+          <Link to="/wallets">Buscar wallet</Link>
+          <Link to="/comercios/listado">Comercios</Link>
+          <Link to="/comercios">Buscar comercio</Link>
           <Link to="/ledger">Ledger</Link>
           <Link to="/retiros/listado">Retiros</Link>
           <Link to="/retiros">Buscar retiro</Link>
