@@ -202,5 +202,13 @@ openssl rand -base64 48 | tr -dc 'A-Za-z0-9!@#$%' | head -c 48
 - Usar **Azure App Settings** para todas las variables sensibles en QA y producción.
 - La connection string incluye `Password=` — configurarla solo en Azure App Settings, nunca en el repo.
 - **Rotar `Jwt__Key`** antes de pasar a producción. La clave QA no debe reutilizarse en producción.
+
+---
+
+## Alcance de la versión candidata QA
+
+Para conocer qué funcionalidades incluye esta versión, qué está excluido deliberadamente, los riesgos conocidos y los criterios de aprobación para pasar a usuarios internos, ver:
+
+**[`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md)**
 - Si se sospecha compromiso de la clave JWT, rotarla inmediatamente en Azure App Settings y reiniciar el App Service (los tokens existentes quedarán inválidos).
 - Considerar Azure Key Vault para manejo de secretos en ambientes productivos.

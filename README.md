@@ -181,6 +181,16 @@ Incluye arquitectura propuesta, variables de entorno, orden de despliegue, check
 
 ---
 
+## Release QA Candidate
+
+**[docs/RELEASE_QA_CANDIDATE.md](docs/RELEASE_QA_CANDIDATE.md)**
+
+Declara formalmente que XPAY MVP QA Candidate v0.1 está listo para despliegue QA y pruebas internas controladas. Incluye alcance, fases completadas, funcionalidades incluidas y no incluidas, riesgos, prerrequisitos y criterios de aprobación.
+
+> ⚠️ Esta versión **no es producción** y **no debe usarse con dinero real**.
+
+---
+
 ## Pruebas QA
 
 | Documento | Propósito |

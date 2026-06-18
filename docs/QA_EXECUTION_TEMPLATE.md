@@ -326,6 +326,7 @@ Completar y firmar el acta de la sección 8. Este documento es el registro forma
 |-----------|-----------|
 | [`docs/QA_MANUAL_TESTING.md`](QA_MANUAL_TESTING.md) | Define los 35 casos de prueba, prerrequisitos, evidencias esperadas y criterios |
 | [`docs/QA_DEPLOYMENT.md`](QA_DEPLOYMENT.md) | Guía de despliegue en Azure App Service para preparar el ambiente QA |
+| [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md) | Declaración formal de la versión QA Candidate: alcance, riesgos y criterios de aprobación |
 | [`README.md`](../README.md) | Descripción del backend: endpoints, configuración, estado del MVP |
 | [`frontend/xpay-admin/README.md`](../frontend/xpay-admin/README.md) | Configuración del frontend: instalación, rutas, autenticación, errores |
 

@@ -383,6 +383,7 @@ Marcar todos los puntos antes de abrir el ambiente a pruebas con usuarios intern
 | Documento | Propósito |
 |-----------|-----------|
 | [`docs/QA_DEPLOYMENT.md`](QA_DEPLOYMENT.md) | Guía de despliegue en Azure App Service: variables, orden, troubleshooting |
+| [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md) | Declaración formal de la versión QA Candidate: alcance, riesgos y criterios de aprobación |
 | [`README.md`](../README.md) | Descripción del backend: endpoints, configuración, estado del MVP |
 | [`frontend/xpay-admin/README.md`](../frontend/xpay-admin/README.md) | Configuración del frontend: instalación, rutas, autenticación, manejo de errores |
 
