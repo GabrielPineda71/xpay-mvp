@@ -330,7 +330,8 @@ Completar y firmar el acta de la sección 8. Este documento es el registro forma
 | [`README.md`](../README.md) | Descripción del backend: endpoints, configuración, estado del MVP |
 | [`frontend/xpay-admin/README.md`](../frontend/xpay-admin/README.md) | Configuración del frontend: instalación, rutas, autenticación, errores |
 | [`docs/QA_DEPLOYMENT_RUNBOOK.md`](QA_DEPLOYMENT_RUNBOOK.md) | Runbook operativo: recursos Azure, variables, scripts SQL, smoke test y rollback |
+| [`docs/QA_FINANCIAL_OPERATIONS_API.md`](QA_FINANCIAL_OPERATIONS_API.md) | Guía de operaciones financieras QA vía API: flujo completo de recarga, pago QR, liquidación y retiros |
 
 ---
 
-*Esta plantilla cubre el MVP XPAY — Fases 1 a 19. Actualizar la matriz de casos si se agregan módulos en fases posteriores.*
+*Esta plantilla cubre el MVP XPAY — Fases 1 a 25. Actualizar la matriz de casos si se agregan módulos en fases posteriores.*

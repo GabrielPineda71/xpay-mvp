@@ -238,6 +238,19 @@ Script de datos de prueba controlados para el ambiente QA. Ejecutar después de 
 
 ---
 
+## Operaciones financieras QA vía API
+
+**[docs/QA_FINANCIAL_OPERATIONS_API.md](docs/QA_FINANCIAL_OPERATIONS_API.md)**
+
+Guía operativa para generar datos financieros QA usando los endpoints reales del backend después de ejecutar el seed. Documenta el flujo completo: recarga, transferencia, pago QR, liquidación, retiro (confirmación y rechazo), reportes y validación contable.
+
+- Ejecutar después del seed QA (`database/008_seed_qa_dataset.sql`).
+- No inserta saldos, ledger ni transacciones directamente en SQL.
+- Incluye ejemplos `curl` con DTOs exactos y validaciones por paso.
+- **Uso exclusivo QA / desarrollo. No usar dinero real. No ejecutar en producción.**
+
+---
+
 ## Pruebas QA
 
 | Documento | Propósito |

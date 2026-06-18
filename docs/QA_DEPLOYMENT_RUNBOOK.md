@@ -457,7 +457,8 @@ bash scripts/build-qa-artifacts.sh
 | [`docs/QA_EXECUTION_TEMPLATE.md`](QA_EXECUTION_TEMPLATE.md) | Plantilla de registro de ejecución, evidencias y acta de cierre |
 | [`README.md`](../README.md) | Descripción del backend: endpoints, configuración, fases completadas |
 | [`frontend/xpay-admin/README.md`](../frontend/xpay-admin/README.md) | Configuración del frontend: instalación, build, rutas, errores |
+| [`docs/QA_FINANCIAL_OPERATIONS_API.md`](QA_FINANCIAL_OPERATIONS_API.md) | Guía de operaciones financieras QA vía API: recarga, pago QR, liquidación, retiros y validación contable |
 
 ---
 
-*Este runbook cubre el MVP XPAY QA Candidate v0.1 — Fases 1 a 22. Actualizar si cambia la arquitectura de despliegue o se agregan servicios Azure.*
+*Este runbook cubre el MVP XPAY QA Candidate v0.1 — Fases 1 a 25. Actualizar si cambia la arquitectura de despliegue o se agregan servicios Azure.*

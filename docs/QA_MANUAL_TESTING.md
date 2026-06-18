@@ -65,6 +65,8 @@ Los siguientes datos deben existir en la base de datos antes de probar. Se gener
 
 Ejecutar después de los scripts 001–007. Crea personas, usuarios, wallets, comercio demo QA (`Comercio Demo XPAY QA`) y QR demo QA (`QR-DEMO-XPAY-QA-001`) de forma idempotente. No contiene datos reales ni dinero real. No ejecutar en producción.
 
+Después del seed, generar datos financieros (saldos, ventas QR, retiros, ledger) vía endpoints del backend siguiendo la guía: **[`docs/QA_FINANCIAL_OPERATIONS_API.md`](QA_FINANCIAL_OPERATIONS_API.md)**.
+
 | Dato | Descripción | Dónde verificar |
 |------|-------------|-----------------|
 | **Usuario admin de prueba** | `usuario: admin_test`, contraseña definida en appsettings | `POST /api/auth/login` |
