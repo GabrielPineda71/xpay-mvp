@@ -496,7 +496,8 @@ Firma responsable técnico:  _________________
 | [`docs/QA_MANUAL_TESTING.md`](QA_MANUAL_TESTING.md) | 35 casos de prueba: módulos, pasos, evidencias esperadas |
 | [`docs/QA_EXECUTION_TEMPLATE.md`](QA_EXECUTION_TEMPLATE.md) | Plantilla de registro: matriz de casos, bugs, acta de cierre |
 | [`README.md`](../README.md) | Descripción del proyecto: endpoints, configuración, fases |
+| [`docs/QA_INTERNAL_CYCLE_01.md`](QA_INTERNAL_CYCLE_01.md) | Paquete de ejecución del primer ciclo QA interno: identificación, roles, plan, resultados y acta |
 
 ---
 
-*Este checklist cubre el MVP XPAY — Fases 1 a 28. Actualizar cuando se agreguen nuevos módulos, flujos o criterios de aprobación.*
+*Este checklist cubre el MVP XPAY — Fases 1 a 29. Actualizar cuando se agreguen nuevos módulos, flujos o criterios de aprobación.*

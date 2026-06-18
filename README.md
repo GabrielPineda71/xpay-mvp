@@ -286,6 +286,17 @@ Guía única que une el ciclo QA completo: desde confirmar CI verde hasta firmar
 
 ---
 
+## Ciclo QA Interno 01
+
+**[docs/QA_INTERNAL_CYCLE_01.md](docs/QA_INTERNAL_CYCLE_01.md)**
+
+Paquete documental para ejecutar el primer ciclo QA interno de XPAY MVP QA Candidate v0.1. Incluye identificación del ciclo, roles y responsabilidades, checklist de entrada, alcance de pruebas (10 módulos, 35 casos), plan de ejecución (13 pasos), registro de resultados, tabla de bugs, criterios de cierre y acta lista para diligenciar.
+
+- Diligenciar durante y después de la ejecución QA.
+- **Uso exclusivo QA / desarrollo. No producción. No dinero real.**
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.
