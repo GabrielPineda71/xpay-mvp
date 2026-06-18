@@ -297,6 +297,17 @@ Paquete documental para ejecutar el primer ciclo QA interno de XPAY MVP QA Candi
 
 ---
 
+## Onboarding usuarios internos QA
+
+**[docs/QA_INTERNAL_USERS_ONBOARDING.md](docs/QA_INTERNAL_USERS_ONBOARDING.md)**
+
+Guía operativa para habilitar usuarios internos después de que QA Interno 01 sea aprobado. Define perfiles permitidos, reglas de uso, checklist de habilitación, plantilla de comunicación de acceso, formato de reporte de incidencias, severidades y controles de riesgo.
+
+- Usar solo si el Ciclo QA Interno 01 está aprobado o aprobado con observaciones no bloqueantes.
+- **Uso exclusivo QA / desarrollo. No producción. No dinero real. No datos reales.**
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

@@ -308,8 +308,8 @@ Firma Aprobador:            _________________   Fecha: __________
 
 | Resultado | Condición | Próximo paso |
 |-----------|-----------|--------------|
-| **Aprobado** | Todos los criterios de la sección 10 cumplidos | Comunicar resultado a stakeholders. Preparar acceso para usuarios internos. Distribuir el acta firmada. Archivar la plantilla de ejecución completada. |
-| **Aprobado con observaciones** | Criterios cumplidos pero con bugs de baja severidad aceptados y documentados | Distribuir a usuarios internos con lista de observaciones conocidas adjunta. Abrir tickets de seguimiento para los bugs aceptados. Definir fecha de revisión. |
+| **Aprobado** | Todos los criterios de la sección 10 cumplidos | Comunicar resultado a stakeholders. Seguir `docs/QA_INTERNAL_USERS_ONBOARDING.md` para habilitar usuarios internos. Distribuir el acta firmada. Archivar la plantilla de ejecución completada. |
+| **Aprobado con observaciones** | Criterios cumplidos pero con bugs de baja severidad aceptados y documentados | Seguir `docs/QA_INTERNAL_USERS_ONBOARDING.md` para habilitar usuarios internos con la lista de observaciones conocidas adjunta. Abrir tickets de seguimiento para los bugs aceptados. Definir fecha de revisión. |
 | **No aprobado** | Al menos un criterio de la sección 10 incumplido | Abrir **Ciclo QA Interno 02**: corregir los bugs bloqueantes, re-ejecutar solo los casos fallidos o bloqueados si los cambios son acotados, o ciclo completo si los cambios afectan múltiples módulos. No compartir con usuarios internos hasta aprobar. |
 
 ---
@@ -323,6 +323,7 @@ Firma Aprobador:            _________________   Fecha: __________
 | [`docs/QA_MANUAL_TESTING.md`](QA_MANUAL_TESTING.md) | Definición de los 35 casos: pasos, evidencias esperadas, criterios de aprobación |
 | [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md) | Declaración formal de la versión: alcance, exclusiones, riesgos conocidos y criterios |
 | [`README.md`](../README.md) | Descripción del backend: endpoints, configuración, ecosistema QA completo |
+| [`docs/QA_INTERNAL_USERS_ONBOARDING.md`](QA_INTERNAL_USERS_ONBOARDING.md) | Siguiente paso si el ciclo es aprobado: guía para habilitar usuarios internos QA |
 
 ---
 

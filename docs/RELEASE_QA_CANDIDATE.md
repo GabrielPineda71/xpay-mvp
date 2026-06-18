@@ -295,6 +295,7 @@ Seguir este orden garantiza que los errores se detecten en la etapa más tempran
 | [`docs/QA_OPERATIONS_VARIABLES.md`](QA_OPERATIONS_VARIABLES.md) | Guía de variables operativas QA: plantilla `ops/qa.env.example`, obtención de TOKEN e IDs, carga local sin secretos en repo |
 | [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Checklist maestro QA end-to-end: ciclo completo desde CI verde hasta acta de aprobación |
 | [`docs/QA_INTERNAL_CYCLE_01.md`](QA_INTERNAL_CYCLE_01.md) | Paquete de ejecución del primer ciclo QA interno: identificación, roles, resultados y acta de cierre |
+| [`docs/QA_INTERNAL_USERS_ONBOARDING.md`](QA_INTERNAL_USERS_ONBOARDING.md) | Guía de onboarding de usuarios internos QA: perfiles, reglas, habilitación y controles |
 
 ---
 
