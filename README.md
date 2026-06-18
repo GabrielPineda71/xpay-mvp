@@ -251,6 +251,30 @@ Guía operativa para generar datos financieros QA usando los endpoints reales de
 
 ---
 
+## Script generación operaciones financieras QA
+
+**[scripts/generate-qa-financial-ops.sh](scripts/generate-qa-financial-ops.sh)**
+
+Script local auxiliar que automatiza el flujo financiero QA completo ejecutando los pasos A–H de la guía `docs/QA_FINANCIAL_OPERATIONS_API.md`.
+
+```bash
+export API_BASE="http://localhost:5000"
+export TOKEN="<jwt-token>"
+export ID_WALLET_USUARIO_1="<id>"
+export ID_WALLET_USUARIO_2="<id>"
+export ID_USUARIO_QA="<id>"
+export ID_COMERCIO_QA="<id>"
+
+bash scripts/generate-qa-financial-ops.sh
+```
+
+- Usa los endpoints reales del backend vía `curl`.
+- No ejecuta SQL. No hace deploy. No contiene secretos.
+- Requiere token JWT válido y backend corriendo.
+- **Uso exclusivo QA / desarrollo. No usar dinero real. No ejecutar en producción.**
+
+---
+
 ## Pruebas QA
 
 | Documento | Propósito |

@@ -724,7 +724,32 @@ Checklist para confirmar que el ledger está balanceado y los saldos son consist
 
 ---
 
-## 16. Relación con `scripts/validate-backend.sh`
+## 16. Script auxiliar de generación automática
+
+**`scripts/generate-qa-financial-ops.sh`** automatiza el flujo documentado en esta guía (pasos A–H) usando los mismos endpoints `curl`. Útil para poblar un ambiente QA/dev desde cero sin ejecutar cada paso manualmente.
+
+```bash
+export API_BASE="http://localhost:5000"
+export TOKEN="<jwt-token>"
+export ID_WALLET_USUARIO_1="<id>"
+export ID_WALLET_USUARIO_2="<id>"
+export ID_USUARIO_QA="<id>"
+export ID_COMERCIO_QA="<id>"
+
+bash scripts/generate-qa-financial-ops.sh
+```
+
+**Requisitos:** token JWT válido, backend activo, scripts SQL 001–008 ejecutados, usuario QA con hash real habilitado.
+
+**Comportamiento con/sin `jq`:**
+- Con `jq` instalado: extrae `ID_VENTA_QR`, `ID_RETIRO_1`, `ID_RETIRO_2` automáticamente de las respuestas JSON.
+- Sin `jq`: intenta extracción por grep. Si no puede, imprime la respuesta y solicita exportar los IDs manualmente antes de continuar.
+
+> No contiene secretos. No ejecuta SQL. No hace deploy. Uso exclusivo QA / desarrollo.
+
+---
+
+## 17. Relación con `scripts/validate-backend.sh`
 
 `scripts/validate-backend.sh` es el flujo automatizado usado por GitHub Actions en cada push. Sirve como referencia técnica de la secuencia real de operaciones financieras del sistema.
 
@@ -740,7 +765,7 @@ Checklist para confirmar que el ledger está balanceado y los saldos son consist
 
 ---
 
-## 17. Problemas comunes
+## 18. Problemas comunes
 
 | Síntoma | Causa probable | Solución |
 |---------|---------------|----------|
@@ -758,7 +783,7 @@ Checklist para confirmar que el ledger está balanceado y los saldos son consist
 
 ---
 
-## 18. Documentos relacionados
+## 19. Documentos relacionados
 
 | Documento | Propósito |
 |-----------|-----------|

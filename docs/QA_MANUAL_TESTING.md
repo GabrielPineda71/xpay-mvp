@@ -67,6 +67,8 @@ Ejecutar después de los scripts 001–007. Crea personas, usuarios, wallets, co
 
 Después del seed, generar datos financieros (saldos, ventas QR, retiros, ledger) vía endpoints del backend siguiendo la guía: **[`docs/QA_FINANCIAL_OPERATIONS_API.md`](QA_FINANCIAL_OPERATIONS_API.md)**.
 
+Para automatizar este paso, usar el script auxiliar **[`scripts/generate-qa-financial-ops.sh`](../scripts/generate-qa-financial-ops.sh)** con las variables de entorno requeridas (ver sección de uso en el propio script). Ejecutar después del seed QA, con backend activo y token JWT válido.
+
 | Dato | Descripción | Dónde verificar |
 |------|-------------|-----------------|
 | **Usuario admin de prueba** | `usuario: admin_test`, contraseña definida en appsettings | `POST /api/auth/login` |
