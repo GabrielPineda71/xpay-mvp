@@ -57,6 +57,7 @@ Los archivos estáticos quedan en `dist/`.
 | `/ledger/:idTransaccion` | Protegido | Detalle de una transacción en el ledger |
 | `/retiros` | Protegido | Búsqueda de retiros por ID |
 | `/retiros/:idRetiro` | Protegido | Gestión de un retiro: consulta, confirmar pago o rechazar |
+| `/retiros/listado` | Protegido | Listado de retiros con filtros (estado, comercio, fechas) |
 
 Las rutas protegidas redirigen a `/login` si no hay sesión activa.
 

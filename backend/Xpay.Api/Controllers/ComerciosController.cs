@@ -19,6 +19,24 @@ public class ComerciosController : ControllerBase
         _retiroService      = retiroService;
     }
 
+    [HttpGet("retiros")]
+    public async Task<IActionResult> ListarRetiros(
+        [FromQuery] string?   estado     = null,
+        [FromQuery] long?     idComercio = null,
+        [FromQuery] DateTime? desde      = null,
+        [FromQuery] DateTime? hasta      = null,
+        [FromQuery] int       page       = 1,
+        [FromQuery] int       pageSize   = 20)
+    {
+        try
+        {
+            var data = await _retiroService.ListarRetirosAsync(estado, idComercio, desde, hasta, page, pageSize);
+            return Ok(new { success = true, data });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno listando los retiros." }); }
+    }
+
     [HttpGet("retiros/{idRetiro}")]
     public async Task<IActionResult> GetRetiro(long idRetiro)
     {

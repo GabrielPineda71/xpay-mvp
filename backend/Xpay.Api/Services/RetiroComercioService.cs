@@ -40,6 +40,54 @@ public class RetiroComercioService
         };
     }
 
+    public async Task<object> ListarRetirosAsync(
+        string? estado,
+        long?   idComercio,
+        DateTime? desde,
+        DateTime? hasta,
+        int page,
+        int pageSize)
+    {
+        if (page < 1)      page     = 1;
+        if (pageSize < 1)  pageSize = 20;
+        if (pageSize > 100) pageSize = 100;
+
+        var query = _db.RetirosComercio.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(estado))
+            query = query.Where(r => r.Estado == estado);
+        if (idComercio.HasValue)
+            query = query.Where(r => r.IdComercio == idComercio.Value);
+        if (desde.HasValue)
+            query = query.Where(r => r.FechaSolicitud >= desde.Value.Date);
+        if (hasta.HasValue)
+            query = query.Where(r => r.FechaSolicitud < hasta.Value.Date.AddDays(1));
+
+        var total = await query.CountAsync();
+
+        var items = await query
+            .OrderByDescending(r => r.FechaSolicitud)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(r => new
+            {
+                idRetiro         = r.IdRetiro,
+                idComercio       = r.IdComercio,
+                idWalletComercio = r.IdWalletComercio,
+                valor            = r.Valor,
+                estado           = r.Estado,
+                medioRetiro      = r.MedioRetiro,
+                banco            = r.Banco,
+                titularCuenta    = r.TitularCuenta,
+                fechaSolicitud   = r.FechaSolicitud,
+                fechaPago        = r.FechaPago,
+                fechaRechazo     = r.FechaRechazo
+            })
+            .ToListAsync();
+
+        return new { items, total, page, pageSize };
+    }
+
     public async Task<RetiroComercio> SolicitarRetiroAsync(SolicitarRetiroComercioRequest request)
     {
         if (request.IdComercio <= 0)

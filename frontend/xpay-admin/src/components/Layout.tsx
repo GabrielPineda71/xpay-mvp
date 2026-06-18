@@ -19,7 +19,8 @@ export function Layout() {
           <Link to="/wallets">Wallet</Link>
           <Link to="/comercios">Comercio</Link>
           <Link to="/ledger">Ledger</Link>
-          <Link to="/retiros">Retiros</Link>
+          <Link to="/retiros/listado">Retiros</Link>
+          <Link to="/retiros">Buscar retiro</Link>
         </div>
         <div className="nav-user">
           {user && <span>{user.usuario}</span>}

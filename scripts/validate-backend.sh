@@ -308,6 +308,36 @@ STATUS_RETIRO_NO_AUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   || fail "GET retiros sin token esperado 401, obtenido $STATUS_RETIRO_NO_AUTH"
 ok "GET retiros sin token → 401 ✓"
 
+info "GET /api/comercios/retiros (listado) → debe retornar success=true y total >= 1"
+RETIROS_LIST=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros") \
+  || fail "GET /api/comercios/retiros (listado) no respondió"
+echo "$RETIROS_LIST" | jq .
+assert_ok "$RETIROS_LIST" "GET listado de retiros"
+RETIROS_TOTAL=$(echo "$RETIROS_LIST" | jq -r '.data.total')
+[[ "$RETIROS_TOTAL" -ge 1 ]] \
+  || fail "Listado retiros: total esperado >= 1, obtenido $RETIROS_TOTAL"
+RETIROS_ITEMS=$(echo "$RETIROS_LIST" | jq '.data.items | length')
+[[ "$RETIROS_ITEMS" -ge 1 ]] \
+  || fail "Listado retiros: items esperado >= 1, obtenido $RETIROS_ITEMS"
+ok "GET /api/comercios/retiros → total=$RETIROS_TOTAL  items=$RETIROS_ITEMS ✓"
+
+info "GET /api/comercios/retiros?estado=PENDIENTE → debe traer al menos 1"
+RETIROS_PEND=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros?estado=PENDIENTE") \
+  || fail "GET retiros?estado=PENDIENTE no respondió"
+echo "$RETIROS_PEND" | jq .
+assert_ok "$RETIROS_PEND" "GET listado retiros PENDIENTE"
+RETIROS_PEND_ITEMS=$(echo "$RETIROS_PEND" | jq '.data.items | length')
+[[ "$RETIROS_PEND_ITEMS" -ge 1 ]] \
+  || fail "Listado PENDIENTE: items esperado >= 1, obtenido $RETIROS_PEND_ITEMS"
+ok "GET retiros?estado=PENDIENTE → items=$RETIROS_PEND_ITEMS ✓"
+
+info "GET /api/comercios/retiros sin token → debe retornar 401"
+STATUS_LISTA_NO_AUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/comercios/retiros")
+[[ "$STATUS_LISTA_NO_AUTH" == "401" ]] \
+  || fail "GET listado retiros sin token esperado 401, obtenido $STATUS_LISTA_NO_AUTH"
+ok "GET /api/comercios/retiros sin token → 401 ✓"
+
 info "Retiro con saldo insuficiente debe retornar error"
 RETIRO_INVALIDO=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/solicitar-retiro" \
   "{\"idComercio\": $ID_COMERCIO, \"valor\": 99999, \"creadoPor\": $ID_USUARIO_A}") || true
@@ -341,6 +371,16 @@ RETIRO_GET_ESTADO_PAGADO=$(echo "$RETIRO_GET_PAGADO" | jq -r '.data.estado')
   || fail "GET retiro estado esperado PAGADO, obtenido $RETIRO_GET_ESTADO_PAGADO"
 RETIRO_GET_REF=$(echo "$RETIRO_GET_PAGADO" | jq -r '.data.referenciaPago // empty')
 ok "GET retiro/$ID_RETIRO → estado=$RETIRO_GET_ESTADO_PAGADO  referenciaPago=${RETIRO_GET_REF:-—} ✓"
+
+info "GET /api/comercios/retiros?estado=PAGADO → debe traer al menos 1"
+RETIROS_PAG=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros?estado=PAGADO") \
+  || fail "GET retiros?estado=PAGADO no respondió"
+echo "$RETIROS_PAG" | jq .
+assert_ok "$RETIROS_PAG" "GET listado retiros PAGADO"
+RETIROS_PAG_ITEMS=$(echo "$RETIROS_PAG" | jq '.data.items | length')
+[[ "$RETIROS_PAG_ITEMS" -ge 1 ]] \
+  || fail "Listado PAGADO: items esperado >= 1, obtenido $RETIROS_PAG_ITEMS"
+ok "GET retiros?estado=PAGADO → items=$RETIROS_PAG_ITEMS ✓"
 
 info "Doble confirmación debe retornar error"
 DOBLE_CONF=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/confirmar-pago" \
@@ -398,6 +438,16 @@ DOBLE_RECH=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/rechazar"
 [[ "$(echo "$DOBLE_RECH" | jq -r '.success' 2>/dev/null || echo false)" != "true" ]] \
   || fail "El doble rechazo debió fallar"
 ok "Doble rechazo rechazado ✓"
+
+info "GET /api/comercios/retiros?estado=RECHAZADO → debe traer al menos 1"
+RETIROS_RECH=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros?estado=RECHAZADO") \
+  || fail "GET retiros?estado=RECHAZADO no respondió"
+echo "$RETIROS_RECH" | jq .
+assert_ok "$RETIROS_RECH" "GET listado retiros RECHAZADO"
+RETIROS_RECH_ITEMS=$(echo "$RETIROS_RECH" | jq '.data.items | length')
+[[ "$RETIROS_RECH_ITEMS" -ge 1 ]] \
+  || fail "Listado RECHAZADO: items esperado >= 1, obtenido $RETIROS_RECH_ITEMS"
+ok "GET retiros?estado=RECHAZADO → items=$RETIROS_RECH_ITEMS ✓"
 
 check_sql_value \
   "Saldo wallet comercio tras rechazo = 10000 (restaurado)" \
@@ -700,4 +750,4 @@ assert_ok "$RESP_AUTH_10" "endpoint protegido con token (Fase 10)"
 ok "Endpoint protegido con token → success=true ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 12: gestión de retiros, CORS, configuración QA y todos los endpoints OK ═══"
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 13: listado de retiros, gestión, CORS, configuración QA y todos los endpoints OK ═══"

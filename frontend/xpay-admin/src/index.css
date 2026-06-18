@@ -191,6 +191,56 @@ tr:hover td { background: #f7fafc; }
 .credit { color: #276749; font-weight: 600; }
 .mono { font-family: 'Courier New', monospace; font-size: 0.82rem; }
 
+/* ── FILTER FORM ── */
+.filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 1.5rem;
+  background: white;
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+.filter-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.filter-field label { font-size: 0.78rem; color: #718096; font-weight: 500; white-space: nowrap; }
+.filter-field select,
+.filter-field input {
+  padding: 0.45rem 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  font-size: 0.9rem;
+  min-width: 120px;
+  font-family: inherit;
+}
+.filter-field select:focus,
+.filter-field input:focus { outline: none; border-color: #63b3ed; }
+.filter-form .btn-search {
+  background: #1a1a2e;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  align-self: flex-end;
+}
+.filter-form .btn-search:hover { background: #2d3561; }
+
+.results-meta { font-size: 0.85rem; color: #718096; margin-bottom: 0.75rem; }
+.btn-link {
+  background: none;
+  border: 1px solid #63b3ed;
+  color: #2b6cb0;
+  padding: 0.25rem 0.65rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.btn-link:hover { background: #ebf8ff; }
+
 /* ── ACTIONS ── */
 .action-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-top: 1.25rem; }
 @media (max-width: 640px) { .action-row { grid-template-columns: 1fr; } }
