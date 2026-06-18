@@ -20,7 +20,9 @@ export function Layout() {
           <Link to="/wallets">Buscar wallet</Link>
           <Link to="/comercios/listado">Comercios</Link>
           <Link to="/comercios">Buscar comercio</Link>
-          <Link to="/ledger">Ledger</Link>
+          <Link to="/ventas-qr/listado">Ventas QR</Link>
+          <Link to="/ledger/listado">Ledger</Link>
+          <Link to="/ledger">Buscar ledger</Link>
           <Link to="/retiros/listado">Retiros</Link>
           <Link to="/retiros">Buscar retiro</Link>
         </div>

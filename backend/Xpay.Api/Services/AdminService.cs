@@ -99,4 +99,88 @@ public class AdminService
 
         return new { items, total, page, pageSize };
     }
+
+    public async Task<object> ListarVentasQrAsync(
+        string? estado, long? idComercio, long? idTienda,
+        DateTime? desde, DateTime? hasta,
+        int page, int pageSize)
+    {
+        if (page < 1)       page     = 1;
+        if (pageSize < 1)   pageSize = 20;
+        if (pageSize > 100) pageSize = 100;
+
+        var query = _db.VentasQr.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(estado))
+            query = query.Where(v => v.Estado == estado);
+        if (idComercio.HasValue)
+            query = query.Where(v => v.IdComercio == idComercio.Value);
+        if (idTienda.HasValue)
+            query = query.Where(v => v.IdTienda == idTienda.Value);
+        if (desde.HasValue)
+            query = query.Where(v => v.FechaVenta >= desde.Value.Date);
+        if (hasta.HasValue)
+            query = query.Where(v => v.FechaVenta < hasta.Value.Date.AddDays(1));
+
+        var total = await query.CountAsync();
+
+        var items = await query
+            .OrderByDescending(v => v.FechaVenta)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(v => new
+            {
+                idVentaQr                = v.IdVentaQr,
+                idComercio               = v.IdComercio,
+                idTienda                 = v.IdTienda,
+                idWalletUsuario          = v.IdWalletUsuario,
+                valorBruto               = v.ValorBruto,
+                estado                   = v.Estado,
+                idTransaccionLedger      = v.IdTransaccionLedger,
+                idTransaccionLiquidacion = v.IdTransaccionLiquidacion,
+                fechaVenta               = v.FechaVenta
+            })
+            .ToListAsync();
+
+        return new { items, total, page, pageSize };
+    }
+
+    public async Task<object> ListarLedgerTransaccionesAsync(
+        string? tipoTransaccion, DateTime? desde, DateTime? hasta,
+        int page, int pageSize)
+    {
+        if (page < 1)       page     = 1;
+        if (pageSize < 1)   pageSize = 20;
+        if (pageSize > 100) pageSize = 100;
+
+        var query = _db.LedgerTransacciones.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(tipoTransaccion))
+            query = query.Where(t => t.TipoTransaccion == tipoTransaccion);
+        if (desde.HasValue)
+            query = query.Where(t => t.FechaTransaccion >= desde.Value.Date);
+        if (hasta.HasValue)
+            query = query.Where(t => t.FechaTransaccion < hasta.Value.Date.AddDays(1));
+
+        var total = await query.CountAsync();
+
+        var items = await query
+            .OrderByDescending(t => t.FechaTransaccion)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(t => new
+            {
+                idTransaccionLedger = t.IdTransaccionLedger,
+                tipoTransaccion     = t.TipoTransaccion,
+                referenciaTipo      = t.ReferenciaTipo,
+                referenciaId        = t.ReferenciaId,
+                descripcion         = t.Descripcion,
+                valorTotal          = t.ValorTotal,
+                fechaTransaccion    = t.FechaTransaccion,
+                creadoPor           = t.CreadoPor
+            })
+            .ToListAsync();
+
+        return new { items, total, page, pageSize };
+    }
 }

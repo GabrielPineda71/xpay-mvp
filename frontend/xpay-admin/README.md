@@ -56,6 +56,8 @@ Los archivos estáticos quedan en `dist/`.
 | `/wallets/:idWallet` | Protegido | Estado de cuenta de una wallet |
 | `/comercios/listado` | Protegido | Listado de comercios con filtros (estado, nombre/NIT) |
 | `/comercios/:idComercio` | Protegido | Resumen financiero de un comercio |
+| `/ventas-qr/listado` | Protegido | Listado de ventas QR con filtros (estado, comercio, tienda, fechas) |
+| `/ledger/listado` | Protegido | Listado de transacciones ledger con filtros (tipo, fechas) |
 | `/ledger/:idTransaccion` | Protegido | Detalle de una transacción en el ledger |
 | `/retiros` | Protegido | Búsqueda de retiros por ID |
 | `/retiros/:idRetiro` | Protegido | Gestión de un retiro: consulta, confirmar pago o rechazar |

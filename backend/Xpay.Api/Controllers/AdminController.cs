@@ -48,4 +48,40 @@ public class AdminController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno listando los comercios." }); }
     }
+
+    [HttpGet("ventas-qr")]
+    public async Task<IActionResult> ListarVentasQr(
+        [FromQuery] string?   estado     = null,
+        [FromQuery] long?     idComercio = null,
+        [FromQuery] long?     idTienda   = null,
+        [FromQuery] DateTime? desde      = null,
+        [FromQuery] DateTime? hasta      = null,
+        [FromQuery] int       page       = 1,
+        [FromQuery] int       pageSize   = 20)
+    {
+        try
+        {
+            var data = await _adminService.ListarVentasQrAsync(estado, idComercio, idTienda, desde, hasta, page, pageSize);
+            return Ok(new { success = true, data });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno listando las ventas QR." }); }
+    }
+
+    [HttpGet("ledger-transacciones")]
+    public async Task<IActionResult> ListarLedgerTransacciones(
+        [FromQuery] string?   tipoTransaccion = null,
+        [FromQuery] DateTime? desde           = null,
+        [FromQuery] DateTime? hasta           = null,
+        [FromQuery] int       page            = 1,
+        [FromQuery] int       pageSize        = 20)
+    {
+        try
+        {
+            var data = await _adminService.ListarLedgerTransaccionesAsync(tipoTransaccion, desde, hasta, page, pageSize);
+            return Ok(new { success = true, data });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno listando las transacciones ledger." }); }
+    }
 }

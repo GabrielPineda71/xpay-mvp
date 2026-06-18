@@ -834,4 +834,77 @@ STATUS_COMS_401=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
 ok "GET /api/admin/comercios sin token → 401 ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 14: listados admin wallets/comercios, retiros, gestión, CORS, configuración QA y todos los endpoints OK ═══"
+
+# ════════════════════════════════════════════════════
+# FASE 15 — Listados administrativos: ventas QR y transacciones ledger
+# ════════════════════════════════════════════════════
+phase "FASE 15: Listados administrativos de ventas QR y transacciones ledger"
+
+# 15.1 GET /api/admin/ventas-qr → success=true, al menos 1 item
+info "GET /api/admin/ventas-qr (sin filtros) → success=true, items >= 1"
+VENTAS_LIST=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/ventas-qr") \
+  || fail "GET /api/admin/ventas-qr no respondió"
+echo "$VENTAS_LIST" | jq .
+assert_ok "$VENTAS_LIST" "GET listado de ventas QR"
+VENTAS_TOTAL=$(echo "$VENTAS_LIST" | jq -r '.data.total')
+[[ "$VENTAS_TOTAL" -ge 1 ]] \
+  || fail "Listado ventas QR: total esperado >= 1, obtenido $VENTAS_TOTAL"
+VENTAS_ITEMS=$(echo "$VENTAS_LIST" | jq '.data.items | length')
+[[ "$VENTAS_ITEMS" -ge 1 ]] \
+  || fail "Listado ventas QR: items esperado >= 1, obtenido $VENTAS_ITEMS"
+ok "GET /api/admin/ventas-qr → total=$VENTAS_TOTAL  items=$VENTAS_ITEMS ✓"
+
+# 15.2 Filtro estado=LIQUIDADA (la venta de Fase 4 queda liquidada tras Fase 5)
+info "GET /api/admin/ventas-qr?estado=LIQUIDADA → items >= 1"
+VENTAS_LIQ=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/ventas-qr?estado=LIQUIDADA") \
+  || fail "GET ventas-qr?estado=LIQUIDADA no respondió"
+echo "$VENTAS_LIQ" | jq .
+assert_ok "$VENTAS_LIQ" "GET ventas-qr filtro LIQUIDADA"
+VENTAS_LIQ_ITEMS=$(echo "$VENTAS_LIQ" | jq '.data.items | length')
+[[ "$VENTAS_LIQ_ITEMS" -ge 1 ]] \
+  || fail "Listado ventas QR LIQUIDADA: items esperado >= 1, obtenido $VENTAS_LIQ_ITEMS"
+ok "GET ventas-qr?estado=LIQUIDADA → items=$VENTAS_LIQ_ITEMS ✓"
+
+# 15.3 Sin token → 401
+info "GET /api/admin/ventas-qr sin token → 401"
+STATUS_VENTAS_401=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/admin/ventas-qr")
+[[ "$STATUS_VENTAS_401" == "401" ]] \
+  || fail "GET ventas-qr sin token esperado 401, obtenido $STATUS_VENTAS_401"
+ok "GET /api/admin/ventas-qr sin token → 401 ✓"
+
+# 15.4 GET /api/admin/ledger-transacciones → success=true, al menos 1 item
+info "GET /api/admin/ledger-transacciones (sin filtros) → success=true, items >= 1"
+LEDGER_LIST=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/ledger-transacciones") \
+  || fail "GET /api/admin/ledger-transacciones no respondió"
+echo "$LEDGER_LIST" | jq .
+assert_ok "$LEDGER_LIST" "GET listado de transacciones ledger"
+LEDGER_TOTAL=$(echo "$LEDGER_LIST" | jq -r '.data.total')
+[[ "$LEDGER_TOTAL" -ge 1 ]] \
+  || fail "Listado ledger: total esperado >= 1, obtenido $LEDGER_TOTAL"
+LEDGER_ITEMS=$(echo "$LEDGER_LIST" | jq '.data.items | length')
+[[ "$LEDGER_ITEMS" -ge 1 ]] \
+  || fail "Listado ledger: items esperado >= 1, obtenido $LEDGER_ITEMS"
+ok "GET /api/admin/ledger-transacciones → total=$LEDGER_TOTAL  items=$LEDGER_ITEMS ✓"
+
+# 15.5 Filtro tipoTransaccion=PAGO_QR
+info "GET /api/admin/ledger-transacciones?tipoTransaccion=PAGO_QR → items >= 1"
+LEDGER_PAGO=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/ledger-transacciones?tipoTransaccion=PAGO_QR") \
+  || fail "GET ledger-transacciones?tipoTransaccion=PAGO_QR no respondió"
+echo "$LEDGER_PAGO" | jq .
+assert_ok "$LEDGER_PAGO" "GET ledger-transacciones filtro PAGO_QR"
+LEDGER_PAGO_ITEMS=$(echo "$LEDGER_PAGO" | jq '.data.items | length')
+[[ "$LEDGER_PAGO_ITEMS" -ge 1 ]] \
+  || fail "Listado ledger PAGO_QR: items esperado >= 1, obtenido $LEDGER_PAGO_ITEMS"
+ok "GET ledger-transacciones?tipoTransaccion=PAGO_QR → items=$LEDGER_PAGO_ITEMS ✓"
+
+# 15.6 Sin token → 401
+info "GET /api/admin/ledger-transacciones sin token → 401"
+STATUS_LEDGER_401=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/admin/ledger-transacciones")
+[[ "$STATUS_LEDGER_401" == "401" ]] \
+  || fail "GET ledger-transacciones sin token esperado 401, obtenido $STATUS_LEDGER_401"
+ok "GET /api/admin/ledger-transacciones sin token → 401 ✓"
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 15: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS, configuración QA y todos los endpoints OK ═══"

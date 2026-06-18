@@ -11,6 +11,8 @@ import { RetiroPage } from './pages/RetiroPage.tsx';
 import { RetirosListPage } from './pages/RetirosListPage.tsx';
 import { WalletsListPage } from './pages/WalletsListPage.tsx';
 import { ComerciosListPage } from './pages/ComerciosListPage.tsx';
+import { VentasQrListPage } from './pages/VentasQrListPage.tsx';
+import { LedgerTransaccionesListPage } from './pages/LedgerTransaccionesListPage.tsx';
 
 export default function App() {
   return (
@@ -28,6 +30,8 @@ export default function App() {
               <Route path="comercios/listado" element={<ComerciosListPage />} />
               <Route path="comercios" element={<ComercioPage />} />
               <Route path="comercios/:idComercio" element={<ComercioPage />} />
+              <Route path="ventas-qr/listado" element={<VentasQrListPage />} />
+              <Route path="ledger/listado" element={<LedgerTransaccionesListPage />} />
               <Route path="ledger" element={<LedgerPage />} />
               <Route path="ledger/:idTransaccion" element={<LedgerPage />} />
               <Route path="retiros/listado" element={<RetirosListPage />} />
