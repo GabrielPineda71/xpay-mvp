@@ -397,10 +397,11 @@ Marcar todos los puntos antes de abrir el ambiente a pruebas con usuarios intern
 | [`README.md`](../README.md) | Descripción del backend: endpoints, configuración, estado del MVP |
 | [`frontend/xpay-admin/README.md`](../frontend/xpay-admin/README.md) | Configuración del frontend: instalación, rutas, autenticación, manejo de errores |
 | [`docs/QA_DEPLOYMENT_RUNBOOK.md`](QA_DEPLOYMENT_RUNBOOK.md) | Runbook operativo: recursos Azure, variables, scripts SQL, smoke test y rollback |
+| [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Checklist maestro QA end-to-end: esta guía corresponde a la Fase 7 del ciclo completo |
 
 ---
 
-*Este documento cubre el MVP XPAY — Fases 1 a 19. Actualizar en cada fase que agregue módulos o modifique flujos existentes.*
+*Este documento cubre el MVP XPAY — Fases 1 a 28. Actualizar en cada fase que agregue módulos o modifique flujos existentes.*
 
 ---
 

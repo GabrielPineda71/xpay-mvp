@@ -796,6 +796,7 @@ bash scripts/generate-qa-financial-ops.sh
 | [`docs/QA_EXECUTION_TEMPLATE.md`](QA_EXECUTION_TEMPLATE.md) | Plantilla de registro de ejecución, evidencias, bugs y acta de cierre |
 | [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md) | Declaración formal de la versión QA Candidate v0.1 |
 | [`README.md`](../README.md) | Descripción del backend: endpoints, configuración, fases completadas |
+| [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Checklist maestro QA end-to-end: esta guía corresponde a la Fase 5 del ciclo completo |
 
 ---
 

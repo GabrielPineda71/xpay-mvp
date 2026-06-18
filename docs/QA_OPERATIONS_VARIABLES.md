@@ -209,7 +209,8 @@ El script ejecuta los pasos A–H (recarga, transferencia, pago QR, liquidación
 | [`docs/QA_DEPLOYMENT_RUNBOOK.md`](QA_DEPLOYMENT_RUNBOOK.md) | Runbook operativo: recursos Azure, variables de entorno backend, scripts SQL |
 | [`database/008_seed_qa_dataset.sql`](../database/008_seed_qa_dataset.sql) | Seed QA: crea las entidades base (wallets, comercio, QR) antes de obtener IDs |
 | [`README.md`](../README.md) | Descripción del backend: endpoints, configuración, fases completadas |
+| [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Checklist maestro QA end-to-end: contexto completo de dónde encaja la preparación de variables |
 
 ---
 
-*Esta guía cubre el MVP XPAY — Fases 1 a 27. Actualizar si cambian las variables requeridas por los scripts QA.*
+*Esta guía cubre el MVP XPAY — Fases 1 a 28. Actualizar si cambian las variables requeridas por los scripts QA.*

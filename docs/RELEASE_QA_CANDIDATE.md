@@ -293,6 +293,7 @@ Seguir este orden garantiza que los errores se detecten en la etapa más tempran
 | [`database/008_seed_qa_dataset.sql`](../database/008_seed_qa_dataset.sql) | Seed QA: personas, usuarios, wallets y comercio demo QA. Uso exclusivo QA/dev. No producción. No dinero real. |
 | [`docs/QA_FINANCIAL_OPERATIONS_API.md`](QA_FINANCIAL_OPERATIONS_API.md) | Guía de operaciones financieras QA vía API: recarga, pago QR, liquidación, retiros y validación contable |
 | [`docs/QA_OPERATIONS_VARIABLES.md`](QA_OPERATIONS_VARIABLES.md) | Guía de variables operativas QA: plantilla `ops/qa.env.example`, obtención de TOKEN e IDs, carga local sin secretos en repo |
+| [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Checklist maestro QA end-to-end: ciclo completo desde CI verde hasta acta de aprobación |
 
 ---
 

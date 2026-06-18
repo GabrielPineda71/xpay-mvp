@@ -275,6 +275,17 @@ bash scripts/generate-qa-financial-ops.sh
 
 ---
 
+## Checklist maestro QA End-to-End
+
+**[docs/QA_MASTER_E2E_CHECKLIST.md](docs/QA_MASTER_E2E_CHECKLIST.md)**
+
+Guía única que une el ciclo QA completo: desde confirmar CI verde hasta firmar el acta de aprobación. Cubre 8 fases: estado del repo, artefactos, ambiente, base de datos, variables, operaciones financieras, smoke test, casos manuales y decisión.
+
+- Punto de entrada único para ejecutar el ciclo QA de punta a punta.
+- **Uso exclusivo QA / desarrollo. No producción. No dinero real.**
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.
