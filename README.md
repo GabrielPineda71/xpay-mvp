@@ -308,6 +308,17 @@ Guía operativa para habilitar usuarios internos después de que QA Interno 01 s
 
 ---
 
+## Seguimiento de incidencias QA internas
+
+**[docs/QA_INTERNAL_ISSUES_TRACKING.md](docs/QA_INTERNAL_ISSUES_TRACKING.md)**
+
+Guía operativa para registrar, clasificar y dar seguimiento a incidencias reportadas por usuarios internos y el equipo QA. Define severidades (Crítica/Alta/Media/Baja), estados (Nueva→Cerrada), flujo de atención, SLA interno sugerido, criterios de cierre por severidad, cuándo abrir Ciclo QA Interno 02, relación con GitHub Issues y plantilla de reporte resumen.
+
+- Usar en paralelo con el acceso de usuarios internos QA.
+- **Uso exclusivo QA / desarrollo. No producción. No datos reales.**
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

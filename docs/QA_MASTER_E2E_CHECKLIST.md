@@ -498,7 +498,8 @@ Firma responsable técnico:  _________________
 | [`README.md`](../README.md) | Descripción del proyecto: endpoints, configuración, fases |
 | [`docs/QA_INTERNAL_CYCLE_01.md`](QA_INTERNAL_CYCLE_01.md) | Paquete de ejecución del primer ciclo QA interno: identificación, roles, plan, resultados y acta |
 | [`docs/QA_INTERNAL_USERS_ONBOARDING.md`](QA_INTERNAL_USERS_ONBOARDING.md) | Guía de onboarding de usuarios internos QA: perfiles, reglas, habilitación, reportes y controles |
+| [`docs/QA_INTERNAL_ISSUES_TRACKING.md`](QA_INTERNAL_ISSUES_TRACKING.md) | Registro y seguimiento de incidencias QA: estados, severidades, flujo de atención y criterios de cierre |
 
 ---
 
-*Este checklist cubre el MVP XPAY — Fases 1 a 30. Actualizar cuando se agreguen nuevos módulos, flujos o criterios de aprobación.*
+*Este checklist cubre el MVP XPAY — Fases 1 a 31. Actualizar cuando se agreguen nuevos módulos, flujos o criterios de aprobación.*

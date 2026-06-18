@@ -333,7 +333,8 @@ Completar y firmar el acta de la sección 8. Este documento es el registro forma
 | [`docs/QA_FINANCIAL_OPERATIONS_API.md`](QA_FINANCIAL_OPERATIONS_API.md) | Guía de operaciones financieras QA vía API: flujo completo de recarga, pago QR, liquidación y retiros |
 | [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Checklist maestro QA end-to-end: esta plantilla se usa en la Fase 7 del ciclo completo |
 | [`docs/QA_INTERNAL_CYCLE_01.md`](QA_INTERNAL_CYCLE_01.md) | Ciclo QA Interno 01: esta plantilla es el instrumento de registro del ciclo formal |
+| [`docs/QA_INTERNAL_ISSUES_TRACKING.md`](QA_INTERNAL_ISSUES_TRACKING.md) | Los bugs de esta plantilla se convierten en incidencias registradas en este tracker |
 
 ---
 
-*Esta plantilla cubre el MVP XPAY — Fases 1 a 29. Actualizar la matriz de casos si se agregan módulos en fases posteriores.*
+*Esta plantilla cubre el MVP XPAY — Fases 1 a 31. Actualizar la matriz de casos si se agregan módulos en fases posteriores.*

@@ -323,7 +323,8 @@ Este documento se usa **después** de `docs/QA_INTERNAL_CYCLE_01.md`:
 | [`docs/QA_EXECUTION_TEMPLATE.md`](QA_EXECUTION_TEMPLATE.md) | Plantilla del ciclo QA formal; no usada por usuarios internos pero referencia de evidencias |
 | [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md) | Declaración formal de la versión: alcance, exclusiones y riesgos conocidos comunicados a usuarios internos |
 | [`README.md`](../README.md) | Descripción del proyecto: endpoints, configuración y ecosistema QA completo |
+| [`docs/QA_INTERNAL_ISSUES_TRACKING.md`](QA_INTERNAL_ISSUES_TRACKING.md) | Registro y seguimiento de incidencias QA: estados, severidades, flujo de atención y criterios de cierre |
 
 ---
 
-*Esta guía cubre el MVP XPAY — Fases 1 a 30. Actualizar si cambian los perfiles de usuarios internos, las reglas de uso o los controles de seguridad del ambiente QA.*
+*Esta guía cubre el MVP XPAY — Fases 1 a 31. Actualizar si cambian los perfiles de usuarios internos, las reglas de uso o los controles de seguridad del ambiente QA.*
