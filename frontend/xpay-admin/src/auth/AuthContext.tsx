@@ -1,25 +1,25 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { post } from '../api/client.ts';
 
 export interface AuthUser {
   idUsuario: number;
   idPersona: number;
-  usuario: string;
-  estado: string;
-  roles: string[];
-  token: string;
+  usuario:   string;
+  estado:    string;
+  roles:     string[];
+  token:     string;
 }
 
 interface AuthCtx {
-  user: AuthUser | null;
-  login: (usuario: string, password: string) => Promise<void>;
+  user:   AuthUser | null;
+  login:  (usuario: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
 interface LoginApiResp {
-  success: boolean;
+  success:  boolean;
   message?: string;
-  data: AuthUser;
+  data:     AuthUser;
 }
 
 const AuthContext = createContext<AuthCtx | null>(null);
@@ -36,6 +36,18 @@ function loadUser(): AuthUser | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(loadUser);
+
+  useEffect(() => {
+    function handleUnauthorized() {
+      // Mark session as expired so LoginPage can show the message
+      sessionStorage.setItem('xpay_expired', '1');
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem('xpay_token');
+      setUser(null); // PrivateRoute will redirect to /login
+    }
+    window.addEventListener('xpay:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('xpay:unauthorized', handleUnauthorized);
+  }, []);
 
   async function login(usuario: string, password: string): Promise<void> {
     const resp = await post<LoginApiResp>('/api/auth/login', { usuario, password });

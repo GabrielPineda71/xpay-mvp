@@ -307,3 +307,57 @@ tr:hover td { background: #f7fafc; }
 }
 
 .compact-table td, .compact-table th { padding: 0.5rem 0.9rem; font-size: 0.82rem; }
+
+/* ── SESSION / ENV / RETRY ── */
+.session-message {
+  background: #fffbeb;
+  color: #92400e;
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+  border-left: 3px solid #f59e0b;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+.api-hint {
+  margin-top: 1.1rem;
+  font-size: 0.75rem;
+  color: #a0aec0;
+  text-align: center;
+  word-break: break-all;
+}
+
+.app-env {
+  font-size: 0.75rem;
+  color: #a0aec0;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.logout-button {
+  background: #e53e3e;
+  color: white;
+  border: none;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.logout-button:hover { background: #c53030; }
+
+.retry-button {
+  background: none;
+  border: 1px solid #718096;
+  color: #4a5568;
+  padding: 0.3rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  margin-top: 0.5rem;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.retry-button:hover { background: #edf2f7; }

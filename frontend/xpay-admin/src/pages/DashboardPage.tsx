@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get } from '../api/client.ts';
 import { fmtDate, fmtMoney, fmtNum } from '../utils.ts';
@@ -56,13 +56,23 @@ function QuickCard({ label, to, onNav }: { label: string; to: string; onNav: (p:
 }
 
 function Section({
-  title, loading, error, children,
-}: { title: string; loading: boolean; error: string; children: ReactNode }) {
+  title, loading, error, onRetry, children,
+}: {
+  title: string; loading: boolean; error: string;
+  onRetry?: () => void; children: ReactNode;
+}) {
   return (
     <div className="dashboard-section">
       <h3>{title}</h3>
       {loading && <div className="loading">Cargando...</div>}
-      {!loading && error && <div className="error-msg">Error: {error}</div>}
+      {!loading && error && (
+        <>
+          <div className="error-msg">Error: {error}</div>
+          {onRetry && (
+            <button className="retry-button" onClick={onRetry}>↺ Reintentar</button>
+          )}
+        </>
+      )}
       {!loading && !error && children}
     </div>
   );
@@ -70,8 +80,8 @@ function Section({
 
 function estadoBadge(estado: string) {
   const cls =
-    estado === 'PAGADO'   || estado === 'LIQUIDADA'    ? 'badge-ok'   :
-    estado === 'PENDIENTE'|| estado === 'CONTINGENCIA' ? 'badge-info' : 'badge-warn';
+    estado === 'PAGADO'    || estado === 'LIQUIDADA'    ? 'badge-ok'   :
+    estado === 'PENDIENTE' || estado === 'CONTINGENCIA' ? 'badge-info' : 'badge-warn';
   return <span className={`badge ${cls}`}>{estado}</span>;
 }
 
@@ -96,7 +106,16 @@ export function DashboardPage() {
   const [ledgerLoad,  setLedgerLoad]  = useState(true);
   const [ledgerErr,   setLedgerErr]   = useState('');
 
+  // Incrementing this counter triggers a full reload of all sections
+  const [retryCount, setRetryCount] = useState(0);
+  const retry = useCallback(() => setRetryCount(c => c + 1), []);
+
   useEffect(() => {
+    setResumenLoad(true); setResumenErr('');
+    setRetirosLoad(true); setRetirosErr('');
+    setVentasLoad(true);  setVentasErr('');
+    setLedgerLoad(true);  setLedgerErr('');
+
     get<{ success: boolean; data: ResumenGeneral }>('/api/reportes/operaciones/resumen-general')
       .then(r => setResumen(r.data))
       .catch(err => setResumenErr((err as Error).message))
@@ -116,7 +135,7 @@ export function DashboardPage() {
       .then(r => setLedger(r.data.items))
       .catch(err => setLedgerErr((err as Error).message))
       .finally(() => setLedgerLoad(false));
-  }, []);
+  }, [retryCount]);
 
   return (
     <div className="page">
@@ -137,6 +156,9 @@ export function DashboardPage() {
       {!resumenLoad && resumenErr && (
         <div className="error-msg" style={{ marginBottom: '1.5rem' }}>
           Error cargando métricas: {resumenErr}
+          <button className="retry-button" style={{ marginLeft: '1rem' }} onClick={retry}>
+            ↺ Reintentar
+          </button>
         </div>
       )}
       {!resumenLoad && !resumenErr && resumen && (
@@ -156,7 +178,7 @@ export function DashboardPage() {
       )}
 
       {/* ── Últimos retiros ── */}
-      <Section title="Últimos retiros" loading={retirosLoad} error={retirosErr}>
+      <Section title="Últimos retiros" loading={retirosLoad} error={retirosErr} onRetry={retry}>
         {retiros.length === 0 ? (
           <div className="empty">Sin registros.</div>
         ) : (
@@ -164,12 +186,8 @@ export function DashboardPage() {
             <table className="compact-table">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Comercio</th>
-                  <th>Valor</th>
-                  <th>Estado</th>
-                  <th>Fecha solicitud</th>
-                  <th></th>
+                  <th>ID</th><th>Comercio</th><th>Valor</th>
+                  <th>Estado</th><th>Fecha solicitud</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -194,7 +212,7 @@ export function DashboardPage() {
       </Section>
 
       {/* ── Últimas ventas QR ── */}
-      <Section title="Últimas ventas QR" loading={ventasLoad} error={ventasErr}>
+      <Section title="Últimas ventas QR" loading={ventasLoad} error={ventasErr} onRetry={retry}>
         {ventas.length === 0 ? (
           <div className="empty">Sin registros.</div>
         ) : (
@@ -202,12 +220,8 @@ export function DashboardPage() {
             <table className="compact-table">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Comercio</th>
-                  <th>Valor bruto</th>
-                  <th>Estado</th>
-                  <th>Fecha venta</th>
-                  <th></th>
+                  <th>ID</th><th>Comercio</th><th>Valor bruto</th>
+                  <th>Estado</th><th>Fecha venta</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -232,7 +246,7 @@ export function DashboardPage() {
       </Section>
 
       {/* ── Últimas transacciones ledger ── */}
-      <Section title="Últimas transacciones ledger" loading={ledgerLoad} error={ledgerErr}>
+      <Section title="Últimas transacciones ledger" loading={ledgerLoad} error={ledgerErr} onRetry={retry}>
         {ledger.length === 0 ? (
           <div className="empty">Sin registros.</div>
         ) : (
@@ -240,11 +254,7 @@ export function DashboardPage() {
             <table className="compact-table">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Tipo</th>
-                  <th>Valor total</th>
-                  <th>Fecha</th>
-                  <th></th>
+                  <th>ID</th><th>Tipo</th><th>Valor total</th><th>Fecha</th><th></th>
                 </tr>
               </thead>
               <tbody>

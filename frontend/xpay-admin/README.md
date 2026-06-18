@@ -102,8 +102,33 @@ Las rutas protegidas redirigen a `/login` si no hay sesión activa.
 2. Ingresar usuario y contraseña
 3. El token JWT se guarda en `localStorage` bajo la clave `xpay_token`
 4. Todos los requests a endpoints protegidos incluyen `Authorization: Bearer {token}`
-5. Al hacer clic en **Salir**, el token se elimina y se redirige a `/login`
+5. Al hacer clic en **Cerrar sesión**, el token se elimina y se redirige a `/login`
 6. Si el backend responde 401, la sesión se invalida automáticamente
+
+---
+
+## Manejo de sesión y errores
+
+### Sesión expirada
+Si cualquier endpoint protegido responde 401, el cliente API dispara el evento `xpay:unauthorized`.
+`AuthContext` lo captura, invalida el estado de sesión y redirige a `/login` vía `PrivateRoute`.
+La página de login muestra: *"Tu sesión ha expirado. Inicia sesión nuevamente."*
+
+### Identificar qué API está consumiendo el frontend
+- **Login:** debajo del botón aparece `API: {VITE_API_BASE_URL}` para confirmar el backend apuntado.
+- **Header (tras iniciar sesión):** el navbar muestra `API: local` en desarrollo o el hostname en QA/producción.
+
+### Error de conexión con el backend
+Si el backend no responde (red caída, URL incorrecta, CORS mal configurado), el frontend muestra:
+> *"No fue posible conectar con el backend XPAY. Verifica la URL del API o la conexión."*
+
+Pasos para diagnosticar:
+1. Verificar que `VITE_API_BASE_URL` en `.env` apunta al backend correcto.
+2. Confirmar que el backend está corriendo (`GET /health` debe responder).
+3. En QA, confirmar que CORS incluye el origen del frontend.
+
+### Botón Reintentar en Dashboard
+Si alguna sección del dashboard falla al cargar, aparece un botón **↺ Reintentar** que relanza todos los fetches del dashboard sin recargar la página.
 
 ---
 

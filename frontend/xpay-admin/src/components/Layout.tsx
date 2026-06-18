@@ -1,9 +1,19 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.tsx';
 
+function getApiLabel(): string {
+  const url = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
+  try {
+    const { hostname } = new URL(url);
+    return hostname === 'localhost' || hostname === '127.0.0.1' ? 'local' : hostname;
+  } catch {
+    return url;
+  }
+}
+
 export function Layout() {
   const { user, logout } = useAuth();
-  const navigate = useNavigate();
+  const navigate          = useNavigate();
 
   function handleLogout() {
     logout();
@@ -28,7 +38,8 @@ export function Layout() {
         </div>
         <div className="nav-user">
           {user && <span>{user.usuario}</span>}
-          <button onClick={handleLogout}>Salir</button>
+          <span className="app-env">API: {getApiLabel()}</span>
+          <button className="logout-button" onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </nav>
       <main className="main-content">

@@ -2,13 +2,23 @@ import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.tsx';
 
+const API_HINT = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
+
 export function LoginPage() {
   const { login } = useAuth();
-  const navigate = useNavigate();
-  const [usuario, setUsuario] = useState('');
+  const navigate   = useNavigate();
+
+  const [usuario,  setUsuario]  = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [error,    setError]    = useState('');
+  const [loading,  setLoading]  = useState(false);
+
+  // Read and immediately clear the session-expired flag written by AuthContext
+  const [sessionMsg] = useState<string>(() => {
+    const flag = sessionStorage.getItem('xpay_expired');
+    sessionStorage.removeItem('xpay_expired');
+    return flag ? 'Tu sesión ha expirado. Inicia sesión nuevamente.' : '';
+  });
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -29,6 +39,7 @@ export function LoginPage() {
       <div className="login-card">
         <h1>XPAY Admin</h1>
         <p className="subtitle">Panel administrativo</p>
+        {sessionMsg && <p className="session-message">{sessionMsg}</p>}
         <form onSubmit={handleSubmit}>
           <label>
             Usuario
@@ -55,6 +66,7 @@ export function LoginPage() {
             {loading ? 'Ingresando...' : 'Ingresar'}
           </button>
         </form>
+        <p className="api-hint">API: {API_HINT}</p>
       </div>
     </div>
   );
