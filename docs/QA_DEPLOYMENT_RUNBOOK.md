@@ -397,6 +397,46 @@ Completar todos los ítems antes de comunicar al equipo QA que el ambiente está
 
 ---
 
+## Scripts auxiliares de build QA
+
+Antes de ejecutar el despliegue manual descrito en las secciones anteriores, es posible generar los artefactos de publicación localmente usando los scripts de la carpeta `scripts/`:
+
+| Script | Qué genera | Dónde deja el artefacto |
+|--------|-----------|------------------------|
+| `scripts/build-backend-qa.sh` | Publica el backend .NET 8 en modo Release | `artifacts/backend-qa/` |
+| `scripts/build-frontend-qa.sh` | Construye el frontend Vite (requiere `.env`) | `artifacts/frontend-qa/` |
+| `scripts/build-qa-artifacts.sh` | Ejecuta ambos en orden | `artifacts/backend-qa/` y `artifacts/frontend-qa/` |
+
+**Prerequisito frontend:** copiar el template de variables antes de ejecutar el script:
+
+```bash
+cp frontend/xpay-admin/.env.qa.example frontend/xpay-admin/.env
+# Verificar/ajustar VITE_API_BASE_URL en .env
+```
+
+**Uso:**
+
+```bash
+# Artefacto backend únicamente
+bash scripts/build-backend-qa.sh
+
+# Artefacto frontend únicamente (requiere .env)
+bash scripts/build-frontend-qa.sh
+
+# Ambos artefactos de una vez
+bash scripts/build-qa-artifacts.sh
+```
+
+**Propiedades importantes de los scripts:**
+- No despliegan a ningún ambiente.
+- No contienen secretos reales.
+- Si `frontend/xpay-admin/.env` no existe, `build-frontend-qa.sh` falla con mensaje claro y `exit 1`.
+- Los artefactos quedan en `artifacts/`, carpeta ignorada por git (no se suben al repositorio).
+- El `artifacts/backend-qa/` generado es el directorio equivalente a lo que se sube al App Service backend en Azure.
+- El `artifacts/frontend-qa/` generado es el directorio equivalente al `dist/` que se sube al App Service / Static Web App frontend en Azure.
+
+---
+
 ## 14. Documentos relacionados
 
 | Documento | Propósito |

@@ -199,6 +199,32 @@ Guía operativa paso a paso para ejecutar el despliegue real de XPAY QA Candidat
 
 ---
 
+## Scripts locales QA
+
+Scripts auxiliares para generar artefactos de publicación QA sin desplegar. Los artefactos quedan en `artifacts/` (ignorado por git).
+
+| Script | Acción |
+|--------|--------|
+| `scripts/build-backend-qa.sh` | Restaura, compila y publica el backend .NET 8 en `artifacts/backend-qa/` |
+| `scripts/build-frontend-qa.sh` | Instala dependencias npm y construye el frontend Vite en `artifacts/frontend-qa/`. Requiere `frontend/xpay-admin/.env` con `VITE_API_BASE_URL` configurado. |
+| `scripts/build-qa-artifacts.sh` | Ejecuta ambos scripts en orden y muestra resumen final |
+
+```bash
+# Generar artefacto backend
+bash scripts/build-backend-qa.sh
+
+# Generar artefacto frontend (requiere .env previo)
+cp frontend/xpay-admin/.env.qa.example frontend/xpay-admin/.env
+bash scripts/build-frontend-qa.sh
+
+# O generar ambos de una vez
+bash scripts/build-qa-artifacts.sh
+```
+
+> Los scripts **no despliegan** ni contienen secretos. Para el despliegue real, ver `docs/QA_DEPLOYMENT_RUNBOOK.md`.
+
+---
+
 ## Pruebas QA
 
 | Documento | Propósito |

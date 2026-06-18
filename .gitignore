@@ -20,3 +20,6 @@ Thumbs.db
 frontend/xpay-admin/node_modules/
 frontend/xpay-admin/dist/
 frontend/xpay-admin/.env
+
+# QA build artifacts (generated locally by scripts/build-*-qa.sh)
+artifacts/

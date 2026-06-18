@@ -289,6 +289,7 @@ Seguir este orden garantiza que los errores se detecten en la etapa más tempran
 | [`docs/QA_MANUAL_TESTING.md`](QA_MANUAL_TESTING.md) | 35 casos de prueba manuales, prerrequisitos y criterios de aprobación |
 | [`docs/QA_EXECUTION_TEMPLATE.md`](QA_EXECUTION_TEMPLATE.md) | Plantilla de registro de ejecución, evidencias, bugs y acta de cierre |
 | [`docs/QA_DEPLOYMENT_RUNBOOK.md`](QA_DEPLOYMENT_RUNBOOK.md) | Runbook operativo: recursos Azure, variables, scripts SQL, smoke test y rollback |
+| [`scripts/`](../scripts/) | Scripts auxiliares locales: generan artefactos backend y frontend QA sin desplegar (`build-qa-artifacts.sh`) |
 
 ---
 
