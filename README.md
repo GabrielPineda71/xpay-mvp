@@ -275,6 +275,24 @@ bash scripts/generate-qa-financial-ops.sh
 
 ---
 
+## Variables operativas QA
+
+**[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.
+**[docs/QA_OPERATIONS_VARIABLES.md](docs/QA_OPERATIONS_VARIABLES.md)** — guía completa.
+
+```bash
+cp ops/qa.env.example ops/qa.env.local
+# completar con valores reales
+source ops/qa.env.local
+bash scripts/generate-qa-financial-ops.sh
+```
+
+- `ops/qa.env.local` está en `.gitignore` — nunca se commitea.
+- No contiene secretos, tokens ni contraseñas en el repositorio.
+- **Uso exclusivo QA / desarrollo. No usar en producción. No usar dinero real.**
+
+---
+
 ## Pruebas QA
 
 | Documento | Propósito |

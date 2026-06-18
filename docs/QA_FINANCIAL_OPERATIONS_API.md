@@ -82,6 +82,8 @@ No usar contraseñas reales ni compartir hashes entre ambientes.
 
 Los bloques `curl` de esta guía usan las siguientes variables. Son placeholders: reemplazar con los valores reales del ambiente QA antes de ejecutar.
 
+> **Atajo:** copiar `ops/qa.env.example` a `ops/qa.env.local`, completar los valores y ejecutar `source ops/qa.env.local`. El archivo local está en `.gitignore` y nunca se commitea. Ver [`docs/QA_OPERATIONS_VARIABLES.md`](QA_OPERATIONS_VARIABLES.md) para instrucciones detalladas.
+
 ```bash
 export API_BASE="http://localhost:5000"
 export TOKEN="<jwt-token-obtenido-en-login>"

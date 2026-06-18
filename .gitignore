@@ -23,3 +23,9 @@ frontend/xpay-admin/.env
 
 # QA build artifacts (generated locally by scripts/build-*-qa.sh)
 artifacts/
+
+# QA operations variables (local, not versioned — never commit real tokens)
+ops/*.local
+ops/.local
+ops/.env.local
+ops/qa.env.local

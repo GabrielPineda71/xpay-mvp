@@ -459,7 +459,8 @@ bash scripts/build-qa-artifacts.sh
 | [`frontend/xpay-admin/README.md`](../frontend/xpay-admin/README.md) | Configuración del frontend: instalación, build, rutas, errores |
 | [`docs/QA_FINANCIAL_OPERATIONS_API.md`](QA_FINANCIAL_OPERATIONS_API.md) | Guía de operaciones financieras QA vía API: recarga, pago QR, liquidación, retiros y validación contable |
 | [`scripts/generate-qa-financial-ops.sh`](../scripts/generate-qa-financial-ops.sh) | Script auxiliar opcional post-seed: ejecuta el flujo financiero QA completo (A–H) vía endpoints reales sin SQL ni deploy |
+| [`docs/QA_OPERATIONS_VARIABLES.md`](QA_OPERATIONS_VARIABLES.md) | Guía de variables operativas QA: cómo obtener TOKEN e IDs, cargar `ops/qa.env.local` y ejecutar scripts locales |
 
 ---
 
-*Este runbook cubre el MVP XPAY QA Candidate v0.1 — Fases 1 a 26. Actualizar si cambia la arquitectura de despliegue o se agregan servicios Azure.*
+*Este runbook cubre el MVP XPAY QA Candidate v0.1 — Fases 1 a 27. Actualizar si cambia la arquitectura de despliegue o se agregan servicios Azure.*
