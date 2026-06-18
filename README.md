@@ -181,6 +181,16 @@ Incluye arquitectura propuesta, variables de entorno, orden de despliegue, check
 
 ---
 
+## Manual de pruebas QA
+
+Para validar el MVP de punta a punta antes de pruebas con usuarios internos:
+
+**[docs/QA_MANUAL_TESTING.md](docs/QA_MANUAL_TESTING.md)**
+
+Incluye 35 casos de prueba distribuidos en 10 módulos, criterios de aprobación, plantilla de reporte de bug y checklist de salida a QA.
+
+---
+
 ## Validación CI
 
 El flujo completo está validado automáticamente en GitHub Actions mediante `scripts/validate-backend.sh`.

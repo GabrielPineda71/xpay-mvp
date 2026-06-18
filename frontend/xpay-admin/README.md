@@ -94,6 +94,8 @@ Si se usa **Azure App Service** para el frontend (servir los estáticos con un s
 
 Las rutas protegidas redirigen a `/login` si no hay sesión activa.
 
+Para pruebas manuales completas de todas las rutas, ver **[../../docs/QA_MANUAL_TESTING.md](../../docs/QA_MANUAL_TESTING.md)**.
+
 ---
 
 ## Autenticación
