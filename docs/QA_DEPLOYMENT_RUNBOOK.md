@@ -129,6 +129,14 @@ Ejecutar los scripts SQL en el siguiente **orden estricto**. No saltarse ninguno
 | 6 | `database/006_gestion_retiros_comercio.sql` | Stored procedures y lógica de gestión de retiros |
 | 7 | `database/007_security_roles_jwt.sql` | Roles, permisos y configuración JWT en BD |
 
+**Script opcional — Dataset QA:**
+
+| Orden | Script | Tipo | Contenido |
+|-------|--------|------|-----------|
+| 8 *(opcional)* | `database/008_seed_qa_dataset.sql` | **Seed QA** | Personas, usuarios, wallets, comercio demo QA, QR demo QA. **No es migración estructural. No ejecutar en producción.** |
+
+> `008_seed_qa_dataset.sql` es idempotente y puede ejecutarse más de una vez. Pobla datos de prueba controlados necesarios para el manual QA. Los datos financieros (saldos, ventas QR, retiros) deben generarse vía endpoints del backend.
+
 **Herramientas para ejecutar:**
 - Azure Data Studio (recomendado para conexión a Azure SQL)
 - SQL Server Management Studio (SSMS)
@@ -147,8 +155,10 @@ Ejecutar los scripts SQL en el siguiente **orden estricto**. No saltarse ninguno
 - [ ] Seed de datos confirmado: existe registro `Comercio Demo XPAY` en tabla `comercios`
 - [ ] Seed de datos confirmado: existe QR `QR-DEMO-XPAY-001` vinculado al comercio demo
 - [ ] Cuentas ledger confirmadas: existen entradas de tipo `SISTEMA` en la tabla de ledger
+- [ ] *(Opcional QA)* Script 008 ejecutado: personas/usuarios/comercio QA creados
+- [ ] *(Opcional QA)* Password hashes de usuarios QA actualizados antes de login
 
-> ⚠️ **No modificar los scripts SQL.** Si alguno falla, detener, revisar el error y corregir el problema de entorno (conexión, permisos, orden) antes de continuar.
+> ⚠️ **No modificar los scripts SQL 001–007.** Si alguno falla, detener, revisar el error y corregir el problema de entorno (conexión, permisos, orden) antes de continuar.
 
 ---
 

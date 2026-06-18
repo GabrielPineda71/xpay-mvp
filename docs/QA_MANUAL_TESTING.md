@@ -59,13 +59,19 @@ Antes de iniciar las pruebas, verificar que todo lo siguiente está en orden:
 
 ### 3.3 Datos seed
 
-Los siguientes datos deben existir en la base de datos antes de probar. Se generan ejecutando el script de validación del CI (`scripts/validate-backend.sh`) o insertando datos manuales:
+Los siguientes datos deben existir en la base de datos antes de probar. Se generan ejecutando el script de validación del CI (`scripts/validate-backend.sh`) o con el dataset QA:
+
+**Script de seed QA recomendado:** `database/008_seed_qa_dataset.sql`
+
+Ejecutar después de los scripts 001–007. Crea personas, usuarios, wallets, comercio demo QA (`Comercio Demo XPAY QA`) y QR demo QA (`QR-DEMO-XPAY-QA-001`) de forma idempotente. No contiene datos reales ni dinero real. No ejecutar en producción.
 
 | Dato | Descripción | Dónde verificar |
 |------|-------------|-----------------|
 | **Usuario admin de prueba** | `usuario: admin_test`, contraseña definida en appsettings | `POST /api/auth/login` |
+| **Usuarios QA** | `qa.admin.xpay`, `qa.operador.xpay`, `qa.usuario1`, `qa.usuario2` (creados por 008, requieren hash actualizado para login) | `POST /api/auth/login` |
 | **Persona y wallet de usuario** | Al menos una wallet activa con saldo > 0 | `GET /api/admin/wallets` |
-| **Comercio Demo XPAY** | Comercio activo con `NombreComercio` conocido | `GET /api/admin/comercios` |
+| **Comercio Demo XPAY** | Comercio activo base (creado por migración 003) | `GET /api/admin/comercios` |
+| **Comercio Demo XPAY QA** | Comercio QA separado (creado por 008) con tienda y QR `QR-DEMO-XPAY-QA-001` | `GET /api/admin/comercios` |
 | **QR de comercio** | Al menos un QR activo asociado al comercio demo | `POST /api/qr/pagar` |
 | **Ventas QR** | Al menos 3 ventas QR (estados mixtos) | `GET /api/admin/ventas-qr` |
 | **Retiros** | Al menos 1 retiro PENDIENTE y 1 PAGADO | `GET /api/comercios/retiros` |

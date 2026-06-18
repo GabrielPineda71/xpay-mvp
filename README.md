@@ -225,6 +225,19 @@ bash scripts/build-qa-artifacts.sh
 
 ---
 
+## Dataset QA
+
+**[database/008_seed_qa_dataset.sql](database/008_seed_qa_dataset.sql)**
+
+Script de datos de prueba controlados para el ambiente QA. Ejecutar después de los scripts de migración 001–007.
+
+- Crea personas, usuarios, wallets, comercio demo QA y QR demo QA (`QR-DEMO-XPAY-QA-001`).
+- Idempotente: puede ejecutarse más de una vez sin crear duplicados.
+- **Uso exclusivo QA / desarrollo. No ejecutar en producción. No contiene datos reales.**
+- Los saldos y transacciones financieras se generan vía endpoints del backend (ver `scripts/validate-backend.sh`).
+
+---
+
 ## Pruebas QA
 
 | Documento | Propósito |
