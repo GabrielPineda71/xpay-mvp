@@ -520,6 +520,48 @@ CorrelationIdMiddleware → ErrorHandlingMiddleware → RequestLogging → Secur
 
 ---
 
+## Política básica de sesión JWT
+
+Los tokens JWT se generan con duración y clock skew configurables. `ValidateLifetime` y `ValidateIssuerSigningKey` están activos.
+
+**Variables de configuración:**
+
+```json
+"Jwt": {
+  "ExpirationHours":  2,
+  "ClockSkewSeconds": 60
+}
+```
+
+Variables de entorno equivalentes:
+
+```bash
+Jwt__ExpirationHours  = 2    # QA recomendado: 2 h; producción: definir política formal
+Jwt__ClockSkewSeconds = 60   # Tolerancia de reloj entre servidores (segundos)
+```
+
+**Validaciones activas (`TokenValidationParameters`):**
+
+- `ValidateLifetime = true` — tokens expirados son rechazados con 401.
+- `ValidateIssuerSigningKey = true` — la firma HS256 se verifica en cada request.
+- `ValidateIssuer` y `ValidateAudience` activos.
+
+**Qué no existe todavía:**
+
+- No hay refresh tokens.
+- No hay persistencia de sesiones en base de datos.
+- No hay endpoint de logout con invalidación del token.
+- No hay revocación de sesiones activas.
+
+**Lo que no cambia con estas variables:**
+
+- Lógica financiera
+- CORS
+- Rate limiting
+- Auditoría
+
+---
+
 ## Auditoría básica por logs
 
 El backend registra eventos sensibles mediante `AuditLogService` usando `ILogger`. Todos los eventos incluyen `correlationId` del request y se pueden filtrar por la marca `audit=True` o el prefijo `AUDIT` en los logs.

@@ -78,7 +78,8 @@ public class AuthService
         foreach (var rol in roles)
             claims.Add(new Claim(ClaimTypes.Role, rol));
 
-        var expHours = int.TryParse(_config["Jwt:ExpirationHours"], out var h) ? h : 8;
+        var expHours = _config.GetValue("Jwt:ExpirationHours", defaultValue: 2);
+        if (expHours <= 0) expHours = 2;
 
         var jwt = new JwtSecurityToken(
             issuer:            _config["Jwt:Issuer"],

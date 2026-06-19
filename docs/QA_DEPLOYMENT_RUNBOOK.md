@@ -71,7 +71,8 @@ Configurar en **Azure App Service → Configuration → Application settings** u
 | `Jwt__Key` | Clave secreta HS256 para firmar tokens JWT | `<CLAVE_ALEATORIA_MINIMO_32_CARACTERES>` | Sí | **Sí** |
 | `Jwt__Issuer` | Emisor declarado en el token JWT | `Xpay.Api.QA` | Sí | No |
 | `Jwt__Audience` | Audiencia declarada en el token JWT | `Xpay.Admin.QA` | Sí | No |
-| `Jwt__ExpirationHours` | Validez del token en horas | `8` | Sí | No |
+| `Jwt__ExpirationHours` | Validez del token en horas | `2` | Sí | No |
+| `Jwt__ClockSkewSeconds` | Tolerancia de reloj para validación de tokens JWT | `60` | No (default 60) | No |
 | `Api__Name` | Nombre de la API (visible en `/api/version`) | `XPAY API QA` | Sí | No |
 | `Api__Version` | Versión de la API (visible en `/api/version`) | `0.1.0-mvp-qa` | Sí | No |
 | `Cors__AllowedOrigins__0` | Origen del frontend QA permitido por CORS | `https://xpay-admin-qa.azurewebsites.net` | Sí | No |

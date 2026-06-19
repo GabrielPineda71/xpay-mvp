@@ -62,7 +62,9 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader()
               .AllowAnyMethod()));
 
-var jwtSection = builder.Configuration.GetSection("Jwt");
+var jwtSection       = builder.Configuration.GetSection("Jwt");
+var clockSkewSeconds = jwtSection.GetValue("ClockSkewSeconds", defaultValue: 60);
+if (clockSkewSeconds < 0) clockSkewSeconds = 60;
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(opts =>
@@ -77,7 +79,7 @@ builder.Services
             ValidateAudience         = true,
             ValidAudience            = jwtSection["Audience"],
             ValidateLifetime         = true,
-            ClockSkew                = TimeSpan.Zero
+            ClockSkew                = TimeSpan.FromSeconds(clockSkewSeconds)
         };
     });
 

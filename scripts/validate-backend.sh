@@ -1084,4 +1084,55 @@ ERR41_XCID=$(curl -si --max-time 15 "$API_URL/api/diagnostics/error-test" \
 ok "error-test → X-Correlation-ID: $ERR41_XCID presente en headers ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 41: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica, error handling global y todos los endpoints OK ═══"
+echo ""
+
+# ════════════════════════════════════════════════════
+# FASE 42 — Política básica de sesión JWT
+# ════════════════════════════════════════════════════
+phase "FASE 42: Política de sesión JWT — token válido, claim exp presente, 401 sin token"
+
+# 42.1 Login fresco para obtener token de prueba
+info "Login para obtener token de sesión FASE 42"
+LOGIN_42=$(curl -s -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"usuario":"carlos","password":"admin123"}' \
+  --max-time 15 \
+  "$API_URL/api/auth/login")
+TOKEN_42=$(echo "$LOGIN_42" | jq -r '.data.token // empty')
+[[ -n "$TOKEN_42" && "$TOKEN_42" != "null" ]] \
+  || fail "FASE 42: Login no devolvió token — verificar credenciales QA o base de datos"
+ok "FASE 42: login exitoso → token obtenido (${TOKEN_42:0:20}...) ✓"
+
+# 42.2 Token válido permite acceder a endpoint protegido
+ID_PERSONA_42=$(echo "$LOGIN_42" | jq -r '.data.idPersona')
+STATUS_42_AUTH=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: Bearer $TOKEN_42" \
+  --max-time 15 \
+  "$API_URL/api/wallets/persona/$ID_PERSONA_42")
+[[ "$STATUS_42_AUTH" == "200" ]] \
+  || fail "FASE 42: endpoint protegido con token válido esperado 200, obtenido $STATUS_42_AUTH"
+ok "FASE 42: token válido → /api/wallets/persona/$ID_PERSONA_42 = 200 ✓"
+
+# 42.3 Sin token → 401 en endpoint protegido (confirmación mínima; validado ampliamente en fases anteriores)
+STATUS_42_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/admin/wallets")
+[[ "$STATUS_42_NOAUTH" == "401" ]] \
+  || fail "FASE 42: endpoint protegido sin token esperado 401, obtenido $STATUS_42_NOAUTH"
+ok "FASE 42: sin token → /api/admin/wallets = 401 ✓"
+
+# 42.4 Claim 'exp' presente en payload JWT (decodificación local, sin verificar firma)
+info "Decodificando payload JWT para verificar claim 'exp'"
+JWT_RAW_PAYLOAD=$(echo "$TOKEN_42" | cut -d'.' -f2)
+case $((${#JWT_RAW_PAYLOAD} % 4)) in
+    2) JWT_PAD="${JWT_RAW_PAYLOAD}==" ;;
+    3) JWT_PAD="${JWT_RAW_PAYLOAD}=" ;;
+    *) JWT_PAD="$JWT_RAW_PAYLOAD" ;;
+esac
+JWT_PAYLOAD_42=$(echo "$JWT_PAD" | tr '_-' '/+' | base64 -d 2>/dev/null || true)
+JWT_EXP=$(echo "$JWT_PAYLOAD_42" | jq -r '.exp // empty')
+[[ -n "$JWT_EXP" && "$JWT_EXP" != "null" ]] \
+  || fail "FASE 42: claim 'exp' ausente o null en payload JWT — verificar ExpirationHours > 0"
+ok "FASE 42: claim exp presente en payload JWT (Unix: $JWT_EXP) ✓"
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 42: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica, error handling global, política JWT y todos los endpoints OK ═══"
