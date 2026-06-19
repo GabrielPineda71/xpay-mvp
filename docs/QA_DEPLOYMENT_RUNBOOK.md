@@ -346,7 +346,8 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 - [ ] El header `X-Correlation-ID` está presente en la respuesta 500 (Fase 41)
 - [ ] Escaneo de dependencias ejecutado: `bash scripts/scan-dependencies-security.sh` desde raíz del repo (Fase 43)
 - [ ] Si exit code 1: hallazgos registrados y decisión de riesgo documentada antes de continuar
-- [ ] Si High/Critical: no avanzar a dinero real sin aprobación explícita del Security Lead
+- [ ] Si High/Critical: no avanzar a dinero real sin aprobación explícita del Security Lead y corrección o aceptación formal firmada
+- [ ] Si solo Moderate/Low: registrar decisión de riesgo aceptado con justificación y firma del Security Lead
 - [ ] Salida del script adjuntada como evidencia en el package de QA/preproducción
 
 > **Error handling en QA (Fase 41):** en producción, configurar `Diagnostics__EnableErrorTestEndpoint=false` para deshabilitar el endpoint de prueba. El middleware `ErrorHandlingMiddleware` sigue activo para capturar excepciones reales; solo el endpoint de test se deshabilita. Si se requiere debugging local, `ErrorHandling__EnableGlobalErrorHandler=false` solo en sesión autorizada.

@@ -555,6 +555,21 @@ Ejecutar desde la raíz del repositorio. Requiere .NET SDK y Node.js instalados.
 - Antes de iniciar el piloto con dinero real
 - Después de actualizar cualquier dependencia
 
+**Remediación controlada de vulnerabilidades**
+
+Las vulnerabilidades encontradas por el script se evalúan manualmente antes de aplicar cualquier cambio:
+
+- **Patch upgrades** (8.0.x → 8.0.y, mismo major): permitidos si no hay breaking changes documentados.
+- **Minor/Major upgrades**: requieren aprobación explícita del responsable técnico y prueba de build completo.
+- **No usar** `npm audit fix --force` sin revisar el diff — puede instalar versiones mayor con breaking changes.
+- **No usar** `dotnet add package` ni cambiar versiones del `.csproj` sin evaluación de compatibilidad.
+
+Para aplicar un upgrade seguro:
+```bash
+# Backend: editar Xpay.Api.csproj manualmente → dotnet restore → dotnet build → re-escaneo
+# Frontend: editar package.json manualmente → npm install → npm run build → re-escaneo
+```
+
 ---
 
 ## Política básica de sesión JWT
