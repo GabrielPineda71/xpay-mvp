@@ -97,7 +97,7 @@ Las siguientes actividades **no están autorizadas** con el MVP en su estado act
 
 | # | Brecha | Riesgo si no se resuelve | Requerido antes de dinero real | Responsable sugerido | Estado |
 |---|--------|--------------------------|-------------------------------|---------------------|--------|
-| S1 | **Revisión OWASP Top 10** | Vulnerabilidades conocidas (injection, XSS, IDOR, etc.) sin evaluar | Sí — crítico | Security Lead / auditor externo | `[ ]` |
+| S1 | **Revisión OWASP Top 10** | Vulnerabilidades conocidas (injection, XSS, IDOR, etc.) sin evaluar | Sí — crítico | Security Lead / auditor externo | `[~]` Fase 37: hardening HTTP básico (headers de seguridad). No reemplaza auditoría formal OWASP. Pendiente: revisión completa por Security Lead o auditor externo. |
 | S2 | **Manejo formal de secretos** | Claves y tokens en variables de entorno sin protección ni rotación | Sí — crítico | Responsable técnico | `[ ]` |
 | S3 | **Rotación de llaves JWT** | Tokens comprometidos sin mecanismo de invalidación masiva | Sí | Responsable técnico | `[ ]` |
 | S4 | **MFA para administradores** | Acceso administrativo protegido solo por contraseña | Sí | Responsable técnico | `[ ]` |

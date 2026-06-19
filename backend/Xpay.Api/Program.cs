@@ -120,6 +120,11 @@ if (enableRequestLogging)
     });
 }
 
+// Security headers básicos — no incluye CSP ni HSTS (ver docs/PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md)
+var enableSecurityHeaders = builder.Configuration.GetValue("SecurityHeaders:EnableSecurityHeaders", defaultValue: true);
+if (enableSecurityHeaders)
+    app.UseMiddleware<SecurityHeadersMiddleware>();
+
 // Swagger — habilitado por config (ApiDocs:EnableSwagger) o por defecto solo en Development
 var enableSwaggerConfig = builder.Configuration.GetValue<bool?>("ApiDocs:EnableSwagger");
 var enableSwagger       = enableSwaggerConfig ?? app.Environment.IsDevelopment();

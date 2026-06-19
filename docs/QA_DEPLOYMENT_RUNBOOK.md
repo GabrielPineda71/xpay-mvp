@@ -78,6 +78,10 @@ Configurar en **Azure App Service → Configuration → Application settings** u
 | `Observability__EnableRequestLogging` | Habilitar logging de requests HTTP | `true` | No (default true) | No |
 | `Observability__EnableCorrelationId` | Habilitar propagación de X-Correlation-ID | `true` | No (default true) | No |
 | `ApiDocs__EnableSwagger` | Habilitar Swagger UI y swagger.json | `true` en QA · `false` en producción | No (default: true en Development, false en otros) | No |
+| `SecurityHeaders__EnableSecurityHeaders` | Habilitar headers de seguridad HTTP básicos | `true` | No (default true) | No |
+| `SecurityHeaders__EnableNoStoreCache` | Agregar `Cache-Control: no-store` a respuestas | `true` | No (default true) | No |
+
+> CSP y HSTS no se configuran como variables de entorno en esta fase — ver nota en sección de smoke test.
 
 **Reglas críticas:**
 
@@ -315,6 +319,11 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 - [ ] `GET /api/diagnostics/ping` → HTTP 200 + campo `status: "OK"` (Fase 35)
 - [ ] Response de `/api/diagnostics/ping` incluye header `X-Correlation-ID` con valor no vacío
 - [ ] Los logs del backend muestran entradas con `CorrelationId` para cada request (revisar consola o log stream en Azure)
+- [ ] Response de `/api/diagnostics/ping` incluye `X-Content-Type-Options: nosniff` (Fase 37)
+- [ ] Response incluye `X-Frame-Options: DENY` (Fase 37)
+- [ ] Response incluye `Referrer-Policy: no-referrer` (Fase 37)
+
+> **CSP y HSTS:** no se configuran en esta fase. CSP requiere análisis para no romper Swagger UI; HSTS requiere HTTPS productivo. Ambos se definen en una fase posterior o a nivel de App Service / Front Door.
 
 > **Investigar errores por correlation ID:** al reportar un error, incluir el valor del header `X-Correlation-ID` de la respuesta. El responsable técnico puede buscar ese ID en los logs del backend para trazar el request completo.
 

@@ -416,6 +416,48 @@ Con Swagger deshabilitado, `/swagger` retorna 404. Los endpoints `/health`, `/ap
 
 ---
 
+## Headers básicos de seguridad
+
+El backend aplica headers de seguridad HTTP a todas las respuestas vía `SecurityHeadersMiddleware`. Se controlan con la sección `SecurityHeaders` en la configuración.
+
+**Headers aplicados:**
+
+| Header | Valor | Propósito |
+|--------|-------|-----------|
+| `X-Content-Type-Options` | `nosniff` | Evita que el browser interprete respuestas con tipo MIME incorrecto |
+| `X-Frame-Options` | `DENY` | Bloquea que la API sea embebida en un iframe |
+| `Referrer-Policy` | `no-referrer` | No envía información de referer en requests salientes |
+| `X-Permitted-Cross-Domain-Policies` | `none` | Bloquea acceso de clientes Flash/Acrobat a datos cross-domain |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=()` | Deshabilita acceso a hardware del dispositivo |
+| `Cache-Control` | `no-store, no-cache` *(si `EnableNoStoreCache: true`)* | Evita que respuestas de la API sean cacheadas |
+| `Pragma` | `no-cache` *(si `EnableNoStoreCache: true`)* | Compatibilidad cache para clientes HTTP/1.0 |
+
+**Configuración:**
+
+```json
+"SecurityHeaders": {
+  "EnableSecurityHeaders": true,
+  "EnableNoStoreCache": true
+}
+```
+
+Para deshabilitar en un ambiente: `SecurityHeaders__EnableSecurityHeaders=false` como variable de entorno.
+
+**Qué no se modificó:**
+
+- JWT: sin cambios en validación ni emisión de tokens.
+- CORS: sin cambios en orígenes, métodos ni headers permitidos.
+- Lógica financiera: sin cambios en ningún endpoint financiero.
+- Swagger configurable: sigue funcionando por `ApiDocs:EnableSwagger`.
+
+**Pendiente (fases posteriores):**
+
+- **Content-Security-Policy (CSP)**: requiere análisis detallado para no romper Swagger UI ni el frontend.
+- **HSTS**: requiere HTTPS productivo con certificado válido; no se activa en local ni QA básico.
+- **Revisión OWASP completa**: auditoría formal por Security Lead o auditor externo.
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

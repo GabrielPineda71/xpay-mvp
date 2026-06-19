@@ -940,4 +940,31 @@ PING_ECHO_CID=$(echo "$PING_ECHO_HEADERS" | grep -i "x-correlation-id:" | tr -d 
 ok "X-Correlation-ID echo → QA-CID-001 ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 35: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS, configuración QA, observabilidad básica y todos los endpoints OK ═══"
+
+# ════════════════════════════════════════════════════
+# FASE 37 — Security headers básicos
+# ════════════════════════════════════════════════════
+phase "FASE 37: Security headers — X-Content-Type-Options, X-Frame-Options, Referrer-Policy"
+
+SEC_HEADERS=$(curl -si --max-time 15 "$API_URL/api/diagnostics/ping")
+
+# 37.1 X-Content-Type-Options: nosniff
+XCTO=$(echo "$SEC_HEADERS" | grep -i "^x-content-type-options:" | tr -d '\r' | awk '{print $2}')
+[[ "$XCTO" == "nosniff" ]] \
+  || fail "X-Content-Type-Options esperado 'nosniff', obtenido '${XCTO:-ausente}' — verificar SecurityHeaders:EnableSecurityHeaders=true"
+ok "X-Content-Type-Options: nosniff ✓"
+
+# 37.2 X-Frame-Options: DENY
+XFO=$(echo "$SEC_HEADERS" | grep -i "^x-frame-options:" | tr -d '\r' | awk '{print $2}')
+[[ "$XFO" == "DENY" ]] \
+  || fail "X-Frame-Options esperado 'DENY', obtenido '${XFO:-ausente}'"
+ok "X-Frame-Options: DENY ✓"
+
+# 37.3 Referrer-Policy: no-referrer
+RP=$(echo "$SEC_HEADERS" | grep -i "^referrer-policy:" | tr -d '\r' | awk '{print $2}')
+[[ "$RP" == "no-referrer" ]] \
+  || fail "Referrer-Policy esperado 'no-referrer', obtenido '${RP:-ausente}'"
+ok "Referrer-Policy: no-referrer ✓"
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 37: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS, configuración QA, observabilidad básica, security headers y todos los endpoints OK ═══"
