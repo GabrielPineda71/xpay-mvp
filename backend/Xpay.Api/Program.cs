@@ -120,8 +120,16 @@ if (enableRequestLogging)
     });
 }
 
-app.UseSwagger();
-app.UseSwaggerUI();
+// Swagger — habilitado por config (ApiDocs:EnableSwagger) o por defecto solo en Development
+var enableSwaggerConfig = builder.Configuration.GetValue<bool?>("ApiDocs:EnableSwagger");
+var enableSwagger       = enableSwaggerConfig ?? app.Environment.IsDevelopment();
+
+if (enableSwagger)
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
 app.UseHttpsRedirection();
 app.UseCors("FrontendCorsPolicy");   // antes de autenticación — requerido para preflight
 app.UseAuthentication();

@@ -670,12 +670,12 @@ STATUS_VERSION_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   || fail "/api/version sin token esperado 200 (no debe exigir JWT), obtenido $STATUS_VERSION_NOAUTH"
 ok "/api/version es público (no requiere JWT) ✓"
 
-# 9.5 GET /swagger/index.html → 200
-info "GET /swagger/index.html → debe retornar 200"
+# 9.5 GET /swagger/index.html → 200 (Swagger habilitado en CI/QA vía ApiDocs:EnableSwagger=true)
+info "GET /swagger/index.html → debe retornar 200 (Swagger esperado habilitado en CI/QA)"
 STATUS_SWAGGER_UI=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   "$API_URL/swagger/index.html")
 [[ "$STATUS_SWAGGER_UI" == "200" ]] \
-  || fail "GET /swagger/index.html esperado 200, obtenido $STATUS_SWAGGER_UI"
+  || fail "GET /swagger/index.html esperado 200 — verificar que ApiDocs:EnableSwagger=true en el ambiente CI/QA, obtenido $STATUS_SWAGGER_UI"
 ok "GET /swagger/index.html → 200 ✓"
 
 # 9.6 GET /swagger/v1/swagger.json → 200 + contiene "Bearer"
@@ -683,7 +683,7 @@ info "GET /swagger/v1/swagger.json → debe retornar 200 y contener definición 
 STATUS_SWAGGER_JSON=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   "$API_URL/swagger/v1/swagger.json")
 [[ "$STATUS_SWAGGER_JSON" == "200" ]] \
-  || fail "GET /swagger/v1/swagger.json esperado 200, obtenido $STATUS_SWAGGER_JSON"
+  || fail "GET /swagger/v1/swagger.json esperado 200 — verificar ApiDocs:EnableSwagger=true, obtenido $STATUS_SWAGGER_JSON"
 SWAGGER_JSON=$(get_json "$API_URL/swagger/v1/swagger.json") \
   || fail "GET /swagger/v1/swagger.json no respondió"
 echo "$SWAGGER_JSON" | grep -qi "bearer" \

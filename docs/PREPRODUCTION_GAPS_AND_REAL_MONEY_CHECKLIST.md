@@ -106,7 +106,7 @@ Las siguientes actividades **no están autorizadas** con el MVP en su estado act
 | S7 | **Protección contra fuerza bruta** | El endpoint de login no tiene rate limiting ni bloqueo por intentos fallidos | Sí | Responsable técnico | `[ ]` |
 | S8 | **Hardening de CORS** | Configuración actual puede ser demasiado permisiva para producción | Sí | Responsable técnico | `[ ]` |
 | S9 | **HTTPS obligatorio** | Sin certificado SSL/TLS en el ambiente de piloto local; requerido en cualquier ambiente expuesto | Sí — crítico | Responsable técnico + Ops | `[ ]` |
-| S10 | **Revisión de exposición de Swagger** | Swagger en producción expone toda la API públicamente | Sí | Responsable técnico | `[ ]` |
+| S10 | **Revisión de exposición de Swagger** | Swagger en producción expone toda la API públicamente | Sí | Responsable técnico | `[~]` Fase 36: configurable vía `ApiDocs:EnableSwagger`; deshabilitado por defecto fuera de Development. Pendiente: política formal, auth adicional si se expone en preprod, decisión final antes de dinero real. |
 | S11 | **Política de sesiones** | Sin tiempo máximo de sesión, sin invalidación de sesiones antiguas al cambiar contraseña | Sí | Responsable técnico | `[ ]` |
 | S12 | **Análisis de vulnerabilidades** | Sin escaneo de dependencias ni análisis de código estático formal | Sí | Security Lead / herramienta automatizada | `[ ]` |
 

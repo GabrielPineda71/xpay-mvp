@@ -75,6 +75,9 @@ Configurar en **Azure App Service → Configuration → Application settings** u
 | `Api__Name` | Nombre de la API (visible en `/api/version`) | `XPAY API QA` | Sí | No |
 | `Api__Version` | Versión de la API (visible en `/api/version`) | `0.1.0-mvp-qa` | Sí | No |
 | `Cors__AllowedOrigins__0` | Origen del frontend QA permitido por CORS | `https://xpay-admin-qa.azurewebsites.net` | Sí | No |
+| `Observability__EnableRequestLogging` | Habilitar logging de requests HTTP | `true` | No (default true) | No |
+| `Observability__EnableCorrelationId` | Habilitar propagación de X-Correlation-ID | `true` | No (default true) | No |
+| `ApiDocs__EnableSwagger` | Habilitar Swagger UI y swagger.json | `true` en QA · `false` en producción | No (default: true en Development, false en otros) | No |
 
 **Reglas críticas:**
 
@@ -296,7 +299,7 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 
 - [ ] `GET /health` → HTTP 200
 - [ ] `GET /api/version` → HTTP 200, nombre y versión correctos
-- [ ] `/swagger` → UI carga con botón Authorize
+- [ ] `/swagger` → UI carga con botón Authorize *(solo si `ApiDocs__EnableSwagger=true`; en producción debe estar deshabilitado)*
 - [ ] Login con usuario de prueba → redirige a `/dashboard`
 - [ ] `GET /api/wallets/persona/1` sin token → **HTTP 401** (no 200, no 500)
 - [ ] Dashboard carga con métricas y 3 tablas sin errores

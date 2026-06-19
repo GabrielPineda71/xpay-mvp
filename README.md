@@ -395,6 +395,27 @@ No expone: connection string, JWT key, variables de entorno completas ni detalle
 
 ---
 
+## Swagger / API Docs por ambiente
+
+Swagger se habilita o deshabilita con la clave `ApiDocs:EnableSwagger`. Si la clave no existe, el backend usa `true` solo en `Development` y `false` en cualquier otro ambiente.
+
+| Ambiente | Configuración | Resultado |
+|----------|--------------|-----------|
+| Local / Development | `ApiDocs:EnableSwagger: true` (appsettings.json) | Swagger activo |
+| QA | `ApiDocs:EnableSwagger: true` (appsettings.QA.example.json) | Swagger activo |
+| Preproducción / Producción | `ApiDocs__EnableSwagger=false` (variable de entorno) | Swagger deshabilitado |
+
+**Deshabilitar en producción:**
+
+```bash
+# Azure App Service → Configuration → Application settings
+ApiDocs__EnableSwagger = false
+```
+
+Con Swagger deshabilitado, `/swagger` retorna 404. Los endpoints `/health`, `/api/version` y `/api/diagnostics/ping` **no dependen de Swagger** y siguen disponibles en todos los ambientes.
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.
