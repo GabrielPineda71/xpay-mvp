@@ -153,6 +153,20 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
+// HTTPS / HSTS — configurable por ambiente (Fase 46)
+var httpsSection           = builder.Configuration.GetSection("Https");
+var enableHttpsRedirection = httpsSection.GetValue("EnableHttpsRedirection", defaultValue: true);
+var enableHsts             = httpsSection.GetValue("EnableHsts",              defaultValue: false);
+var hstsMaxAgeDays         = httpsSection.GetValue("HstsMaxAgeDays",          defaultValue: 30);
+if (hstsMaxAgeDays <= 0) hstsMaxAgeDays = 30;
+
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge            = TimeSpan.FromDays(hstsMaxAgeDays);
+    options.Preload           = false;
+    options.IncludeSubDomains = false;
+});
+
 var app = builder.Build();
 
 // Startup: log CORS origins (no son secretos — son URLs públicas del frontend)
@@ -195,7 +209,7 @@ if (enableRequestLogging)
     });
 }
 
-// Security headers básicos — no incluye CSP ni HSTS (ver docs/PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md)
+// Security headers básicos — no incluye CSP (HSTS gestionado vía Https:EnableHsts; ver docs/PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md)
 var enableSecurityHeaders = builder.Configuration.GetValue("SecurityHeaders:EnableSecurityHeaders", defaultValue: true);
 if (enableSecurityHeaders)
     app.UseMiddleware<SecurityHeadersMiddleware>();
@@ -210,7 +224,11 @@ if (enableSwagger)
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// HTTPS/HSTS — HSTS nunca activo en Development aunque la config lo pida
+if (enableHsts && !app.Environment.IsDevelopment())
+    app.UseHsts();
+if (enableHttpsRedirection)
+    app.UseHttpsRedirection();
 app.UseCors("FrontendCorsPolicy");   // antes de autenticación — requerido para preflight
 if (enableRateLimiting)
     app.UseRateLimiter();            // después de CORS, antes de autenticación

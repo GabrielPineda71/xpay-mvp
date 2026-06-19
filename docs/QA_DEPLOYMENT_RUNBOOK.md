@@ -88,8 +88,11 @@ Configurar en **Azure App Service → Configuration → Application settings** u
 | `Audit__EnableAuditLogs` | Habilitar auditoría básica por logs (ILogger) | `true` | No (default true) | No |
 | `ErrorHandling__EnableGlobalErrorHandler` | Habilitar middleware de manejo global de errores (JSON 500 seguro) | `true` | No (default true) | No |
 | `Diagnostics__EnableErrorTestEndpoint` | Habilitar endpoint diagnóstico `/api/diagnostics/error-test` | `true` en QA · **`false` en producción** | No (default false) | No |
+| `Https__EnableHttpsRedirection` | Habilitar redirección automática HTTP → HTTPS | `true` | No (default true) | No |
+| `Https__EnableHsts` | Habilitar HSTS (`Strict-Transport-Security`); bloqueado en Development | `false` · **`true` en producción con TLS válido** | No (default false) | No |
+| `Https__HstsMaxAgeDays` | Max-Age de HSTS en días | `30` | No (default 30) | No |
 
-> CSP y HSTS no se configuran como variables de entorno en esta fase — ver nota en sección de smoke test.
+> **HSTS** se configura con `Https__EnableHsts=true` + `Https__HstsMaxAgeDays=<días>`. Activar solo en ambientes HTTPS reales con certificado TLS válido — nunca en Development. CSP no está implementado aún (ver `docs/PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md`).
 
 **Reglas críticas:**
 
@@ -347,6 +350,9 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 - [ ] Escaneo de dependencias ejecutado: `bash scripts/scan-dependencies-security.sh` desde raíz del repo (Fase 43)
 - [ ] Workflow **Dependency Security Scan** en verde (`success`) en GitHub Actions para el commit a desplegar (Fase 45)
 - [ ] Si exit code 1 o workflow falla: hallazgos registrados y decisión de riesgo documentada antes de continuar
+- [ ] `UseHttpsRedirection` activa: request HTTP al backend redirige a HTTPS (verificar en Azure App Service con `curl -I http://...` y observar 301/302 a `https://`) (Fase 46)
+- [ ] Si `Https__EnableHsts=true` en ambiente HTTPS real: response incluye `Strict-Transport-Security: max-age=<días>` sin `preload` ni `includeSubDomains` (Fase 46)
+- [ ] En Development (`ASPNETCORE_ENVIRONMENT=Development`): HSTS no se activa aunque `Https__EnableHsts=true` en config (garantizado por código; no requiere smoke test manual)
 - [ ] Si High/Critical: no avanzar a dinero real sin aprobación explícita del Security Lead y corrección o aceptación formal firmada
 - [ ] Si solo Moderate/Low: registrar decisión de riesgo aceptado con justificación y firma del Security Lead
 - [ ] Salida del script o enlace al run de GitHub Actions adjuntada como evidencia en el package de QA/preproducción

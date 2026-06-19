@@ -453,8 +453,51 @@ Para deshabilitar en un ambiente: `SecurityHeaders__EnableSecurityHeaders=false`
 **Pendiente (fases posteriores):**
 
 - **Content-Security-Policy (CSP)**: requiere análisis detallado para no romper Swagger UI ni el frontend.
-- **HSTS**: requiere HTTPS productivo con certificado válido; no se activa en local ni QA básico.
+- **HSTS activado en producción**: `Https__EnableHsts=true` con certificado TLS válido; evaluación de `preload` e `includeSubDomains` pendiente de revisión formal.
 - **Revisión OWASP completa**: auditoría formal por Security Lead o auditor externo.
+
+---
+
+## HTTPS y HSTS por ambiente
+
+El backend hace `UseHttpsRedirection` y HSTS configurables por ambiente vía la sección `Https` en la configuración.
+
+**Configuración:**
+
+```json
+"Https": {
+  "EnableHttpsRedirection": true,
+  "EnableHsts": false,
+  "HstsMaxAgeDays": 30
+}
+```
+
+| Clave | Default | Descripción |
+|-------|---------|-------------|
+| `EnableHttpsRedirection` | `true` | Redirige HTTP → HTTPS automáticamente |
+| `EnableHsts` | `false` | Envía header `Strict-Transport-Security` (solo fuera de Development) |
+| `HstsMaxAgeDays` | `30` | Max-Age del header HSTS en días |
+
+**Reglas de seguridad implementadas:**
+
+- HSTS **nunca** se activa en `Development` aunque la configuración lo pida (`!app.Environment.IsDevelopment()` guard en código).
+- Sin `preload` ni `includeSubDomains` hasta revisión formal del dominio productivo.
+- `AddHsts` registrado en servicios con los valores de la config; deshabilitado por defecto hasta confirmar TLS válido en el ambiente destino.
+
+**Variables de entorno (QA/Producción):**
+
+| Variable | Valor QA | Valor Producción |
+|----------|----------|-----------------|
+| `Https__EnableHttpsRedirection` | `true` | `true` |
+| `Https__EnableHsts` | `false` (hasta TLS confirmado) | `true` |
+| `Https__HstsMaxAgeDays` | `30` | `365` *(después de estabilización)* |
+
+**Qué no se modificó:**
+
+- Lógica financiera: sin cambios.
+- JWT, CORS, rate limiting: sin cambios.
+- `SecurityHeadersMiddleware`: sin cambios.
+- Frontend funcional: sin cambios.
 
 ---
 
