@@ -458,6 +458,68 @@ Para deshabilitar en un ambiente: `SecurityHeaders__EnableSecurityHeaders=false`
 
 ---
 
+## Manejo global de errores seguro
+
+`ErrorHandlingMiddleware` captura cualquier excepción no controlada y devuelve una respuesta JSON consistente con HTTP 500. Se ubica en el pipeline después de `CorrelationIdMiddleware` para tener el `correlationId` disponible.
+
+**Formato de respuesta 500:**
+
+```json
+{
+  "success": false,
+  "error": "internal_server_error",
+  "message": "An unexpected error occurred.",
+  "correlationId": "<guid>"
+}
+```
+
+**Qué NO se expone:**
+
+- Stack trace
+- `exception.Message`
+- Inner exceptions
+- Connection strings
+- Detalles de infraestructura
+- Datos de usuario, tokens, headers de request
+
+**Correlation ID:** incluido en el body de la respuesta 500 y también en el header `X-Correlation-ID` (puesto por `CorrelationIdMiddleware` antes del error handler). Permite al equipo técnico buscar el error completo en los logs del backend.
+
+**Errores controlados no se modifican:** errores 400/401/404 retornados explícitamente por los controladores continúan funcionando igual. El middleware solo actúa sobre excepciones que escapan del controlador.
+
+**Endpoint de diagnóstico:**
+
+```
+GET /api/diagnostics/error-test
+```
+
+Disponible cuando `Diagnostics:EnableErrorTestEndpoint = true`. Lanza una excepción intencional para verificar que el middleware responde correctamente con JSON 500 genérico.
+
+**Configuración:**
+
+```json
+"ErrorHandling": {
+  "EnableGlobalErrorHandler": true
+},
+"Diagnostics": {
+  "EnableErrorTestEndpoint": true
+}
+```
+
+Variables de entorno:
+
+```bash
+ErrorHandling__EnableGlobalErrorHandler = true
+Diagnostics__EnableErrorTestEndpoint    = false   # obligatorio en producción
+```
+
+**Posición en el pipeline:**
+
+```
+CorrelationIdMiddleware → ErrorHandlingMiddleware → RequestLogging → SecurityHeaders → CORS → Auth → Controllers
+```
+
+---
+
 ## Auditoría básica por logs
 
 El backend registra eventos sensibles mediante `AuditLogService` usando `ILogger`. Todos los eventos incluyen `correlationId` del request y se pueden filtrar por la marca `audit=True` o el prefijo `AUDIT` en los logs.

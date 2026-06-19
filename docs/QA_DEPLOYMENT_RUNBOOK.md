@@ -85,6 +85,8 @@ Configurar en **Azure App Service → Configuration → Application settings** u
 | `RateLimiting__LoginWindowSeconds` | Duración de la ventana de rate limiting (segundos) | `60` | No (default 60) | No |
 | `RateLimiting__LoginQueueLimit` | Requests en cola cuando se supera el límite | `0` | No (default 0) | No |
 | `Audit__EnableAuditLogs` | Habilitar auditoría básica por logs (ILogger) | `true` | No (default true) | No |
+| `ErrorHandling__EnableGlobalErrorHandler` | Habilitar middleware de manejo global de errores (JSON 500 seguro) | `true` | No (default true) | No |
+| `Diagnostics__EnableErrorTestEndpoint` | Habilitar endpoint diagnóstico `/api/diagnostics/error-test` | `true` en QA · **`false` en producción** | No (default false) | No |
 
 > CSP y HSTS no se configuran como variables de entorno en esta fase — ver nota en sección de smoke test.
 
@@ -337,7 +339,12 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 - [ ] Preflight CORS desde frontend QA (`OPTIONS /api/auth/login -H "Origin: https://xpay-admin-qa.azurewebsites.net"`) devuelve `Access-Control-Allow-Origin: https://xpay-admin-qa.azurewebsites.net` (Fase 40)
 - [ ] Preflight CORS desde origen desconocido (`Origin: https://evil.example.com`) NO devuelve ese origen en `Access-Control-Allow-Origin` (Fase 40)
 - [ ] Los logs de arranque del backend contienen entrada `CORS: FrontendCorsPolicy — allowed origins:` con la URL QA correcta (Fase 40)
+- [ ] `GET /api/diagnostics/error-test` responde HTTP 500 (Fase 41 — requiere `Diagnostics__EnableErrorTestEndpoint=true`)
+- [ ] El body del 500 contiene `"error":"internal_server_error"` y un `correlationId` no vacío (Fase 41)
+- [ ] El body del 500 NO contiene stack trace, mensaje de excepción interno ni detalles de infraestructura (Fase 41)
+- [ ] El header `X-Correlation-ID` está presente en la respuesta 500 (Fase 41)
 
+> **Error handling en QA (Fase 41):** en producción, configurar `Diagnostics__EnableErrorTestEndpoint=false` para deshabilitar el endpoint de prueba. El middleware `ErrorHandlingMiddleware` sigue activo para capturar excepciones reales; solo el endpoint de test se deshabilita. Si se requiere debugging local, `ErrorHandling__EnableGlobalErrorHandler=false` solo en sesión autorizada.
 > **CORS en QA (Fase 40):** si el frontend no puede conectarse, revisar CORS antes de tocar JWT o endpoints. Verificar `Cors__AllowedOrigins__0` en Azure App Settings. Si el backend no arranca (503), puede ser que la variable esté ausente — el backend lanza excepción al inicio si no hay orígenes configurados en no-Development.
 > **Auditoría en logs QA:** filtrar por `AUDIT` en la consola del backend o log stream de Azure App Service. Búsqueda alternativa: `grep '"audit":true'` o `grep 'event=LOGIN'`. La ausencia de estos eventos con `Audit__EnableAuditLogs=true` es un defecto bloqueante.
 > **Rate limiting en QA:** si aparece HTTP 429 en pruebas manuales o CI, verificar que el volumen de llamadas no supera `RateLimiting__LoginPermitLimit` en la ventana de `RateLimiting__LoginWindowSeconds`. Ajustar los valores vía variable de entorno sin deshabilitar completamente.

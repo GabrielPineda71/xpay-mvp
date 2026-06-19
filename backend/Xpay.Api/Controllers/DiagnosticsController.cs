@@ -15,9 +15,6 @@ public class DiagnosticsController : ControllerBase
         _config = config;
     }
 
-    /// <summary>
-    /// Diagnóstico básico: responde OK sin exponer secretos ni datos de infraestructura.
-    /// </summary>
     [HttpGet("ping")]
     public IActionResult Ping()
     {
@@ -33,5 +30,17 @@ public class DiagnosticsController : ControllerBase
             timestamp     = DateTime.UtcNow,
             correlationId
         });
+    }
+
+    // Endpoint diagnóstico para validar ErrorHandlingMiddleware en CI/QA.
+    // En producción: Diagnostics__EnableErrorTestEndpoint=false.
+    [HttpGet("error-test")]
+    public IActionResult ErrorTest()
+    {
+        var enabled = _config.GetValue("Diagnostics:EnableErrorTestEndpoint", defaultValue: false);
+        if (!enabled)
+            return NotFound(new { success = false, message = "Not found." });
+
+        throw new InvalidOperationException("Intentional diagnostics error test.");
     }
 }

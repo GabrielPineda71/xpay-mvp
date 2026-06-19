@@ -1038,4 +1038,50 @@ CORS40_EVIL=$(echo "$CORS40_EVIL_RESPONSE" | grep -i "access-control-allow-origi
 ok "CORS origen no permitido → sin Access-Control-Allow-Origin: https://evil.example.com ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 40: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica y todos los endpoints OK ═══"
+
+# ════════════════════════════════════════════════════
+# FASE 41 — Manejo global de errores seguro
+# ════════════════════════════════════════════════════
+phase "FASE 41: Error handling global — JSON 500 seguro sin stack trace"
+
+# 41.1 GET /api/diagnostics/error-test → HTTP 500
+info "GET /api/diagnostics/error-test → debe retornar HTTP 500 con JSON seguro"
+ERR41_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/diagnostics/error-test")
+[[ "$ERR41_STATUS" == "500" ]] \
+  || fail "error-test esperado 500, obtenido $ERR41_STATUS — verificar Diagnostics:EnableErrorTestEndpoint=true"
+ok "error-test → HTTP 500 ✓"
+
+# 41.2 Verificar campos JSON del cuerpo
+ERR41_BODY=$(curl -s --max-time 15 "$API_URL/api/diagnostics/error-test")
+
+ERR41_SUCCESS=$(echo "$ERR41_BODY" | jq -r '.success')
+[[ "$ERR41_SUCCESS" == "false" ]] \
+  || fail "error-test: success esperado false, obtenido '$ERR41_SUCCESS'"
+ok "error-test JSON → success=false ✓"
+
+ERR41_CODE=$(echo "$ERR41_BODY" | jq -r '.error')
+[[ "$ERR41_CODE" == "internal_server_error" ]] \
+  || fail "error-test: error esperado 'internal_server_error', obtenido '$ERR41_CODE'"
+ok "error-test JSON → error=internal_server_error ✓"
+
+ERR41_CID=$(echo "$ERR41_BODY" | jq -r '.correlationId')
+[[ -n "$ERR41_CID" && "$ERR41_CID" != "null" ]] \
+  || fail "error-test: correlationId vacío o null en body 500"
+ok "error-test JSON → correlationId presente: $ERR41_CID ✓"
+
+# 41.3 Body NO debe contener stack trace ni mensaje interno
+ERR41_LEAK=$(echo "$ERR41_BODY" | grep -i "Intentional\|StackTrace\|Exception\|InnerException" || true)
+[[ -z "$ERR41_LEAK" ]] \
+  || fail "error-test: body contiene información interna: $ERR41_LEAK"
+ok "error-test → sin stack trace ni mensaje interno ✓"
+
+# 41.4 X-Correlation-ID presente en headers de la respuesta 500
+ERR41_XCID=$(curl -si --max-time 15 "$API_URL/api/diagnostics/error-test" \
+  | grep -i "x-correlation-id:" | tr -d '\r' | awk '{print $2}' || true)
+[[ -n "$ERR41_XCID" ]] \
+  || fail "error-test: header X-Correlation-ID ausente en respuesta 500"
+ok "error-test → X-Correlation-ID: $ERR41_XCID presente en headers ✓"
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 41: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica, error handling global y todos los endpoints OK ═══"

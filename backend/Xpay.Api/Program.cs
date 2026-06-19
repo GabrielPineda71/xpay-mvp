@@ -159,11 +159,16 @@ app.Logger.LogInformation(
     string.Join(", ", corsOrigins));
 
 // Correlation ID — debe ir primero para que todos los logs del request tengan el scope
-var enableCorrelationId   = builder.Configuration.GetValue("Observability:EnableCorrelationId",   defaultValue: true);
-var enableRequestLogging  = builder.Configuration.GetValue("Observability:EnableRequestLogging",  defaultValue: true);
+var enableCorrelationId      = builder.Configuration.GetValue("Observability:EnableCorrelationId",             defaultValue: true);
+var enableRequestLogging     = builder.Configuration.GetValue("Observability:EnableRequestLogging",             defaultValue: true);
+var enableGlobalErrorHandler = builder.Configuration.GetValue("ErrorHandling:EnableGlobalErrorHandler",        defaultValue: true);
 
 if (enableCorrelationId)
     app.UseMiddleware<CorrelationIdMiddleware>();
+
+// Error handling global — después de CorrelationId (correlationId disponible) y antes de todo lo demás
+if (enableGlobalErrorHandler)
+    app.UseMiddleware<ErrorHandlingMiddleware>();
 
 // Request logging básico — no registra Authorization, body, passwords ni connection strings
 if (enableRequestLogging)
