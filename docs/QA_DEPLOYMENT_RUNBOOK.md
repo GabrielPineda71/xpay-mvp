@@ -344,6 +344,10 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 - [ ] El body del 500 contiene `"error":"internal_server_error"` y un `correlationId` no vacío (Fase 41)
 - [ ] El body del 500 NO contiene stack trace, mensaje de excepción interno ni detalles de infraestructura (Fase 41)
 - [ ] El header `X-Correlation-ID` está presente en la respuesta 500 (Fase 41)
+- [ ] Escaneo de dependencias ejecutado: `bash scripts/scan-dependencies-security.sh` desde raíz del repo (Fase 43)
+- [ ] Si exit code 1: hallazgos registrados y decisión de riesgo documentada antes de continuar
+- [ ] Si High/Critical: no avanzar a dinero real sin aprobación explícita del Security Lead
+- [ ] Salida del script adjuntada como evidencia en el package de QA/preproducción
 
 > **Error handling en QA (Fase 41):** en producción, configurar `Diagnostics__EnableErrorTestEndpoint=false` para deshabilitar el endpoint de prueba. El middleware `ErrorHandlingMiddleware` sigue activo para capturar excepciones reales; solo el endpoint de test se deshabilita. Si se requiere debugging local, `ErrorHandling__EnableGlobalErrorHandler=false` solo en sesión autorizada.
 > **CORS en QA (Fase 40):** si el frontend no puede conectarse, revisar CORS antes de tocar JWT o endpoints. Verificar `Cors__AllowedOrigins__0` en Azure App Settings. Si el backend no arranca (503), puede ser que la variable esté ausente — el backend lanza excepción al inicio si no hay orígenes configurados en no-Development.

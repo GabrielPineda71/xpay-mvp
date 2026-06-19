@@ -520,6 +520,43 @@ CorrelationIdMiddleware → ErrorHandlingMiddleware → RequestLogging → Secur
 
 ---
 
+## Escaneo básico de dependencias vulnerables
+
+```bash
+bash scripts/scan-dependencies-security.sh
+```
+
+Ejecutar desde la raíz del repositorio. Requiere .NET SDK y Node.js instalados.
+
+**Qué revisa:**
+
+- Dependencias NuGet del backend: `dotnet list package --vulnerable --include-transitive`
+- Dependencias npm del frontend: `npm audit --audit-level=moderate`
+
+**Qué NO hace:**
+
+- No corrige dependencias automáticamente
+- No ejecuta `npm audit fix` ni `npm audit fix --force`
+- No ejecuta `dotnet add package`
+- No reemplaza SAST, DAST ni auditoría externa formal
+- No reemplaza una revisión de seguridad para dinero real
+
+**Exit codes:**
+
+| Código | Significado |
+|--------|-------------|
+| `0` | Sin vulnerabilidades Moderate/High/Critical detectadas |
+| `1` | Vulnerabilidades encontradas — revisar antes de preproducción |
+| `2` | Error de ejecución (herramienta faltante o repo mal posicionado) |
+
+**Cuándo ejecutar:**
+
+- Antes de cualquier despliegue a QA
+- Antes de iniciar el piloto con dinero real
+- Después de actualizar cualquier dependencia
+
+---
+
 ## Política básica de sesión JWT
 
 Los tokens JWT se generan con duración y clock skew configurables. `ValidateLifetime` y `ValidateIssuerSigningKey` están activos.
