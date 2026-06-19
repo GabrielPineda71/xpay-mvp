@@ -390,24 +390,43 @@ Ejecutar después del smoke test para confirmar integridad del sistema financier
 
 ## 11. Rollback básico
 
-No existe una estrategia de rollback productiva automatizada en esta versión. Las siguientes acciones son para el ambiente QA únicamente.
+> **Referencia completa:** para la estrategia formal de rollback con criterios de activación (R1–R13), matriz rollback/fix-forward, procedimientos por componente y plantilla de acta, consultar **`docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md`**.
+
+Las siguientes acciones son guía rápida para el ambiente QA. En caso de incidente Critical o High, usar el runbook completo.
+
+### Pre-deploy: checklist de rollback readiness
+
+Completar antes de cada deploy en QA o piloto:
+
+- [ ] Identificar el último commit estable con los 3 GitHub Actions en `success`
+- [ ] Anotar el SHA del commit estable como punto de rollback
+- [ ] Exportar/capturar snapshot de App Settings de Azure antes del deploy (`az webapp config appsettings list ...` o export desde Azure Portal) — **no versionar en git**
+- [ ] Confirmar que los artefactos backend (`artifacts/backend-qa`) y frontend (`artifacts/frontend-qa`) del commit estable están disponibles o pueden reconstruirse rápidamente
+- [ ] Confirmar rollback owner: responsable técnico disponible durante el deploy
+- [ ] Leer `docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md` sección 4 (criterios) y sección 5 (matriz) antes del deploy
 
 ### Si el backend falla al arrancar o tras el despliegue
 
 1. Revisar logs en Azure Portal: `xpay-api-qa` → Log stream.
 2. Verificar variables de entorno (sección 4): JWT Key ≥ 32 chars, Connection String correcta.
-3. Si el problema es de código: redeployar el commit anterior.
+3. Si el problema es de código y no tiene fix inmediato: redeployar el commit estable identificado en el pre-deploy checklist.
    ```bash
-   git checkout <commit-anterior>
-   dotnet publish backend/Xpay.Api/Xpay.Api.csproj -c Release -o ./publish
-   # Repetir deploy zip
+   git checkout <sha-commit-estable>
+   dotnet publish backend/Xpay.Api/Xpay.Api.csproj -c Release -o ./publish-rollback
+   cd publish-rollback && zip -r ../xpay-rollback.zip . && cd ..
+   az webapp deploy --resource-group rg-xpay-qa --name xpay-api-qa \
+     --src-path xpay-rollback.zip --type zip
+   git checkout main
    ```
+4. Validar con los probes de la sección 9 y con `GET /api/diagnostics/ready`.
+5. Registrar el rollback en el acta (plantilla en `docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md` sección 11).
 
 ### Si el frontend falla o apunta al backend incorrecto
 
 1. Verificar `VITE_API_BASE_URL` en el `.env` antes del build.
 2. Reconstruir con la URL correcta y redesplegar `dist/`.
 3. Limpiar caché del navegador (`Ctrl+Shift+R`) antes de verificar.
+4. Si el fallo persiste: redeployar el artefacto `artifacts/frontend-qa` del commit estable.
 
 ### Si una migración SQL falla
 
@@ -430,6 +449,7 @@ No existe una estrategia de rollback productiva automatizada en esta versión. L
 3. Guardar y reiniciar el App Service.
 
 > **Para QA:** siempre tomar un backup del estado de la BD antes de ejecutar migraciones si hay datos de prueba valiosos. Azure SQL permite crear backups desde el portal con un clic.
+> **Regla crítica:** el rollback técnico **no revierte operaciones financieras ya ejecutadas**. Si hubo operaciones durante el periodo con código defectuoso, notificar al responsable financiero antes de declarar el incidente cerrado.
 
 ---
 
@@ -449,6 +469,10 @@ Completar todos los ítems antes de comunicar al equipo QA que el ambiente está
 - [ ] Copia de `docs/QA_EXECUTION_TEMPLATE.md` preparada para registrar la ejecución real
 - [ ] `docs/RELEASE_QA_CANDIDATE.md` revisado: responsable técnico confirma que el alcance es correcto
 - [ ] Responsable técnico firma/aprueba formalmente el inicio de pruebas
+- [ ] SHA del commit estable anotado como punto de rollback: `____________`
+- [ ] Snapshot de App Settings exportado y guardado en ubicación segura (no en git)
+- [ ] Rollback owner identificado y disponible durante las pruebas QA
+- [ ] `docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md` revisado por el responsable técnico (Fase 48)
 
 ---
 

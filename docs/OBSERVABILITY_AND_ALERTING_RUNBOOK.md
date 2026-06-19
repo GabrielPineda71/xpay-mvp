@@ -161,6 +161,8 @@ Si el incidente correlaciona con un deploy reciente:
 3. Verificar que los 3 workflows de GitHub Actions están en `success` para el commit de rollback.
 4. Re-ejecutar smoke test (`bash scripts/validate-backend.sh` si hay ambiente local, o los probes manuales en QA).
 
+> Cuando el incidente sea **Critical o High** y afecte disponibilidad, seguridad o finanzas, usar la matriz de decisión rollback/fix-forward y el procedimiento completo documentado en **`docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md`** (criterios R1–R13, pasos por componente, plantilla de acta de rollback).
+
 ### Paso 7 — Escalar
 
 Si el incidente no se resuelve en el tiempo objetivo:

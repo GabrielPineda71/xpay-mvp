@@ -882,6 +882,30 @@ El backend expone endpoints operativos para probes de uptime y readiness. Los cr
 
 ---
 
+## Rollback técnico y recuperación
+
+La estrategia de rollback técnico para backend, frontend y configuración está documentada en **[docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md](docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md)**.
+
+**Cuándo usarlo:**
+
+- `Backend Validation` CI falla después de un deploy.
+- `/health` o `/api/diagnostics/ready` no responde HTTP 200.
+- Login roto, endpoint protegido expuesto, CORS o JWT rotos.
+- Error 5xx sostenido, operaciones financieras principales fallan.
+- Exposición de secretos o datos sensibles detectada.
+
+**Relación con GitHub Actions:** antes de hacer rollback, confirmar qué commit tiene los 3 workflows (`Backend Validation`, `Frontend Build`, `Dependency Security Scan`) en `success` — ese es el objetivo del rollback.
+
+**Reglas críticas:**
+
+- **El rollback técnico no revierte operaciones financieras ya ejecutadas.** Si hubo pagos, recargas o retiros durante el periodo con código defectuoso, el responsable financiero debe evaluarlos por separado con auditoría antes de declarar el incidente cerrado.
+- **No hacer rollback de base de datos sin plan específico.** Las migraciones SQL son acumulativas; un rollback de schema puede corromper datos contables. Ver T4 en `docs/PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md`.
+- **Antes de cada deploy en QA:** conservar snapshot de App Settings de Azure como evidencia. Nunca versionar ese snapshot en git (puede contener secretos).
+
+**No crea recursos cloud ni usa secretos.** El rollback real en Azure QA es el próximo paso antes de considerar rollback en producción.
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.
