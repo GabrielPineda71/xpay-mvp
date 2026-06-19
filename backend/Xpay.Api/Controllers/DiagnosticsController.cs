@@ -32,6 +32,25 @@ public class DiagnosticsController : ControllerBase
         });
     }
 
+    // Readiness probe — confirma que el proceso arrancó, el pipeline de middleware está activo
+    // y la configuración mínima es accesible. No consulta DB ni expone secretos.
+    [HttpGet("ready")]
+    public IActionResult Ready()
+    {
+        var correlationId = HttpContext.Items.TryGetValue("CorrelationId", out var cid)
+            ? cid?.ToString()
+            : HttpContext.Response.Headers["X-Correlation-ID"].FirstOrDefault() ?? string.Empty;
+
+        return Ok(new
+        {
+            status       = "READY",
+            service      = _config["Api:Name"] ?? "XPAY API",
+            environment  = _env.EnvironmentName,
+            timestampUtc = DateTime.UtcNow,
+            correlationId
+        });
+    }
+
     // Endpoint diagnóstico para validar ErrorHandlingMiddleware en CI/QA.
     // En producción: Diagnostics__EnableErrorTestEndpoint=false.
     [HttpGet("error-test")]

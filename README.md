@@ -857,6 +857,31 @@ RateLimiting__LoginQueueLimit    = 0
 
 ---
 
+## Readiness de monitoreo y alertas
+
+El backend expone endpoints operativos para probes de uptime y readiness. Los criterios de alerta, la matriz de probes y el runbook de respuesta a incidentes están documentados en **[docs/OBSERVABILITY_AND_ALERTING_RUNBOOK.md](docs/OBSERVABILITY_AND_ALERTING_RUNBOOK.md)**.
+
+**Endpoints de monitoreo (públicos, sin autenticación):**
+
+| Endpoint | Propósito | Esperado |
+|----------|-----------|---------|
+| `GET /health` | Uptime probe de plataforma | HTTP 200 `{"status":"Healthy"}` |
+| `GET /api/diagnostics/ping` | Proceso vivo (liveness probe) | HTTP 200 `{"status":"OK","correlationId":"..."}` |
+| `GET /api/diagnostics/ready` | API lista a nivel de config/pipeline, sin DB | HTTP 200 `{"status":"READY","correlationId":"..."}` |
+| `GET /api/version` | Versión desplegada | HTTP 200 `{"success":true,"data":{"version":"..."}}` |
+
+**Qué cubre la Fase 47:**
+
+- Readiness probe (`/api/diagnostics/ready`) agregado — no consulta DB, no expone secretos.
+- Matriz de probes documentada: uptime, readiness, API version, error rate, latencia, HTTP 5xx, 401/403, 429, CI failures, ausencia de auditoría.
+- Matriz de alertas mínimas con severidad (Critical / High / Medium / Low) y tiempo de respuesta objetivo.
+- Runbook de respuesta a incidentes paso a paso.
+- Guía conceptual para configurar monitoreo en Azure App Service / Application Insights / monitor externo.
+
+**No crea recursos cloud ni usa secretos.** La configuración real de alertas en Azure Monitor, canales de notificación y dashboards queda pendiente hasta que se apruebe el ambiente QA productivo.
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

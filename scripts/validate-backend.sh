@@ -1141,5 +1141,23 @@ else
   info "FASE 46: Para validar HSTS → establecer EXPECT_HSTS=true y ejecutar contra API HTTPS"
 fi
 
+# FASE 47 — Readiness probe: /api/diagnostics/ready
+phase "FASE 47: /api/diagnostics/ready — readiness probe"
+READY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$API_URL/api/diagnostics/ready")
+[[ "$READY_HTTP" == "200" ]] \
+  || fail "FASE 47: /api/diagnostics/ready esperado 200, obtenido $READY_HTTP"
+ok "FASE 47: /api/diagnostics/ready → HTTP 200 ✓"
+
+READY_BODY=$(curl -sf --max-time 15 "$API_URL/api/diagnostics/ready" 2>/dev/null || true)
+READY_STATUS=$(echo "$READY_BODY" | jq -r '.status // empty')
+[[ "$READY_STATUS" == "READY" ]] \
+  || fail "FASE 47: campo 'status' esperado 'READY', obtenido '$READY_STATUS'"
+ok "FASE 47: status=READY ✓"
+
+READY_CID=$(echo "$READY_BODY" | jq -r '.correlationId // empty')
+[[ -n "$READY_CID" ]] \
+  || fail "FASE 47: correlationId ausente en /api/diagnostics/ready"
+ok "FASE 47: correlationId presente (cid=$READY_CID) ✓"
+
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 46: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica, error handling global, política JWT, HTTPS/HSTS readiness y todos los endpoints OK ═══"
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 47: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica, error handling global, política JWT, HTTPS/HSTS readiness, readiness probe y todos los endpoints OK ═══"

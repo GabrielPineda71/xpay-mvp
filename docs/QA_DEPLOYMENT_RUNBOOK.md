@@ -353,6 +353,12 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 - [ ] `UseHttpsRedirection` activa: request HTTP al backend redirige a HTTPS (verificar en Azure App Service con `curl -I http://...` y observar 301/302 a `https://`) (Fase 46)
 - [ ] Si `Https__EnableHsts=true` en ambiente HTTPS real: response incluye `Strict-Transport-Security: max-age=<días>` sin `preload` ni `includeSubDomains` (Fase 46)
 - [ ] En Development (`ASPNETCORE_ENVIRONMENT=Development`): HSTS no se activa aunque `Https__EnableHsts=true` en config (garantizado por código; no requiere smoke test manual)
+- [ ] `GET /api/diagnostics/ready` responde HTTP 200 con `"status":"READY"` y campo `correlationId` no vacío (Fase 47)
+- [ ] `GET /api/diagnostics/ping` responde HTTP 200 con `"status":"OK"` — uptime probe activo (Fase 35)
+- [ ] `GET /health` responde HTTP 200 con `"status":"Healthy"` — probe básico de plataforma
+- [ ] `GET /api/version` responde HTTP 200 con `success: true` y `data.version` no vacío
+- [ ] Revisar `docs/OBSERVABILITY_AND_ALERTING_RUNBOOK.md` y confirmar responsable de alertas, canal de incidentes y horario de monitoreo antes del piloto (Fase 47)
+- [ ] Confirmar los 3 workflows de GitHub Actions en verde (`success`) para el commit desplegado: **Backend Validation**, **Frontend Build**, **Dependency Security Scan** (Fase 47)
 - [ ] Si High/Critical: no avanzar a dinero real sin aprobación explícita del Security Lead y corrección o aceptación formal firmada
 - [ ] Si solo Moderate/Low: registrar decisión de riesgo aceptado con justificación y firma del Security Lead
 - [ ] Salida del script o enlace al run de GitHub Actions adjuntada como evidencia en el package de QA/preproducción
