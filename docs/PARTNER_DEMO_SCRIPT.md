@@ -245,15 +245,50 @@ Mostrar brevemente (sin salir del frontend):
 
 ---
 
-## 8. Notas técnicas para el presentador
+## 8. Módulo opcional — Flujo transaccional en vivo (5 min)
+
+> Este módulo muestra el ciclo transaccional completo entre usuarios QA.
+> Se puede mostrar la **evidencia ya cargada** en el panel o ejecutar una transacción en vivo si la red es confiable.
+
+**Usuarios transaccionales disponibles:**
+
+| Usuario | idWallet | Saldo ficticio disponible |
+|---------|----------|--------------------------|
+| `qa.usuario1` | 2 | ~$290,000 ficticio |
+| `qa.usuario2` | 3 | ~$195,000 ficticio |
+| QR demo | — | `QR-DEMO-XPAY-QA-001` |
+
+**Opción A — Mostrar evidencia ya cargada (recomendado para demo):**
+
+1. Abrir **Wallets** → filtrar por tipo PERSONA → mostrar "Wallet QA Usuario Uno" y "Wallet QA Usuario Dos" con sus saldos ficticios.
+2. Abrir **Ventas QR** → mostrar ventaQR#4 (CONTINGENCIA, $15,000, Comercio Demo XPAY QA) ya ejecutada.
+3. Abrir **Ledger** → mostrar tx#21 (TRANSFERENCIA_WALLET, $10,000) y tx#22 (PAGO_QR, $15,000).
+
+**Frase:** *"Este es el resultado de una transferencia entre usuarios y un pago QR ya ejecutados. Cada operación genera entradas balanceadas en el ledger."*
+
+**Opción B — Ejecutar transacción en vivo (requiere red y cliente API o Swagger):**
+
+Usar Swagger en `https://xpay-api-qa.azurewebsites.net/swagger`:
+1. Autenticar con `qa.usuario1` y hacer una transferencia de $5,000 a `qa.usuario2`.
+2. Verificar el nuevo saldo de ambos usuarios.
+3. Hacer un pago QR de `qa.usuario2` al código `QR-DEMO-XPAY-QA-001` por $5,000.
+4. Mostrar la nueva venta QR en CONTINGENCIA en el panel admin.
+
+> **Precaución para Opción B:** si la red falla o el backend está en Cold Start, la transacción puede fallar en vivo. Tener preparada la Opción A como respaldo.
+
+Ver IDs, saldos y operaciones detalladas: **[docs/QA_DEMO_TRANSACTIONAL_USERS.md](QA_DEMO_TRANSACTIONAL_USERS.md)**
+
+---
+
+## 9. Notas técnicas para el presentador
 
 - La pantalla de login muestra `API: xpay-api-qa.azurewebsites.net` — es visible para socios, es la URL del backend QA real, es correcto.
 - El menú lateral muestra el usuario `qa.admin.xpay` y `API: xpay-api-qa.azurewebsites.net` — información de contexto, no sensible.
-- Los saldos en el dashboard (Saldo Usuarios ~70,000, Saldo Comercios ~10,000) son ficticios, acumulados por corridas del ciclo de validación QA automática — presentarlos como "datos del ciclo de pruebas".
+- Los saldos en el dashboard (Saldo Usuarios ~$555,000) son ficticios, acumulados por las recargas QA y el ciclo de validación automática — presentarlos como "datos del ciclo de pruebas".
 - Si una sección muestra "Error" en el dashboard, usar el botón "↺ Reintentar" — puede ser un timeout del Cold Start del App Service.
 - El Cold Start del App Service puede tardar 5–15 segundos en la primera carga del día.
 - Si el backend está dormido (primera carga del día), `/health` puede tardar hasta 30 segundos en responder — verificar 30 minutos antes de la demo.
 
 ---
 
-*Documento creado en Fase 52. No versionado con contraseñas reales. Actualizar después de cada demo con socios.*
+*Documento creado en Fase 52. Actualizado en Fase 53 con flujo transaccional. No versionado con contraseñas reales. Actualizar después de cada demo con socios.*

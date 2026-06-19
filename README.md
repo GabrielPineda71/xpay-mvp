@@ -956,18 +956,29 @@ Estado completo:
 
 ---
 
-## Demo QA para socios (Fase 52)
+## Demo QA para socios (Fases 52–53)
 
 > Ambiente QA/demo preparado para presentación a socios. Datos ficticios. Sin dinero real. Sin producción.
 
 **URL frontend:** `https://xpay-admin-qa.azurewebsites.net`
 
-**Usuario demo:** `qa.admin.xpay` — contraseña por canal seguro (no en este documento)
+**Usuario admin demo:** `qa.admin.xpay` — contraseña por canal seguro (no en este documento)
+
+### Usuarios QA transaccionales
+
+| Usuario | idWallet | Saldo ficticio | Rol demo |
+|---------|----------|---------------|----------|
+| `qa.usuario1` | 2 | $290,000 ficticio | Usuario final — transfiere y navega |
+| `qa.usuario2` | 3 | $195,000 ficticio | Usuario final — recibe y paga QR |
+| QR demo | — | `QR-DEMO-XPAY-QA-001` | Comercio Demo XPAY QA |
+
+> Contraseñas por canal seguro. No en este documento.
 
 | Documento | Propósito |
 |-----------|-----------|
-| **[docs/PARTNER_DEMO_SCRIPT.md](docs/PARTNER_DEMO_SCRIPT.md)** | Guion de demo: flujo de 10–15 min, respuestas a preguntas de socios, qué decir y qué no decir |
-| **[docs/PARTNER_DEMO_READINESS.md](docs/PARTNER_DEMO_READINESS.md)** | Estado de readiness: módulos verificados, datos confirmados ficticios, decisión lista/no lista |
+| **[docs/PARTNER_DEMO_SCRIPT.md](docs/PARTNER_DEMO_SCRIPT.md)** | Guion de demo: flujo 10–15 min, respuestas a preguntas, qué decir/no decir |
+| **[docs/PARTNER_DEMO_READINESS.md](docs/PARTNER_DEMO_READINESS.md)** | Readiness: módulos verificados, datos ficticios confirmados, decisión lista/no lista |
+| **[docs/QA_DEMO_TRANSACTIONAL_USERS.md](docs/QA_DEMO_TRANSACTIONAL_USERS.md)** | IDs de wallets, saldos ficticios, operaciones ejecutadas (transferencia + pago QR), validación ledger |
 
 ---
 
