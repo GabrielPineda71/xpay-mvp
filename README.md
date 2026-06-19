@@ -458,6 +458,66 @@ Para deshabilitar en un ambiente: `SecurityHeaders__EnableSecurityHeaders=false`
 
 ---
 
+## Rate limiting básico
+
+El backend aplica rate limiting por IP al endpoint de login usando `FixedWindowRateLimiter` nativo de .NET 8. Al exceder el límite, se devuelve HTTP 429 con un cuerpo JSON seguro.
+
+**Endpoint protegido:**
+
+| Endpoint | Política | Límite por defecto |
+|----------|----------|--------------------|
+| `POST /api/auth/login` | `LoginPolicy` (FixedWindow por IP) | 20 requests / 60 segundos |
+
+**Respuesta al exceder el límite:**
+
+```json
+{
+  "error": "rate_limit_exceeded",
+  "message": "Too many requests. Please try again later.",
+  "correlationId": "..."
+}
+```
+
+Header adicional: `Retry-After: 60`
+
+No incluye: IP, stack trace, detalle de usuario, tokens.
+
+**Configuración:**
+
+```json
+"RateLimiting": {
+  "EnableRateLimiting": true,
+  "LoginPermitLimit": 20,
+  "LoginWindowSeconds": 60,
+  "LoginQueueLimit": 0
+}
+```
+
+Variables de entorno (Azure App Service):
+
+```bash
+RateLimiting__EnableRateLimiting = true
+RateLimiting__LoginPermitLimit   = 20   # aumentar si QA/CI supera el límite
+RateLimiting__LoginWindowSeconds = 60
+RateLimiting__LoginQueueLimit    = 0
+```
+
+**Qué no cambia:**
+
+- JWT: sin cambios en validación ni emisión.
+- CORS: sin cambios. CORS preflight (OPTIONS) no está sujeto a `LoginPolicy`.
+- Lógica financiera: sin cambios en ningún endpoint financiero.
+- Endpoints financieros: no tienen rate limiting en esta fase.
+
+**Pendiente (fases posteriores):**
+
+- Límites más finos por endpoint (registro, operaciones financieras, retiros).
+- Lockout por usuario (no solo por IP) si aplica.
+- Monitoreo y alertas de intentos fallidos.
+- WAF / Azure Front Door si se requiere protección a nivel de infraestructura.
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

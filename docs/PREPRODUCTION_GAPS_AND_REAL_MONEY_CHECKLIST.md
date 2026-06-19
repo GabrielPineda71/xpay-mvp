@@ -64,7 +64,7 @@ Las siguientes actividades **no están autorizadas** con el MVP en su estado act
 |---|--------|--------------------------|-------------------------------|---------------------|--------|
 | T1 | **Observabilidad y logging formal** | Sin trazas, imposible diagnosticar errores financieros en producción | Sí — crítico | Responsable técnico | `[~]` Fase 35: correlation ID + request logging básico implementados. Pendiente: App Insights / agregación formal / alertas. |
 | T2 | **Manejo de errores productivo** | Stack traces expuestos al usuario; información de servidor filtrada | Sí | Responsable técnico | `[ ]` |
-| T3 | **Rate limiting / throttling** | El sistema es vulnerable a abuso por volumen de requests | Sí | Responsable técnico | `[ ]` |
+| T3 | **Rate limiting / throttling** | El sistema es vulnerable a abuso por volumen de requests | Sí | Responsable técnico | `[~]` Fase 38: FixedWindow por IP en endpoint de login (20 req/min). Pendiente: límites más finos por endpoint, otros endpoints sensibles, alertas de intentos. |
 | T4 | **Backups y restauración probados** | Pérdida de datos contables y de saldos sin posibilidad de recuperación | Sí — crítico | Responsable técnico + Ops | `[ ]` |
 | T5 | **Monitoreo de uptime** | Sin alerta de caídas; no hay SLA real posible | Sí | Responsable técnico + Ops | `[~]` Fase 35: `GET /api/diagnostics/ping` disponible como probe básico. Pendiente: monitor externo, alertas automáticas. |
 | T6 | **Alertas automáticas** | Errores financieros no detectados en tiempo real | Sí — crítico | Responsable técnico | `[ ]` |
@@ -103,7 +103,7 @@ Las siguientes actividades **no están autorizadas** con el MVP en su estado act
 | S4 | **MFA para administradores** | Acceso administrativo protegido solo por contraseña | Sí | Responsable técnico | `[ ]` |
 | S5 | **Control de roles y permisos más granular** | Roles actuales (ADMIN_XPAY, OPERADOR_XPAY, COMERCIO) pueden ser insuficientes para operación real | Sí | Responsable técnico | `[ ]` |
 | S6 | **Auditoría de accesos** | Sin registro de quién accedió a qué, cuándo y desde dónde | Sí | Responsable técnico | `[ ]` |
-| S7 | **Protección contra fuerza bruta** | El endpoint de login no tiene rate limiting ni bloqueo por intentos fallidos | Sí | Responsable técnico | `[ ]` |
+| S7 | **Protección contra fuerza bruta** | El endpoint de login no tiene rate limiting ni bloqueo por intentos fallidos | Sí | Responsable técnico | `[~]` Fase 38: rate limiting activo en login (20 req/min por IP, respuesta 429). Pendiente: lockout por usuario, monitoreo de intentos fallidos, WAF/Front Door. |
 | S8 | **Hardening de CORS** | Configuración actual puede ser demasiado permisiva para producción | Sí | Responsable técnico | `[ ]` |
 | S9 | **HTTPS obligatorio** | Sin certificado SSL/TLS en el ambiente de piloto local; requerido en cualquier ambiente expuesto | Sí — crítico | Responsable técnico + Ops | `[ ]` |
 | S10 | **Revisión de exposición de Swagger** | Swagger en producción expone toda la API públicamente | Sí | Responsable técnico | `[~]` Fase 36: configurable vía `ApiDocs:EnableSwagger`; deshabilitado por defecto fuera de Development. Pendiente: política formal, auth adicional si se expone en preprod, decisión final antes de dinero real. |

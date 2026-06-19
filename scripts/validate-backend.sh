@@ -967,4 +967,23 @@ RP=$(echo "$SEC_HEADERS" | grep -i "^referrer-policy:" | tr -d '\r' | awk '{prin
 ok "Referrer-Policy: no-referrer ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 37: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS, configuración QA, observabilidad básica, security headers y todos los endpoints OK ═══"
+
+# ════════════════════════════════════════════════════
+# FASE 38 — Rate limiting básico: login no bloqueado
+# ════════════════════════════════════════════════════
+phase "FASE 38: Rate limiting — login normal no bloqueado"
+
+# 38.1 Login normal → 200 (no 429)
+# Se verifica que una sola llamada a login no activa el rate limiter.
+# Prueba agresiva (>20 reqs/min) se realiza manualmente; no se incluye en CI para evitar fragilidad.
+info "POST /api/auth/login → debe retornar 200, no 429 (rate limiting activo con límite amplio)"
+STATUS_LOGIN_RL=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"usuario":"carlos_ci_test","password":"Xpay@Test1!"}')
+[[ "$STATUS_LOGIN_RL" == "200" ]] \
+  || fail "POST /api/auth/login esperado 200 (no debe estar bloqueado por rate limiting), obtenido $STATUS_LOGIN_RL"
+ok "Login normal → 200 (no bloqueado por rate limiting) ✓"
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 38: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS, configuración QA, observabilidad básica, security headers, rate limiting y todos los endpoints OK ═══"

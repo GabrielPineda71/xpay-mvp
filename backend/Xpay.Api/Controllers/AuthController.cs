@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -12,6 +13,7 @@ public class AuthController : ControllerBase
     public AuthController(AuthService authService) => _authService = authService;
 
     [HttpPost("login")]
+    [EnableRateLimiting("LoginPolicy")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         try { return Ok(new { success = true, data = await _authService.LoginAsync(request) }); }

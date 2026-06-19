@@ -80,6 +80,10 @@ Configurar en **Azure App Service → Configuration → Application settings** u
 | `ApiDocs__EnableSwagger` | Habilitar Swagger UI y swagger.json | `true` en QA · `false` en producción | No (default: true en Development, false en otros) | No |
 | `SecurityHeaders__EnableSecurityHeaders` | Habilitar headers de seguridad HTTP básicos | `true` | No (default true) | No |
 | `SecurityHeaders__EnableNoStoreCache` | Agregar `Cache-Control: no-store` a respuestas | `true` | No (default true) | No |
+| `RateLimiting__EnableRateLimiting` | Habilitar rate limiting (FixedWindow por IP en login) | `true` | No (default true) | No |
+| `RateLimiting__LoginPermitLimit` | Requests permitidos por ventana en endpoint login | `20` | No (default 20) | No |
+| `RateLimiting__LoginWindowSeconds` | Duración de la ventana de rate limiting (segundos) | `60` | No (default 60) | No |
+| `RateLimiting__LoginQueueLimit` | Requests en cola cuando se supera el límite | `0` | No (default 0) | No |
 
 > CSP y HSTS no se configuran como variables de entorno en esta fase — ver nota en sección de smoke test.
 
@@ -322,7 +326,9 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 - [ ] Response de `/api/diagnostics/ping` incluye `X-Content-Type-Options: nosniff` (Fase 37)
 - [ ] Response incluye `X-Frame-Options: DENY` (Fase 37)
 - [ ] Response incluye `Referrer-Policy: no-referrer` (Fase 37)
+- [ ] Login normal responde 200 (no 429) — rate limiting activo con límite amplio de 20 req/min (Fase 38)
 
+> **Rate limiting en QA:** si aparece HTTP 429 en pruebas manuales o CI, verificar que el volumen de llamadas no supera `RateLimiting__LoginPermitLimit` en la ventana de `RateLimiting__LoginWindowSeconds`. Ajustar los valores vía variable de entorno sin deshabilitar completamente.
 > **CSP y HSTS:** no se configuran en esta fase. CSP requiere análisis para no romper Swagger UI; HSTS requiere HTTPS productivo. Ambos se definen en una fase posterior o a nivel de App Service / Front Door.
 
 > **Investigar errores por correlation ID:** al reportar un error, incluir el valor del header `X-Correlation-ID` de la respuesta. El responsable técnico puede buscar ese ID en los logs del backend para trazar el request completo.

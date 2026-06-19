@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -53,6 +55,42 @@ builder.Services
             ClockSkew                = TimeSpan.Zero
         };
     });
+
+// Rate limiting — FixedWindow por IP para endpoints sensibles (login)
+var rlSection          = builder.Configuration.GetSection("RateLimiting");
+var enableRateLimiting = rlSection.GetValue("EnableRateLimiting", defaultValue: true);
+var loginPermitLimit   = rlSection.GetValue("LoginPermitLimit",   defaultValue: 20);
+var loginWindowSeconds = rlSection.GetValue("LoginWindowSeconds", defaultValue: 60);
+var loginQueueLimit    = rlSection.GetValue("LoginQueueLimit",    defaultValue: 0);
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy("LoginPolicy", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit          = loginPermitLimit,
+                Window               = TimeSpan.FromSeconds(loginWindowSeconds),
+                QueueLimit           = loginQueueLimit,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        var correlationId = context.HttpContext.Items.TryGetValue("CorrelationId", out var cid)
+            ? cid?.ToString() ?? string.Empty
+            : string.Empty;
+
+        context.HttpContext.Response.StatusCode  = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.ContentType = "application/json";
+        context.HttpContext.Response.Headers["Retry-After"] = loginWindowSeconds.ToString();
+
+        await context.HttpContext.Response.WriteAsync(
+            $"{{\"error\":\"rate_limit_exceeded\",\"message\":\"Too many requests. Please try again later.\",\"correlationId\":\"{correlationId}\"}}",
+            cancellationToken);
+    };
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -137,6 +175,8 @@ if (enableSwagger)
 
 app.UseHttpsRedirection();
 app.UseCors("FrontendCorsPolicy");   // antes de autenticación — requerido para preflight
+if (enableRateLimiting)
+    app.UseRateLimiter();            // después de CORS, antes de autenticación
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
