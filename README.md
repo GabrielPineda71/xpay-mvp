@@ -551,9 +551,20 @@ Ejecutar desde la raíz del repositorio. Requiere .NET SDK y Node.js instalados.
 
 **Cuándo ejecutar:**
 
+- Automáticamente en cada push/PR a `main` — workflow `Dependency Security Scan`
 - Antes de cualquier despliegue a QA
 - Antes de iniciar el piloto con dinero real
 - Después de actualizar cualquier dependencia
+
+**CI automático (Fase 45):**
+
+El workflow `.github/workflows/dependency-security-scan.yml` ejecuta el script en cada push y pull request a `main`. Si el script devuelve exit 1 (vulnerabilidades encontradas) o exit 2 (error de herramienta), el workflow falla y bloquea el merge.
+
+Si el workflow de CI falla:
+- No usar `npm audit fix --force` ni aplicar upgrades sin revisión manual.
+- Revisar la salida del workflow en la pestaña Actions de GitHub.
+- Evaluar y aplicar upgrades controlados (patch primero, luego minor con justificación).
+- Antes de avanzar a dinero real, este workflow debe estar verde (`success`).
 
 **Remediación controlada de vulnerabilidades**
 

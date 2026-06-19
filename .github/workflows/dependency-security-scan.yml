@@ -1,0 +1,37 @@
+name: Dependency Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  scan-dependencies:
+    name: Scan NuGet and npm for known vulnerabilities
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Restore .NET packages
+        run: dotnet restore backend/Xpay.Api/Xpay.Api.csproj
+
+      - name: Install frontend npm packages
+        working-directory: frontend/xpay-admin
+        run: npm ci
+
+      - name: Run dependency security scan
+        run: bash scripts/scan-dependencies-security.sh
