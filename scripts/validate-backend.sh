@@ -1001,4 +1001,40 @@ info "Auditoría por logs: validación manual — ver docs/QA_DEPLOYMENT_RUNBOOK
 ok "FASE 39 documentada — validación en logs manuales; funcionalidad cubierta por fases anteriores ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 39: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica y todos los endpoints OK ═══"
+
+# ════════════════════════════════════════════════════
+# FASE 40 — Hardening CORS por ambiente
+# ════════════════════════════════════════════════════
+phase "FASE 40: Hardening CORS — origen permitido y origen no permitido"
+
+FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-http://localhost:5173}"
+
+# 40.1 Preflight desde origen permitido → Access-Control-Allow-Origin presente y correcto
+info "OPTIONS /api/auth/login con Origin: $FRONTEND_ORIGIN → debe devolver Access-Control-Allow-Origin correcto"
+CORS40_ALLOW_RESPONSE=$(curl -si -X OPTIONS \
+  -H "Origin: $FRONTEND_ORIGIN" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: Content-Type,Authorization" \
+  --max-time 15 \
+  "$API_URL/api/auth/login")
+CORS40_ALLOW=$(echo "$CORS40_ALLOW_RESPONSE" | grep -i "access-control-allow-origin:" \
+  | tr -d '\r' | awk '{print $2}')
+[[ "$CORS40_ALLOW" == "$FRONTEND_ORIGIN" ]] \
+  || fail "CORS: Access-Control-Allow-Origin esperado '$FRONTEND_ORIGIN', obtenido '$CORS40_ALLOW'"
+ok "CORS origen permitido → Access-Control-Allow-Origin: $CORS40_ALLOW ✓"
+
+# 40.2 Preflight desde origen no permitido → sin Access-Control-Allow-Origin con ese valor
+info "OPTIONS /api/auth/login con Origin: https://evil.example.com → NO debe devolver ese origen permitido"
+CORS40_EVIL_RESPONSE=$(curl -si -X OPTIONS \
+  -H "Origin: https://evil.example.com" \
+  -H "Access-Control-Request-Method: POST" \
+  --max-time 15 \
+  "$API_URL/api/auth/login")
+CORS40_EVIL=$(echo "$CORS40_EVIL_RESPONSE" | grep -i "access-control-allow-origin:" \
+  | tr -d '\r' | awk '{print $2}')
+[[ "$CORS40_EVIL" != "https://evil.example.com" ]] \
+  || fail "CORS: origen no permitido recibió Access-Control-Allow-Origin: $CORS40_EVIL"
+ok "CORS origen no permitido → sin Access-Control-Allow-Origin: https://evil.example.com ✓"
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 40: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica y todos los endpoints OK ═══"

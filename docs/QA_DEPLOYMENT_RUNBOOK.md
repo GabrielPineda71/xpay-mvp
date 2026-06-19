@@ -94,6 +94,8 @@ Configurar en **Azure App Service → Configuration → Application settings** u
 - `ConnectionStrings__XpayConnection` **no debe subirse nunca al repositorio**. Configurar solo en Azure App Settings.
 - `Cors__AllowedOrigins__0` debe ser la URL **exacta** del frontend QA, incluyendo `https://` y sin barra final.
 - Si se agrega un segundo origen, usar `Cors__AllowedOrigins__1` con la misma estructura.
+- **Fase 40 — hardening:** si `Cors__AllowedOrigins__0` no está configurado en un ambiente no Development, el backend lanza `InvalidOperationException` al arrancar y no inicia. Configurar antes de hacer deploy.
+- Nunca usar `Cors__AllowedOrigins__0=*` ni equivalente. El backend no acepta `AllowAnyOrigin`.
 
 ---
 
@@ -332,7 +334,11 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 - [ ] Un intento de login fallido genera entrada con `event=LOGIN_FAILURE` y `reason=credentials_invalid` (Fase 39)
 - [ ] Una operación financiera QA genera entradas con `event=QR_PAYMENT_ATTEMPT` / `QR_PAYMENT_SUCCESS` u operación equivalente (Fase 39)
 - [ ] Los eventos de auditoría incluyen `correlationId` coincidente con header `X-Correlation-ID` (Fase 39)
+- [ ] Preflight CORS desde frontend QA (`OPTIONS /api/auth/login -H "Origin: https://xpay-admin-qa.azurewebsites.net"`) devuelve `Access-Control-Allow-Origin: https://xpay-admin-qa.azurewebsites.net` (Fase 40)
+- [ ] Preflight CORS desde origen desconocido (`Origin: https://evil.example.com`) NO devuelve ese origen en `Access-Control-Allow-Origin` (Fase 40)
+- [ ] Los logs de arranque del backend contienen entrada `CORS: FrontendCorsPolicy — allowed origins:` con la URL QA correcta (Fase 40)
 
+> **CORS en QA (Fase 40):** si el frontend no puede conectarse, revisar CORS antes de tocar JWT o endpoints. Verificar `Cors__AllowedOrigins__0` en Azure App Settings. Si el backend no arranca (503), puede ser que la variable esté ausente — el backend lanza excepción al inicio si no hay orígenes configurados en no-Development.
 > **Auditoría en logs QA:** filtrar por `AUDIT` en la consola del backend o log stream de Azure App Service. Búsqueda alternativa: `grep '"audit":true'` o `grep 'event=LOGIN'`. La ausencia de estos eventos con `Audit__EnableAuditLogs=true` es un defecto bloqueante.
 > **Rate limiting en QA:** si aparece HTTP 429 en pruebas manuales o CI, verificar que el volumen de llamadas no supera `RateLimiting__LoginPermitLimit` en la ventana de `RateLimiting__LoginWindowSeconds`. Ajustar los valores vía variable de entorno sin deshabilitar completamente.
 > **CSP y HSTS:** no se configuran en esta fase. CSP requiere análisis para no romper Swagger UI; HSTS requiere HTTPS productivo. Ambos se definen en una fase posterior o a nivel de App Service / Front Door.
@@ -386,9 +392,10 @@ No existe una estrategia de rollback productiva automatizada en esta versión. L
 
 ### Si CORS falla (error `Access-Control-Allow-Origin`)
 
-1. Verificar que `Cors__AllowedOrigins__0` en Azure App Settings es exactamente la URL del frontend QA (sin barra final, con `https://`).
-2. Guardar los cambios en Configuration y **reiniciar el App Service** (`Overview → Restart`).
-3. Esperar 30 segundos y probar nuevamente.
+1. **Verificar `Cors__AllowedOrigins__0`** en Azure App Settings: debe ser exactamente la URL del frontend QA (sin barra final, con `https://`). Es la primera causa de fallo CORS — revisar esto antes de tocar JWT o endpoints.
+2. Si el App Service no inició (`503` o error de arranque), revisar los logs de inicio — puede ser que `Cors__AllowedOrigins__0` esté ausente (Fase 40: el backend no arranca sin CORS configurado en no-Development).
+3. Guardar los cambios en Configuration y **reiniciar el App Service** (`Overview → Restart`).
+4. Esperar 30 segundos y probar nuevamente.
 
 ### Si JWT falla (login devuelve 500 o token inválido)
 

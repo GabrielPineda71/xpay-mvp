@@ -28,13 +28,37 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<AuditLogService>();
 
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
-var allowedOrigins = builder.Configuration
+// Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.
+var configuredOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
     .Get<string[]>() ?? Array.Empty<string>();
 
+string[] corsOrigins;
+if (configuredOrigins.Length == 0)
+{
+    if (builder.Environment.IsDevelopment())
+    {
+        corsOrigins = new[]
+        {
+            "http://localhost:5173", "https://localhost:5173",
+            "http://localhost:3000", "https://localhost:3000"
+        };
+    }
+    else
+    {
+        throw new InvalidOperationException(
+            "Cors:AllowedOrigins must be configured outside Development. " +
+            "Set at least one allowed origin via Cors__AllowedOrigins__0 environment variable.");
+    }
+}
+else
+{
+    corsOrigins = configuredOrigins;
+}
+
 builder.Services.AddCors(options =>
     options.AddPolicy("FrontendCorsPolicy", policy =>
-        policy.WithOrigins(allowedOrigins)
+        policy.WithOrigins(corsOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()));
 
@@ -128,6 +152,11 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+// Startup: log CORS origins (no son secretos — son URLs públicas del frontend)
+app.Logger.LogInformation(
+    "CORS: FrontendCorsPolicy — allowed origins: {Origins}",
+    string.Join(", ", corsOrigins));
 
 // Correlation ID — debe ir primero para que todos los logs del request tengan el scope
 var enableCorrelationId   = builder.Configuration.GetValue("Observability:EnableCorrelationId",   defaultValue: true);

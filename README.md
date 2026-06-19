@@ -518,6 +518,75 @@ Audit__EnableAuditLogs = false
 
 ---
 
+## CORS por ambiente
+
+El backend configura CORS mediante `Cors:AllowedOrigins`. La política `FrontendCorsPolicy` aplica a todos los endpoints.
+
+**Reglas por ambiente:**
+
+| Ambiente | Regla |
+|----------|-------|
+| Development (local) | Si `Cors:AllowedOrigins` está vacío, usa fallback `localhost:5173` y `localhost:3000`. Si está configurado, usa esos valores. |
+| QA / Preproducción / Producción | `Cors:AllowedOrigins` **obligatorio**. Si no está configurado, el backend lanza `InvalidOperationException` al arrancar y no inicia. |
+
+**Nunca se usa `AllowAnyOrigin`.** No se agrega `AllowCredentials` (no requerido).
+
+**Configuración local (`appsettings.json`):**
+
+```json
+"Cors": {
+  "AllowedOrigins": [
+    "http://localhost:5173",
+    "https://localhost:5173",
+    "http://localhost:3000",
+    "https://localhost:3000"
+  ]
+}
+```
+
+**Configuración QA (`appsettings.QA.example.json`):**
+
+```json
+"Cors": {
+  "AllowedOrigins": [
+    "https://xpay-admin-qa.azurewebsites.net"
+  ]
+}
+```
+
+**Variable Azure App Service:**
+
+```bash
+Cors__AllowedOrigins__0 = https://xpay-admin-qa.azurewebsites.net
+# Segundo origen si aplica:
+Cors__AllowedOrigins__1 = https://otro-frontend.azurewebsites.net
+```
+
+**Guard de startup (Fase 40):** si el ambiente no es Development y no hay orígenes configurados, el backend falla al arrancar con:
+
+```
+InvalidOperationException: Cors:AllowedOrigins must be configured outside Development.
+Set at least one allowed origin via Cors__AllowedOrigins__0 environment variable.
+```
+
+**Log de arranque:** al iniciar, el backend registra los orígenes CORS activos:
+
+```
+CORS: FrontendCorsPolicy — allowed origins: https://xpay-admin-qa.azurewebsites.net
+```
+
+**Qué no cambia con este hardening:**
+
+- JWT: sin cambios en validación ni emisión.
+- Swagger: sin cambios; controlado por `ApiDocs:EnableSwagger`.
+- Rate limiting: sin cambios; sigue activo en login.
+- Auditoría: sin cambios; sigue emitiendo eventos.
+- Lógica financiera: sin cambios.
+
+**Pendiente (fases posteriores):** política definitiva por dominio productivo, revisión con Azure Front Door / App Gateway, pruebas de seguridad externas.
+
+---
+
 ## Rate limiting básico
 
 El backend aplica rate limiting por IP al endpoint de login usando `FixedWindowRateLimiter` nativo de .NET 8. Al exceder el límite, se devuelve HTTP 429 con un cuerpo JSON seguro.
