@@ -247,34 +247,41 @@ Mostrar brevemente (sin salir del frontend):
 
 ## 8. Módulo opcional — Flujo transaccional en vivo (5 min)
 
-> Este módulo muestra el ciclo transaccional completo entre usuarios QA.
-> Se puede mostrar la **evidencia ya cargada** en el panel o ejecutar una transacción en vivo si la red es confiable.
+> Este módulo muestra el ciclo transaccional completo desde la **vista Mi Wallet** de usuarios QA.
+> A partir de Fase 54, los usuarios QA tienen su propia interfaz — ya no se necesita Swagger para las demo transaccionales.
 
 **Usuarios transaccionales disponibles:**
 
-| Usuario | idWallet | Saldo ficticio disponible |
-|---------|----------|--------------------------|
-| `qa.usuario1` | 2 | ~$290,000 ficticio |
-| `qa.usuario2` | 3 | ~$195,000 ficticio |
-| QR demo | — | `QR-DEMO-XPAY-QA-001` |
+| Usuario | idWallet | Saldo ficticio | Contraseña |
+|---------|----------|---------------|-----------|
+| `qa.usuario1` | 2 | ~$285,000 ficticio | `<por canal seguro>` |
+| `qa.usuario2` | 3 | ~$195,000 ficticio | `<por canal seguro>` |
+| QR demo | — | `QR-DEMO-XPAY-QA-001` | — |
 
-**Opción A — Mostrar evidencia ya cargada (recomendado para demo):**
+**Opción A — Mostrar evidencia ya cargada desde panel admin (rápido):**
 
-1. Abrir **Wallets** → filtrar por tipo PERSONA → mostrar "Wallet QA Usuario Uno" y "Wallet QA Usuario Dos" con sus saldos ficticios.
-2. Abrir **Ventas QR** → mostrar ventaQR#4 (CONTINGENCIA, $15,000, Comercio Demo XPAY QA) ya ejecutada.
-3. Abrir **Ledger** → mostrar tx#21 (TRANSFERENCIA_WALLET, $10,000) y tx#22 (PAGO_QR, $15,000).
+1. Logueado como `qa.admin.xpay` → abrir **Wallets** → mostrar "Wallet QA Usuario Uno" y "Wallet QA Usuario Dos".
+2. Abrir **Ventas QR** → mostrar ventas CONTINGENCIA ya ejecutadas.
+3. Abrir **Ledger** → mostrar TRANSFERENCIA_WALLET y PAGO_QR.
 
-**Frase:** *"Este es el resultado de una transferencia entre usuarios y un pago QR ya ejecutados. Cada operación genera entradas balanceadas en el ledger."*
+**Frase:** *"Este es el resultado de una transferencia entre usuarios y un pago QR ejecutados. Cada operación genera entradas balanceadas en el ledger."*
 
-**Opción B — Ejecutar transacción en vivo (requiere red y cliente API o Swagger):**
+**Opción B — Demostrar la vista usuario final (recomendado para mostrar diferenciación) — Fase 54:**
 
-Usar Swagger en `https://xpay-api-qa.azurewebsites.net/swagger`:
-1. Autenticar con `qa.usuario1` y hacer una transferencia de $5,000 a `qa.usuario2`.
-2. Verificar el nuevo saldo de ambos usuarios.
-3. Hacer un pago QR de `qa.usuario2` al código `QR-DEMO-XPAY-QA-001` por $5,000.
-4. Mostrar la nueva venta QR en CONTINGENCIA en el panel admin.
+1. **Logout** del admin → ingresar como `qa.usuario1` (contraseña por canal seguro).
+2. El sistema redirige automáticamente a `/mi-wallet` — el menú admin **no aparece**.
+3. Mostrar: saldo ficticio, movimientos recientes.
+4. Ejecutar una transferencia a wallet 3 (`qa.usuario2`) por $5,000 desde el formulario.
+5. Saldo se actualiza automáticamente al completar.
+6. **Logout** → ingresar como `qa.usuario2`.
+7. Verificar que el saldo aumentó (recibió la transferencia).
+8. Ejecutar un pago QR a `QR-DEMO-XPAY-QA-001` por $5,000.
+9. Saldo se actualiza.
+10. **Logout** → ingresar como `qa.admin.xpay` → mostrar la nueva venta QR en CONTINGENCIA en el panel admin.
 
-> **Precaución para Opción B:** si la red falla o el backend está en Cold Start, la transacción puede fallar en vivo. Tener preparada la Opción A como respaldo.
+**Frase:** *"Los usuarios finales acceden a su propia vista de wallet. No ven el panel administrativo. El admin ve todo el panorama global."*
+
+> **Si la red falla:** tener preparada la Opción A como respaldo. La Opción B requiere red estable para los POSTs de transferencia y pago QR.
 
 Ver IDs, saldos y operaciones detalladas: **[docs/QA_DEMO_TRANSACTIONAL_USERS.md](QA_DEMO_TRANSACTIONAL_USERS.md)**
 

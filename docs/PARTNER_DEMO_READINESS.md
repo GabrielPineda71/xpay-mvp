@@ -136,7 +136,7 @@ Los datos visibles demuestran el ciclo financiero completo funcionando. Presenta
 
 > **✅ LISTA PARA DEMO CON SOCIOS — CON OBSERVACIONES**
 
-**Condiciones de la decisión:**
+**Condiciones de la decisión (actualizado Fase 54):**
 
 - ✅ Frontend accesible y cargando correctamente
 - ✅ Backend respondiendo en todos los endpoints críticos
@@ -146,12 +146,28 @@ Los datos visibles demuestran el ciclo financiero completo funcionando. Presenta
 - ✅ Datos ficticios confirmados (sin datos personales reales ni dinero real)
 - ✅ No hay secretos en el repositorio
 - ✅ CI/CD verde en el commit desplegado
+- ✅ Vista "Mi Wallet" disponible para qa.usuario1 y qa.usuario2 (Fase 54)
+- ✅ qa.admin.xpay ve panel admin completo; usuarios QA ven solo "Mi Wallet"
+- ✅ Transferencia y pago QR desde UI funcionales para usuarios QA
+
+**Módulos — qa.usuario1 / qa.usuario2 (Fase 54):**
+
+| Módulo | Estado |
+|--------|--------|
+| Login → redirige a /mi-wallet | ✅ |
+| Saldo ficticio visible | ✅ $285,000 / $195,000 |
+| Movimientos recientes | ✅ carga automática |
+| Formulario transferencia | ✅ HTTP 200, saldo refresca |
+| Formulario pago QR | ✅ HTTP 200, saldo refresca |
+| Menú admin oculto | ✅ solo "Mi Wallet" + "Cerrar sesión" |
+| Logout funcional | ✅ redirige a /login |
 
 **Observaciones (no bloqueantes):**
 
-- Los listados de wallets/comercios/etc. requieren que el usuario busque o cargue la primera página manualmente — no hay carga automática en la vista de búsqueda individual.
+- Los listados de wallets/comercios/etc. (admin) requieren que el usuario cargue la primera página manualmente.
 - El Cold Start del App Service puede generar un retraso en la primera carga del día.
-- Los saldos acumulados del ciclo QA (ej. $70,000 en wallets de usuarios CI) son ficticios pero pueden confundir si no se aclara el origen.
+- Los saldos acumulados del ciclo QA son ficticios — aclarar origen durante la demo.
+- La vista Mi Wallet usa un mapa hardcoded qa.usuario1→idWallet=2, qa.usuario2→idWallet=3 (regla demo temporal QA).
 
 **Qué NO está lista:**
 
@@ -172,4 +188,4 @@ Los datos visibles demuestran el ciclo financiero completo funcionando. Presenta
 
 ---
 
-*Documento creado en Fase 52. Actualizar después de cada demo con socios y después de cambios en el ambiente QA.*
+*Documento creado en Fase 52. Actualizado en Fase 54 con vista Mi Wallet para usuarios QA. Actualizar después de cada demo con socios y después de cambios en el ambiente QA.*

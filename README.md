@@ -964,15 +964,18 @@ Estado completo:
 
 **Usuario admin demo:** `qa.admin.xpay` — contraseña por canal seguro (no en este documento)
 
-### Usuarios QA transaccionales
+### Usuarios QA transaccionales — vista "Mi Wallet" (Fase 54)
 
-| Usuario | idWallet | Saldo ficticio | Rol demo |
-|---------|----------|---------------|----------|
-| `qa.usuario1` | 2 | $290,000 ficticio | Usuario final — transfiere y navega |
-| `qa.usuario2` | 3 | $195,000 ficticio | Usuario final — recibe y paga QR |
+| Usuario | idWallet | Saldo ficticio | Vista al ingresar |
+|---------|----------|---------------|------------------|
+| `qa.usuario1` | 2 | ~$285,000 ficticio | **Mi Wallet** — no ve menú admin |
+| `qa.usuario2` | 3 | ~$195,000 ficticio | **Mi Wallet** — no ve menú admin |
+| `qa.admin.xpay` | — | — | **Panel admin completo** |
 | QR demo | — | `QR-DEMO-XPAY-QA-001` | Comercio Demo XPAY QA |
 
 > Contraseñas por canal seguro. No en este documento.
+>
+> `qa.usuario1` y `qa.usuario2` acceden a `/mi-wallet` al iniciar sesión: ven su saldo ficticio, movimientos recientes, y pueden transferir o pagar QR directamente desde la UI. El menú admin está oculto.
 
 | Documento | Propósito |
 |-----------|-----------|

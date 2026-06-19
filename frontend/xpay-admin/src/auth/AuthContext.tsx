@@ -76,3 +76,8 @@ export function useAuth(): AuthCtx {
   if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
   return ctx;
 }
+
+// QA/Demo: admin = has ADMIN_XPAY or OPERADOR_XPAY role; else = demo wallet user
+export function isAdminUser(user: AuthUser): boolean {
+  return user.roles.includes('ADMIN_XPAY') || user.roles.includes('OPERADOR_XPAY');
+}

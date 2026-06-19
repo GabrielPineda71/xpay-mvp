@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
-import { useAuth } from '../auth/AuthContext.tsx';
+import { useAuth, isAdminUser } from '../auth/AuthContext.tsx';
 
 function getApiLabel(): string {
   const url = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
@@ -14,6 +14,7 @@ function getApiLabel(): string {
 export function Layout() {
   const { user, logout } = useAuth();
   const navigate          = useNavigate();
+  const isAdmin           = user ? isAdminUser(user) : false;
 
   function handleLogout() {
     logout();
@@ -23,19 +24,27 @@ export function Layout() {
   return (
     <div className="layout">
       <nav className="nav">
-        <span className="nav-brand">XPAY Admin</span>
+        <span className="nav-brand">{isAdmin ? 'XPAY Admin' : 'XPAY'}</span>
+
         <div className="nav-links">
-          <Link to="/dashboard">Dashboard</Link>
-          <Link to="/wallets/listado">Wallets</Link>
-          <Link to="/wallets">Buscar wallet</Link>
-          <Link to="/comercios/listado">Comercios</Link>
-          <Link to="/comercios">Buscar comercio</Link>
-          <Link to="/ventas-qr/listado">Ventas QR</Link>
-          <Link to="/ledger/listado">Ledger</Link>
-          <Link to="/ledger">Buscar ledger</Link>
-          <Link to="/retiros/listado">Retiros</Link>
-          <Link to="/retiros">Buscar retiro</Link>
+          {isAdmin ? (
+            <>
+              <Link to="/dashboard">Dashboard</Link>
+              <Link to="/wallets/listado">Wallets</Link>
+              <Link to="/wallets">Buscar wallet</Link>
+              <Link to="/comercios/listado">Comercios</Link>
+              <Link to="/comercios">Buscar comercio</Link>
+              <Link to="/ventas-qr/listado">Ventas QR</Link>
+              <Link to="/ledger/listado">Ledger</Link>
+              <Link to="/ledger">Buscar ledger</Link>
+              <Link to="/retiros/listado">Retiros</Link>
+              <Link to="/retiros">Buscar retiro</Link>
+            </>
+          ) : (
+            <Link to="/mi-wallet">Mi Wallet</Link>
+          )}
         </div>
+
         <div className="nav-user">
           {user && <span>{user.usuario}</span>}
           <span className="app-env">API: {getApiLabel()}</span>

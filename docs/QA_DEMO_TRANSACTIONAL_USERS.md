@@ -219,4 +219,28 @@ POST /api/qr/pagar
 
 ---
 
-*Documento creado en Fase 53. Actualizar si se modifican los IDs de wallet o se resetea la BD QA.*
+## Fase 54 — Vista "Mi Wallet" en el frontend
+
+En Fase 54 se creó la página `UserWalletPage.tsx` para que qa.usuario1 y qa.usuario2 tengan una experiencia diferenciada del admin.
+
+| Elemento | Detalle |
+|----------|---------|
+| Ruta | `/mi-wallet` |
+| Acceso | Solo usuarios sin rol ADMIN_XPAY/OPERADOR_XPAY |
+| Muestra | Saldo ficticio, movimientos recientes, formulario transferencia, formulario pago QR |
+| Oculta | Menú admin (dashboard, ledger global, todos los wallets/comercios/retiros) |
+| Detección | `isAdminUser(user)` → roles includes ADMIN_XPAY o OPERADOR_XPAY |
+| Mapa demo | `qa.usuario1` → idWallet=2, idUsuario=3 / `qa.usuario2` → idWallet=3, idUsuario=4 |
+
+**Operaciones de validación ejecutadas en Fase 54 (ficticias):**
+
+| Operación | Detalles | Resultado |
+|-----------|---------|-----------|
+| Transferencia qa.usuario1→qa.usuario2 desde UI | $5,000 desde formulario Mi Wallet | ✅ HTTP 200 |
+| Pago QR qa.usuario2→QR-DEMO-XPAY-QA-001 desde UI | $5,000 desde formulario Mi Wallet | ✅ HTTP 200 |
+
+**Saldos tras Fase 54 (ficticios):**
+- qa.usuario1 (wallet 2): $285,000
+- qa.usuario2 (wallet 3): $195,000
+
+*Documento creado en Fase 53. Actualizado en Fase 54 con vista Mi Wallet y operaciones de validación adicionales. Actualizar si se modifican los IDs de wallet o se resetea la BD QA.*

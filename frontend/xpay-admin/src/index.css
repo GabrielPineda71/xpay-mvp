@@ -361,3 +361,11 @@ tr:hover td { background: #f7fafc; }
   transition: background 0.15s;
 }
 .retry-button:hover { background: #edf2f7; }
+
+/* ── USER WALLET (demo) ── */
+.user-wallet-footer {
+  margin-top: 1.5rem;
+  font-size: 0.75rem;
+  color: #a0aec0;
+  text-align: center;
+}
