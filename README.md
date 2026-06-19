@@ -341,6 +341,17 @@ Plan operativo para ejecutar el piloto controlado de XPAY MVP después de cumpli
 
 ---
 
+## Preproducción y brechas para dinero real
+
+**[docs/PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md](docs/PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md)**
+
+Checklist estratégico que define las 53 brechas (técnicas, financieras/contables, seguridad, legales/regulatorias, operativas) que deben resolverse antes de operar con dinero real, datos reales o apertura pública. Incluye criterios mínimos para autorizar dinero real (12 ítems), criterios para comercios/clientes reales, matriz de decisión de preproducción (4 opciones), señales de bloqueo absoluto (10) y acta de evaluación con firma quíntuple.
+
+- **El MVP actual sirve para QA y piloto controlado. No está autorizado para operación financiera real.**
+- Usar después de cerrar el piloto controlado (`docs/PILOT_CONTROLLED_OPERATING_PLAN.md`).
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

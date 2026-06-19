@@ -304,7 +304,8 @@ Firma Responsable negocio:     _________________   Fecha: __________
 | [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md) | Declaración formal de la versión: alcance, riesgos conocidos y criterios de aprobación |
 | [`README.md`](../README.md) | Descripción del proyecto: endpoints, configuración y ecosistema QA completo |
 | [`docs/PILOT_CONTROLLED_OPERATING_PLAN.md`](PILOT_CONTROLLED_OPERATING_PLAN.md) | Siguiente paso si la decisión es avanzar: plan operativo completo del piloto controlado |
+| [`docs/PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md`](PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md) | Etapa posterior al piloto: checklist de brechas que deben resolverse antes de dinero real o apertura pública |
 
 ---
 
-*Este documento cubre el MVP XPAY — Fases 1 a 33. Actualizar si cambian los criterios de salida, el alcance del piloto o las condiciones de seguridad y financieras requeridas.*
+*Este documento cubre el MVP XPAY — Fases 1 a 34. Actualizar si cambian los criterios de salida, el alcance del piloto o las condiciones de seguridad y financieras requeridas.*

@@ -370,7 +370,8 @@ Firma Responsable negocio:  _________________   Fecha: __________
 | [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Referencia de smoke test previo a cada sesión del piloto |
 | [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md) | Declaración formal de la versión: alcance, riesgos conocidos y criterios de aprobación |
 | [`README.md`](../README.md) | Descripción del proyecto: endpoints, configuración y ecosistema QA completo |
+| [`docs/PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md`](PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md) | Siguiente etapa si el piloto cierra exitosamente: checklist de brechas para autorizar dinero real y preproducción |
 
 ---
 
-*Este documento cubre el MVP XPAY — Fases 1 a 33. Actualizar si cambia el alcance del piloto, los participantes autorizados, las reglas operativas o los criterios de éxito.*
+*Este documento cubre el MVP XPAY — Fases 1 a 34. Actualizar si cambia el alcance del piloto, los participantes autorizados, las reglas operativas o los criterios de éxito.*
