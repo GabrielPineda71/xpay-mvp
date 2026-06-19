@@ -906,6 +906,30 @@ La estrategia de rollback técnico para backend, frontend y configuración está
 
 ---
 
+## Azure QA — demo visible para socios
+
+El plan completo para crear el ambiente Azure QA desde cero está documentado en **[docs/AZURE_QA_FOUNDATION.md](docs/AZURE_QA_FOUNDATION.md)**.
+
+**Propósito:** demo controlada del MVP XPAY para socios, con datos ficticios, montos ficticios y usuarios demo. Sin dinero real, sin datos personales reales, sin clientes reales, sin producción.
+
+**Arquitectura QA propuesta:**
+
+| Recurso | Nombre | Tecnología |
+|---------|--------|-----------|
+| Resource Group | `rg-xpay-qa` | Azure |
+| SQL Server + Database | `sql-xpay-qa` / `sqldb-xpay-qa` | Azure SQL (Basic) |
+| App Service Plan | `asp-xpay-api-qa` | Linux · B1 |
+| Backend API | `xpay-api-qa` | .NET 8 · `https://xpay-api-qa.azurewebsites.net` |
+| Frontend | `swa-xpay-admin-qa` *(recomendado)* | Static Web Apps (Free) |
+
+**Frontend recomendado: Azure Static Web Apps** — tier gratuito, CI/CD integrado, CDN global, SSL automático. Alternativa: App Service `xpay-admin-qa` (más simple de gestionar junto al backend).
+
+**Regla de oro:** antes de la demo, verificar que los datos son totalmente ficticios (sin cédulas, correos ni números bancarios reales) y que el smoke test completo de la sección 8 del documento está aprobado.
+
+**El documento cubre:** arquitectura · nombres de recursos · 22 variables backend · variables frontend · comandos Azure CLI · scripts DB 001–008 · smoke test post-deploy · checklist de salida a demo.
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

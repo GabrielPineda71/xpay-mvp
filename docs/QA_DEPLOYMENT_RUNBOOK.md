@@ -10,6 +10,8 @@
 
 Este runbook es la guía paso a paso para ejecutar el **despliegue real** de XPAY MVP QA Candidate v0.1 en Azure, siguiendo el alcance definido en [`docs/RELEASE_QA_CANDIDATE.md`](RELEASE_QA_CANDIDATE.md).
 
+> **Prerrequisito — ambiente desde cero:** si los recursos Azure (Resource Group, SQL Server, App Service) aún no existen, leer y ejecutar primero **[`docs/AZURE_QA_FOUNDATION.md`](AZURE_QA_FOUNDATION.md)**. Ese documento cubre la creación de todos los recursos, la configuración de variables de entorno y los comandos Azure CLI necesarios antes de ejecutar los pasos de este runbook.
+
 **Qué es este documento:**
 - Una guía operativa concreta con comandos, validaciones y checklist.
 - Una referencia para el responsable técnico que ejecuta el despliegue.
@@ -547,6 +549,9 @@ bash scripts/build-qa-artifacts.sh
 | [`scripts/generate-qa-financial-ops.sh`](../scripts/generate-qa-financial-ops.sh) | Script auxiliar opcional post-seed: ejecuta el flujo financiero QA completo (A–H) vía endpoints reales sin SQL ni deploy |
 | [`docs/QA_OPERATIONS_VARIABLES.md`](QA_OPERATIONS_VARIABLES.md) | Guía de variables operativas QA: cómo obtener TOKEN e IDs, cargar `ops/qa.env.local` y ejecutar scripts locales |
 | [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Checklist maestro QA end-to-end: ciclo completo desde CI verde hasta acta de aprobación |
+| [`docs/AZURE_QA_FOUNDATION.md`](AZURE_QA_FOUNDATION.md) | Plan Azure QA desde cero: arquitectura, recursos, variables, comandos CLI, scripts DB, smoke test, checklist demo socios |
+| [`docs/OBSERVABILITY_AND_ALERTING_RUNBOOK.md`](OBSERVABILITY_AND_ALERTING_RUNBOOK.md) | Endpoints de monitoreo, matriz de alertas, runbook de respuesta a incidentes |
+| [`docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md`](ROLLBACK_AND_RECOVERY_RUNBOOK.md) | Criterios de rollback, matriz rollback/fix-forward, procedimientos por componente, plantilla de acta |
 
 ---
 
