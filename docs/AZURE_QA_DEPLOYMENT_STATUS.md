@@ -17,6 +17,7 @@
 | SQL Database | `sqldb-xpay-qa` | Azure SQL — Basic | eastus2 | ✅ Online |
 | App Service Plan | `asp-xpay-api-qa` | App Service Plan B1 | eastus | ✅ Ready |
 | App Service backend | `xpay-api-qa` | Web App .NET 8 | eastus | ✅ Running |
+| App Service frontend | `xpay-admin-qa` | Web App NODE:20-lts | eastus | ✅ Running (Fase 51) |
 
 > ¹ SQL Server en `eastus2` (no `eastus`) porque `eastus` presentó restricción de provisioning temporal durante la creación. El Resource Group `rg-xpay-qa` contiene recursos en ambas regiones — esto es válido en Azure y no afecta el funcionamiento.
 
@@ -29,9 +30,9 @@ El nombre del SQL Server es `xpay-sql-qa` (no `sql-xpay-qa` como en el plan orig
 
 | Servicio | URL | Estado |
 |---------|-----|--------|
+| **Frontend Admin** | `https://xpay-admin-qa.azurewebsites.net` | ✅ Público (Fase 51) |
 | **Backend API** | `https://xpay-api-qa.azurewebsites.net` | ✅ Público |
 | SQL Server | `xpay-sql-qa.database.windows.net` | ✅ Privado (firewall) |
-| Frontend | Pendiente — Fase 51 | — |
 
 ---
 
@@ -196,16 +197,34 @@ FASE 47: Readiness probe /ready                    ✅
 
 ---
 
-## Pendientes para Fase 51 — Frontend QA
+## Fase 51 — Frontend QA desplegado
+
+**Fecha UTC:** 2026-06-19  
+**Frontend URL:** `https://xpay-admin-qa.azurewebsites.net`
+
+| Check | Estado |
+|-------|--------|
+| Recurso `xpay-admin-qa` creado (NODE:20-lts) | ✅ |
+| Build frontend con QA env | ✅ 0 errores, 677ms |
+| URL API en bundle | ✅ `xpay-api-qa.azurewebsites.net` |
+| ZIP deploy (`RuntimeSuccessful`) | ✅ |
+| SPA routing (todas las rutas → index.html) | ✅ 200 en /dashboard, /wallets, /comercios, /ventas-qr, /ledger, /retiros |
+| CORS preflight `/api/auth/login` desde frontend | ✅ 204, `Access-Control-Allow-Origin` correcto |
+| Login `qa.admin.xpay` end-to-end | ✅ HTTP 200, JWT, rol `ADMIN_XPAY` |
+| `Cors__AllowedOrigins__0` | ✅ Pre-configurado correctamente desde Fase 50 — sin cambios requeridos |
+
+Ver detalle completo: **[docs/AZURE_QA_FRONTEND_STATUS.md](AZURE_QA_FRONTEND_STATUS.md)**
+
+---
+
+## Pendientes para Fase 52 — Demo socios
 
 | Pendiente | Descripción |
 |-----------|------------|
-| Crear `swa-xpay-admin-qa` | Static Web App para frontend React |
-| Build frontend con `.env.qa` | `VITE_API_BASE_URL=https://xpay-api-qa.azurewebsites.net` |
-| Deploy `dist/` a Static Web Apps | Via `swa-cli` o ZIP deploy |
-| Actualizar `Cors__AllowedOrigins__0` | Con la URL real del Static Web App |
-| Reiniciar backend | Para que tome el nuevo CORS |
-| Verificar login end-to-end desde UI | Login, wallets, QR, retiros en navegador |
+| Verificación visual UI completa en navegador | Login, dashboard, wallets, comercios, ventas QR, ledger, retiros, logout |
+| Compartir URL con socios | `https://xpay-admin-qa.azurewebsites.net` — solo por canal seguro |
+| Resetear saldos antes de demo | Si se corrió `validate-backend.sh` los saldos del comercio pueden estar acumulados |
+| Application Insights QA (opcional) | Telemetría para detectar errores durante demo |
 
 ---
 

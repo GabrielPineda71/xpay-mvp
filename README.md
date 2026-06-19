@@ -930,22 +930,29 @@ El plan completo para crear el ambiente Azure QA desde cero está documentado en
 
 ---
 
-## Azure QA backend — desplegado (Fase 50)
+## Azure QA — backend + frontend desplegados (Fases 50–51)
 
-**API pública:** `https://xpay-api-qa.azurewebsites.net`
+> Ambiente QA/Demo — datos ficticios · sin dinero real · sin datos personales reales · sin producción
+
+| Servicio | URL pública |
+|---------|------------|
+| **Frontend Admin** | **`https://xpay-admin-qa.azurewebsites.net`** |
+| **Backend API** | `https://xpay-api-qa.azurewebsites.net` |
 
 | Check | Estado |
 |-------|--------|
+| Frontend — carga UI login | ✅ 200 + "XPAY Admin" |
+| Frontend — SPA routing (/wallets, /comercios, etc.) | ✅ 200 en todas las rutas |
+| CORS preflight frontend → backend | ✅ 204 `Access-Control-Allow-Origin` correcto |
+| Login `qa.admin.xpay` / `XpayDemo2026!` end-to-end | ✅ 200 JWT rol `ADMIN_XPAY` |
 | `GET /health` | ✅ 200 Healthy |
-| `GET /api/diagnostics/ping` | ✅ 200 OK + correlationId |
 | `GET /api/diagnostics/ready` | ✅ 200 READY |
 | `GET /api/version` | ✅ 200 `0.1.0-mvp-qa` |
-| Swagger UI `/swagger` | ✅ Disponible |
-| Login `qa.admin.xpay` | ✅ JWT con rol `ADMIN_XPAY` |
 | `validate-backend.sh` (Fases 1–47) | ✅ Todas pasan contra Azure QA |
 
-Estado completo: **[docs/AZURE_QA_DEPLOYMENT_STATUS.md](docs/AZURE_QA_DEPLOYMENT_STATUS.md)**  
-Frontend QA pendiente: Fase 51.
+Estado completo:
+- **[docs/AZURE_QA_DEPLOYMENT_STATUS.md](docs/AZURE_QA_DEPLOYMENT_STATUS.md)** — backend (Fase 50) + frontend (Fase 51)
+- **[docs/AZURE_QA_FRONTEND_STATUS.md](docs/AZURE_QA_FRONTEND_STATUS.md)** — detalle despliegue frontend
 
 ---
 

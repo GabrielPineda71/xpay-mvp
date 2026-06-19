@@ -352,6 +352,19 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 - [ ] Escaneo de dependencias ejecutado: `bash scripts/scan-dependencies-security.sh` desde raíz del repo (Fase 43)
 - [ ] Workflow **Dependency Security Scan** en verde (`success`) en GitHub Actions para el commit a desplegar (Fase 45)
 - [ ] Si exit code 1 o workflow falla: hallazgos registrados y decisión de riesgo documentada antes de continuar
+
+**Smoke test UI — Frontend QA (Fase 51):**
+
+- [ ] `GET https://xpay-admin-qa.azurewebsites.net/` → HTTP 200, título "XPAY Admin"
+- [ ] SPA routing: `/dashboard`, `/wallets`, `/comercios` → HTTP 200 (sin 404)
+- [ ] Login en UI con `qa.admin.xpay` / `XpayDemo2026!` → redirige a `/dashboard`
+- [ ] DevTools Network: `POST /api/auth/login` → 200 con token JWT
+- [ ] DevTools Network: llamadas protegidas incluyen header `Authorization: Bearer ...`
+- [ ] DevTools Network: todas las llamadas API van a `xpay-api-qa.azurewebsites.net` (no `localhost`, no producción)
+- [ ] No hay errores CORS en consola del navegador (F12 → Console)
+- [ ] No hay 401 inesperado después del login
+- [ ] No hay datos reales de personas, cédulas ni saldos reales visibles
+- [ ] Cerrar sesión: redirige a `/login` y el token se elimina de `localStorage`
 - [ ] `UseHttpsRedirection` activa: request HTTP al backend redirige a HTTPS (verificar en Azure App Service con `curl -I http://...` y observar 301/302 a `https://`) (Fase 46)
 - [ ] Si `Https__EnableHsts=true` en ambiente HTTPS real: response incluye `Strict-Transport-Security: max-age=<días>` sin `preload` ni `includeSubDomains` (Fase 46)
 - [ ] En Development (`ASPNETCORE_ENVIRONMENT=Development`): HSTS no se activa aunque `Https__EnableHsts=true` en config (garantizado por código; no requiere smoke test manual)
@@ -550,7 +563,8 @@ bash scripts/build-qa-artifacts.sh
 | [`docs/QA_OPERATIONS_VARIABLES.md`](QA_OPERATIONS_VARIABLES.md) | Guía de variables operativas QA: cómo obtener TOKEN e IDs, cargar `ops/qa.env.local` y ejecutar scripts locales |
 | [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Checklist maestro QA end-to-end: ciclo completo desde CI verde hasta acta de aprobación |
 | [`docs/AZURE_QA_FOUNDATION.md`](AZURE_QA_FOUNDATION.md) | Plan Azure QA desde cero: arquitectura, recursos, variables, comandos CLI, scripts DB, smoke test, checklist demo socios |
-| [`docs/AZURE_QA_DEPLOYMENT_STATUS.md`](AZURE_QA_DEPLOYMENT_STATUS.md) | Estado real del deploy Fase 50: recursos creados, URLs, validación endpoints, pendientes Fase 51 |
+| [`docs/AZURE_QA_DEPLOYMENT_STATUS.md`](AZURE_QA_DEPLOYMENT_STATUS.md) | Estado real del deploy Fases 50–51: recursos creados, URLs backend + frontend, validación endpoints |
+| [`docs/AZURE_QA_FRONTEND_STATUS.md`](AZURE_QA_FRONTEND_STATUS.md) | Detalle del despliegue frontend QA Fase 51: estrategia, build, deploy, SPA routing, CORS, login UI |
 | [`docs/OBSERVABILITY_AND_ALERTING_RUNBOOK.md`](OBSERVABILITY_AND_ALERTING_RUNBOOK.md) | Endpoints de monitoreo, matriz de alertas, runbook de respuesta a incidentes |
 | [`docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md`](ROLLBACK_AND_RECOVERY_RUNBOOK.md) | Criterios de rollback, matriz rollback/fix-forward, procedimientos por componente, plantilla de acta |
 
