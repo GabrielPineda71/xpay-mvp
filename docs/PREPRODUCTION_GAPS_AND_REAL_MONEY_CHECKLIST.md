@@ -102,7 +102,7 @@ Las siguientes actividades **no están autorizadas** con el MVP en su estado act
 | S3 | **Rotación de llaves JWT** | Tokens comprometidos sin mecanismo de invalidación masiva | Sí | Responsable técnico | `[ ]` |
 | S4 | **MFA para administradores** | Acceso administrativo protegido solo por contraseña | Sí | Responsable técnico | `[ ]` |
 | S5 | **Control de roles y permisos más granular** | Roles actuales (ADMIN_XPAY, OPERADOR_XPAY, COMERCIO) pueden ser insuficientes para operación real | Sí | Responsable técnico | `[ ]` |
-| S6 | **Auditoría de accesos** | Sin registro de quién accedió a qué, cuándo y desde dónde | Sí | Responsable técnico | `[ ]` |
+| S6 | **Auditoría de accesos** | Sin registro de quién accedió a qué, cuándo y desde dónde | Sí | Responsable técnico | `[~]` Fase 39: auditoría básica por ILogger (LOGIN_SUCCESS/FAILURE, operaciones financieras, accesos admin/ledger). Pendiente: persistencia en BD, dashboard, retención, SIEM/App Insights, trazabilidad completa por usuario/rol. |
 | S7 | **Protección contra fuerza bruta** | El endpoint de login no tiene rate limiting ni bloqueo por intentos fallidos | Sí | Responsable técnico | `[~]` Fase 38: rate limiting activo en login (20 req/min por IP, respuesta 429). Pendiente: lockout por usuario, monitoreo de intentos fallidos, WAF/Front Door. |
 | S8 | **Hardening de CORS** | Configuración actual puede ser demasiado permisiva para producción | Sí | Responsable técnico | `[ ]` |
 | S9 | **HTTPS obligatorio** | Sin certificado SSL/TLS en el ambiente de piloto local; requerido en cualquier ambiente expuesto | Sí — crítico | Responsable técnico + Ops | `[ ]` |

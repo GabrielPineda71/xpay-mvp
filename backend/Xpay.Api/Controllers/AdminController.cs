@@ -9,11 +9,13 @@ namespace Xpay.Api.Controllers;
 [Route("api/admin")]
 public class AdminController : ControllerBase
 {
-    private readonly AdminService _adminService;
+    private readonly AdminService    _adminService;
+    private readonly AuditLogService _audit;
 
-    public AdminController(AdminService adminService)
+    public AdminController(AdminService adminService, AuditLogService audit)
     {
         _adminService = adminService;
+        _audit        = audit;
     }
 
     [HttpGet("wallets")]
@@ -24,6 +26,8 @@ public class AdminController : ControllerBase
         [FromQuery] int     page       = 1,
         [FromQuery] int     pageSize   = 20)
     {
+        _audit.LogSensitiveAction(HttpContext, "ADMIN_WALLETS_ACCESS",
+            new { tipoWallet, estado, page, pageSize });
         try
         {
             var data = await _adminService.ListarWalletsAsync(tipoWallet, estado, idPersona, page, pageSize);
@@ -59,6 +63,8 @@ public class AdminController : ControllerBase
         [FromQuery] int       page       = 1,
         [FromQuery] int       pageSize   = 20)
     {
+        _audit.LogSensitiveAction(HttpContext, "ADMIN_VENTAS_QR_ACCESS",
+            new { estado, idComercio, page, pageSize });
         try
         {
             var data = await _adminService.ListarVentasQrAsync(estado, idComercio, idTienda, desde, hasta, page, pageSize);
@@ -76,6 +82,8 @@ public class AdminController : ControllerBase
         [FromQuery] int       page            = 1,
         [FromQuery] int       pageSize        = 20)
     {
+        _audit.LogSensitiveAction(HttpContext, "ADMIN_LEDGER_ACCESS",
+            new { tipoTransaccion, page, pageSize });
         try
         {
             var data = await _adminService.ListarLedgerTransaccionesAsync(tipoTransaccion, desde, hasta, page, pageSize);

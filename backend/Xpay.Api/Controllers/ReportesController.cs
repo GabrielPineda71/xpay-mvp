@@ -10,8 +10,13 @@ namespace Xpay.Api.Controllers;
 public class ReportesController : ControllerBase
 {
     private readonly ReportesService _reportes;
+    private readonly AuditLogService _audit;
 
-    public ReportesController(ReportesService reportes) => _reportes = reportes;
+    public ReportesController(ReportesService reportes, AuditLogService audit)
+    {
+        _reportes = reportes;
+        _audit    = audit;
+    }
 
     [HttpGet("wallet/{idWallet}/estado-cuenta")]
     public async Task<IActionResult> EstadoCuentaWallet(long idWallet)
@@ -52,6 +57,7 @@ public class ReportesController : ControllerBase
     [HttpGet("operaciones/resumen-general")]
     public async Task<IActionResult> ResumenGeneral()
     {
+        _audit.LogSensitiveAction(HttpContext, "ADMIN_REPORT_ACCESS");
         try
         {
             var data = await _reportes.GetResumenGeneralAsync();

@@ -458,6 +458,66 @@ Para deshabilitar en un ambiente: `SecurityHeaders__EnableSecurityHeaders=false`
 
 ---
 
+## Auditoría básica por logs
+
+El backend registra eventos sensibles mediante `AuditLogService` usando `ILogger`. Todos los eventos incluyen `correlationId` del request y se pueden filtrar por la marca `audit=True` o el prefijo `AUDIT` en los logs.
+
+**Eventos auditados:**
+
+| Evento | Controlador | Nivel |
+|--------|-------------|-------|
+| `LOGIN_SUCCESS` | `AuthController` | Information |
+| `LOGIN_FAILURE` | `AuthController` | Warning |
+| `WALLET_MANUAL_RECHARGE_ATTEMPT` / `_SUCCESS` | `WalletsController` | Information |
+| `WALLET_TRANSFER_ATTEMPT` / `_SUCCESS` | `WalletsController` | Information |
+| `QR_PAYMENT_ATTEMPT` / `_SUCCESS` | `QrController` | Information |
+| `QR_SETTLEMENT_ATTEMPT` / `_SUCCESS` | `ComerciosController` | Information |
+| `MERCHANT_WITHDRAWAL_REQUEST_ATTEMPT` / `_SUCCESS` | `ComerciosController` | Information |
+| `MERCHANT_WITHDRAWAL_PAID_ATTEMPT` / `_SUCCESS` | `ComerciosController` | Information |
+| `MERCHANT_WITHDRAWAL_REJECTED_ATTEMPT` / `_SUCCESS` | `ComerciosController` | Information |
+| `ADMIN_WALLETS_ACCESS` | `AdminController` | Information |
+| `ADMIN_VENTAS_QR_ACCESS` | `AdminController` | Information |
+| `ADMIN_LEDGER_ACCESS` | `AdminController` | Information |
+| `ADMIN_REPORT_ACCESS` | `ReportesController` | Information |
+
+**Formato de log:**
+
+```
+AUDIT audit=True event=LOGIN_SUCCESS user=carlos_ci_test path=/api/auth/login method=POST correlationId=<guid>
+AUDIT audit=True event=WALLET_TRANSFER_ATTEMPT user=carlos_ci_test path=/api/wallets/transferencia method=POST correlationId=<guid> metadata={ idWalletOrigen = 1, idWalletDestino = 2, valor = 50.00 }
+```
+
+**Correlation ID:** cada evento incluye el `correlationId` propagado por `CorrelationIdMiddleware`. Permite trazar la secuencia completa de un request cruzando logs de request, auditoría y errores.
+
+**Qué NO se registra por seguridad:**
+
+- Passwords (ninguna forma, ni hash)
+- Tokens JWT
+- Header `Authorization`
+- Body completo de requests
+- Cédulas / documentos de identidad
+- Números de cuenta bancaria completos
+- Nombres o datos personales sensibles
+- Connection strings
+
+**Configuración:**
+
+```json
+"Audit": {
+  "EnableAuditLogs": true
+}
+```
+
+Variable de entorno para deshabilitar:
+
+```bash
+Audit__EnableAuditLogs = false
+```
+
+**Importante:** esta auditoría por logs NO reemplaza auditoría persistente en base de datos, dashboard de auditoría, retención formal ni integración con SIEM o Application Insights. Esas capacidades se definen como pendientes en `docs/PREPRODUCTION_GAPS_AND_REAL_MONEY_CHECKLIST.md` (brecha S6).
+
+---
+
 ## Rate limiting básico
 
 El backend aplica rate limiting por IP al endpoint de login usando `FixedWindowRateLimiter` nativo de .NET 8. Al exceder el límite, se devuelve HTTP 429 con un cuerpo JSON seguro.

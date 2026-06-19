@@ -12,11 +12,13 @@ public class ComerciosController : ControllerBase
 {
     private readonly LiquidacionComercioService _liquidacionService;
     private readonly RetiroComercioService      _retiroService;
+    private readonly AuditLogService            _audit;
 
-    public ComerciosController(LiquidacionComercioService liquidacionService, RetiroComercioService retiroService)
+    public ComerciosController(LiquidacionComercioService liquidacionService, RetiroComercioService retiroService, AuditLogService audit)
     {
         _liquidacionService = liquidacionService;
         _retiroService      = retiroService;
+        _audit              = audit;
     }
 
     [HttpGet("retiros")]
@@ -52,9 +54,13 @@ public class ComerciosController : ControllerBase
     [HttpPost("liquidar-venta-qr")]
     public async Task<IActionResult> LiquidarVentaQr([FromBody] LiquidarVentaQrRequest request)
     {
+        _audit.LogSensitiveAction(HttpContext, "QR_SETTLEMENT_ATTEMPT",
+            new { idVentaQr = request.IdVentaQr });
         try
         {
             var liq = await _liquidacionService.LiquidarVentaQrAsync(request);
+            _audit.LogSensitiveAction(HttpContext, "QR_SETTLEMENT_SUCCESS",
+                new { idLiquidacion = liq.IdLiquidacion, idVentaQr = request.IdVentaQr, idComercio = liq.IdComercio, valorNeto = liq.ValorNeto });
             return Ok(new
             {
                 success = true,
@@ -77,9 +83,14 @@ public class ComerciosController : ControllerBase
     [HttpPost("solicitar-retiro")]
     public async Task<IActionResult> SolicitarRetiro([FromBody] SolicitarRetiroComercioRequest request)
     {
+        // metadata segura: sin NumeroCuenta, TitularCuenta ni DocumentoTitular
+        _audit.LogSensitiveAction(HttpContext, "MERCHANT_WITHDRAWAL_REQUEST_ATTEMPT",
+            new { idComercio = request.IdComercio, valor = request.Valor, medioRetiro = request.MedioRetiro });
         try
         {
             var retiro = await _retiroService.SolicitarRetiroAsync(request);
+            _audit.LogSensitiveAction(HttpContext, "MERCHANT_WITHDRAWAL_REQUEST_SUCCESS",
+                new { idRetiro = retiro.IdRetiro, idComercio = retiro.IdComercio, valor = retiro.Valor });
             return Ok(new
             {
                 success = true,
@@ -101,9 +112,13 @@ public class ComerciosController : ControllerBase
     [HttpPost("retiros/confirmar-pago")]
     public async Task<IActionResult> ConfirmarPago([FromBody] ConfirmarRetiroComercioRequest request)
     {
+        _audit.LogSensitiveAction(HttpContext, "MERCHANT_WITHDRAWAL_PAID_ATTEMPT",
+            new { idRetiro = request.IdRetiro });
         try
         {
             var retiro = await _retiroService.ConfirmarRetiroPagadoAsync(request);
+            _audit.LogSensitiveAction(HttpContext, "MERCHANT_WITHDRAWAL_PAID_SUCCESS",
+                new { idRetiro = retiro.IdRetiro, valor = retiro.Valor });
             return Ok(new
             {
                 success = true,
@@ -123,9 +138,13 @@ public class ComerciosController : ControllerBase
     [HttpPost("retiros/rechazar")]
     public async Task<IActionResult> RechazarRetiro([FromBody] RechazarRetiroComercioRequest request)
     {
+        _audit.LogSensitiveAction(HttpContext, "MERCHANT_WITHDRAWAL_REJECTED_ATTEMPT",
+            new { idRetiro = request.IdRetiro });
         try
         {
             var retiro = await _retiroService.RechazarRetiroAsync(request);
+            _audit.LogSensitiveAction(HttpContext, "MERCHANT_WITHDRAWAL_REJECTED_SUCCESS",
+                new { idRetiro = retiro.IdRetiro, valor = retiro.Valor });
             return Ok(new
             {
                 success = true,

@@ -10,13 +10,15 @@ namespace Xpay.Api.Controllers;
 [Route("api/wallets")]
 public class WalletsController : ControllerBase
 {
-    private readonly WalletService _walletService;
+    private readonly WalletService          _walletService;
     private readonly WalletOperacionService _walletOperacionService;
+    private readonly AuditLogService        _audit;
 
-    public WalletsController(WalletService walletService, WalletOperacionService walletOperacionService)
+    public WalletsController(WalletService walletService, WalletOperacionService walletOperacionService, AuditLogService audit)
     {
-        _walletService = walletService;
+        _walletService          = walletService;
         _walletOperacionService = walletOperacionService;
+        _audit                  = audit;
     }
 
     [HttpGet("persona/{idPersona:long}")]
@@ -39,9 +41,13 @@ public class WalletsController : ControllerBase
     [HttpPost("{idWallet:long}/recarga-manual")]
     public async Task<IActionResult> RecargarManual(long idWallet, [FromBody] RecargaWalletRequest request)
     {
+        _audit.LogSensitiveAction(HttpContext, "WALLET_MANUAL_RECHARGE_ATTEMPT",
+            new { idWallet, valor = request.Valor });
         try
         {
             var idMovimiento = await _walletOperacionService.RecargarWalletManualAsync(idWallet, request);
+            _audit.LogSensitiveAction(HttpContext, "WALLET_MANUAL_RECHARGE_SUCCESS",
+                new { idWallet, valor = request.Valor, idMovimiento });
             return Ok(new { success = true, message = "Recarga manual aplicada correctamente.", idMovimientoWallet = idMovimiento });
         }
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
@@ -51,9 +57,13 @@ public class WalletsController : ControllerBase
     [HttpPost("transferencia")]
     public async Task<IActionResult> Transferir([FromBody] TransferenciaWalletRequest request)
     {
+        _audit.LogSensitiveAction(HttpContext, "WALLET_TRANSFER_ATTEMPT",
+            new { idWalletOrigen = request.IdWalletOrigen, idWalletDestino = request.IdWalletDestino, valor = request.Valor });
         try
         {
             var idTransaccion = await _walletOperacionService.TransferirWalletAsync(request);
+            _audit.LogSensitiveAction(HttpContext, "WALLET_TRANSFER_SUCCESS",
+                new { idWalletOrigen = request.IdWalletOrigen, idWalletDestino = request.IdWalletDestino, valor = request.Valor, idTransaccion });
             return Ok(new
             {
                 success = true,

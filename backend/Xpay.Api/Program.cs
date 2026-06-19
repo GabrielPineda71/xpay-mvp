@@ -25,6 +25,7 @@ builder.Services.AddScoped<LiquidacionComercioService>();
 builder.Services.AddScoped<RetiroComercioService>();
 builder.Services.AddScoped<ReportesService>();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<AuditLogService>();
 
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 var allowedOrigins = builder.Configuration

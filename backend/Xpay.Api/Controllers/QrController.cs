@@ -10,15 +10,25 @@ namespace Xpay.Api.Controllers;
 [Route("api/qr")]
 public class QrController : ControllerBase
 {
-    private readonly PagoQrService _pagoQrService;
-    public QrController(PagoQrService pagoQrService) => _pagoQrService = pagoQrService;
+    private readonly PagoQrService   _pagoQrService;
+    private readonly AuditLogService _audit;
+
+    public QrController(PagoQrService pagoQrService, AuditLogService audit)
+    {
+        _pagoQrService = pagoQrService;
+        _audit         = audit;
+    }
 
     [HttpPost("pagar")]
     public async Task<IActionResult> Pagar([FromBody] PagoQrRequest request)
     {
+        _audit.LogSensitiveAction(HttpContext, "QR_PAYMENT_ATTEMPT",
+            new { idWalletUsuario = request.IdWalletUsuario, valor = request.Valor });
         try
         {
             var venta = await _pagoQrService.PagarQrAsync(request);
+            _audit.LogSensitiveAction(HttpContext, "QR_PAYMENT_SUCCESS",
+                new { idVentaQr = venta.IdVentaQr, idTransaccion = venta.IdTransaccionLedger, idComercio = venta.IdComercio, valor = venta.ValorBruto });
             return Ok(new
             {
                 success = true,
