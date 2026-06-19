@@ -956,6 +956,21 @@ Estado completo:
 
 ---
 
+## Demo QA para socios (Fase 52)
+
+> Ambiente QA/demo preparado para presentación a socios. Datos ficticios. Sin dinero real. Sin producción.
+
+**URL frontend:** `https://xpay-admin-qa.azurewebsites.net`
+
+**Usuario demo:** `qa.admin.xpay` — contraseña por canal seguro (no en este documento)
+
+| Documento | Propósito |
+|-----------|-----------|
+| **[docs/PARTNER_DEMO_SCRIPT.md](docs/PARTNER_DEMO_SCRIPT.md)** | Guion de demo: flujo de 10–15 min, respuestas a preguntas de socios, qué decir y qué no decir |
+| **[docs/PARTNER_DEMO_READINESS.md](docs/PARTNER_DEMO_READINESS.md)** | Estado de readiness: módulos verificados, datos confirmados ficticios, decisión lista/no lista |
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

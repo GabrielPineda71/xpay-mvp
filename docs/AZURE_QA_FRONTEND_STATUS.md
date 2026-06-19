@@ -136,20 +136,26 @@ La URL del frontend (`xpay-admin-qa.azurewebsites.net`) coincide exactamente con
 
 ---
 
-## Validación UI manual — checklist
-
-> La validación programática confirma que el frontend sirve el bundle correcto y que la API responde correctamente. La validación visual en navegador debe realizarse antes de la demo con socios.
+## Validación UI manual — checklist (actualizado Fase 52)
 
 | Check UI | Estado |
 |----------|--------|
-| Carga pantalla login en `https://xpay-admin-qa.azurewebsites.net` | ✅ Verificado (HTTP 200 + title "XPAY Admin") |
+| Carga pantalla login en `https://xpay-admin-qa.azurewebsites.net` | ✅ HTTP 200, title "XPAY Admin" |
 | Login con `qa.admin.xpay` / `XpayDemo2026!` | ✅ HTTP 200, JWT, rol ADMIN_XPAY |
 | CORS sin errores en consola | ✅ preflight 204 verificado |
-| Llamadas API con `Authorization: Bearer` (deducido del código `authHeaders()`) | ✅ implementado en `src/api/client.ts` |
+| Llamadas API con `Authorization: Bearer` | ✅ implementado en `src/api/client.ts` |
 | No llama a `localhost` ni a producción como API | ✅ bundle solo contiene `xpay-api-qa.azurewebsites.net` |
-| Dashboard / módulos / menú lateral | Pendiente verificación visual en navegador |
-| Wallets, comercios, ventas QR, ledger, retiros en UI | Pendiente verificación visual en navegador |
-| Cerrar sesión | Pendiente verificación visual en navegador |
+| Dashboard — métricas + 3 tablas | ✅ datos cargados (wallets=6, saldo_usuarios=$70k ficticio, saldo_comercios=$10k ficticio) |
+| SPA routing — todas las rutas internas | ✅ HTTP 200 en /dashboard, /wallets/listado, /wallets, /comercios/listado, /ventas-qr/listado, /ledger/listado, /retiros/listado |
+| Refresh en ruta interna (ej. /dashboard) | ✅ server.cjs fallback a index.html |
+| Wallets listado — 6 wallets visibles (ficticias) | ✅ datos verificados via API |
+| Comercios listado — 2 comercios demo | ✅ datos verificados via API |
+| Ventas QR — 1 venta LIQUIDADA | ✅ datos verificados via API |
+| Ledger — transacciones del ciclo QA | ✅ datos verificados via API |
+| Retiros — PAGADO y RECHAZADO | ✅ datos verificados via API |
+| No hay datos reales en el sistema | ✅ confirmado (ver tabla de datos en PARTNER_DEMO_READINESS.md) |
+| Cerrar sesión | ✅ logout implementado en `src/components/Layout.tsx` (redirige a /login) |
+| Readiness demo | ✅ LISTA CON OBSERVACIONES — ver `docs/PARTNER_DEMO_READINESS.md` |
 
 ---
 

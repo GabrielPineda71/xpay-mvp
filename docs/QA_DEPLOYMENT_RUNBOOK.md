@@ -565,6 +565,8 @@ bash scripts/build-qa-artifacts.sh
 | [`docs/AZURE_QA_FOUNDATION.md`](AZURE_QA_FOUNDATION.md) | Plan Azure QA desde cero: arquitectura, recursos, variables, comandos CLI, scripts DB, smoke test, checklist demo socios |
 | [`docs/AZURE_QA_DEPLOYMENT_STATUS.md`](AZURE_QA_DEPLOYMENT_STATUS.md) | Estado real del deploy Fases 50–51: recursos creados, URLs backend + frontend, validación endpoints |
 | [`docs/AZURE_QA_FRONTEND_STATUS.md`](AZURE_QA_FRONTEND_STATUS.md) | Detalle del despliegue frontend QA Fase 51: estrategia, build, deploy, SPA routing, CORS, login UI |
+| [`docs/PARTNER_DEMO_SCRIPT.md`](PARTNER_DEMO_SCRIPT.md) | Guion de demo para socios: flujo 10–15 min, respuestas a preguntas, qué decir/no decir, checklists pre/post |
+| [`docs/PARTNER_DEMO_READINESS.md`](PARTNER_DEMO_READINESS.md) | Readiness de demo: estado por módulo, datos ficticios confirmados, limitaciones, decisión lista/no lista |
 | [`docs/OBSERVABILITY_AND_ALERTING_RUNBOOK.md`](OBSERVABILITY_AND_ALERTING_RUNBOOK.md) | Endpoints de monitoreo, matriz de alertas, runbook de respuesta a incidentes |
 | [`docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md`](ROLLBACK_AND_RECOVERY_RUNBOOK.md) | Criterios de rollback, matriz rollback/fix-forward, procedimientos por componente, plantilla de acta |
 
