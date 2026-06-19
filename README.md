@@ -930,6 +930,25 @@ El plan completo para crear el ambiente Azure QA desde cero está documentado en
 
 ---
 
+## Azure QA backend — desplegado (Fase 50)
+
+**API pública:** `https://xpay-api-qa.azurewebsites.net`
+
+| Check | Estado |
+|-------|--------|
+| `GET /health` | ✅ 200 Healthy |
+| `GET /api/diagnostics/ping` | ✅ 200 OK + correlationId |
+| `GET /api/diagnostics/ready` | ✅ 200 READY |
+| `GET /api/version` | ✅ 200 `0.1.0-mvp-qa` |
+| Swagger UI `/swagger` | ✅ Disponible |
+| Login `qa.admin.xpay` | ✅ JWT con rol `ADMIN_XPAY` |
+| `validate-backend.sh` (Fases 1–47) | ✅ Todas pasan contra Azure QA |
+
+Estado completo: **[docs/AZURE_QA_DEPLOYMENT_STATUS.md](docs/AZURE_QA_DEPLOYMENT_STATUS.md)**  
+Frontend QA pendiente: Fase 51.
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

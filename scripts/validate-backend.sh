@@ -7,7 +7,9 @@ API_URL="${API_URL:-http://localhost:5000}"
 DB_HOST="${DB_HOST:-localhost,1433}"
 DB_NAME="${DB_NAME:-XPAY_MVP}"
 SA_PASS="${SA_PASSWORD:-XpayCI@2024!}"
-SQLCMD="/opt/mssql-tools18/bin/sqlcmd"
+DB_USER="${DB_USER:-sa}"
+# Auto-detect sqlcmd path: CI Linux path first, fallback to Homebrew (macOS)
+SQLCMD="${SQLCMD_PATH:-$(command -v sqlcmd 2>/dev/null || echo /opt/mssql-tools18/bin/sqlcmd)}"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -59,7 +61,7 @@ assert_saldo() {
 check_count() {
   local table="$1" min="${2:-1}"
   local count
-  count=$("$SQLCMD" -S "$DB_HOST" -U sa -P "$SA_PASS" \
+  count=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" \
     -d "$DB_NAME" -b -C \
     -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM $table" \
     -h -1 | tr -d ' \r\n')
@@ -71,7 +73,7 @@ check_count() {
 check_sql_value() {
   local label="$1" query="$2" esperado="$3"
   local resultado
-  resultado=$("$SQLCMD" -S "$DB_HOST" -U sa -P "$SA_PASS" \
+  resultado=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" \
     -d "$DB_NAME" -b -C \
     -Q "SET NOCOUNT ON; $query" \
     -h -1 | tr -d ' \r\n')
@@ -260,7 +262,7 @@ phase "FASE 5: Solicitud de retiro del comercio"
 
 check_sql_value \
   "Saldo wallet comercio antes de retiro = 30000" \
-  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws WHERE ws.id_wallet = $ID_WALLET_COMERCIO" \
   "30000"
 
 info "POST /api/comercios/solicitar-retiro (idComercio=$ID_COMERCIO, valor=20000)"
@@ -391,7 +393,7 @@ ok "Doble confirmación rechazada ✓"
 
 check_sql_value \
   "Saldo wallet comercio tras confirmar pago = 10000" \
-  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws WHERE ws.id_wallet = $ID_WALLET_COMERCIO" \
   "10000"
 
 check_sql_value \
@@ -418,7 +420,7 @@ ok "Segundo retiro → idRetiro=$ID_RETIRO_2  valor=5000  estado=$ESTADO_RETIRO_
 
 check_sql_value \
   "Saldo wallet comercio tras segundo retiro = 5000" \
-  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws WHERE ws.id_wallet = $ID_WALLET_COMERCIO" \
   "5000"
 
 info "POST /api/comercios/retiros/rechazar (idRetiro=$ID_RETIRO_2)"
@@ -451,7 +453,7 @@ ok "GET retiros?estado=RECHAZADO → items=$RETIROS_RECH_ITEMS ✓"
 
 check_sql_value \
   "Saldo wallet comercio tras rechazo = 10000 (restaurado)" \
-  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws WHERE ws.id_wallet = $ID_WALLET_COMERCIO" \
   "10000"
 
 # ════════════════════════════════════════════════════
@@ -481,7 +483,7 @@ check_sql_value \
 
 check_sql_value \
   "Saldo final wallet comercio = 10000" \
-  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws INNER JOIN wallets w ON ws.id_wallet = w.id_wallet WHERE w.tipo_wallet = 'COMERCIO'" \
+  "SELECT CAST(CAST(ws.saldo_disponible AS BIGINT) AS NVARCHAR(50)) FROM wallet_saldos ws WHERE ws.id_wallet = $ID_WALLET_COMERCIO" \
   "10000"
 
 check_sql_value \

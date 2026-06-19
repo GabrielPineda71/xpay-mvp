@@ -550,6 +550,7 @@ bash scripts/build-qa-artifacts.sh
 | [`docs/QA_OPERATIONS_VARIABLES.md`](QA_OPERATIONS_VARIABLES.md) | Guía de variables operativas QA: cómo obtener TOKEN e IDs, cargar `ops/qa.env.local` y ejecutar scripts locales |
 | [`docs/QA_MASTER_E2E_CHECKLIST.md`](QA_MASTER_E2E_CHECKLIST.md) | Checklist maestro QA end-to-end: ciclo completo desde CI verde hasta acta de aprobación |
 | [`docs/AZURE_QA_FOUNDATION.md`](AZURE_QA_FOUNDATION.md) | Plan Azure QA desde cero: arquitectura, recursos, variables, comandos CLI, scripts DB, smoke test, checklist demo socios |
+| [`docs/AZURE_QA_DEPLOYMENT_STATUS.md`](AZURE_QA_DEPLOYMENT_STATUS.md) | Estado real del deploy Fase 50: recursos creados, URLs, validación endpoints, pendientes Fase 51 |
 | [`docs/OBSERVABILITY_AND_ALERTING_RUNBOOK.md`](OBSERVABILITY_AND_ALERTING_RUNBOOK.md) | Endpoints de monitoreo, matriz de alertas, runbook de respuesta a incidentes |
 | [`docs/ROLLBACK_AND_RECOVERY_RUNBOOK.md`](ROLLBACK_AND_RECOVERY_RUNBOOK.md) | Criterios de rollback, matriz rollback/fix-forward, procedimientos por componente, plantilla de acta |
 
