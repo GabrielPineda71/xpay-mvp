@@ -15,8 +15,8 @@
 | **Backend API** | `https://xpay-api-qa.azurewebsites.net` | ✅ Activo |
 | SQL Server | `xpay-sql-qa.database.windows.net` | ✅ Privado (firewall) |
 
-**Commit desplegado (frontend):** `0c6385f` (docs: record Azure QA frontend deployment)  
-**Commit desplegado (backend):** `0c6385f` (mismo — sin cambios funcionales en Fase 52)
+**Commit desplegado (frontend):** `aee1b10` + fix Fase 56 (feat: add QA business user demo views + corrección zip deploy)  
+**Commit desplegado (backend):** `aee1b10` (sin cambios funcionales en backend)
 
 ---
 
@@ -211,4 +211,23 @@ Los datos visibles demuestran el ciclo financiero completo funcionando. Presenta
 
 ---
 
-*Documento creado en Fase 52. Actualizado en Fase 54 con vista Mi Wallet para usuarios QA. Actualizar después de cada demo con socios y después de cambios en el ambiente QA.*
+---
+
+## Corrección Fase 56 — Deploy vistas diferenciadas
+
+**Problema detectado (post Fase 55):** Los 5 usuarios QA veían el mismo panel admin.
+Los deploys de Fase 54/55 reportaron éxito pero el frontend seguía sirviendo el bundle
+original de Fase 51.
+
+**Causa raíz:** El zip se creaba con `dist/` como directorio raíz → archivos aterrizaban
+en `/home/site/wwwroot/dist/` en lugar de `/home/site/wwwroot/`. El proceso Node no
+sobreescribía `index.html` correctamente en deploys subsiguientes.
+
+**Corrección:** Zip flat desde `cd dist/ && zip .` + `az webapp restart` explícito.
+
+**Estado post-corrección:** Bundle `index-BW_UhIYj.js` activo, todas las rutas 200,
+los 5 usuarios redirigen a su vista diferenciada correctamente.
+
+---
+
+*Documento creado en Fase 52. Actualizado en Fase 54 (Mi Wallet), Fase 55 (Mi Comercio / Mi Empresa), Fase 56 (corrección deploy). Actualizar después de cada demo con socios y después de cambios en el ambiente QA.*

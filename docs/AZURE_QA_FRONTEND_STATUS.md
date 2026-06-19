@@ -222,4 +222,81 @@ La URL del frontend (`xpay-admin-qa.azurewebsites.net`) coincide exactamente con
 
 ---
 
-*Documento creado en Fase 51. Actualizar en Fase 52 con resultados de demo con socios.*
+---
+
+## Fase 56 — Corrección deploy vistas diferenciadas (2026-06-19)
+
+### Problema
+
+Los deploys de Fase 54 y Fase 55 reportaron `RuntimeSuccessful` pero el frontend seguía
+sirviendo el bundle original de Fase 51 (`index-Bmv8AqfC.js`, sin código de vistas
+diferenciadas). Los 5 usuarios QA veían el mismo panel admin.
+
+### Causa raíz
+
+El zip de deploy se creaba con `zip -r /tmp/frontend.zip dist/`, lo que genera una estructura
+donde `dist/` es el **directorio raíz dentro del zip**. Al extraer en `/home/site/wwwroot/`,
+los archivos aterrizaban en `/home/site/wwwroot/dist/`. La primera instancia (Fase 51) funcionó
+porque el App Service inició `npm start` desde el directorio con `package.json` (`dist/`), pero
+los deploys subsiguientes —al poner los archivos en la misma ruta— no sobreescribían
+`index.html` si el proceso Node tenía el archivo en caché, resultando en que el servidor seguía
+sirviendo el `index.html` viejo referenciando `index-Bmv8AqfC.js`.
+
+### Corrección aplicada
+
+1. `rm -rf dist/` — limpieza total antes del build
+2. `npm run build` — genera `index-BW_UhIYj.js` (50 módulos, 231.64 kB, Phase 55)
+3. Se recrearon `dist/server.cjs` y `dist/package.json` en `dist/`
+4. **Zip flat**: `cd dist && zip -r /tmp/frontend-56.zip .` — archivos en raíz del zip (sin
+   subdirectorio `dist/`), aterrizan directamente en `/home/site/wwwroot/`
+5. `az webapp deploy --type zip` → `RuntimeSuccessful`
+6. `az webapp restart` — fuerza reinicio del proceso Node para garantizar lectura del nuevo
+   `index.html` desde disco
+
+### Validación post-corrección
+
+| Check | Resultado |
+|-------|----------|
+| Bundle activo en live site | `index-BW_UhIYj.js` (Phase 55) ✅ |
+| Cadenas Phase 55 en bundle público | `mi-wallet`, `mi-comercio`, `mi-empresa`, `qa.comercio1`, `qa.empresa1`, `ADMIN_XPAY` ✅ |
+| GET / | HTTP 200 ✅ |
+| GET /login | HTTP 200 ✅ |
+| GET /mi-wallet | HTTP 200 ✅ |
+| GET /mi-comercio | HTTP 200 ✅ |
+| GET /mi-empresa | HTTP 200 ✅ |
+| GET /dashboard | HTTP 200 ✅ |
+| CORS OPTIONS /api/auth/login | HTTP 204, Access-Control-Allow-Origin correcto ✅ |
+
+### Logins post-corrección
+
+| Usuario | HTTP | idUsuario | Roles | Vista esperada |
+|---------|------|-----------|-------|---------------|
+| qa.admin.xpay | 200 | 1 | ['ADMIN_XPAY'] | /dashboard ✅ |
+| qa.usuario1 | 200 | 3 | [] | /mi-wallet ✅ |
+| qa.usuario2 | 200 | 4 | [] | /mi-wallet ✅ |
+| qa.comercio1 | 200 | 11 | ['COMERCIO'] | /mi-comercio ✅ |
+| qa.empresa1 | 200 | 12 | [] | /mi-empresa (username) ✅ |
+
+### Validaciones locales — Fase 56
+
+| Check | Resultado |
+|-------|----------|
+| `npm run build` (Vite) | ✅ 50 módulos, 0 errores, 694ms |
+| `dotnet build` (Release) | ✅ Build succeeded — 0 errors, 0 warnings |
+| `scan-dependencies-security.sh` | ✅ 0 vulnerabilidades Moderate/High/Critical |
+
+### Cambio permanente en proceso de deploy
+
+A partir de Fase 56, el zip de deploy **siempre debe generarse desde DENTRO de `dist/`**:
+
+```bash
+cd frontend/xpay-admin/dist
+zip -r /tmp/xpay-admin-qa-frontend-XX.zip . -x "*.DS_Store"
+```
+
+Esto garantiza que los archivos aterricen en la raíz de `/home/site/wwwroot/` y `server.cjs`
+sea accesible directamente para el proceso Node del App Service.
+
+---
+
+*Documento creado en Fase 51. Actualizado en Fase 56 con causa raíz y corrección deploy.*
