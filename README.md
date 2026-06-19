@@ -964,24 +964,31 @@ Estado completo:
 
 **Usuario admin demo:** `qa.admin.xpay` — contraseña por canal seguro (no en este documento)
 
-### Usuarios QA transaccionales — vista "Mi Wallet" (Fase 54)
+### Usuarios QA — vistas diferenciadas (Fases 54–55)
 
-| Usuario | idWallet | Saldo ficticio | Vista al ingresar |
-|---------|----------|---------------|------------------|
-| `qa.usuario1` | 2 | ~$285,000 ficticio | **Mi Wallet** — no ve menú admin |
-| `qa.usuario2` | 3 | ~$195,000 ficticio | **Mi Wallet** — no ve menú admin |
-| `qa.admin.xpay` | — | — | **Panel admin completo** |
+| Usuario | Rol | Vista al ingresar | Descripción |
+|---------|-----|------------------|-------------|
+| `qa.admin.xpay` | ADMIN_XPAY | **Panel admin completo** | Acceso global a todos los módulos |
+| `qa.usuario1` | — | **Mi Wallet** `/mi-wallet` | Saldo ficticio, transferencias, pago QR |
+| `qa.usuario2` | — | **Mi Wallet** `/mi-wallet` | Saldo ficticio, transferencias, pago QR |
+| `qa.comercio1` | COMERCIO | **Mi Comercio** `/mi-comercio` | Ventas QR, saldo, retiros del comercio demo |
+| `qa.empresa1` | — | **Mi Empresa** `/mi-empresa` | Vista informativa libranza (módulo en prep.) |
 | QR demo | — | `QR-DEMO-XPAY-QA-001` | Comercio Demo XPAY QA |
 
 > Contraseñas por canal seguro. No en este documento.
->
-> `qa.usuario1` y `qa.usuario2` acceden a `/mi-wallet` al iniciar sesión: ven su saldo ficticio, movimientos recientes, y pueden transferir o pagar QR directamente desde la UI. El menú admin está oculto.
+
+### Usuarios QA negocio (Fase 55)
+
+`qa.comercio1` accede a `/mi-comercio`: ve ventas QR de su comercio (idComercio=2), saldo del wallet comercio, retiros, y puede solicitar retiro cuando hay saldo disponible.
+
+`qa.empresa1` accede a `/mi-empresa`: vista informativa del módulo de libranza (no implementado en este MVP), con flujo previsto y capacidades planificadas.
 
 | Documento | Propósito |
 |-----------|-----------|
 | **[docs/PARTNER_DEMO_SCRIPT.md](docs/PARTNER_DEMO_SCRIPT.md)** | Guion de demo: flujo 10–15 min, respuestas a preguntas, qué decir/no decir |
 | **[docs/PARTNER_DEMO_READINESS.md](docs/PARTNER_DEMO_READINESS.md)** | Readiness: módulos verificados, datos ficticios confirmados, decisión lista/no lista |
 | **[docs/QA_DEMO_TRANSACTIONAL_USERS.md](docs/QA_DEMO_TRANSACTIONAL_USERS.md)** | IDs de wallets, saldos ficticios, operaciones ejecutadas (transferencia + pago QR), validación ledger |
+| **[docs/QA_DEMO_BUSINESS_USERS.md](docs/QA_DEMO_BUSINESS_USERS.md)** | Perfiles qa.comercio1 y qa.empresa1: roles, vistas, endpoints, mapa demo, seguridad |
 
 ---
 

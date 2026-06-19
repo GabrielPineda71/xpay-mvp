@@ -149,6 +149,29 @@ Los datos visibles demuestran el ciclo financiero completo funcionando. Presenta
 - ✅ Vista "Mi Wallet" disponible para qa.usuario1 y qa.usuario2 (Fase 54)
 - ✅ qa.admin.xpay ve panel admin completo; usuarios QA ven solo "Mi Wallet"
 - ✅ Transferencia y pago QR desde UI funcionales para usuarios QA
+- ✅ Vista "Mi Comercio" disponible para qa.comercio1 (Fase 55) — ventas, saldo, retiros filtrados
+- ✅ Vista "Mi Empresa" disponible para qa.empresa1 (Fase 55) — informativa, módulo libranza en preparación
+- ✅ 5 usuarios QA con vistas diferenciadas: admin / wallet×2 / comercio / empresa
+
+**Módulos — qa.comercio1 (Fase 55):**
+
+| Módulo | Estado |
+|--------|--------|
+| Login → redirige a /mi-comercio | ✅ |
+| Resumen comercio (saldo, ventas, retiros) | ✅ |
+| Listado ventas QR filtrado por comercio | ✅ 2 ventas CONTINGENCIA |
+| Listado retiros filtrado por comercio | ✅ 0 retiros (sin saldo liquidado) |
+| Formulario solicitar retiro | ✅ visible (deshabilitado cuando saldo=0) |
+| Menú admin oculto | ✅ solo "Mi Comercio" + "Cerrar sesión" |
+
+**Módulos — qa.empresa1 (Fase 55):**
+
+| Módulo | Estado |
+|--------|--------|
+| Login → redirige a /mi-empresa | ✅ |
+| Vista informativa libranza | ✅ flujo previsto + capacidades planificadas |
+| Sin transacciones financieras | ✅ módulo no implementado |
+| Menú admin oculto | ✅ solo "Mi Empresa" + "Cerrar sesión" |
 
 **Módulos — qa.usuario1 / qa.usuario2 (Fase 54):**
 

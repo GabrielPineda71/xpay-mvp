@@ -287,7 +287,42 @@ Ver IDs, saldos y operaciones detalladas: **[docs/QA_DEMO_TRANSACTIONAL_USERS.md
 
 ---
 
-## 9. Notas técnicas para el presentador
+## 9. Módulo opcional — Comercio aliado (3 min)
+
+> Muestra la experiencia diferenciada de un comercio que recibe pagos QR con XPAY. — Fase 55.
+
+1. **Logout** → ingresar como `qa.comercio1` (contraseña por canal seguro).
+2. Sistema redirige a `/mi-comercio` — menú admin **no aparece**, solo "Mi Comercio".
+3. Mostrar: nombre del comercio, saldo disponible, resumen de ventas QR (total, contingencia, valor).
+4. Mostrar listado de ventas QR → 2 ventas CONTINGENCIA ya ejecutadas en Fase 53.
+5. Explicar el flujo de liquidación: *"Cuando el admin liquida una venta CONTINGENCIA, el saldo del comercio aumenta y puede solicitar su retiro."*
+6. Mostrar formulario de solicitud de retiro (actualmente deshabilitado porque el saldo es $0 — las ventas están en CONTINGENCIA, no liquidadas aún).
+
+**Frase:** *"El comercio ve únicamente sus propias ventas y saldo. No ve datos de otros comercios ni del panel administrativo global."*
+
+> **Demo avanzada (opcional):** si se quiere mostrar el flujo completo, el admin puede liquidar una venta QR desde el panel admin (`/ventas-qr/listado`) y luego volver a ingresar como qa.comercio1 para mostrar que el saldo aumentó y el retiro ya puede solicitarse.
+
+Ver perfiles y detalles: **[docs/QA_DEMO_BUSINESS_USERS.md](QA_DEMO_BUSINESS_USERS.md)**
+
+---
+
+## 10. Módulo opcional — Empresa libranza (2 min)
+
+> Muestra el roadmap del módulo de libranza para empresas aliadas. — Fase 55.
+
+1. **Logout** → ingresar como `qa.empresa1` (contraseña por canal seguro).
+2. Sistema redirige a `/mi-empresa` — menú admin **no aparece**, solo "Mi Empresa".
+3. Mostrar: badge "Módulo en preparación".
+4. Recorrer el flujo previsto de 5 pasos: carga empleados → validación cupo → uso wallet/QR → consulta → recaudo.
+5. Mostrar tabla de capacidades planificadas.
+
+**Frase:** *"Este módulo aún no está implementado en el MVP, pero muestra a los socios qué pueden esperar cuando XPAY integre libranza como beneficio para empresas y sus empleados."*
+
+> No hay transacciones financieras en esta vista — es 100% informativa.
+
+---
+
+## 11. Notas técnicas para el presentador  <!-- renombrado de Sección 9 -->
 
 - La pantalla de login muestra `API: xpay-api-qa.azurewebsites.net` — es visible para socios, es la URL del backend QA real, es correcto.
 - El menú lateral muestra el usuario `qa.admin.xpay` y `API: xpay-api-qa.azurewebsites.net` — información de contexto, no sensible.
@@ -298,4 +333,4 @@ Ver IDs, saldos y operaciones detalladas: **[docs/QA_DEMO_TRANSACTIONAL_USERS.md
 
 ---
 
-*Documento creado en Fase 52. Actualizado en Fase 53 con flujo transaccional. No versionado con contraseñas reales. Actualizar después de cada demo con socios.*
+*Documento creado en Fase 52. Actualizado Fase 53 con flujo transaccional. Actualizado Fase 54 con vista usuario final. Actualizado Fase 55 con módulos comercio aliado y empresa libranza. No versionado con contraseñas reales. Actualizar después de cada demo con socios.*

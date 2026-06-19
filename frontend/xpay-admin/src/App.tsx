@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth, isAdminUser } from './auth/AuthContext.tsx';
+import { AuthProvider, useAuth, getViewForUser } from './auth/AuthContext.tsx';
 import { PrivateRoute } from './router/PrivateRoute.tsx';
 import { Layout } from './components/Layout.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
@@ -14,14 +14,18 @@ import { ComerciosListPage } from './pages/ComerciosListPage.tsx';
 import { VentasQrListPage } from './pages/VentasQrListPage.tsx';
 import { LedgerTransaccionesListPage } from './pages/LedgerTransaccionesListPage.tsx';
 import { UserWalletPage } from './pages/UserWalletPage.tsx';
+import { MiComercioPage } from './pages/MiComercioPage.tsx';
+import { MiEmpresaPage } from './pages/MiEmpresaPage.tsx';
 
-// Redirects to dashboard (admin) or Mi Wallet (demo user) after login
+// Smart redirect based on user role/view
 function UserRedirect() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  return isAdminUser(user)
-    ? <Navigate to="/dashboard" replace />
-    : <Navigate to="/mi-wallet" replace />;
+  const view = getViewForUser(user);
+  if (view === 'admin')    return <Navigate to="/dashboard" replace />;
+  if (view === 'comercio') return <Navigate to="/mi-comercio" replace />;
+  if (view === 'empresa')  return <Navigate to="/mi-empresa" replace />;
+  return <Navigate to="/mi-wallet" replace />;
 }
 
 export default function App() {
@@ -48,8 +52,10 @@ export default function App() {
               <Route path="retiros/listado" element={<RetirosListPage />} />
               <Route path="retiros" element={<RetiroPage />} />
               <Route path="retiros/:idRetiro" element={<RetiroPage />} />
-              {/* Demo user route */}
-              <Route path="mi-wallet" element={<UserWalletPage />} />
+              {/* Demo user routes */}
+              <Route path="mi-wallet"   element={<UserWalletPage />} />
+              <Route path="mi-comercio" element={<MiComercioPage />} />
+              <Route path="mi-empresa"  element={<MiEmpresaPage />} />
               {/* Catch-all: smart redirect per role */}
               <Route path="*" element={<UserRedirect />} />
             </Route>

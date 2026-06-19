@@ -77,7 +77,17 @@ export function useAuth(): AuthCtx {
   return ctx;
 }
 
-// QA/Demo: admin = has ADMIN_XPAY or OPERADOR_XPAY role; else = demo wallet user
+// QA/Demo role detection
+// Temporary demo rule documented in docs/QA_DEMO_BUSINESS_USERS.md
+export type UserView = 'admin' | 'wallet' | 'comercio' | 'empresa';
+
 export function isAdminUser(user: AuthUser): boolean {
   return user.roles.includes('ADMIN_XPAY') || user.roles.includes('OPERADOR_XPAY');
+}
+
+export function getViewForUser(user: AuthUser): UserView {
+  if (user.roles.includes('ADMIN_XPAY') || user.roles.includes('OPERADOR_XPAY')) return 'admin';
+  if (user.roles.includes('COMERCIO') || user.usuario === 'qa.comercio1') return 'comercio';
+  if (user.usuario === 'qa.empresa1') return 'empresa';
+  return 'wallet';
 }

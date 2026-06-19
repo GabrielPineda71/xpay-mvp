@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
-import { useAuth, isAdminUser } from '../auth/AuthContext.tsx';
+import { useAuth, getViewForUser } from '../auth/AuthContext.tsx';
 
 function getApiLabel(): string {
   const url = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
@@ -14,7 +14,7 @@ function getApiLabel(): string {
 export function Layout() {
   const { user, logout } = useAuth();
   const navigate          = useNavigate();
-  const isAdmin           = user ? isAdminUser(user) : false;
+  const view              = user ? getViewForUser(user) : 'wallet';
 
   function handleLogout() {
     logout();
@@ -24,10 +24,10 @@ export function Layout() {
   return (
     <div className="layout">
       <nav className="nav">
-        <span className="nav-brand">{isAdmin ? 'XPAY Admin' : 'XPAY'}</span>
+        <span className="nav-brand">{view === 'admin' ? 'XPAY Admin' : 'XPAY'}</span>
 
         <div className="nav-links">
-          {isAdmin ? (
+          {view === 'admin' && (
             <>
               <Link to="/dashboard">Dashboard</Link>
               <Link to="/wallets/listado">Wallets</Link>
@@ -40,9 +40,10 @@ export function Layout() {
               <Link to="/retiros/listado">Retiros</Link>
               <Link to="/retiros">Buscar retiro</Link>
             </>
-          ) : (
-            <Link to="/mi-wallet">Mi Wallet</Link>
           )}
+          {view === 'wallet'   && <Link to="/mi-wallet">Mi Wallet</Link>}
+          {view === 'comercio' && <Link to="/mi-comercio">Mi Comercio</Link>}
+          {view === 'empresa'  && <Link to="/mi-empresa">Mi Empresa</Link>}
         </div>
 
         <div className="nav-user">
