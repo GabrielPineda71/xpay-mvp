@@ -62,11 +62,11 @@ Las siguientes actividades **no están autorizadas** con el MVP en su estado act
 
 | # | Brecha | Riesgo si no se resuelve | Requerido antes de dinero real | Responsable sugerido | Estado |
 |---|--------|--------------------------|-------------------------------|---------------------|--------|
-| T1 | **Observabilidad y logging formal** | Sin trazas, imposible diagnosticar errores financieros en producción | Sí — crítico | Responsable técnico | `[ ]` |
+| T1 | **Observabilidad y logging formal** | Sin trazas, imposible diagnosticar errores financieros en producción | Sí — crítico | Responsable técnico | `[~]` Fase 35: correlation ID + request logging básico implementados. Pendiente: App Insights / agregación formal / alertas. |
 | T2 | **Manejo de errores productivo** | Stack traces expuestos al usuario; información de servidor filtrada | Sí | Responsable técnico | `[ ]` |
 | T3 | **Rate limiting / throttling** | El sistema es vulnerable a abuso por volumen de requests | Sí | Responsable técnico | `[ ]` |
 | T4 | **Backups y restauración probados** | Pérdida de datos contables y de saldos sin posibilidad de recuperación | Sí — crítico | Responsable técnico + Ops | `[ ]` |
-| T5 | **Monitoreo de uptime** | Sin alerta de caídas; no hay SLA real posible | Sí | Responsable técnico + Ops | `[ ]` |
+| T5 | **Monitoreo de uptime** | Sin alerta de caídas; no hay SLA real posible | Sí | Responsable técnico + Ops | `[~]` Fase 35: `GET /api/diagnostics/ping` disponible como probe básico. Pendiente: monitor externo, alertas automáticas. |
 | T6 | **Alertas automáticas** | Errores financieros no detectados en tiempo real | Sí — crítico | Responsable técnico | `[ ]` |
 | T7 | **Estrategia de rollback técnico documentada y probada** | Corrección de errores en producción sin plan de reversión genera daño mayor | Sí | Responsable técnico | `[ ]` |
 | T8 | **Ambientes separados: QA / Preproducción / Producción** | Datos de prueba y datos reales mezclados; riesgo de corrupción | Sí — crítico | Responsable técnico | `[ ]` |

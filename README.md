@@ -352,6 +352,49 @@ Checklist estratégico que define las 53 brechas (técnicas, financieras/contabl
 
 ---
 
+## Observabilidad básica
+
+El backend incluye observabilidad mínima para QA y desarrollo:
+
+**Correlation ID (`X-Correlation-ID`)**
+
+Cada request recibe un correlation ID. Si el cliente envía el header `X-Correlation-ID`, el backend lo propaga en el response. Si no lo envía, se genera un GUID automáticamente.
+
+```bash
+# Enviar correlation ID propio
+curl -H "X-Correlation-ID: QA-DEBUG-001" http://localhost:5000/api/diagnostics/ping
+
+# El response siempre incluye el header de vuelta
+# X-Correlation-ID: QA-DEBUG-001
+```
+
+**Request logging**
+
+Cada request registra en los logs: método HTTP, path, status code y tiempo de respuesta en ms, vinculados al correlation ID. Se configura en `appsettings.json`:
+
+```json
+"Observability": {
+  "EnableRequestLogging": true,
+  "EnableCorrelationId": true
+}
+```
+
+**No se registra por seguridad:** header `Authorization`, body de requests, passwords, tokens, connection strings ni datos personales.
+
+**`GET /api/diagnostics/ping`**
+
+Endpoint público de diagnóstico sin secretos:
+
+```bash
+curl http://localhost:5000/api/diagnostics/ping
+# { "status": "OK", "service": "XPAY API", "environment": "Development",
+#   "timestamp": "...", "correlationId": "..." }
+```
+
+No expone: connection string, JWT key, variables de entorno completas ni detalles de infraestructura.
+
+---
+
 ## Variables operativas QA
 
 **[ops/qa.env.example](ops/qa.env.example)** — plantilla versionada con placeholders.

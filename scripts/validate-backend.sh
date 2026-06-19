@@ -907,4 +907,37 @@ STATUS_LEDGER_401=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
 ok "GET /api/admin/ledger-transacciones sin token → 401 ✓"
 
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 15: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS, configuración QA y todos los endpoints OK ═══"
+
+# ════════════════════════════════════════════════════
+# FASE 35 — Observabilidad básica: diagnostics y correlation id
+# ════════════════════════════════════════════════════
+phase "FASE 35: Observabilidad básica — diagnostics/ping y X-Correlation-ID"
+
+# 35.1 GET /api/diagnostics/ping → 200 + status=OK
+info "GET /api/diagnostics/ping → debe retornar 200 + status OK"
+STATUS_PING=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$API_URL/api/diagnostics/ping")
+[[ "$STATUS_PING" == "200" ]] || fail "GET /api/diagnostics/ping esperado 200, obtenido $STATUS_PING"
+BODY_PING=$(get_json "$API_URL/api/diagnostics/ping") || fail "GET /api/diagnostics/ping no respondió"
+echo "$BODY_PING" | jq .
+PING_STATUS=$(echo "$BODY_PING" | jq -r '.status')
+[[ "$PING_STATUS" == "OK" ]] || fail "/api/diagnostics/ping → status esperado 'OK', obtenido '$PING_STATUS'"
+ok "GET /api/diagnostics/ping → 200 / status=OK ✓"
+
+# 35.2 Response incluye header X-Correlation-ID no vacío
+info "GET /api/diagnostics/ping → response debe incluir header X-Correlation-ID"
+PING_HEADERS=$(curl -si --max-time 15 "$API_URL/api/diagnostics/ping")
+echo "$PING_HEADERS" | grep -qi "x-correlation-id:" || fail "Header X-Correlation-ID ausente en response"
+PING_CID=$(echo "$PING_HEADERS" | grep -i "x-correlation-id:" | tr -d '\r' | awk '{print $2}')
+[[ -n "$PING_CID" ]] || fail "X-Correlation-ID header vacío en response"
+ok "X-Correlation-ID header presente → $PING_CID ✓"
+
+# 35.3 Enviar X-Correlation-ID y verificar que el response lo devuelve igual (echo)
+info "Enviar X-Correlation-ID: QA-CID-001 → response debe devolver el mismo valor"
+PING_ECHO_HEADERS=$(curl -si --max-time 15 -H "X-Correlation-ID: QA-CID-001" "$API_URL/api/diagnostics/ping")
+PING_ECHO_CID=$(echo "$PING_ECHO_HEADERS" | grep -i "x-correlation-id:" | tr -d '\r' | awk '{print $2}')
+[[ "$PING_ECHO_CID" == "QA-CID-001" ]] \
+  || fail "X-Correlation-ID echo esperado 'QA-CID-001', obtenido '$PING_ECHO_CID'"
+ok "X-Correlation-ID echo → QA-CID-001 ✓"
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 35: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS, configuración QA, observabilidad básica y todos los endpoints OK ═══"

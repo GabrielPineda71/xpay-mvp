@@ -309,6 +309,11 @@ Ejecutar inmediatamente después del despliegue, antes de abrir el ambiente a te
 - [ ] `API:` en header del frontend muestra el hostname QA (no `localhost`)
 - [ ] `API:` en pantalla de login muestra la URL QA correcta
 - [ ] No hay datos reales de clientes ni saldos reales en el sistema
+- [ ] `GET /api/diagnostics/ping` → HTTP 200 + campo `status: "OK"` (Fase 35)
+- [ ] Response de `/api/diagnostics/ping` incluye header `X-Correlation-ID` con valor no vacío
+- [ ] Los logs del backend muestran entradas con `CorrelationId` para cada request (revisar consola o log stream en Azure)
+
+> **Investigar errores por correlation ID:** al reportar un error, incluir el valor del header `X-Correlation-ID` de la respuesta. El responsable técnico puede buscar ese ID en los logs del backend para trazar el request completo.
 
 ---
 

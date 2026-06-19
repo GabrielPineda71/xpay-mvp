@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Xpay.Api.Data;
+using Xpay.Api.Middleware;
 using Xpay.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -87,6 +89,36 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+// Correlation ID — debe ir primero para que todos los logs del request tengan el scope
+var enableCorrelationId   = builder.Configuration.GetValue("Observability:EnableCorrelationId",   defaultValue: true);
+var enableRequestLogging  = builder.Configuration.GetValue("Observability:EnableRequestLogging",  defaultValue: true);
+
+if (enableCorrelationId)
+    app.UseMiddleware<CorrelationIdMiddleware>();
+
+// Request logging básico — no registra Authorization, body, passwords ni connection strings
+if (enableRequestLogging)
+{
+    app.Use(async (context, next) =>
+    {
+        var sw    = Stopwatch.StartNew();
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        var method = context.Request.Method;
+        var path   = context.Request.Path.Value ?? string.Empty;
+
+        await next();
+
+        sw.Stop();
+        var correlationId = context.Items.TryGetValue("CorrelationId", out var cid)
+            ? cid?.ToString() ?? "-"
+            : "-";
+
+        logger.LogInformation(
+            "HTTP {Method} {Path} responded {StatusCode} in {Elapsed}ms | cid={CorrelationId}",
+            method, path, context.Response.StatusCode, sw.ElapsedMilliseconds, correlationId);
+    });
+}
 
 app.UseSwagger();
 app.UseSwaggerUI();
