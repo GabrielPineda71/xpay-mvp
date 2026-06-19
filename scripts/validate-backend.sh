@@ -1030,8 +1030,9 @@ CORS40_EVIL_RESPONSE=$(curl -si -X OPTIONS \
   -H "Access-Control-Request-Method: POST" \
   --max-time 15 \
   "$API_URL/api/auth/login")
+# grep puede retornar exit 1 si no encuentra el header (caso esperado); || true previene fallo del script
 CORS40_EVIL=$(echo "$CORS40_EVIL_RESPONSE" | grep -i "access-control-allow-origin:" \
-  | tr -d '\r' | awk '{print $2}')
+  | tr -d '\r' | awk '{print $2}' || true)
 [[ "$CORS40_EVIL" != "https://evil.example.com" ]] \
   || fail "CORS: origen no permitido recibió Access-Control-Allow-Origin: $CORS40_EVIL"
 ok "CORS origen no permitido → sin Access-Control-Allow-Origin: https://evil.example.com ✓"
