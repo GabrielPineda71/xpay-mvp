@@ -523,3 +523,24 @@ tr:hover td { background: #f7fafc; }
   border-radius: 8px;
   border: 1px solid #e2e8f0;
 }
+
+/* ── QR READER CONTAINER (html5-qrcode) ── */
+/* html5-qrcode injects its own video + viewfinder into this div.
+   Must have explicit width/height before scanner.start() is called. */
+.qr-reader-container {
+  width: 100%;
+  max-width: 300px;
+  min-height: 300px;
+  margin-bottom: 0.5rem;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1a202c;
+  /* Override html5-qrcode default styles inside the container */
+}
+.qr-reader-container video {
+  width: 100% !important;
+  border-radius: 8px;
+}
+.qr-reader-container img {
+  border-radius: 8px;
+}

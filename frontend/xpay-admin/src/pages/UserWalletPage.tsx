@@ -1,15 +1,9 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { get, post } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
-
-// BarcodeDetector — Web API, not yet in TS stdlib (Chrome/Edge/Android/Safari 17+)
-interface BarcodeResult { rawValue: string }
-declare class BarcodeDetector {
-  constructor(opts: { formats: string[] });
-  detect(src: HTMLVideoElement): Promise<BarcodeResult[]>;
-}
 
 // QA/Demo mapping — temporary rule: username → wallet/user IDs
 // Documented in docs/QA_DEMO_TRANSACTIONAL_USERS.md
@@ -61,23 +55,11 @@ interface EstadoCuenta {
 type Msg = { ok: boolean; text: string };
 type Tab = 'saldo' | 'recibir' | 'enviar' | 'pagar' | 'movimientos';
 
-const HAS_BARCODE_DETECTOR = typeof window !== 'undefined' && 'BarcodeDetector' in window;
-
 // PIN: format-only validation for QA/Demo phase
 // Full cryptographic validation (backend hash, attempt limits, lockout) is pending for production
 function validatePin(pin: string): string | null {
   if (!/^\d{7}$/.test(pin)) return 'La clave debe ser exactamente 7 dígitos numéricos.';
   return null;
-}
-
-function stopScan(
-  streamRef:  { current: MediaStream | null },
-  intervalRef: { current: number | null },
-  setScanningFn: (v: boolean) => void,
-): void {
-  if (intervalRef.current !== null) { clearInterval(intervalRef.current); intervalRef.current = null; }
-  if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
-  setScanningFn(false);
 }
 
 export function UserWalletPage() {
@@ -108,9 +90,7 @@ export function UserWalletPage() {
   const [envScanErr,    setEnvScanErr]    = useState<string | null>(null);
   const [envManual,     setEnvManual]     = useState(false);
   const [envManualDest, setEnvManualDest] = useState('');
-  const envVideoRef   = useRef<HTMLVideoElement>(null);
-  const envStreamRef  = useRef<MediaStream | null>(null);
-  const envIntervalRef = useRef<number | null>(null);
+  const envScannerRef = useRef<Html5Qrcode | null>(null);
 
   // ── Pagar comercio QR ─────────────────────────────────────────────────────
   const [pagQrCode,    setPagQrCode]    = useState('');
@@ -122,9 +102,7 @@ export function UserWalletPage() {
   const [pagPasted,    setPagPasted]    = useState('');
   const [pagScanning,  setPagScanning]  = useState(false);
   const [pagScanErr,   setPagScanErr]   = useState<string | null>(null);
-  const pagVideoRef   = useRef<HTMLVideoElement>(null);
-  const pagStreamRef  = useRef<MediaStream | null>(null);
-  const pagIntervalRef = useRef<number | null>(null);
+  const pagScannerRef = useRef<Html5Qrcode | null>(null);
 
   // ── Load account ──────────────────────────────────────────────────────────
   const loadCuenta = useCallback(async () => {
@@ -141,40 +119,18 @@ export function UserWalletPage() {
 
   useEffect(() => { void loadCuenta(); }, [loadCuenta]);
 
-  // Cleanup camera on unmount
+  // ── Cleanup on unmount ────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      stopScan(envStreamRef, envIntervalRef, () => {});
-      stopScan(pagStreamRef, pagIntervalRef, () => {});
+      const stopScanner = async (s: Html5Qrcode | null) => {
+        if (!s) return;
+        try { await s.stop(); } catch { /* ignore */ }
+        try { s.clear(); } catch { /* ignore */ }
+      };
+      void stopScanner(envScannerRef.current);
+      void stopScanner(pagScannerRef.current);
     };
   }, []);
-
-  // ── QR generation (Recibir) ───────────────────────────────────────────────
-  async function handleGenerarQr() {
-    if (!user || !demoInfo) return;
-    setRecQrBusy(true);
-    try {
-      const payload: XpayTransferQR = {
-        type:             'XPAY_TRANSFER',
-        env:              'QA',
-        version:          1,
-        receiverUser:     user.usuario,
-        receiverWalletId: demoInfo.idWallet,
-        amount:           recValor ? Number(recValor) : null,
-        currency:         'COP',
-      };
-      const dataUrl = await QRCode.toDataURL(JSON.stringify(payload), { width: 280, margin: 2, color: { dark: '#1a202c' } });
-      setRecQrSrc(dataUrl);
-    } finally { setRecQrBusy(false); }
-  }
-
-  function handleDescargarQr() {
-    if (!recQrSrc || !user) return;
-    const a = document.createElement('a');
-    a.href = recQrSrc;
-    a.download = `xpay-recibir-${user.usuario}.png`;
-    a.click();
-  }
 
   // ── QR parse helpers ──────────────────────────────────────────────────────
   function parseTransferQr(raw: string): void {
@@ -208,37 +164,114 @@ export function UserWalletPage() {
     else       { setPagScanErr('No se pudo leer el contenido del QR.'); }
   }
 
-  // ── Camera scanner ────────────────────────────────────────────────────────
-  async function startScan(
-    videoRef:     React.RefObject<HTMLVideoElement>,
-    streamRef:    { current: MediaStream | null },
-    intervalRef:  { current: number | null },
-    setScanFn:    (v: boolean) => void,
-    setScanErrFn: (e: string | null) => void,
-    onDetect:     (raw: string) => void,
-  ) {
-    setScanErrFn(null);
+  // Stable refs so scanner effects always call the latest parse functions
+  // (avoids stale closure over demoInfo/state setters without adding them to effect deps)
+  const parseTransferQrRef = useRef(parseTransferQr);
+  parseTransferQrRef.current = parseTransferQr;
+  const parseMerchantQrRef = useRef(parseMerchantQr);
+  parseMerchantQrRef.current = parseMerchantQr;
+
+  // ── Env scanner lifecycle (html5-qrcode) ──────────────────────────────────
+  // Effect fires after React commits the <div id="env-qr-reader"> to DOM,
+  // so Html5Qrcode always finds a mounted, sized element.
+  useEffect(() => {
+    if (!envScanning) return;
+    let done = false;
+    const scanner = new Html5Qrcode('env-qr-reader');
+    envScannerRef.current = scanner;
+
+    const teardown = async () => {
+      try { await scanner.stop(); } catch { /* ignore — may already be stopped or element gone */ }
+      try { scanner.clear(); } catch { /* ignore */ }
+      envScannerRef.current = null;
+    };
+
+    void scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      (text) => {
+        if (done) return;
+        done = true;
+        void teardown().then(() => { setEnvScanning(false); parseTransferQrRef.current(text); });
+      },
+      () => { /* per-frame decode miss — normal, ignored */ },
+    ).catch(() => {
+      if (done) return;
+      done = true;
+      void teardown().then(() => {
+        setEnvScanning(false);
+        setEnvScanErr('No se pudo abrir la cámara. Puedes pegar el código QR manualmente.');
+      });
+    });
+
+    return () => {
+      done = true;
+      void teardown();
+    };
+  }, [envScanning]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Pag scanner lifecycle (html5-qrcode) ──────────────────────────────────
+  useEffect(() => {
+    if (!pagScanning) return;
+    let done = false;
+    const scanner = new Html5Qrcode('pag-qr-reader');
+    pagScannerRef.current = scanner;
+
+    const teardown = async () => {
+      try { await scanner.stop(); } catch { /* ignore */ }
+      try { scanner.clear(); } catch { /* ignore */ }
+      pagScannerRef.current = null;
+    };
+
+    void scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      (text) => {
+        if (done) return;
+        done = true;
+        void teardown().then(() => { setPagScanning(false); parseMerchantQrRef.current(text); });
+      },
+      () => { /* per-frame decode miss — normal, ignored */ },
+    ).catch(() => {
+      if (done) return;
+      done = true;
+      void teardown().then(() => {
+        setPagScanning(false);
+        setPagScanErr('No se pudo abrir la cámara. Puedes pegar el código QR manualmente.');
+      });
+    });
+
+    return () => {
+      done = true;
+      void teardown();
+    };
+  }, [pagScanning]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── QR generation (Recibir) ───────────────────────────────────────────────
+  async function handleGenerarQr() {
+    if (!user || !demoInfo) return;
+    setRecQrBusy(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      streamRef.current = stream;
-      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
-      setScanFn(true);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-      intervalRef.current = window.setInterval(async () => {
-        if (!videoRef.current) return;
-        try {
-          const codes = await (detector.detect(videoRef.current) as Promise<BarcodeResult[]>);
-          if (codes.length > 0) {
-            stopScan(streamRef, intervalRef, setScanFn);
-            onDetect(codes[0].rawValue);
-          }
-        } catch { /* detection error — retry */ }
-      }, 500);
-    } catch (err) {
-      setScanErrFn('No se pudo acceder a la cámara: ' + ((err as Error).message ?? 'usa el campo de texto para pegar el QR.'));
-      setScanFn(false);
-    }
+      const payload: XpayTransferQR = {
+        type:             'XPAY_TRANSFER',
+        env:              'QA',
+        version:          1,
+        receiverUser:     user.usuario,
+        receiverWalletId: demoInfo.idWallet,
+        amount:           recValor ? Number(recValor) : null,
+        currency:         'COP',
+      };
+      const dataUrl = await QRCode.toDataURL(JSON.stringify(payload), { width: 280, margin: 2, color: { dark: '#1a202c' } });
+      setRecQrSrc(dataUrl);
+    } finally { setRecQrBusy(false); }
+  }
+
+  function handleDescargarQr() {
+    if (!recQrSrc || !user) return;
+    const a = document.createElement('a');
+    a.href = recQrSrc;
+    a.download = `xpay-recibir-${user.usuario}.png`;
+    a.click();
   }
 
   // ── Transfer handler ──────────────────────────────────────────────────────
@@ -290,12 +323,12 @@ export function UserWalletPage() {
   function resetEnviar() {
     setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
     setEnvMsg(null); setEnvScanErr(null); setEnvPasted(''); setEnvManual(false); setEnvManualDest('');
-    stopScan(envStreamRef, envIntervalRef, setEnvScanning);
+    setEnvScanning(false); // useEffect cleanup handles scanner.stop()
   }
   function resetPagar() {
     setPagQrCode(''); setPagValor(''); setPagNeedValor(false);
     setPagMsg(null); setPagScanErr(null); setPagPasted('');
-    stopScan(pagStreamRef, pagIntervalRef, setPagScanning);
+    setPagScanning(false); // useEffect cleanup handles scanner.stop()
   }
 
   // ── Early return ──────────────────────────────────────────────────────────
@@ -336,8 +369,9 @@ export function UserWalletPage() {
               className={`wallet-tab-btn${tab === t ? ' wallet-tab-btn--active' : ''}`}
               onClick={() => {
                 setTab(t);
-                if (t !== 'enviar') stopScan(envStreamRef, envIntervalRef, setEnvScanning);
-                if (t !== 'pagar')  stopScan(pagStreamRef, pagIntervalRef, setPagScanning);
+                // Stop cameras when leaving their tabs
+                if (t !== 'enviar') setEnvScanning(false);
+                if (t !== 'pagar')  setPagScanning(false);
               }}
             >
               {labels[t]}
@@ -435,30 +469,20 @@ export function UserWalletPage() {
           <h3>Enviar dinero</h3>
           <p className="tab-hint">Escanea el QR del receptor, pega su contenido, o ingresa el ID de wallet.</p>
 
-          {/* Video element — always in DOM when on this tab (hidden until scanning) */}
-          <video
-            ref={envVideoRef}
-            className="scan-video"
-            playsInline
-            muted
-            style={{ display: envScanning ? 'block' : 'none', marginBottom: '0.75rem' }}
-          />
-
           {/* Scan / paste / manual — hidden once destination is set */}
           {!envDest && !envManual && (
             <div className="scan-section">
+              {/* html5-qrcode container — only mounted when scanning so the lib finds a sized element */}
+              {envScanning && <div id="env-qr-reader" className="qr-reader-container" />}
+
               {!envScanning && (
                 <>
-                  {HAS_BARCODE_DETECTOR ? (
-                    <button
-                      className="btn-scan"
-                      onClick={() => void startScan(envVideoRef, envStreamRef, envIntervalRef, setEnvScanning, setEnvScanErr, parseTransferQr)}
-                    >
-                      📷 Escanear QR
-                    </button>
-                  ) : (
-                    <p className="scan-unavail">Escáner no disponible en este navegador.</p>
-                  )}
+                  <button
+                    className="btn-scan"
+                    onClick={() => { setEnvScanErr(null); setEnvScanning(true); }}
+                  >
+                    📷 Escanear QR
+                  </button>
                   <div style={{ marginTop: '0.75rem' }}>
                     <label>
                       Pegar contenido del QR
@@ -482,8 +506,12 @@ export function UserWalletPage() {
                 </>
               )}
               {envScanning && (
-                <button className="btn-secondary" onClick={() => stopScan(envStreamRef, envIntervalRef, setEnvScanning)}>
-                  Cancelar cámara
+                <button
+                  className="btn-secondary"
+                  style={{ marginTop: '0.5rem' }}
+                  onClick={() => setEnvScanning(false)}
+                >
+                  Cancelar escaneo
                 </button>
               )}
               {envScanErr && <div className="error-msg" style={{ marginTop: '0.5rem' }}>{envScanErr}</div>}
@@ -595,28 +623,19 @@ export function UserWalletPage() {
           <h3>Pagar comercio QR</h3>
           <p className="tab-hint">Escanea el QR del comercio o pega el código / contenido JSON.</p>
 
-          <video
-            ref={pagVideoRef}
-            className="scan-video"
-            playsInline
-            muted
-            style={{ display: pagScanning ? 'block' : 'none', marginBottom: '0.75rem' }}
-          />
-
           {!pagQrCode && (
             <div className="scan-section">
+              {/* html5-qrcode container */}
+              {pagScanning && <div id="pag-qr-reader" className="qr-reader-container" />}
+
               {!pagScanning && (
                 <>
-                  {HAS_BARCODE_DETECTOR ? (
-                    <button
-                      className="btn-scan"
-                      onClick={() => void startScan(pagVideoRef, pagStreamRef, pagIntervalRef, setPagScanning, setPagScanErr, parseMerchantQr)}
-                    >
-                      📷 Escanear QR del comercio
-                    </button>
-                  ) : (
-                    <p className="scan-unavail">Escáner no disponible en este navegador.</p>
-                  )}
+                  <button
+                    className="btn-scan"
+                    onClick={() => { setPagScanErr(null); setPagScanning(true); }}
+                  >
+                    📷 Escanear QR del comercio
+                  </button>
                   <div style={{ marginTop: '0.75rem' }}>
                     <label>
                       Pegar código QR o contenido JSON
@@ -635,8 +654,12 @@ export function UserWalletPage() {
                 </>
               )}
               {pagScanning && (
-                <button className="btn-secondary" onClick={() => stopScan(pagStreamRef, pagIntervalRef, setPagScanning)}>
-                  Cancelar cámara
+                <button
+                  className="btn-secondary"
+                  style={{ marginTop: '0.5rem' }}
+                  onClick={() => setPagScanning(false)}
+                >
+                  Cancelar escaneo
                 </button>
               )}
               {pagScanErr && <div className="error-msg" style={{ marginTop: '0.5rem' }}>{pagScanErr}</div>}
