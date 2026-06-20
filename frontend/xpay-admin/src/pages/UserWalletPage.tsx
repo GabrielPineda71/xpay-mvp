@@ -12,6 +12,10 @@ const DEMO_MAP: Record<string, { idWallet: number; idUsuario: number; defaultDes
   'qa.usuario2': { idWallet: 3, idUsuario: 4, defaultDestWallet: 2 },
 };
 
+// Polling interval for automatic wallet refresh (QA/Demo phase)
+// Production: replace with SignalR/WebSocket push notifications
+const POLL_INTERVAL_MS = 7000;
+
 // XPAY QR payload types — QA/Demo phase (no cryptographic signing in this phase)
 // See docs/QA_QR_MONEY_FLOW.md for full specification
 interface XpayTransferQR {
@@ -62,15 +66,31 @@ function validatePin(pin: string): string | null {
   return null;
 }
 
+function fmtTime(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 export function UserWalletPage() {
   const { user } = useAuth();
   const demoInfo = user ? DEMO_MAP[user.usuario] : undefined;
   const [tab, setTab] = useState<Tab>('saldo');
 
   // ── Account data ──────────────────────────────────────────────────────────
-  const [cuenta,  setCuenta]  = useState<EstadoCuenta | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [dataErr, setDataErr] = useState<string | null>(null);
+  const [cuenta,     setCuenta]     = useState<EstadoCuenta | null>(null);
+  const [loading,    setLoading]    = useState(true);
+  const [dataErr,    setDataErr]    = useState<string | null>(null);
+
+  // ── Auto-refresh state ────────────────────────────────────────────────────
+  const [refreshing,  setRefreshing]  = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [refreshErr,  setRefreshErr]  = useState<string | null>(null);
+  const [newMovMsg,   setNewMovMsg]   = useState<string | null>(null);
+
+  // Refs for polling: baseline movement ID, toast timer, in-progress guard
+  const lastKnownMovIdRef   = useRef<number>(-1);
+  const newMovToastTimerRef = useRef<number | null>(null);
+  const opInProgressRef     = useRef(false); // true during financial transactions
 
   // ── Recibir dinero ────────────────────────────────────────────────────────
   const [recValor,   setRecValor]   = useState('');
@@ -104,7 +124,7 @@ export function UserWalletPage() {
   const [pagScanErr,   setPagScanErr]   = useState<string | null>(null);
   const pagScannerRef = useRef<Html5Qrcode | null>(null);
 
-  // ── Load account ──────────────────────────────────────────────────────────
+  // ── Initial load ──────────────────────────────────────────────────────────
   const loadCuenta = useCallback(async () => {
     if (!demoInfo) return;
     setLoading(true); setDataErr(null);
@@ -113,15 +133,59 @@ export function UserWalletPage() {
         `/api/reportes/wallet/${demoInfo.idWallet}/estado-cuenta`,
       );
       setCuenta(r.data);
+      setLastUpdated(new Date());
+      // Establish baseline for new-movement detection
+      lastKnownMovIdRef.current = r.data.movimientos[0]?.idMovimiento ?? -1;
     } catch (e) { setDataErr((e as Error).message); }
     finally { setLoading(false); }
   }, [demoInfo]);
 
+  // ── Silent background refresh (polling) ───────────────────────────────────
+  const pollRefresh = useCallback(async () => {
+    if (!demoInfo) return;
+    if (opInProgressRef.current) return; // skip during financial transactions
+    setRefreshing(true);
+    try {
+      const r = await get<{ success: boolean; data: EstadoCuenta }>(
+        `/api/reportes/wallet/${demoInfo.idWallet}/estado-cuenta`,
+      );
+      const fresh = r.data;
+      const latestId = fresh.movimientos[0]?.idMovimiento ?? -1;
+
+      // Detect new movement since last known baseline
+      if (lastKnownMovIdRef.current !== -1 && latestId > lastKnownMovIdRef.current) {
+        const newest = fresh.movimientos[0];
+        const msg = newest?.naturaleza === 'C'
+          ? 'Recibiste dinero. Saldo actualizado.'
+          : 'Movimiento realizado. Saldo actualizado.';
+        setNewMovMsg(msg);
+        if (newMovToastTimerRef.current) clearTimeout(newMovToastTimerRef.current);
+        newMovToastTimerRef.current = window.setTimeout(() => setNewMovMsg(null), 6000);
+      }
+
+      lastKnownMovIdRef.current = latestId;
+      setCuenta(fresh);
+      setLastUpdated(new Date());
+      setRefreshErr(null);
+    } catch {
+      setRefreshErr('No se pudo actualizar automáticamente. Usa "Actualizar ahora".');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [demoInfo]);
+
   useEffect(() => { void loadCuenta(); }, [loadCuenta]);
+
+  // ── Polling every 7 seconds ───────────────────────────────────────────────
+  useEffect(() => {
+    const id = window.setInterval(() => { void pollRefresh(); }, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [pollRefresh]);
 
   // ── Cleanup on unmount ────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
+      if (newMovToastTimerRef.current) clearTimeout(newMovToastTimerRef.current);
       const stopScanner = async (s: Html5Qrcode | null) => {
         if (!s) return;
         try { await s.stop(); } catch { /* ignore */ }
@@ -165,15 +229,12 @@ export function UserWalletPage() {
   }
 
   // Stable refs so scanner effects always call the latest parse functions
-  // (avoids stale closure over demoInfo/state setters without adding them to effect deps)
   const parseTransferQrRef = useRef(parseTransferQr);
   parseTransferQrRef.current = parseTransferQr;
   const parseMerchantQrRef = useRef(parseMerchantQr);
   parseMerchantQrRef.current = parseMerchantQr;
 
   // ── Env scanner lifecycle (html5-qrcode) ──────────────────────────────────
-  // Effect fires after React commits the <div id="env-qr-reader"> to DOM,
-  // so Html5Qrcode always finds a mounted, sized element.
   useEffect(() => {
     if (!envScanning) return;
     let done = false;
@@ -181,7 +242,7 @@ export function UserWalletPage() {
     envScannerRef.current = scanner;
 
     const teardown = async () => {
-      try { await scanner.stop(); } catch { /* ignore — may already be stopped or element gone */ }
+      try { await scanner.stop(); } catch { /* ignore */ }
       try { scanner.clear(); } catch { /* ignore */ }
       envScannerRef.current = null;
     };
@@ -204,10 +265,7 @@ export function UserWalletPage() {
       });
     });
 
-    return () => {
-      done = true;
-      void teardown();
-    };
+    return () => { done = true; void teardown(); };
   }, [envScanning]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Pag scanner lifecycle (html5-qrcode) ──────────────────────────────────
@@ -241,10 +299,7 @@ export function UserWalletPage() {
       });
     });
 
-    return () => {
-      done = true;
-      void teardown();
-    };
+    return () => { done = true; void teardown(); };
   }, [pagScanning]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── QR generation (Recibir) ───────────────────────────────────────────────
@@ -283,7 +338,7 @@ export function UserWalletPage() {
     if (destId === demoInfo.idWallet) { setEnvMsg({ ok: false, text: 'No puedes transferirte a tu propia wallet.' }); return; }
     const pinErr = validatePin(envPin);
     if (pinErr) { setEnvMsg({ ok: false, text: pinErr }); return; }
-    setEnvBusy(true); setEnvMsg(null);
+    setEnvBusy(true); setEnvMsg(null); opInProgressRef.current = true;
     try {
       const r = await post<{ success: boolean; message?: string }>('/api/wallets/transferencia', {
         idWalletOrigen:  demoInfo.idWallet,
@@ -295,7 +350,7 @@ export function UserWalletPage() {
       setEnvMsg({ ok: r.success, text: r.message ?? (r.success ? 'Transferencia realizada.' : 'Error al transferir.') });
       if (r.success) { await loadCuenta(); }
     } catch (e) { setEnvMsg({ ok: false, text: (e as Error).message }); }
-    finally { setEnvBusy(false); setEnvPin(''); }
+    finally { setEnvBusy(false); setEnvPin(''); opInProgressRef.current = false; }
   }
 
   // ── QR Payment handler ────────────────────────────────────────────────────
@@ -304,7 +359,7 @@ export function UserWalletPage() {
     if (!demoInfo || !pagQrCode) return;
     const pinErr = validatePin(pagPin);
     if (pinErr) { setPagMsg({ ok: false, text: pinErr }); return; }
-    setPagBusy(true); setPagMsg(null);
+    setPagBusy(true); setPagMsg(null); opInProgressRef.current = true;
     try {
       const r = await post<{ success: boolean; message?: string }>('/api/qr/pagar', {
         codigoQr:        pagQrCode,
@@ -316,19 +371,19 @@ export function UserWalletPage() {
       setPagMsg({ ok: r.success, text: r.message ?? (r.success ? 'Pago QR realizado.' : 'Error al pagar QR.') });
       if (r.success) { await loadCuenta(); }
     } catch (e) { setPagMsg({ ok: false, text: (e as Error).message }); }
-    finally { setPagBusy(false); setPagPin(''); }
+    finally { setPagBusy(false); setPagPin(''); opInProgressRef.current = false; }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function resetEnviar() {
     setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
     setEnvMsg(null); setEnvScanErr(null); setEnvPasted(''); setEnvManual(false); setEnvManualDest('');
-    setEnvScanning(false); // useEffect cleanup handles scanner.stop()
+    setEnvScanning(false);
   }
   function resetPagar() {
     setPagQrCode(''); setPagValor(''); setPagNeedValor(false);
     setPagMsg(null); setPagScanErr(null); setPagPasted('');
-    setPagScanning(false); // useEffect cleanup handles scanner.stop()
+    setPagScanning(false);
   }
 
   // ── Early return ──────────────────────────────────────────────────────────
@@ -356,6 +411,26 @@ export function UserWalletPage() {
         )}
       </p>
 
+      {/* ── Auto-refresh status bar ──────────────────────────────────────── */}
+      <div className="wallet-refresh-bar">
+        <span className="refresh-label">
+          {refreshing ? '● Actualizando...' : '↻ Actualización automática activa'}
+        </span>
+        {lastUpdated && !refreshing && (
+          <span className="refresh-time">Última actualización: {fmtTime(lastUpdated)}</span>
+        )}
+        <button
+          className="btn-refresh-now"
+          onClick={() => void loadCuenta()}
+          disabled={loading || refreshing}
+        >
+          Actualizar ahora
+        </button>
+        {refreshErr && !loading && (
+          <span className="refresh-err">{refreshErr}</span>
+        )}
+      </div>
+
       {/* Tab navigation */}
       <div className="wallet-tabs">
         {(['saldo', 'recibir', 'enviar', 'pagar', 'movimientos'] as Tab[]).map(t => {
@@ -369,7 +444,6 @@ export function UserWalletPage() {
               className={`wallet-tab-btn${tab === t ? ' wallet-tab-btn--active' : ''}`}
               onClick={() => {
                 setTab(t);
-                // Stop cameras when leaving their tabs
                 if (t !== 'enviar') setEnvScanning(false);
                 if (t !== 'pagar')  setPagScanning(false);
               }}
@@ -469,10 +543,8 @@ export function UserWalletPage() {
           <h3>Enviar dinero</h3>
           <p className="tab-hint">Escanea el QR del receptor, pega su contenido, o ingresa el ID de wallet.</p>
 
-          {/* Scan / paste / manual — hidden once destination is set */}
           {!envDest && !envManual && (
             <div className="scan-section">
-              {/* html5-qrcode container — only mounted when scanning so the lib finds a sized element */}
               {envScanning && <div id="env-qr-reader" className="qr-reader-container" />}
 
               {!envScanning && (
@@ -506,11 +578,7 @@ export function UserWalletPage() {
                 </>
               )}
               {envScanning && (
-                <button
-                  className="btn-secondary"
-                  style={{ marginTop: '0.5rem' }}
-                  onClick={() => setEnvScanning(false)}
-                >
+                <button className="btn-secondary" style={{ marginTop: '0.5rem' }} onClick={() => setEnvScanning(false)}>
                   Cancelar escaneo
                 </button>
               )}
@@ -518,7 +586,6 @@ export function UserWalletPage() {
             </div>
           )}
 
-          {/* Manual entry fallback */}
           {!envDest && envManual && (
             <div className="qr-manual-entry">
               <label>
@@ -552,7 +619,6 @@ export function UserWalletPage() {
             </div>
           )}
 
-          {/* Transfer form — shown once destination is confirmed */}
           {envDest && (
             <>
               <div className="qr-parsed">
@@ -625,7 +691,6 @@ export function UserWalletPage() {
 
           {!pagQrCode && (
             <div className="scan-section">
-              {/* html5-qrcode container */}
               {pagScanning && <div id="pag-qr-reader" className="qr-reader-container" />}
 
               {!pagScanning && (
@@ -654,11 +719,7 @@ export function UserWalletPage() {
                 </>
               )}
               {pagScanning && (
-                <button
-                  className="btn-secondary"
-                  style={{ marginTop: '0.5rem' }}
-                  onClick={() => setPagScanning(false)}
-                >
+                <button className="btn-secondary" style={{ marginTop: '0.5rem' }} onClick={() => setPagScanning(false)}>
                   Cancelar escaneo
                 </button>
               )}
@@ -776,6 +837,20 @@ export function UserWalletPage() {
       <p className="user-wallet-footer">
         Ambiente QA/Demo · saldos y transacciones ficticios · sin dinero real · sin producción
       </p>
+
+      {/* ── New movement toast ─────────────────────────────────────────────── */}
+      {newMovMsg && (
+        <div className="wallet-toast" role="alert">
+          <span>{newMovMsg}</span>
+          <button
+            className="wallet-toast-close"
+            onClick={() => setNewMovMsg(null)}
+            aria-label="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }

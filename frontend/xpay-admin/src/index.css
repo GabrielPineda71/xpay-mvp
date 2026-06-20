@@ -544,3 +544,67 @@ tr:hover td { background: #f7fafc; }
 .qr-reader-container img {
   border-radius: 8px;
 }
+
+/* ── WALLET AUTO-REFRESH BAR ── */
+.wallet-refresh-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: #718096;
+  margin-bottom: 0.25rem;
+}
+.refresh-label { color: #68d391; font-weight: 600; }
+.refresh-time  { color: #a0aec0; }
+.refresh-err   { color: #c53030; }
+
+.btn-refresh-now {
+  background: none;
+  border: 1px solid #cbd5e0;
+  color: #4a5568;
+  padding: 0.18rem 0.65rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.74rem;
+  font-family: inherit;
+  transition: background 0.12s;
+}
+.btn-refresh-now:hover    { background: #edf2f7; }
+.btn-refresh-now:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── NEW MOVEMENT TOAST ── */
+.wallet-toast {
+  position: fixed;
+  bottom: 1.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #276749;
+  color: #fff;
+  padding: 0.75rem 1.25rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.22);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  white-space: nowrap;
+  animation: toastSlideUp 0.22s ease;
+}
+.wallet-toast-close {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.8);
+  cursor: pointer;
+  font-size: 0.95rem;
+  padding: 0;
+  line-height: 1;
+}
+.wallet-toast-close:hover { color: #fff; }
+
+@keyframes toastSlideUp {
+  from { transform: translateX(-50%) translateY(1rem); opacity: 0; }
+  to   { transform: translateX(-50%) translateY(0);    opacity: 1; }
+}
