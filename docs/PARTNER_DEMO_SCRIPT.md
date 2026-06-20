@@ -266,20 +266,21 @@ Mostrar brevemente (sin salir del frontend):
 
 **Frase:** *"Este es el resultado de una transferencia entre usuarios y un pago QR ejecutados. Cada operación genera entradas balanceadas en el ledger."*
 
-**Opción B — Demostrar la vista usuario final (recomendado para mostrar diferenciación) — Fase 54:**
+**Opción B — Demostrar la vista usuario final con flujo QR (recomendado) — Fase 57:**
 
-1. **Logout** del admin → ingresar como `qa.usuario1` (contraseña por canal seguro).
-2. El sistema redirige automáticamente a `/mi-wallet` — el menú admin **no aparece**.
-3. Mostrar: saldo ficticio, movimientos recientes.
-4. Ejecutar una transferencia a wallet 3 (`qa.usuario2`) por $5,000 desde el formulario.
-5. Saldo se actualiza automáticamente al completar.
-6. **Logout** → ingresar como `qa.usuario2`.
-7. Verificar que el saldo aumentó (recibió la transferencia).
-8. Ejecutar un pago QR a `QR-DEMO-XPAY-QA-001` por $5,000.
-9. Saldo se actualiza.
-10. **Logout** → ingresar como `qa.admin.xpay` → mostrar la nueva venta QR en CONTINGENCIA en el panel admin.
+1. **Logout** del admin → ingresar como `qa.usuario2` (contraseña por canal seguro).
+2. Sistema redirige a `/mi-wallet` — menú admin **no aparece**.
+3. Pestaña **Recibir** → ingresar $5,000 → clic "Generar QR" → mostrar QR en pantalla → "Descargar QR PNG".
+4. **Logout** → ingresar como `qa.usuario1`.
+5. Pestaña **Enviar** → clic "Escanear QR" (o pegar el JSON del QR) → sistema llena wallet destino y valor.
+6. Ingresar clave de 7 dígitos → clic "Enviar dinero".
+7. Mostrar que el saldo de `qa.usuario1` bajó y en Movimientos aparece la transferencia.
+8. Pestaña **Pagar QR** → escanear o pegar código `QR-DEMO-XPAY-QA-001` → ingresar valor → clave 7 dígitos → "Pagar QR".
+9. **Logout** → ingresar como `qa.admin.xpay` → mostrar venta QR CONTINGENCIA en panel admin.
 
-**Frase:** *"Los usuarios finales acceden a su propia vista de wallet. No ven el panel administrativo. El admin ve todo el panorama global."*
+**Frase:** *"El usuario ve únicamente su wallet. Genera QR para recibir, escanea QR para enviar, paga al comercio con QR. Sin acceso al panel admin."*
+
+> **Fallback si cámara no disponible:** el campo "Pegar código QR" acepta el JSON del QR o el código de texto directo. El botón "Ingresar destino manualmente" también está disponible.
 
 > **Si la red falla:** tener preparada la Opción A como respaldo. La Opción B requiere red estable para los POSTs de transferencia y pago QR.
 
@@ -294,13 +295,15 @@ Ver IDs, saldos y operaciones detalladas: **[docs/QA_DEMO_TRANSACTIONAL_USERS.md
 1. **Logout** → ingresar como `qa.comercio1` (contraseña por canal seguro).
 2. Sistema redirige a `/mi-comercio` — menú admin **no aparece**, solo "Mi Comercio".
 3. Mostrar: nombre del comercio, saldo disponible, resumen de ventas QR (total, contingencia, valor).
-4. Mostrar listado de ventas QR → 2 ventas CONTINGENCIA ya ejecutadas en Fase 53.
-5. Explicar el flujo de liquidación: *"Cuando el admin liquida una venta CONTINGENCIA, el saldo del comercio aumenta y puede solicitar su retiro."*
-6. Mostrar formulario de solicitud de retiro (actualmente deshabilitado porque el saldo es $0 — las ventas están en CONTINGENCIA, no liquidadas aún).
+4. Sección **QR del comercio** → ingresar valor opcional ($5,000) → "Generar QR comercio" → mostrar QR en pantalla.
+5. Clic "Descargar QR PNG" → mostrar descarga del QR como PNG.
+6. Clic "Copiar JSON" → el JSON del QR va al portapapeles (puede pegarse en celular del receptor).
+7. Mostrar listado de ventas QR → 2 ventas CONTINGENCIA ya ejecutadas.
+8. Explicar el flujo de liquidación: *"Cuando el admin liquida una venta CONTINGENCIA, el saldo del comercio aumenta y puede solicitar su retiro."*
 
-**Frase:** *"El comercio ve únicamente sus propias ventas y saldo. No ve datos de otros comercios ni del panel administrativo global."*
+**Frase:** *"El comercio genera su QR de cobro, lo descarga o lo muestra en pantalla. El usuario escanea desde su wallet y paga. Sin acceso al panel admin."*
 
-> **Demo avanzada (opcional):** si se quiere mostrar el flujo completo, el admin puede liquidar una venta QR desde el panel admin (`/ventas-qr/listado`) y luego volver a ingresar como qa.comercio1 para mostrar que el saldo aumentó y el retiro ya puede solicitarse.
+> **Demo avanzada (opcional):** el admin puede liquidar una venta QR desde el panel admin y luego mostrar que el saldo del comercio aumentó y el retiro ya puede solicitarse.
 
 Ver perfiles y detalles: **[docs/QA_DEMO_BUSINESS_USERS.md](QA_DEMO_BUSINESS_USERS.md)**
 
@@ -333,4 +336,4 @@ Ver perfiles y detalles: **[docs/QA_DEMO_BUSINESS_USERS.md](QA_DEMO_BUSINESS_USE
 
 ---
 
-*Documento creado en Fase 52. Actualizado Fase 53 con flujo transaccional. Actualizado Fase 54 con vista usuario final. Actualizado Fase 55 con módulos comercio aliado y empresa libranza. No versionado con contraseñas reales. Actualizar después de cada demo con socios.*
+*Documento creado en Fase 52. Actualizado Fase 53 (flujo transaccional). Actualizado Fase 54 (vista usuario final). Actualizado Fase 55 (comercio aliado / empresa libranza). Actualizado Fase 57 (flujo QR: generar, escanear, PIN 7 dígitos, QR comercio descargable). No versionado con contraseñas reales. Actualizar después de cada demo con socios.*

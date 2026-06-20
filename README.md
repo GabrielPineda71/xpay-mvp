@@ -989,6 +989,7 @@ Estado completo:
 | **[docs/PARTNER_DEMO_READINESS.md](docs/PARTNER_DEMO_READINESS.md)** | Readiness: módulos verificados, datos ficticios confirmados, decisión lista/no lista |
 | **[docs/QA_DEMO_TRANSACTIONAL_USERS.md](docs/QA_DEMO_TRANSACTIONAL_USERS.md)** | IDs de wallets, saldos ficticios, operaciones ejecutadas (transferencia + pago QR), validación ledger |
 | **[docs/QA_DEMO_BUSINESS_USERS.md](docs/QA_DEMO_BUSINESS_USERS.md)** | Perfiles qa.comercio1 y qa.empresa1: roles, vistas, endpoints, mapa demo, seguridad |
+| **[docs/QA_QR_MONEY_FLOW.md](docs/QA_QR_MONEY_FLOW.md)** | Flujo QR completo: recibir/enviar dinero, pagar comercio, PIN 7 dígitos, tecnología QR, pendientes producción |
 
 ---
 

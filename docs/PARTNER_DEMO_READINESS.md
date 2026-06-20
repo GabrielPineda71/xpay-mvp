@@ -192,6 +192,23 @@ Los datos visibles demuestran el ciclo financiero completo funcionando. Presenta
 - Los saldos acumulados del ciclo QA son ficticios — aclarar origen durante la demo.
 - La vista Mi Wallet usa un mapa hardcoded qa.usuario1→idWallet=2, qa.usuario2→idWallet=3 (regla demo temporal QA).
 
+**Módulos — flujo QR (Fase 57):**
+
+| Módulo | Estado |
+|--------|--------|
+| Recibir: generar QR con/sin valor | ✅ imagen PNG en pantalla, descargable |
+| Enviar: escanear QR (BarcodeDetector nativa) | ✅ rellena destino + valor automáticamente |
+| Enviar: pegar JSON del QR (fallback) | ✅ siempre disponible |
+| Enviar: entrada manual por wallet ID | ✅ disponible como fallback adicional |
+| Enviar: PIN 7 dígitos requerido | ✅ validación de formato; PIN no guardado |
+| Pagar QR: escanear QR comercio | ✅ acepta JSON y texto plano |
+| Pagar QR: pegar código (fallback) | ✅ siempre disponible |
+| QR comercio: generar con/sin valor | ✅ imagen PNG en pantalla |
+| QR comercio: descargar PNG | ✅ descarga automática |
+| QR comercio: copiar JSON | ✅ portapapeles |
+| No pagar automáticamente al escanear | ✅ solo rellena datos; usuario debe confirmar |
+| No backend PIN esta fase | ✅ documentado; pendiente producción |
+
 **Qué NO está lista:**
 
 - ❌ Producción
