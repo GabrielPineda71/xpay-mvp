@@ -129,7 +129,7 @@ Estado visible en Mi Wallet (con polling o push)
 # 1. Login como admin QA
 TOKEN=$(curl -s -X POST https://xpay-api-qa.azurewebsites.net/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"usuario":"qa.admin.xpay","password":"XpayQA@Test1!"}' \
+  -d '{"usuario":"qa.admin.xpay","password":"XpayDemo2026!"}' \
   | jq -r '.data.token')
 
 # 2. Simular APROBADO para qa.usuario1
@@ -141,7 +141,7 @@ curl -s -X POST https://xpay-api-qa.azurewebsites.net/api/kyc/qa/simular-estado 
 # 3. Verificar estado como qa.usuario1
 TOKEN2=$(curl -s -X POST https://xpay-api-qa.azurewebsites.net/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"usuario":"qa.usuario1","password":"XpayQA@Test1!"}' \
+  -d '{"usuario":"qa.usuario1","password":"XpayDemo2026!"}' \
   | jq -r '.data.token')
 
 curl -s https://xpay-api-qa.azurewebsites.net/api/kyc/mi-estado \

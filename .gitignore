@@ -29,3 +29,6 @@ ops/*.local
 ops/.local
 ops/.env.local
 ops/qa.env.local
+
+# Claude Code local settings (may contain approved commands with credentials)
+.claude/
