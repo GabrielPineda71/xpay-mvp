@@ -79,6 +79,29 @@ function fmtTime(d: Date): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+function kycLabel(estado: string): string {
+  const labels: Record<string, string> = {
+    NO_INICIADO: 'No iniciado',
+    PENDIENTE:   'Pendiente',
+    EN_REVISION: 'En revisión',
+    APROBADO:    'Aprobado',
+    RECHAZADO:   'Rechazado',
+    EXPIRADO:    'Expirado',
+    ERROR:       'Error',
+  };
+  return labels[estado] ?? estado;
+}
+
+const KYC_BADGE_CLASS: Record<string, string> = {
+  NO_INICIADO: 'kyc-badge kyc-badge-no-iniciado',
+  PENDIENTE:   'kyc-badge kyc-badge-pendiente',
+  EN_REVISION: 'kyc-badge kyc-badge-en-revision',
+  APROBADO:    'kyc-badge kyc-badge-aprobado',
+  RECHAZADO:   'kyc-badge kyc-badge-rechazado',
+  EXPIRADO:    'kyc-badge kyc-badge-expirado',
+  ERROR:       'kyc-badge kyc-badge-error',
+};
+
 // Computes a human-readable description for a wallet movement.
 // Uses tipoMovimiento + referenciaId (already in the API response) to identify the counterpart.
 // Falls back to the stored descripcion for unknown types.
@@ -142,6 +165,9 @@ export function UserWalletPage() {
   const [envManualDest, setEnvManualDest] = useState('');
   const envScannerRef = useRef<Html5Qrcode | null>(null);
 
+  // ── KYC state ─────────────────────────────────────────────────────────────
+  const [kycEstado, setKycEstado] = useState<string>('NO_INICIADO');
+
   // ── Pagar comercio QR ─────────────────────────────────────────────────────
   const [pagQrCode,    setPagQrCode]    = useState('');
   const [pagValor,     setPagValor]     = useState('');
@@ -153,6 +179,18 @@ export function UserWalletPage() {
   const [pagScanning,  setPagScanning]  = useState(false);
   const [pagScanErr,   setPagScanErr]   = useState<string | null>(null);
   const pagScannerRef = useRef<Html5Qrcode | null>(null);
+
+  // ── KYC load (once on mount) ──────────────────────────────────────────────
+  const loadKyc = useCallback(async () => {
+    try {
+      const r = await get<{ success: boolean; data: { estadoKyc: string } }>(
+        '/api/kyc/mi-estado',
+      );
+      setKycEstado(r.data.estadoKyc);
+    } catch {
+      /* non-critical: keep default NO_INICIADO */
+    }
+  }, []);
 
   // ── Initial load ──────────────────────────────────────────────────────────
   const loadCuenta = useCallback(async () => {
@@ -212,7 +250,7 @@ export function UserWalletPage() {
     }
   }, [demoInfo]);
 
-  useEffect(() => { void loadCuenta(); }, [loadCuenta]);
+  useEffect(() => { void loadCuenta(); void loadKyc(); }, [loadCuenta, loadKyc]);
 
   // ── Polling every 7 seconds ───────────────────────────────────────────────
   useEffect(() => {
@@ -470,6 +508,24 @@ export function UserWalletPage() {
           <span className="refresh-err">{refreshErr}</span>
         )}
       </div>
+
+      {/* ── KYC status section ───────────────────────────────────────────── */}
+      {(() => {
+        const kycApproved = kycEstado === 'APROBADO';
+        return (
+          <div className="kyc-status-bar">
+            <span className="kyc-label">Verificación de identidad:</span>
+            <span className={KYC_BADGE_CLASS[kycEstado] ?? 'kyc-badge kyc-badge-no-iniciado'}>
+              {kycLabel(kycEstado)}
+            </span>
+            {!kycApproved && (
+              <span className="kyc-nota">
+                En producción, esta wallet requerirá verificación de identidad aprobada.
+              </span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Tab navigation */}
       <div className="wallet-tabs">

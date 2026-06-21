@@ -15,4 +15,6 @@ public class Usuario
     public string Estado { get; set; } = "ACTIVO";
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaActualizacion { get; set; }
+    public string EstadoKycActual { get; set; } = "NO_INICIADO";
+    public DateTime? FechaKycActualizacion { get; set; }
 }

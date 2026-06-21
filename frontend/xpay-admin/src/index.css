@@ -608,3 +608,35 @@ tr:hover td { background: #f7fafc; }
   from { transform: translateX(-50%) translateY(1rem); opacity: 0; }
   to   { transform: translateX(-50%) translateY(0);    opacity: 1; }
 }
+
+/* ── Phase 61: KYC status section ─────────────────────────────────────── */
+.kyc-status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  background: #f7fafc;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+}
+.kyc-label { color: #4a5568; font-weight: 600; }
+.kyc-nota  { color: #718096; font-style: italic; }
+
+.kyc-badge {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.kyc-badge-no-iniciado { background: #edf2f7; color: #718096; }
+.kyc-badge-pendiente   { background: #ebf8ff; color: #2b6cb0; }
+.kyc-badge-en-revision { background: #fefcbf; color: #744210; }
+.kyc-badge-aprobado    { background: #f0fff4; color: #276749; }
+.kyc-badge-rechazado   { background: #fff5f5; color: #c53030; }
+.kyc-badge-expirado    { background: #fff8f0; color: #c05621; }
+.kyc-badge-error       { background: #fff5f5; color: #9b2c2c; }
