@@ -12,6 +12,12 @@ const DEMO_MAP: Record<string, { idWallet: number; idUsuario: number; defaultDes
   'qa.usuario2': { idWallet: 3, idUsuario: 4, defaultDestWallet: 2 },
 };
 
+// QA wallet-to-username reverse map — used to show counterpart in movement descriptions
+const WALLET_USER_MAP: Record<number, string> = {
+  2: 'qa.usuario1',
+  3: 'qa.usuario2',
+};
+
 // Polling interval for automatic wallet refresh (QA/Demo phase)
 // Production: replace with SignalR/WebSocket push notifications
 const POLL_INTERVAL_MS = 7000;
@@ -46,6 +52,8 @@ interface Movimiento {
   valor:          number;
   saldoDespues:   number;
   descripcion:    string | null;
+  referenciaTipo: string | null;
+  referenciaId:   number | null;
 }
 
 interface EstadoCuenta {
@@ -69,6 +77,28 @@ function validatePin(pin: string): string | null {
 function fmtTime(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+// Computes a human-readable description for a wallet movement.
+// Uses tipoMovimiento + referenciaId (already in the API response) to identify the counterpart.
+// Falls back to the stored descripcion for unknown types.
+function descripcionVisible(m: Movimiento): string {
+  if (m.tipoMovimiento === 'TRANSFERENCIA_SALIDA' && m.referenciaTipo === 'wallets' && m.referenciaId) {
+    const destUser = WALLET_USER_MAP[m.referenciaId];
+    return destUser
+      ? `Enviado a ${destUser} — Wallet #${m.referenciaId}`
+      : `Enviado a Wallet #${m.referenciaId}`;
+  }
+  if (m.tipoMovimiento === 'TRANSFERENCIA_ENTRADA' && m.referenciaTipo === 'wallets' && m.referenciaId) {
+    const srcUser = WALLET_USER_MAP[m.referenciaId];
+    return srcUser
+      ? `Recibido de ${srcUser} — Wallet #${m.referenciaId}`
+      : `Recibido de Wallet #${m.referenciaId}`;
+  }
+  if (m.tipoMovimiento === 'PAGO_QR') {
+    return 'Pago a Comercio Demo XPAY QA';
+  }
+  return m.descripcion ?? '—';
 }
 
 export function UserWalletPage() {
@@ -155,9 +185,17 @@ export function UserWalletPage() {
       // Detect new movement since last known baseline
       if (lastKnownMovIdRef.current !== -1 && latestId > lastKnownMovIdRef.current) {
         const newest = fresh.movimientos[0];
-        const msg = newest?.naturaleza === 'C'
-          ? 'Recibiste dinero. Saldo actualizado.'
-          : 'Movimiento realizado. Saldo actualizado.';
+        let msg = 'Movimiento realizado. Saldo actualizado.';
+        if (newest?.naturaleza === 'C') {
+          if (newest.tipoMovimiento === 'TRANSFERENCIA_ENTRADA'
+              && newest.referenciaTipo === 'wallets'
+              && newest.referenciaId) {
+            const from = WALLET_USER_MAP[newest.referenciaId] ?? `Wallet #${newest.referenciaId}`;
+            msg = `Recibiste dinero de ${from}. Saldo actualizado.`;
+          } else {
+            msg = 'Recibiste dinero. Saldo actualizado.';
+          }
+        }
         setNewMovMsg(msg);
         if (newMovToastTimerRef.current) clearTimeout(newMovToastTimerRef.current);
         newMovToastTimerRef.current = window.setTimeout(() => setNewMovMsg(null), 6000);
@@ -344,7 +382,9 @@ export function UserWalletPage() {
         idWalletOrigen:  demoInfo.idWallet,
         idWalletDestino: destId,
         valor:           Number(envValor),
-        descripcion:     `Transferencia QA a wallet #${destId}${envDestUser ? ' (' + envDestUser + ')' : ''}`,
+        descripcion:     envDestUser
+          ? `Enviado a ${envDestUser} — Wallet #${destId}`
+          : `Enviado a Wallet #${destId}`,
         creadoPor:       demoInfo.idUsuario,
       });
       setEnvMsg({ ok: r.success, text: r.message ?? (r.success ? 'Transferencia realizada.' : 'Error al transferir.') });
@@ -365,7 +405,7 @@ export function UserWalletPage() {
         codigoQr:        pagQrCode,
         idWalletUsuario: demoInfo.idWallet,
         valor:           Number(pagValor),
-        descripcion:     'Pago QR comercio demo QA desde UI',
+        descripcion:     'Pago a Comercio Demo XPAY QA',
         creadoPor:       demoInfo.idUsuario,
       });
       setPagMsg({ ok: r.success, text: r.message ?? (r.success ? 'Pago QR realizado.' : 'Error al pagar QR.') });
@@ -821,7 +861,7 @@ export function UserWalletPage() {
                         {m.naturaleza === 'C' ? '+' : '−'}{fmtMoney(m.valor)}
                       </td>
                       <td>{fmtMoney(m.saldoDespues)}</td>
-                      <td>{m.descripcion ?? '—'}</td>
+                      <td>{descripcionVisible(m)}</td>
                       <td className="mono">{fmtDate(m.fecha)}</td>
                     </tr>
                   ))}
