@@ -27,6 +27,7 @@ builder.Services.AddScoped<ReportesService>();
 builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<KycService>();
+builder.Services.AddHttpClient();
 
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.

@@ -640,3 +640,8 @@ tr:hover td { background: #f7fafc; }
 .kyc-badge-rechazado   { background: #fff5f5; color: #c53030; }
 .kyc-badge-expirado    { background: #fff8f0; color: #c05621; }
 .kyc-badge-error       { background: #fff5f5; color: #9b2c2c; }
+.btn-kyc-start { background: #276749; color: #fff; border: none; padding: 0.25rem 0.85rem; border-radius: 4px; cursor: pointer; font-size: 0.78rem; font-weight: 600; font-family: inherit; transition: background 0.12s; }
+.btn-kyc-start:hover:not(:disabled) { background: #22543d; }
+.btn-kyc-start:disabled { opacity: 0.55; cursor: not-allowed; }
+.kyc-nota-aprobado { color: #276749 !important; font-weight: 600; font-style: normal; }
+.kyc-nota-error    { color: #c53030 !important; font-weight: 600; font-style: normal; }

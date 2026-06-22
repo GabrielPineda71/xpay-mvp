@@ -1,7 +1,7 @@
 # KYC con Veriff — Plan de Integración XPAY
 
-> **Estado:** Fase 61 completada (modelo base y endpoints QA).
-> **Próximo:** Fase 62 — Conexión sandbox Veriff real.
+> **Estado:** Fase 62 completada (sesión Veriff sandbox real + botón Mi Wallet).
+> **Próximo:** Fase 63 — Webhook HMAC-SHA256 + decisión automática.
 > **Ambiente:** QA/Demo únicamente. Sin dinero real. Sin producción.
 
 ---
@@ -12,13 +12,13 @@ XPAY requiere verificación de identidad (KYC) de usuarios wallet antes de habil
 
 Esta integración se prepara en fases:
 
-| Fase | Descripción                                  | Estado      |
-|------|----------------------------------------------|-------------|
+| Fase | Descripción                                  | Estado       |
+|------|----------------------------------------------|--------------|
 | 61   | Modelo KYC, endpoints QA, UI básica          | ✅ Completada |
-| 62   | Conexión SDK Veriff sandbox (sin dinero real) | Pendiente   |
-| 63   | Validación HMAC webhook, lógica de estados   | Pendiente   |
-| 64   | Restricciones por estado KYC en operaciones  | Pendiente   |
-| 65   | Producción + datos reales                    | Pendiente   |
+| 62   | Sesión Veriff sandbox real + botón Mi Wallet | ✅ Completada |
+| 63   | Webhook HMAC-SHA256 + decisión automática    | Pendiente    |
+| 64   | Restricciones por estado KYC en operaciones  | Pendiente    |
+| 65   | Producción + datos reales                    | Pendiente    |
 
 ---
 
@@ -110,14 +110,21 @@ Estado visible en Mi Wallet (con polling o push)
 - Registra en `kyc_verificaciones` con `proveedor = 'SIMULACION_QA'`
 - Actualiza `usuarios.estado_kyc_actual`
 
-### `POST /api/kyc/veriff/session` (placeholder)
-- Devuelve `501 Not Implemented`
-- Requiere credenciales `VERIFF_API_KEY` en Azure App Settings (Fase 62)
+### `POST /api/kyc/veriff/session` ✅ Fase 62
+- Requiere: `[Authorize]` (cualquier usuario autenticado)
+- Lee `VERIFF_API_KEY`, `VERIFF_SHARED_SECRET`, `VERIFF_BASE_URL` desde Azure App Settings
+- Si falta config → `503 "Veriff sandbox no configurado. Contacta al administrador."`
+- Payload a Veriff: `{ verification: { callback, vendorData: "XPAY-QA-USUARIO-{id}", timestamp } }`
+- Sin datos personales reales — vendorData es el único identificador
+- Guarda en `kyc_verificaciones`: `proveedor=VERIFF`, `estado_kyc=PENDIENTE`, `session_id`, `session_url`
+- Actualiza `usuarios.estado_kyc_actual = 'PENDIENTE'`
+- Responde: `{ success: true, data: { estadoKyc, sessionId, sessionUrl } }`
+- API key y shared secret **nunca** en respuesta ni en logs
 
-### `POST /api/kyc/veriff/webhook` (stub seguro)
+### `POST /api/kyc/veriff/webhook` (stub seguro — pendiente Fase 63)
 - No requiere auth (webhook externo de Veriff)
 - Devuelve `200 { received: true }` sin procesar nada
-- Fase 63: añadir validación HMAC + lógica de actualización de estado
+- Fase 63: añadir validación HMAC-SHA256 con `VERIFF_SHARED_SECRET` + actualización de estado
 
 ---
 
@@ -192,13 +199,31 @@ Requerimientos para producción:
 
 ---
 
-## 10. Pendientes para Fase 62
+## 10. Pendientes para Fase 63
 
-- [ ] Credenciales sandbox Veriff (API key + webhook secret)
-- [ ] Implementar `POST /api/kyc/veriff/session` real
-- [ ] Implementar flujo frontend (botón "Iniciar verificación" → redirect Veriff)
-- [ ] Prueba end-to-end en QA con documento de prueba Veriff
-- [ ] Contrato/plan Veriff seleccionado
+- [ ] Validación HMAC-SHA256 en webhook con `VERIFF_SHARED_SECRET`
+- [ ] Actualizar `kyc_verificaciones.estado_kyc` y `kyc_verificaciones.decision` según decisión Veriff
+- [ ] Actualizar `usuarios.estado_kyc_actual` cuando llega decisión (APROBADO / RECHAZADO / EN_REVISION)
+- [ ] Probar webhook con evento real desde dashboard Veriff sandbox
+- [ ] Considerar polling de `GET /api/kyc/mi-estado` en frontend para detectar cambio de estado post-Veriff
+
+### Variables Azure requeridas (ya configuradas en xpay-api-qa)
+
+| Variable              | Uso                                                       |
+|-----------------------|-----------------------------------------------------------|
+| `VERIFF_API_KEY`      | Header `X-AUTH-CLIENT` en llamada a Veriff `/v1/sessions` |
+| `VERIFF_SHARED_SECRET`| Validación HMAC-SHA256 webhook (Fase 63)                  |
+| `VERIFF_BASE_URL`     | Base URL Veriff sandbox (ej. `https://stationapi.veriff.com`) |
+
+### Cómo iniciar verificación desde Mi Wallet
+
+1. Ir a `https://xpay-admin-qa.azurewebsites.net` → login como `qa.usuario1`
+2. Asegurarse de que el estado KYC sea `NO_INICIADO` (o `RECHAZADO`/`EXPIRADO`/`ERROR`)
+3. Hacer clic en **"Iniciar verificación"** en la sección de identidad
+4. Backend crea sesión Veriff sandbox → estado pasa a `PENDIENTE`
+5. Frontend muestra "Verificación iniciada. Continúa en Veriff." y redirige a `sessionUrl`
+6. Completar verificación con documento de prueba Veriff (sandbox)
+7. Veriff envía webhook → Fase 63 procesará la decisión
 
 ---
 

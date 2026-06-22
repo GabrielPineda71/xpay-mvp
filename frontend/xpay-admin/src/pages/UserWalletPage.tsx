@@ -167,6 +167,8 @@ export function UserWalletPage() {
 
   // ── KYC state ─────────────────────────────────────────────────────────────
   const [kycEstado, setKycEstado] = useState<string>('NO_INICIADO');
+  const [kycBusy,   setKycBusy]   = useState(false);
+  const [kycMsg,    setKycMsg]    = useState<Msg | null>(null);
 
   // ── Pagar comercio QR ─────────────────────────────────────────────────────
   const [pagQrCode,    setPagQrCode]    = useState('');
@@ -183,7 +185,7 @@ export function UserWalletPage() {
   // ── KYC load (once on mount) ──────────────────────────────────────────────
   const loadKyc = useCallback(async () => {
     try {
-      const r = await get<{ success: boolean; data: { estadoKyc: string } }>(
+      const r = await get<{ success: boolean; data: { estadoKyc: string; sessionUrl?: string } }>(
         '/api/kyc/mi-estado',
       );
       setKycEstado(r.data.estadoKyc);
@@ -452,6 +454,31 @@ export function UserWalletPage() {
     finally { setPagBusy(false); setPagPin(''); opInProgressRef.current = false; }
   }
 
+  // ── KYC: iniciar verificación Veriff ─────────────────────────────────────
+  async function handleIniciarVerificacion() {
+    setKycBusy(true);
+    setKycMsg(null);
+    try {
+      const r = await post<{
+        success: boolean;
+        data: { estadoKyc: string; sessionId: string; sessionUrl: string };
+      }>('/api/kyc/veriff/session', {});
+      if (r.success && r.data.sessionUrl) {
+        setKycEstado('PENDIENTE');
+        setKycMsg({ ok: true, text: 'Verificación iniciada. Continúa en Veriff.' });
+        const url = r.data.sessionUrl;
+        window.setTimeout(() => { window.location.href = url; }, 1200);
+        // Don't reset kycBusy — page navigates away
+      } else {
+        setKycMsg({ ok: false, text: 'Error iniciando verificación. Intenta de nuevo.' });
+        setKycBusy(false);
+      }
+    } catch (err) {
+      setKycMsg({ ok: false, text: (err as Error).message || 'Error iniciando verificación.' });
+      setKycBusy(false);
+    }
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   function resetEnviar() {
     setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
@@ -511,16 +538,34 @@ export function UserWalletPage() {
 
       {/* ── KYC status section ───────────────────────────────────────────── */}
       {(() => {
-        const kycApproved = kycEstado === 'APROBADO';
+        const canStart   = ['NO_INICIADO', 'RECHAZADO', 'EXPIRADO', 'ERROR'].includes(kycEstado);
+        const inProgress = ['PENDIENTE', 'EN_REVISION'].includes(kycEstado);
+        const approved   = kycEstado === 'APROBADO';
         return (
           <div className="kyc-status-bar">
             <span className="kyc-label">Verificación de identidad:</span>
             <span className={KYC_BADGE_CLASS[kycEstado] ?? 'kyc-badge kyc-badge-no-iniciado'}>
               {kycLabel(kycEstado)}
             </span>
-            {!kycApproved && (
-              <span className="kyc-nota">
-                En producción, esta wallet requerirá verificación de identidad aprobada.
+            {approved   && <span className="kyc-nota kyc-nota-aprobado">Identidad verificada.</span>}
+            {inProgress && <span className="kyc-nota">Tu verificación está en proceso.</span>}
+            {canStart && (
+              <>
+                <span className="kyc-nota">
+                  En producción, esta wallet requerirá verificación de identidad aprobada.
+                </span>
+                <button
+                  className="btn-kyc-start"
+                  disabled={kycBusy}
+                  onClick={() => void handleIniciarVerificacion()}
+                >
+                  {kycBusy ? 'Iniciando...' : 'Iniciar verificación'}
+                </button>
+              </>
+            )}
+            {kycMsg && (
+              <span className={kycMsg.ok ? 'kyc-nota kyc-nota-aprobado' : 'kyc-nota kyc-nota-error'}>
+                {kycMsg.text}
               </span>
             )}
           </div>

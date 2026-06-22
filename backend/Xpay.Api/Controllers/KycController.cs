@@ -76,27 +76,41 @@ public class KycController : ControllerBase
 
     /// <summary>
     /// POST /api/kyc/veriff/session
-    /// Placeholder — Fase 62 conectará el SDK Veriff sandbox.
-    /// Devuelve 501 hasta que las credenciales sandbox estén configuradas
-    /// en Azure App Settings (nunca en el repositorio).
+    /// Crea sesión real en Veriff sandbox.
+    /// Lee VERIFF_API_KEY / VERIFF_SHARED_SECRET / VERIFF_BASE_URL desde Azure App Settings.
+    /// No guarda ni retorna API keys. No envía datos personales.
+    /// VendorData = XPAY-QA-USUARIO-{idUsuario} — tracking interno sin PII.
+    /// Guarda en kyc_verificaciones y actualiza usuarios.estado_kyc_actual = PENDIENTE.
     /// </summary>
     [HttpPost("veriff/session")]
     [Authorize]
-    public IActionResult VeriffSession()
+    public async Task<IActionResult> VeriffSession()
     {
-        return StatusCode(501, new
+        if (!long.TryParse(User.FindFirst("idUsuario")?.Value, out var idUsuario) || idUsuario <= 0)
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "KYC_VERIFF_SESSION_ATTEMPT", new { idUsuario });
+        try
         {
-            success = false,
-            message = "Veriff session creation not implemented yet. " +
-                      "Configure VERIFF_API_KEY in Azure App Settings to enable. " +
-                      "Fase 62 pending.",
-            fase    = "62-veriff-sandbox",
-        });
+            var data = await _kyc.CreateVeriffSessionAsync(idUsuario);
+            _audit.LogSensitiveAction(HttpContext, "KYC_VERIFF_SESSION_CREATED",
+                new { idUsuario, sessionId = data.SessionId });
+            return Ok(new { success = true, data });
+        }
+        catch (InvalidOperationException ex)
+        {
+            var code = ex.Message.StartsWith("Veriff sandbox no configurado") ? 503 : 400;
+            return StatusCode(code, new { success = false, message = ex.Message });
+        }
+        catch
+        {
+            return StatusCode(500, new { success = false, message = "Error interno iniciando verificación." });
+        }
     }
 
     /// <summary>
     /// POST /api/kyc/veriff/webhook
-    /// Stub seguro — Fase 62 implementará validación HMAC de firma Veriff
+    /// Stub seguro — Fase 63 implementará validación HMAC-SHA256 con VERIFF_SHARED_SECRET
     /// y actualización real de estado KYC.
     /// Devuelve 200 para evitar reintentos de Veriff en ambiente QA.
     /// SIN lógica de negocio ni actualización de datos en esta fase.
@@ -105,7 +119,7 @@ public class KycController : ControllerBase
     public IActionResult VeriffWebhook()
     {
         // Stub: acknowledge receipt without processing.
-        // Phase 62 will add HMAC signature validation and state update logic.
+        // Phase 63 will add HMAC-SHA256 signature validation and state update logic.
         return Ok(new { received = true });
     }
 }
