@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using System.Text;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
@@ -10,13 +11,15 @@ namespace Xpay.Api.Controllers;
 [Route("api/kyc")]
 public class KycController : ControllerBase
 {
-    private readonly KycService    _kyc;
-    private readonly AuditLogService _audit;
+    private readonly KycService             _kyc;
+    private readonly AuditLogService        _audit;
+    private readonly ILogger<KycController> _logger;
 
-    public KycController(KycService kyc, AuditLogService audit)
+    public KycController(KycService kyc, AuditLogService audit, ILogger<KycController> logger)
     {
-        _kyc   = kyc;
-        _audit = audit;
+        _kyc    = kyc;
+        _audit  = audit;
+        _logger = logger;
     }
 
     /// <summary>
@@ -132,6 +135,17 @@ public class KycController : ControllerBase
         using (var reader = new StreamReader(Request.Body, Encoding.UTF8, leaveOpen: true))
             rawBody = await reader.ReadToEndAsync();
         Request.Body.Position = 0;
+
+        // Part D: log names (not values) of signature-related headers for diagnostics
+        var sigHeaderNames = Request.Headers.Keys
+            .Where(k => k.StartsWith("x-", StringComparison.OrdinalIgnoreCase)
+                     || k.Contains("hmac", StringComparison.OrdinalIgnoreCase)
+                     || k.Contains("sign", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(k => k);
+        _logger.LogInformation(
+            "Veriff webhook incoming: bodyLen={Len} sigHeaders=[{Headers}]",
+            rawBody.Length,
+            string.Join(", ", sigHeaderNames));
 
         var signature = Request.Headers["x-hmac-signature"].FirstOrDefault();
 

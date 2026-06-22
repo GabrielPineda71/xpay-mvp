@@ -170,6 +170,7 @@ export function UserWalletPage() {
   const [kycBusy,       setKycBusy]       = useState(false);
   const [kycMsg,        setKycMsg]        = useState<Msg | null>(null);
   const [kycRefreshing, setKycRefreshing] = useState(false);
+  const [fromVeriff,    setFromVeriff]    = useState(false);
   const kycEstadoRef = useRef<string>('NO_INICIADO');
 
   // ── Pagar comercio QR ─────────────────────────────────────────────────────
@@ -259,6 +260,17 @@ export function UserWalletPage() {
   }, [demoInfo]);
 
   useEffect(() => { void loadCuenta(); void loadKyc(); }, [loadCuenta, loadKyc]);
+
+  // Part G: detect ?kyc=return — user returned from Veriff, refresh KYC state immediately
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('kyc') === 'return') {
+      setFromVeriff(true);
+      setKycMsg({ ok: true, text: 'Regresaste de Veriff. Estamos actualizando tu estado...' });
+      window.history.replaceState({}, '', window.location.pathname);
+      void loadKyc();
+    }
+  }, [loadKyc]);
 
   // ── Wallet polling every 7 seconds ────────────────────────────────────────
   useEffect(() => {
@@ -487,10 +499,16 @@ export function UserWalletPage() {
       }>('/api/kyc/veriff/session', {});
       if (r.success && r.data.sessionUrl) {
         setKycEstado('PENDIENTE');
-        setKycMsg({ ok: true, text: 'Verificación iniciada. Continúa en Veriff.' });
+        kycEstadoRef.current = 'PENDIENTE';
+        setKycMsg({ ok: true, text: 'Verificación iniciada. Abriendo Veriff...' });
         const url = r.data.sessionUrl;
-        window.setTimeout(() => { window.location.href = url; }, 1200);
-        // Don't reset kycBusy — page navigates away
+        window.setTimeout(() => {
+          // Open Veriff in new tab so KYC polling continues on this page.
+          // If browser blocks the popup, fall back to same-tab navigation.
+          const tab = window.open(url, '_blank');
+          if (!tab) window.location.href = url;
+          else setKycBusy(false);
+        }, 800);
       } else {
         setKycMsg({ ok: false, text: 'Error iniciando verificación. Intenta de nuevo.' });
         setKycBusy(false);
@@ -575,8 +593,9 @@ export function UserWalletPage() {
             {isPending && (
               <>
                 <span className="kyc-nota">
-                  Tu verificación está pendiente. Si ya terminaste en Veriff, toca{' '}
-                  <strong>Actualizar estado</strong>.
+                  {fromVeriff
+                    ? 'La verificación fue enviada. Veriff puede tardar unos minutos en confirmar el resultado.'
+                    : <>Tu verificación está pendiente. Si ya terminaste en Veriff, toca <strong>Actualizar estado</strong>.</>}
                 </span>
                 <button
                   className="btn-kyc-start"

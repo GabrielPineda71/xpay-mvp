@@ -87,9 +87,12 @@ public class KycService
         {
             Verification = new
             {
-                Callback   = "https://xpay-api-qa.azurewebsites.net/api/kyc/veriff/webhook",
-                VendorData = vendorData,
-                Timestamp  = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                Callback    = "https://xpay-api-qa.azurewebsites.net/api/kyc/veriff/webhook",
+                VendorData  = vendorData,
+                Timestamp   = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                // RedirectUrl instructs Veriff to redirect user back after completing verification.
+                // Handled in frontend as ?kyc=return. Veriff V1 may ignore this field.
+                RedirectUrl = "https://xpay-admin-qa.azurewebsites.net/mi-wallet?kyc=return",
             }
         };
 
@@ -206,17 +209,44 @@ public class KycService
         var secret = _config["VERIFF_SHARED_SECRET"];
         if (string.IsNullOrWhiteSpace(secret)) return false;
 
-        var keyBytes  = Encoding.UTF8.GetBytes(secret);
+        // Trim key to prevent Azure App Settings trailing-whitespace from causing mismatch
+        var keyBytes  = Encoding.UTF8.GetBytes(secret.Trim());
         var bodyBytes = Encoding.UTF8.GetBytes(rawBody);
 
-        using var hmac    = new HMACSHA256(keyBytes);
-        var computed      = hmac.ComputeHash(bodyBytes);
+        using var hmac = new HMACSHA256(keyBytes);
+        var computed   = hmac.ComputeHash(bodyBytes);
+        var sigTrimmed = signature.Trim();
 
-        byte[] sigBytes;
-        try { sigBytes = Convert.FromHexString(signature.Trim()); }
-        catch { return false; }
+        // Safe diagnostic — format hints only, never reveals key or sig values
+        _logger.LogInformation(
+            "Webhook HMAC check: sigLen={SigLen} sigIsHex={IsHex} bodyLen={BodyLen}",
+            sigTrimmed.Length,
+            sigTrimmed.Length == 64 && sigTrimmed.All(c => "0123456789abcdefABCDEF".Contains(c)),
+            rawBody.Length);
 
-        return CryptographicOperations.FixedTimeEquals(computed.AsSpan(), sigBytes.AsSpan());
+        // Try hex decode (Veriff standard)
+        try
+        {
+            var sigBytes = Convert.FromHexString(sigTrimmed);
+            if (CryptographicOperations.FixedTimeEquals(computed.AsSpan(), sigBytes.AsSpan()))
+                return true;
+        }
+        catch { /* not valid hex */ }
+
+        // Try base64 fallback (some Veriff webhook versions encode the signature in base64)
+        try
+        {
+            var sigBytes = Convert.FromBase64String(sigTrimmed);
+            if (CryptographicOperations.FixedTimeEquals(computed.AsSpan(), sigBytes.AsSpan()))
+            {
+                _logger.LogInformation("Webhook HMAC: matched via base64 decode.");
+                return true;
+            }
+        }
+        catch { /* not valid base64 */ }
+
+        _logger.LogWarning("Webhook HMAC: signature mismatch. sigLen={SigLen}", sigTrimmed.Length);
+        return false;
     }
 
     // ── Veriff webhook decision processing ─────────────────────────────────────
@@ -232,6 +262,10 @@ public class KycService
             _logger.LogWarning("Veriff webhook: JSON parse failed.");
             return new VeriffWebhookResult { Processed = false };
         }
+
+        // Part E: log top-level property names (not values) for structure diagnostics
+        var topKeys = root.EnumerateObject().Select(p => p.Name);
+        _logger.LogInformation("Veriff webhook top-level keys: [{Keys}]", string.Join(", ", topKeys));
 
         // Extract only the fields needed — never log person/document/image data
         var topStatus  = root.TryGetProperty("status",       out var sv) ? sv.GetString() : null;
