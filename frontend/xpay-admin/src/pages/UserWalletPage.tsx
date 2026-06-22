@@ -166,9 +166,11 @@ export function UserWalletPage() {
   const envScannerRef = useRef<Html5Qrcode | null>(null);
 
   // ── KYC state ─────────────────────────────────────────────────────────────
-  const [kycEstado, setKycEstado] = useState<string>('NO_INICIADO');
-  const [kycBusy,   setKycBusy]   = useState(false);
-  const [kycMsg,    setKycMsg]    = useState<Msg | null>(null);
+  const [kycEstado,     setKycEstado]     = useState<string>('NO_INICIADO');
+  const [kycBusy,       setKycBusy]       = useState(false);
+  const [kycMsg,        setKycMsg]        = useState<Msg | null>(null);
+  const [kycRefreshing, setKycRefreshing] = useState(false);
+  const kycEstadoRef = useRef<string>('NO_INICIADO');
 
   // ── Pagar comercio QR ─────────────────────────────────────────────────────
   const [pagQrCode,    setPagQrCode]    = useState('');
@@ -182,15 +184,19 @@ export function UserWalletPage() {
   const [pagScanErr,   setPagScanErr]   = useState<string | null>(null);
   const pagScannerRef = useRef<Html5Qrcode | null>(null);
 
-  // ── KYC load (once on mount) ──────────────────────────────────────────────
-  const loadKyc = useCallback(async () => {
+  // ── KYC load / manual refresh ─────────────────────────────────────────────
+  const loadKyc = useCallback(async (silent = false) => {
+    if (!silent) setKycRefreshing(true);
     try {
       const r = await get<{ success: boolean; data: { estadoKyc: string; sessionUrl?: string } }>(
         '/api/kyc/mi-estado',
       );
       setKycEstado(r.data.estadoKyc);
+      kycEstadoRef.current = r.data.estadoKyc;
     } catch {
-      /* non-critical: keep default NO_INICIADO */
+      /* non-critical: keep last known state */
+    } finally {
+      if (!silent) setKycRefreshing(false);
     }
   }, []);
 
@@ -254,11 +260,27 @@ export function UserWalletPage() {
 
   useEffect(() => { void loadCuenta(); void loadKyc(); }, [loadCuenta, loadKyc]);
 
-  // ── Polling every 7 seconds ───────────────────────────────────────────────
+  // ── Wallet polling every 7 seconds ────────────────────────────────────────
   useEffect(() => {
     const id = window.setInterval(() => { void pollRefresh(); }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
   }, [pollRefresh]);
+
+  // ── KYC polling while PENDIENTE — stops when a final state is reached ─────
+  // Polls every 12 seconds. Stops automatically for APROBADO/RECHAZADO/EXPIRADO/ERROR.
+  // Production: replace with webhook push or server-sent events.
+  const KYC_FINAL_STATES = new Set(['APROBADO', 'RECHAZADO', 'EXPIRADO', 'ERROR']);
+  useEffect(() => {
+    if (kycEstado !== 'PENDIENTE') return;
+    const id = window.setInterval(() => {
+      if (KYC_FINAL_STATES.has(kycEstadoRef.current)) {
+        clearInterval(id);
+        return;
+      }
+      void loadKyc(true);
+    }, 12000);
+    return () => clearInterval(id);
+  }, [kycEstado, loadKyc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cleanup on unmount ────────────────────────────────────────────────────
   useEffect(() => {
@@ -539,7 +561,8 @@ export function UserWalletPage() {
       {/* ── KYC status section ───────────────────────────────────────────── */}
       {(() => {
         const canStart   = ['NO_INICIADO', 'RECHAZADO', 'EXPIRADO', 'ERROR'].includes(kycEstado);
-        const inProgress = ['PENDIENTE', 'EN_REVISION'].includes(kycEstado);
+        const isPending  = kycEstado === 'PENDIENTE';
+        const inReview   = kycEstado === 'EN_REVISION';
         const approved   = kycEstado === 'APROBADO';
         return (
           <div className="kyc-status-bar">
@@ -547,8 +570,23 @@ export function UserWalletPage() {
             <span className={KYC_BADGE_CLASS[kycEstado] ?? 'kyc-badge kyc-badge-no-iniciado'}>
               {kycLabel(kycEstado)}
             </span>
-            {approved   && <span className="kyc-nota kyc-nota-aprobado">Identidad verificada.</span>}
-            {inProgress && <span className="kyc-nota">Tu verificación está en proceso.</span>}
+            {approved && <span className="kyc-nota kyc-nota-aprobado">Identidad verificada.</span>}
+            {inReview && <span className="kyc-nota">Tu verificación está en revisión.</span>}
+            {isPending && (
+              <>
+                <span className="kyc-nota">
+                  Tu verificación está pendiente. Si ya terminaste en Veriff, toca{' '}
+                  <strong>Actualizar estado</strong>.
+                </span>
+                <button
+                  className="btn-kyc-start"
+                  disabled={kycRefreshing}
+                  onClick={() => void loadKyc()}
+                >
+                  {kycRefreshing ? 'Actualizando...' : 'Actualizar estado'}
+                </button>
+              </>
+            )}
             {canStart && (
               <>
                 <span className="kyc-nota">

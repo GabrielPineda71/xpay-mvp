@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
@@ -193,6 +194,157 @@ public class KycService
             SessionUrl = sessionUrl,
         };
     }
+
+    // ── Veriff webhook signature validation ────────────────────────────────────
+    // Header: x-hmac-signature (Veriff sends hex-encoded HMAC-SHA256 of raw body)
+    // Algorithm: HMAC-SHA256(UTF-8 body bytes, UTF-8 VERIFF_SHARED_SECRET bytes)
+    // Comparison: CryptographicOperations.FixedTimeEquals — constant-time, prevents timing attacks
+    public bool ValidateVeriffSignature(string rawBody, string? signature)
+    {
+        if (string.IsNullOrWhiteSpace(signature)) return false;
+
+        var secret = _config["VERIFF_SHARED_SECRET"];
+        if (string.IsNullOrWhiteSpace(secret)) return false;
+
+        var keyBytes  = Encoding.UTF8.GetBytes(secret);
+        var bodyBytes = Encoding.UTF8.GetBytes(rawBody);
+
+        using var hmac    = new HMACSHA256(keyBytes);
+        var computed      = hmac.ComputeHash(bodyBytes);
+
+        byte[] sigBytes;
+        try { sigBytes = Convert.FromHexString(signature.Trim()); }
+        catch { return false; }
+
+        return CryptographicOperations.FixedTimeEquals(computed.AsSpan(), sigBytes.AsSpan());
+    }
+
+    // ── Veriff webhook decision processing ─────────────────────────────────────
+    // Called only after signature is validated.
+    // Does NOT log raw body, PII, documents, or biometrics.
+    // Logs: event received, sessionId, vendorData, mapped state, update result.
+    public async Task<VeriffWebhookResult> ProcessVeriffWebhookAsync(string rawBody)
+    {
+        JsonElement root;
+        try { root = JsonSerializer.Deserialize<JsonElement>(rawBody); }
+        catch
+        {
+            _logger.LogWarning("Veriff webhook: JSON parse failed.");
+            return new VeriffWebhookResult { Processed = false };
+        }
+
+        // Extract only the fields needed — never log person/document/image data
+        var topStatus  = root.TryGetProperty("status",       out var sv) ? sv.GetString() : null;
+        var hasVerif   = root.TryGetProperty("verification", out var vv);
+        var sessionId  = hasVerif && vv.TryGetProperty("id",         out var sid)  ? sid.GetString()  : null;
+        var vendorData = hasVerif && vv.TryGetProperty("vendorData", out var vd)   ? vd.GetString()   : null;
+        // Prefer verification.status for decision; fall back to top-level status
+        var decision   = (hasVerif && vv.TryGetProperty("status",    out var vs)   ? vs.GetString()   : null)
+                         ?? topStatus;
+        var reason     = hasVerif && vv.TryGetProperty("reason",     out var vr)   ? vr.GetString()   : null;
+
+        _logger.LogInformation(
+            "Veriff webhook received: topStatus={Status} sessionId={SessionId} vendorData={VendorData}",
+            topStatus, sessionId, vendorData);
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            _logger.LogWarning("Veriff webhook: missing sessionId — cannot process.");
+            return new VeriffWebhookResult { Processed = false };
+        }
+
+        // Map Veriff decision to XPAY internal state
+        var estadoXpay = MapVeriffDecision(decision);
+
+        if (estadoXpay == null)
+        {
+            // Non-decision events (started, submitted, etc.) — acknowledge, no state change
+            _logger.LogInformation(
+                "Veriff webhook: status '{Status}' is not a terminal/decision event — acknowledged, no state update.",
+                topStatus);
+            return new VeriffWebhookResult { Processed = false, SessionIdHint = sessionId };
+        }
+
+        // Find record by sessionId (prefer es_actual=true; fall back to most recent for this sessionId)
+        var kyc = await _db.KycVerificaciones
+            .Where(k => k.SessionId == sessionId && k.EsActual)
+            .FirstOrDefaultAsync()
+            ?? await _db.KycVerificaciones
+                .Where(k => k.SessionId == sessionId)
+                .OrderByDescending(k => k.IdKycVerificacion)
+                .FirstOrDefaultAsync();
+
+        if (kyc == null)
+        {
+            _logger.LogWarning(
+                "Veriff webhook: sessionId '{SessionId}' not found in kyc_verificaciones — cannot update.",
+                sessionId);
+            return new VeriffWebhookResult { Processed = false, SessionIdHint = sessionId };
+        }
+
+        // Idempotency: if already in this exact final state, skip without error
+        var estadosFinales = new HashSet<string>(StringComparer.Ordinal)
+            { "APROBADO", "RECHAZADO", "EXPIRADO", "ERROR" };
+
+        if (estadosFinales.Contains(kyc.EstadoKyc) && kyc.EstadoKyc == estadoXpay)
+        {
+            _logger.LogInformation(
+                "Veriff webhook: sessionId '{SessionId}' already in final state '{Estado}' — idempotent skip.",
+                sessionId, estadoXpay);
+            return new VeriffWebhookResult { Processed = true, EstadoMapeado = estadoXpay, SessionIdHint = sessionId };
+        }
+
+        // Load user
+        var usuario = await _db.Usuarios
+            .Where(u => u.IdUsuario == kyc.IdUsuario)
+            .FirstOrDefaultAsync();
+
+        if (usuario == null)
+        {
+            _logger.LogWarning(
+                "Veriff webhook: usuario {IdUsuario} not found for sessionId '{SessionId}'.",
+                kyc.IdUsuario, sessionId);
+            return new VeriffWebhookResult { Processed = false, SessionIdHint = sessionId };
+        }
+
+        // Transactional update of kyc record + user summary
+        kyc.EstadoKyc          = estadoXpay;
+        kyc.Decision           = decision;
+        kyc.Reason             = reason;
+        kyc.FechaDecision      = DateTime.UtcNow;
+        kyc.FechaActualizacion = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(vendorData)) kyc.VendorData = vendorData;
+        kyc.EsActual = true;
+
+        usuario.EstadoKycActual       = estadoXpay;
+        usuario.FechaKycActualizacion = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Veriff webhook processed: sessionId={SessionId} idUsuario={IdUsuario} estado={Estado}",
+            sessionId, kyc.IdUsuario, estadoXpay);
+
+        return new VeriffWebhookResult
+        {
+            Processed     = true,
+            EstadoMapeado = estadoXpay,
+            SessionIdHint = sessionId,
+        };
+    }
+
+    private static string? MapVeriffDecision(string? decision) =>
+        decision?.ToLowerInvariant() switch
+        {
+            "approved"               => "APROBADO",
+            "declined"               => "RECHAZADO",
+            "resubmission_requested" => "EN_REVISION",
+            "review"                 => "EN_REVISION",
+            "expired"                => "EXPIRADO",
+            "abandoned"              => "EXPIRADO",
+            "error"                  => "ERROR",
+            _                        => null   // not a decision event — no state change
+        };
 
     public async Task<string> SimularEstadoQaAsync(SimularEstadoKycRequest request)
     {

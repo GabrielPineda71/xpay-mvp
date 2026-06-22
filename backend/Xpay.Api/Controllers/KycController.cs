@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -110,16 +111,54 @@ public class KycController : ControllerBase
 
     /// <summary>
     /// POST /api/kyc/veriff/webhook
-    /// Stub seguro — Fase 63 implementará validación HMAC-SHA256 con VERIFF_SHARED_SECRET
-    /// y actualización real de estado KYC.
-    /// Devuelve 200 para evitar reintentos de Veriff en ambiente QA.
-    /// SIN lógica de negocio ni actualización de datos en esta fase.
+    /// Veriff decision webhook — no [Authorize], called by Veriff server directly.
+    ///
+    /// Security (Fase 63):
+    ///   1. Reads raw body (EnableBuffering) to validate HMAC-SHA256.
+    ///   2. Header: x-hmac-signature (hex-encoded HMAC-SHA256 of raw body, key = VERIFF_SHARED_SECRET).
+    ///   3. Constant-time comparison (CryptographicOperations.FixedTimeEquals).
+    ///   4. Missing or invalid signature → 401, no state change, audit logged.
+    ///   5. Valid signature → ProcessVeriffWebhookAsync updates kyc_verificaciones + usuarios.
+    ///
+    /// Logs: event, sessionId, vendorData, mapped state, result.
+    /// Never logs: VERIFF_SHARED_SECRET, raw body, person data, biometrics, documents.
     /// </summary>
     [HttpPost("veriff/webhook")]
-    public IActionResult VeriffWebhook()
+    public async Task<IActionResult> VeriffWebhook()
     {
-        // Stub: acknowledge receipt without processing.
-        // Phase 63 will add HMAC-SHA256 signature validation and state update logic.
-        return Ok(new { received = true });
+        // Read raw body before any model binding — required for HMAC computation
+        Request.EnableBuffering();
+        string rawBody;
+        using (var reader = new StreamReader(Request.Body, Encoding.UTF8, leaveOpen: true))
+            rawBody = await reader.ReadToEndAsync();
+        Request.Body.Position = 0;
+
+        var signature = Request.Headers["x-hmac-signature"].FirstOrDefault();
+
+        if (!_kyc.ValidateVeriffSignature(rawBody, signature))
+        {
+            _audit.LogSensitiveAction(HttpContext, "KYC_WEBHOOK_SIGNATURE_INVALID",
+                new { signaturePresent = !string.IsNullOrEmpty(signature) });
+            return Unauthorized(new { received = false, error = "Signature invalid or missing." });
+        }
+
+        _audit.LogSensitiveAction(HttpContext, "KYC_WEBHOOK_SIGNATURE_VALID", new { });
+
+        VeriffWebhookResult result;
+        try
+        {
+            result = await _kyc.ProcessVeriffWebhookAsync(rawBody);
+        }
+        catch (Exception ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "KYC_WEBHOOK_PROCESSING_ERROR",
+                new { error = ex.GetType().Name });
+            return StatusCode(500, new { received = true, processed = false });
+        }
+
+        _audit.LogSensitiveAction(HttpContext, "KYC_WEBHOOK_PROCESSED",
+            new { processed = result.Processed, estadoMapeado = result.EstadoMapeado });
+
+        return Ok(new { received = true, processed = result.Processed });
     }
 }

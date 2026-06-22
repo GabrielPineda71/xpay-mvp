@@ -1,7 +1,7 @@
 # KYC con Veriff — Plan de Integración XPAY
 
-> **Estado:** Fase 62 completada (sesión Veriff sandbox real + botón Mi Wallet).
-> **Próximo:** Fase 63 — Webhook HMAC-SHA256 + decisión automática.
+> **Estado:** Fase 63 completada (webhook HMAC-SHA256 + decisión automática + polling frontend).
+> **Próximo:** Fase 64 — Restricciones operacionales por estado KYC.
 > **Ambiente:** QA/Demo únicamente. Sin dinero real. Sin producción.
 
 ---
@@ -12,13 +12,14 @@ XPAY requiere verificación de identidad (KYC) de usuarios wallet antes de habil
 
 Esta integración se prepara en fases:
 
-| Fase | Descripción                                  | Estado       |
-|------|----------------------------------------------|--------------|
-| 61   | Modelo KYC, endpoints QA, UI básica          | ✅ Completada |
-| 62   | Sesión Veriff sandbox real + botón Mi Wallet | ✅ Completada |
-| 63   | Webhook HMAC-SHA256 + decisión automática    | Pendiente    |
-| 64   | Restricciones por estado KYC en operaciones  | Pendiente    |
-| 65   | Producción + datos reales                    | Pendiente    |
+| Fase | Descripción                                                          | Estado       |
+|------|----------------------------------------------------------------------|--------------|
+| 61   | Modelo KYC, endpoints QA, UI básica                                  | ✅ Completada |
+| 62   | Sesión Veriff sandbox real + botón Mi Wallet                         | ✅ Completada |
+| 63   | Webhook HMAC-SHA256 + decisión automática + polling frontend         | ✅ Completada |
+| 64   | Restricciones operacionales por estado KYC                           | Pendiente    |
+| 65   | Integración KYC en flujo de creación de cuenta                       | Pendiente    |
+| 66   | Producción + datos reales                                            | Pendiente    |
 
 ---
 
@@ -121,10 +122,29 @@ Estado visible en Mi Wallet (con polling o push)
 - Responde: `{ success: true, data: { estadoKyc, sessionId, sessionUrl } }`
 - API key y shared secret **nunca** en respuesta ni en logs
 
-### `POST /api/kyc/veriff/webhook` (stub seguro — pendiente Fase 63)
-- No requiere auth (webhook externo de Veriff)
-- Devuelve `200 { received: true }` sin procesar nada
-- Fase 63: añadir validación HMAC-SHA256 con `VERIFF_SHARED_SECRET` + actualización de estado
+### `POST /api/kyc/veriff/webhook` ✅ Fase 63
+- No requiere auth JWT (webhook externo de Veriff — autenticado por firma HMAC)
+- **Firma:** header `x-hmac-signature` — HMAC-SHA256 hex del raw body con `VERIFF_SHARED_SECRET`
+- **Comparación:** `CryptographicOperations.FixedTimeEquals` — tiempo constante
+- Sin firma → `401 { received: false, error: "Signature invalid or missing." }`, sin cambio de estado
+- Firma inválida → `401`, sin cambio de estado, auditoría registrada
+- Firma válida → procesa payload, actualiza `kyc_verificaciones` + `usuarios.estado_kyc_actual`
+- **Idempotencia:** si la sesión ya está en el mismo estado final, responde OK sin duplicar registros
+- **Mapeo de decisiones Veriff → XPAY:**
+
+| Veriff decision         | Estado XPAY |
+|-------------------------|-------------|
+| `approved`              | APROBADO    |
+| `declined`              | RECHAZADO   |
+| `resubmission_requested`| EN_REVISION |
+| `review`                | EN_REVISION |
+| `expired`               | EXPIRADO    |
+| `abandoned`             | EXPIRADO    |
+| `error`                 | ERROR       |
+| Cualquier otro          | (no actualiza — evento no decisivo como `started`, `submitted`) |
+
+- Logs: evento, sessionId, vendorData, estado mapeado, resultado. **Nunca:** secret, raw body, datos personales, biométricos.
+- Responde: `200 { received: true, processed: true/false }`
 
 ---
 
@@ -199,21 +219,29 @@ Requerimientos para producción:
 
 ---
 
-## 10. Pendientes para Fase 63
+## 10. Implementado en Fase 63
 
-- [ ] Validación HMAC-SHA256 en webhook con `VERIFF_SHARED_SECRET`
-- [ ] Actualizar `kyc_verificaciones.estado_kyc` y `kyc_verificaciones.decision` según decisión Veriff
-- [ ] Actualizar `usuarios.estado_kyc_actual` cuando llega decisión (APROBADO / RECHAZADO / EN_REVISION)
-- [ ] Probar webhook con evento real desde dashboard Veriff sandbox
-- [ ] Considerar polling de `GET /api/kyc/mi-estado` en frontend para detectar cambio de estado post-Veriff
+- [x] Validación HMAC-SHA256 en webhook con `VERIFF_SHARED_SECRET` (tiempo constante)
+- [x] Header `x-hmac-signature` — sin firma o firma inválida → 401, sin actualización
+- [x] Procesamiento de decisión: actualiza `kyc_verificaciones` + `usuarios.estado_kyc_actual`
+- [x] Idempotencia: webhook duplicado en mismo estado final → OK sin duplicar
+- [x] Frontend: botón "Actualizar estado" cuando PENDIENTE
+- [x] Frontend: polling KYC cada 12 s mientras PENDIENTE, se detiene al llegar estado final
+- [x] Auditoría: KYC_WEBHOOK_SIGNATURE_INVALID / VALID / PROCESSED sin datos sensibles
+
+## 10b. Pendientes para Fase 64
+
+- [ ] Restricciones operacionales según estado KYC (bloquear envíos > límite si NO_INICIADO/RECHAZADO)
+- [ ] Mensaje más prominente si estado es RECHAZADO
+- [ ] Prueba real del webhook desde Veriff sandbox (requiere completar flujo con documento de prueba)
 
 ### Variables Azure requeridas (ya configuradas en xpay-api-qa)
 
-| Variable              | Uso                                                       |
-|-----------------------|-----------------------------------------------------------|
-| `VERIFF_API_KEY`      | Header `X-AUTH-CLIENT` en llamada a Veriff `/v1/sessions` |
-| `VERIFF_SHARED_SECRET`| Validación HMAC-SHA256 webhook (Fase 63)                  |
-| `VERIFF_BASE_URL`     | Base URL Veriff sandbox (ej. `https://stationapi.veriff.com`) |
+| Variable              | Uso                                                            |
+|-----------------------|----------------------------------------------------------------|
+| `VERIFF_API_KEY`      | Header `X-AUTH-CLIENT` en llamada a Veriff `/v1/sessions`      |
+| `VERIFF_SHARED_SECRET`| Validación HMAC-SHA256 webhook — **NUNCA en repo ni logs**     |
+| `VERIFF_BASE_URL`     | Base URL Veriff sandbox (ej. `https://stationapi.veriff.com`)  |
 
 ### Cómo iniciar verificación desde Mi Wallet
 
@@ -223,11 +251,91 @@ Requerimientos para producción:
 4. Backend crea sesión Veriff sandbox → estado pasa a `PENDIENTE`
 5. Frontend muestra "Verificación iniciada. Continúa en Veriff." y redirige a `sessionUrl`
 6. Completar verificación con documento de prueba Veriff (sandbox)
-7. Veriff envía webhook → Fase 63 procesará la decisión
+7. Veriff envía webhook → backend valida HMAC y actualiza estado automáticamente
+8. Al volver a XPAY → tocar **"Actualizar estado"** o esperar polling (≤ 12 s)
 
 ---
 
-## 11. Restricciones permanentes
+## 11. Integración con creación de cuenta (Fase 65 — pendiente)
+
+Esta sección documenta el flujo objetivo para cuando se implemente el registro de nuevos usuarios en XPAY. Los endpoints creados en Fases 61–63 son reutilizables sin cambios.
+
+### Flujo objetivo
+
+```
+1. Usuario completa formulario de registro (datos mínimos)
+         │
+         ▼
+2. POST /api/registro-usuario
+   → XPAY crea: persona, usuario (estado=PENDIENTE_KYC), wallet (estado=LIMITADA)
+         │
+         ▼
+3. XPAY llama internamente a CreateVeriffSessionAsync(idUsuario)
+   → kyc_verificaciones: proveedor=VERIFF, estado=PENDIENTE, session_id, session_url
+   → usuarios.estado_kyc_actual = PENDIENTE
+         │
+         ▼
+4. Backend responde con { sessionUrl }
+         │
+         ▼
+5. Frontend redirige a sessionUrl de Veriff
+         │
+         ▼
+6. Usuario completa verificación en Veriff (documento + biométrica)
+         │
+         ▼
+7. Veriff envía webhook a POST /api/kyc/veriff/webhook
+   → XPAY valida firma HMAC-SHA256 (ya implementado en Fase 63)
+   → XPAY actualiza kyc_verificaciones + usuarios.estado_kyc_actual
+         │
+    ┌────┴────────────────────────────┐
+    ▼                                 ▼
+APROBADO                         RECHAZADO / EN_REVISION
+→ wallet.estado = ACTIVA         → wallet.estado = LIMITADA (sin cambio)
+→ usuario habilitado             → notificar, permitir reintento si aplica
+    │                                 │
+    └─────────────┬───────────────────┘
+                  ▼
+8. Usuario regresa a XPAY → estado KYC actualizado visible
+   (polling 12 s o botón "Actualizar estado" — ya implementado en Fase 63)
+```
+
+### Responsabilidades por capa
+
+| Capa        | Responsabilidad                                                       |
+|-------------|-----------------------------------------------------------------------|
+| Backend     | Crear usuario/persona/wallet. Llamar `CreateVeriffSessionAsync`. Retornar `sessionUrl`. |
+| Webhook     | Validar HMAC. Mapear decisión. Actualizar estado. Ya implementado.    |
+| Frontend    | Redirigir a `sessionUrl`. Mostrar estado. Polling/botón ya implementados. |
+| Base datos  | `estado_kyc_actual` en `usuarios`. `kyc_verificaciones`. Wallet estado (Fase 64). |
+
+### Campos de wallet para Fase 64/65
+
+El campo `estado` de la tabla `wallets` ya existe (`ACTIVA`, `INACTIVA`, `BLOQUEADA`).
+Para la integración de creación de cuenta se propone un nuevo valor `LIMITADA` (pendiente migración):
+
+- `LIMITADA`: creada pero KYC pendiente — operaciones restringidas según límites regulatorios
+- `ACTIVA`: KYC aprobado — operaciones sin restricción adicional por KYC
+
+### Endpoints reutilizables (sin cambios en Fase 65)
+
+| Endpoint                              | Rol en creación de cuenta                |
+|---------------------------------------|------------------------------------------|
+| `POST /api/kyc/veriff/session`        | Crear sesión después de crear usuario    |
+| `POST /api/kyc/veriff/webhook`        | Recibir decisión Veriff — ya funcional   |
+| `GET /api/kyc/mi-estado`              | Polling / consulta de estado             |
+
+### Consideraciones de seguridad para Fase 65
+
+- El formulario de registro debe validar datos mínimos sin enviar PII a Veriff más allá de `vendorData`.
+- El campo `vendorData` continuará siendo `XPAY-{ENV}-USUARIO-{idUsuario}` — sin nombre, email ni cédula.
+- La sesión Veriff se crea inmediatamente al registrar (no diferida) para evitar estados inconsistentes.
+- La wallet en estado `LIMITADA` no debe permitir recibir fondos externos hasta APROBADO (Fase 64).
+- El consentimiento KYC (Habeas Data) debe registrarse antes de llamar a Veriff (ver sección 9).
+
+---
+
+## 12. Restricciones permanentes
 
 - **Sin dinero real** — QA/Demo únicamente hasta Fase 65
 - **Sin producción** — nunca configurar keys reales en código
