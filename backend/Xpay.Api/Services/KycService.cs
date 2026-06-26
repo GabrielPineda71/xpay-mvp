@@ -68,12 +68,12 @@ public class KycService
 
     public async Task<IniciarKycResponse> CreateVeriffSessionAsync(long idUsuario)
     {
-        // Validate config exists — read presence only, never log values
-        var apiKey    = _config["VERIFF_API_KEY"];
-        var baseUrl   = _config["VERIFF_BASE_URL"];
-        var hasSecret = !string.IsNullOrWhiteSpace(_config["VERIFF_SHARED_SECRET"]);
+        // Read all three config values — validate presence, never log values
+        var apiKey  = _config["VERIFF_API_KEY"];
+        var baseUrl = _config["VERIFF_BASE_URL"];
+        var secret  = _config["VERIFF_SHARED_SECRET"];
 
-        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(baseUrl) || !hasSecret)
+        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(secret))
         {
             _logger.LogWarning("Veriff sandbox config incomplete for user {IdUsuario}.", idUsuario);
             throw new InvalidOperationException(
@@ -90,14 +90,27 @@ public class KycService
                 Callback    = "https://xpay-api-qa.azurewebsites.net/api/kyc/veriff/webhook",
                 VendorData  = vendorData,
                 Timestamp   = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                // RedirectUrl instructs Veriff to redirect user back after completing verification.
-                // Handled in frontend as ?kyc=return. Veriff V1 may ignore this field.
+                // RedirectUrl: redirect user back to XPAY after Veriff completion. Veriff V1 may ignore this field.
                 RedirectUrl = "https://xpay-admin-qa.azurewebsites.net/mi-wallet?kyc=return",
             }
         };
 
         var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         var json     = JsonSerializer.Serialize(payload, jsonOpts);
+
+        // X-HMAC-SIGNATURE: required by Veriff API — HMAC-SHA256(UTF-8 body, UTF-8 secret), hex lowercase
+        var hmacKeyBytes  = Encoding.UTF8.GetBytes(secret.Trim());
+        var hmacBodyBytes = Encoding.UTF8.GetBytes(json);
+        using var hmacAlg = new HMACSHA256(hmacKeyBytes);
+        var hmacHex       = Convert.ToHexString(hmacAlg.ComputeHash(hmacBodyBytes)).ToLowerInvariant();
+
+        // Safe diagnostic: confirm both headers present and body/sig lengths — never log values
+        _logger.LogInformation(
+            "Veriff session request: hasAuthClient={HasAC} hasHmacSig={HasHS} bodyLen={BLen} sigLen={SLen}",
+            !string.IsNullOrEmpty(apiKey),
+            !string.IsNullOrEmpty(hmacHex),
+            json.Length,
+            hmacHex.Length);
 
         var client = _http.CreateClient();
         var req    = new HttpRequestMessage(
@@ -106,7 +119,8 @@ public class KycService
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
-        req.Headers.TryAddWithoutValidation("X-AUTH-CLIENT", apiKey);
+        req.Headers.TryAddWithoutValidation("X-AUTH-CLIENT",    apiKey);
+        req.Headers.TryAddWithoutValidation("X-HMAC-SIGNATURE", hmacHex);
 
         HttpResponseMessage httpResp;
         try
@@ -124,9 +138,22 @@ public class KycService
         var body = await httpResp.Content.ReadAsStringAsync();
         if (!httpResp.IsSuccessStatusCode)
         {
+            // Extract Veriff error code/message for diagnostics — no secrets, no full body
+            int?    veriffCode = null;
+            string? veriffMsg  = null;
+            try
+            {
+                var errEl = JsonSerializer.Deserialize<JsonElement>(body);
+                if (errEl.TryGetProperty("code",    out var ec) && ec.ValueKind == JsonValueKind.Number)
+                    veriffCode = ec.GetInt32();
+                if (errEl.TryGetProperty("message", out var em))
+                    veriffMsg = em.GetString();
+            }
+            catch { /* body not JSON — ignore */ }
+
             _logger.LogWarning(
-                "Veriff returned HTTP {Status} for user {IdUsuario}.",
-                (int)httpResp.StatusCode, idUsuario);
+                "Veriff returned HTTP {Status} for user {IdUsuario}. VeriffCode={VC} VeriffMsg={VM}",
+                (int)httpResp.StatusCode, idUsuario, veriffCode, veriffMsg);
             throw new InvalidOperationException(
                 $"El proveedor de verificación respondió con error {(int)httpResp.StatusCode}. Intenta más tarde.");
         }
