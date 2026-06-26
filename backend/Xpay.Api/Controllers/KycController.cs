@@ -147,16 +147,33 @@ public class KycController : ControllerBase
             rawBody.Length,
             string.Join(", ", sigHeaderNames));
 
-        var signature = Request.Headers["x-hmac-signature"].FirstOrDefault();
+        // Read both possible signature headers; Veriff sends x-hmac-signature and x-signature
+        var hmacSig   = Request.Headers["x-hmac-signature"].FirstOrDefault();
+        var altSig    = Request.Headers["x-signature"].FirstOrDefault();
+        var anyPresent = !string.IsNullOrEmpty(hmacSig) || !string.IsNullOrEmpty(altSig);
 
-        if (!_kyc.ValidateVeriffSignature(rawBody, signature))
+        _logger.LogInformation(
+            "Veriff webhook sig lengths: x-hmac-signature={HmacLen} x-signature={AltLen}",
+            hmacSig?.Trim().Length ?? 0,
+            altSig?.Trim().Length ?? 0);
+
+        // Try x-hmac-signature first, then x-signature as fallback header name
+        var validHmac = !string.IsNullOrEmpty(hmacSig) && _kyc.ValidateVeriffSignature(rawBody, hmacSig);
+        var validAlt  = !validHmac && !string.IsNullOrEmpty(altSig) && _kyc.ValidateVeriffSignature(rawBody, altSig);
+        var validationPassed = validHmac || validAlt;
+
+        if (validationPassed)
+            _logger.LogInformation("Veriff webhook sig validated via: {Header}", validHmac ? "x-hmac-signature" : "x-signature");
+
+        if (!validationPassed)
         {
             _audit.LogSensitiveAction(HttpContext, "KYC_WEBHOOK_SIGNATURE_INVALID",
-                new { signaturePresent = !string.IsNullOrEmpty(signature) });
+                new { hmacPresent = !string.IsNullOrEmpty(hmacSig), altPresent = !string.IsNullOrEmpty(altSig) });
             return Unauthorized(new { received = false, error = "Signature invalid or missing." });
         }
 
-        _audit.LogSensitiveAction(HttpContext, "KYC_WEBHOOK_SIGNATURE_VALID", new { });
+        _audit.LogSensitiveAction(HttpContext, "KYC_WEBHOOK_SIGNATURE_VALID",
+            new { via = validHmac ? "x-hmac-signature" : "x-signature" });
 
         VeriffWebhookResult result;
         try
