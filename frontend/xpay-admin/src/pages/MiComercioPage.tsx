@@ -51,6 +51,28 @@ interface RetiroComercio {
 
 type Msg = { ok: boolean; text: string };
 
+interface BrebLlave {
+  idBrebLlave:     number;
+  tipoSujeto:      string;
+  keyType:         string;
+  keyValueMasked:  string;
+  estado:          string;
+  fechaRegistro?:  string;
+  fechaValidacion?: string;
+}
+
+interface BrebRetiro {
+  idBrebRetiro:      number;
+  tipoSujeto:        string;
+  valor:             number;
+  moneda:            string;
+  estado:            string;
+  referenciaInterna: string;
+  keyValueMasked:    string;
+  fechaSolicitud:    string;
+  motivoRechazo?:    string;
+}
+
 export function MiComercioPage() {
   const { user } = useAuth();
   const demoInfo = user ? DEMO_COMERCIO_MAP[user.usuario] : undefined;
@@ -65,6 +87,17 @@ export function MiComercioPage() {
   const [retObs,   setRetObs]   = useState('Solicitud retiro demo QA desde UI');
   const [retBusy,  setRetBusy]  = useState(false);
   const [retMsg,   setRetMsg]   = useState<Msg | null>(null);
+
+  // ── Bre-B comercio ───────────────────────────────────────────────────────
+  const [brebLlave,    setBrebLlave]    = useState<BrebLlave | null>(null);
+  const [brebKeyType,  setBrebKeyType]  = useState('ID');
+  const [brebKeyValue, setBrebKeyValue] = useState('');
+  const [brebRegBusy,  setBrebRegBusy]  = useState(false);
+  const [brebRegMsg,   setBrebRegMsg]   = useState<Msg | null>(null);
+  const [brebRetiros,  setBrebRetiros]  = useState<BrebRetiro[]>([]);
+  const [brebRetValor, setBrebRetValor] = useState('');
+  const [brebRetBusy,  setBrebRetBusy]  = useState(false);
+  const [brebRetMsg,   setBrebRetMsg]   = useState<Msg | null>(null);
 
   // ── QR del comercio ───────────────────────────────────────────────────────
   const [qrComValor,   setQrComValor]   = useState('');
@@ -97,7 +130,23 @@ export function MiComercioPage() {
     }
   }, [demoInfo]);
 
-  useEffect(() => { void loadData(); }, [loadData]);
+  useEffect(() => {
+    void loadData();
+    if (demoInfo) {
+      void (async () => {
+        try {
+          const [llaveR, retirosR] = await Promise.all([
+            get<{ success: boolean; data: BrebLlave | null }>(
+              `/api/breb/mi-llave/comercio?idComercio=${demoInfo.idComercio}`),
+            get<{ success: boolean; data: BrebRetiro[] }>(
+              `/api/breb/mis-retiros/comercio?idComercio=${demoInfo.idComercio}`),
+          ]);
+          setBrebLlave(llaveR.data);
+          setBrebRetiros(retirosR.data ?? []);
+        } catch { /* non-critical */ }
+      })();
+    }
+  }, [loadData, demoInfo]);
 
   if (!user || !demoInfo) {
     return (
@@ -163,6 +212,49 @@ export function MiComercioPage() {
     } finally {
       setRetBusy(false);
     }
+  }
+
+  async function handleRegistrarLlaveComercio(e: FormEvent) {
+    e.preventDefault();
+    if (!brebKeyValue.trim() || !demoInfo) return;
+    setBrebRegBusy(true); setBrebRegMsg(null);
+    try {
+      const r = await post<{ success: boolean; data?: BrebLlave; message?: string }>(
+        '/api/breb/mi-llave/comercio',
+        { keyType: brebKeyType, keyValue: brebKeyValue.trim(), idComercio: demoInfo.idComercio },
+      );
+      if (r.success && r.data) {
+        setBrebLlave(r.data);
+        setBrebKeyValue('');
+        setBrebRegMsg({ ok: true, text: `Llave registrada: ${r.data.keyValueMasked} — ${r.data.estado}` });
+      } else {
+        setBrebRegMsg({ ok: false, text: r.message ?? 'Error registrando llave.' });
+      }
+    } catch (err) {
+      setBrebRegMsg({ ok: false, text: (err as Error).message || 'Error registrando llave.' });
+    } finally { setBrebRegBusy(false); }
+  }
+
+  async function handleSolicitarRetiroComercio(e: FormEvent) {
+    e.preventDefault();
+    const val = Number(brebRetValor);
+    if (!val || val <= 0 || !demoInfo) { setBrebRetMsg({ ok: false, text: 'Ingresa un valor válido.' }); return; }
+    setBrebRetBusy(true); setBrebRetMsg(null);
+    try {
+      const r = await post<{ success: boolean; data?: BrebRetiro; message?: string }>(
+        '/api/breb/retiros/simular',
+        { valor: val, idComercio: demoInfo.idComercio },
+      );
+      if (r.success && r.data) {
+        setBrebRetiros(prev => [r.data!, ...prev]);
+        setBrebRetValor('');
+        setBrebRetMsg({ ok: true, text: `Retiro simulado. Ref: ${r.data.referenciaInterna} — ${r.data.estado}` });
+      } else {
+        setBrebRetMsg({ ok: false, text: r.message ?? 'Error creando retiro.' });
+      }
+    } catch (err) {
+      setBrebRetMsg({ ok: false, text: (err as Error).message || 'Error creando retiro.' });
+    } finally { setBrebRetBusy(false); }
   }
 
   return (
@@ -392,6 +484,111 @@ export function MiComercioPage() {
           </div>
         </>
       ) : null}
+
+      {/* ── RETIRAR SALDO DEL COMERCIO (Bre-B) ──────────────────────────── */}
+      <hr style={{ margin: '1.5rem 0', borderColor: '#e2e8f0' }} />
+      <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem', color: '#2d3748' }}>Retirar saldo del comercio</h3>
+      <div className="breb-section">
+        <span className="breb-sandbox-badge">Sandbox Passport — retiro simulado, sin dinero real</span>
+
+        <div className="breb-status-card">
+          <div className="breb-status-row">
+            <span className="breb-status-label">Llave Bre-B comercio:</span>
+            {brebLlave ? (
+              <>
+                <span className={`breb-badge breb-badge-${brebLlave.estado.toLowerCase().replace(/_/g, '-')}`}>
+                  {brebLlave.estado.replace(/_/g, ' ')}
+                </span>
+                <span className="breb-key-masked">{brebLlave.keyType} · {brebLlave.keyValueMasked}</span>
+              </>
+            ) : (
+              <span className="breb-badge breb-badge-no-registrada">NO REGISTRADA</span>
+            )}
+          </div>
+        </div>
+
+        <h4 style={{ margin: '0 0 0.3rem', fontSize: '0.88rem', color: '#2d3748' }}>
+          {brebLlave ? 'Actualizar llave' : 'Registrar llave Bre-B'}
+        </h4>
+        <form className="breb-form" onSubmit={(e) => void handleRegistrarLlaveComercio(e)}>
+          <label>
+            Tipo de llave
+            <select value={brebKeyType} onChange={e => setBrebKeyType(e.target.value)}>
+              <option value="ID">NIT / ID</option>
+              <option value="PHONE">Número de celular</option>
+              <option value="EMAIL">Correo electrónico</option>
+              <option value="ALPHA">Alias alfanumérico</option>
+              <option value="BCODE">Código Bre-B</option>
+            </select>
+          </label>
+          <label>
+            Valor de la llave
+            <input
+              type="text"
+              value={brebKeyValue}
+              onChange={e => setBrebKeyValue(e.target.value)}
+              placeholder="Llave Bre-B del comercio"
+            />
+          </label>
+          <p className="breb-confirm-text">
+            Esta llave debe corresponder a la cuenta bancaria del comercio en Coopcentral.
+          </p>
+          <button type="submit" className="btn-breb" disabled={brebRegBusy || !brebKeyValue.trim()}>
+            {brebRegBusy ? 'Registrando...' : brebLlave ? 'Actualizar llave' : 'Registrar llave'}
+          </button>
+          {brebRegMsg && (
+            <span className={brebRegMsg.ok ? 'breb-msg-ok' : 'breb-msg-err'}>{brebRegMsg.text}</span>
+          )}
+        </form>
+
+        {brebLlave?.estado === 'VALIDADA' && (
+          <form className="breb-retiro-form" onSubmit={(e) => void handleSolicitarRetiroComercio(e)}>
+            <h4 style={{ margin: '0', fontSize: '0.88rem', color: '#2d3748' }}>Solicitar retiro de saldo</h4>
+            <p className="breb-retiro-note">
+              Destino: <strong>{brebLlave.keyType} · {brebLlave.keyValueMasked}</strong>
+            </p>
+            <label>
+              Valor a retirar (COP ficticio)
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={brebRetValor}
+                onChange={e => setBrebRetValor(e.target.value)}
+                placeholder="Ej: 100000"
+              />
+            </label>
+            <button type="submit" className="btn-breb" disabled={brebRetBusy || !brebRetValor}>
+              {brebRetBusy ? 'Procesando...' : 'Solicitar retiro simulado'}
+            </button>
+            {brebRetMsg && (
+              <span className={brebRetMsg.ok ? 'breb-msg-ok' : 'breb-msg-err'}>{brebRetMsg.text}</span>
+            )}
+          </form>
+        )}
+
+        {brebRetiros.length > 0 && (
+          <>
+            <h4 style={{ margin: '1rem 0 0.3rem', fontSize: '0.88rem', color: '#2d3748' }}>Historial retiros Bre-B</h4>
+            <table className="breb-retiros-table">
+              <thead>
+                <tr><th>Ref</th><th>Valor</th><th>Estado</th><th>Llave</th><th>Fecha</th></tr>
+              </thead>
+              <tbody>
+                {brebRetiros.map(r => (
+                  <tr key={r.idBrebRetiro}>
+                    <td className="mono">{r.referenciaInterna}</td>
+                    <td>{fmtMoney(r.valor)}</td>
+                    <td><span className={`breb-badge breb-badge-${r.estado.toLowerCase().replace(/_/g, '-')}`}>{r.estado}</span></td>
+                    <td>{r.keyValueMasked}</td>
+                    <td>{fmtDate(r.fechaSolicitud)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+      </div>
 
       <p className="user-wallet-footer">
         Ambiente QA/Demo · datos ficticios · sin dinero real · sin producción

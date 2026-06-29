@@ -91,6 +91,9 @@ jobs:
           echo "--- Ejecutando 009_kyc_verificaciones.sql ---"
           sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
             -i database/009_kyc_verificaciones.sql
+          echo "--- Ejecutando 010_passport_breb_base.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/010_passport_breb_base.sql
           echo "Migraciones aplicadas."
 
       - name: dotnet restore

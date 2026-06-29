@@ -65,7 +65,29 @@ interface EstadoCuenta {
 }
 
 type Msg = { ok: boolean; text: string };
-type Tab = 'saldo' | 'recibir' | 'enviar' | 'pagar' | 'movimientos';
+type Tab = 'saldo' | 'recibir' | 'enviar' | 'pagar' | 'movimientos' | 'banco';
+
+interface BrebLlave {
+  idBrebLlave:     number;
+  tipoSujeto:      string;
+  keyType:         string;
+  keyValueMasked:  string;
+  estado:          string;
+  fechaRegistro?:  string;
+  fechaValidacion?: string;
+}
+
+interface BrebRetiro {
+  idBrebRetiro:      number;
+  tipoSujeto:        string;
+  valor:             number;
+  moneda:            string;
+  estado:            string;
+  referenciaInterna: string;
+  keyValueMasked:    string;
+  fechaSolicitud:    string;
+  motivoRechazo?:    string;
+}
 
 // PIN: format-only validation for QA/Demo phase
 // Full cryptographic validation (backend hash, attempt limits, lockout) is pending for production
@@ -173,6 +195,18 @@ export function UserWalletPage() {
   const [fromVeriff,    setFromVeriff]    = useState(false);
   const kycEstadoRef = useRef<string>('NO_INICIADO');
 
+  // ── Bre-B / Retirar a mi banco ───────────────────────────────────────────
+  const [brebLlave,      setBrebLlave]      = useState<BrebLlave | null>(null);
+  const [brebLlaveLoad,  setBrebLlaveLoad]  = useState(false);
+  const [brebKeyType,    setBrebKeyType]    = useState('ID');
+  const [brebKeyValue,   setBrebKeyValue]   = useState('');
+  const [brebRegBusy,    setBrebRegBusy]    = useState(false);
+  const [brebRegMsg,     setBrebRegMsg]     = useState<Msg | null>(null);
+  const [brebRetiros,    setBrebRetiros]    = useState<BrebRetiro[]>([]);
+  const [brebRetValor,   setBrebRetValor]   = useState('');
+  const [brebRetBusy,    setBrebRetBusy]    = useState(false);
+  const [brebRetMsg,     setBrebRetMsg]     = useState<Msg | null>(null);
+
   // ── Pagar comercio QR ─────────────────────────────────────────────────────
   const [pagQrCode,    setPagQrCode]    = useState('');
   const [pagValor,     setPagValor]     = useState('');
@@ -198,6 +232,23 @@ export function UserWalletPage() {
       /* non-critical: keep last known state */
     } finally {
       if (!silent) setKycRefreshing(false);
+    }
+  }, []);
+
+  // ── Bre-B load ────────────────────────────────────────────────────────────
+  const loadBreb = useCallback(async () => {
+    setBrebLlaveLoad(true);
+    try {
+      const [llaveResp, retirosResp] = await Promise.all([
+        get<{ success: boolean; data: BrebLlave | null }>('/api/breb/mi-llave'),
+        get<{ success: boolean; data: BrebRetiro[] }>('/api/breb/mis-retiros'),
+      ]);
+      setBrebLlave(llaveResp.data);
+      setBrebRetiros(retirosResp.data ?? []);
+    } catch {
+      /* non-critical */
+    } finally {
+      setBrebLlaveLoad(false);
     }
   }, []);
 
@@ -259,7 +310,7 @@ export function UserWalletPage() {
     }
   }, [demoInfo]);
 
-  useEffect(() => { void loadCuenta(); void loadKyc(); }, [loadCuenta, loadKyc]);
+  useEffect(() => { void loadCuenta(); void loadKyc(); void loadBreb(); }, [loadCuenta, loadKyc, loadBreb]);
 
   // Part G: detect ?kyc=return — user returned from Veriff, refresh KYC state immediately
   useEffect(() => {
@@ -519,6 +570,50 @@ export function UserWalletPage() {
     }
   }
 
+  // ── Bre-B handlers ────────────────────────────────────────────────────────
+  async function handleRegistrarLlave(e: FormEvent) {
+    e.preventDefault();
+    if (!brebKeyValue.trim()) { setBrebRegMsg({ ok: false, text: 'Ingresa el valor de la llave.' }); return; }
+    setBrebRegBusy(true); setBrebRegMsg(null);
+    try {
+      const r = await post<{ success: boolean; data?: BrebLlave; message?: string }>(
+        '/api/breb/mi-llave',
+        { keyType: brebKeyType, keyValue: brebKeyValue.trim() },
+      );
+      if (r.success && r.data) {
+        setBrebLlave(r.data);
+        setBrebKeyValue('');
+        setBrebRegMsg({ ok: true, text: `Llave registrada: ${r.data.keyValueMasked} — estado: ${r.data.estado}` });
+      } else {
+        setBrebRegMsg({ ok: false, text: r.message ?? 'Error registrando llave.' });
+      }
+    } catch (err) {
+      setBrebRegMsg({ ok: false, text: (err as Error).message || 'Error registrando llave.' });
+    } finally { setBrebRegBusy(false); }
+  }
+
+  async function handleSolicitarRetiro(e: FormEvent) {
+    e.preventDefault();
+    const val = Number(brebRetValor);
+    if (!val || val <= 0) { setBrebRetMsg({ ok: false, text: 'Ingresa un valor válido.' }); return; }
+    setBrebRetBusy(true); setBrebRetMsg(null);
+    try {
+      const r = await post<{ success: boolean; data?: BrebRetiro; message?: string }>(
+        '/api/breb/retiros/simular',
+        { valor: val },
+      );
+      if (r.success && r.data) {
+        setBrebRetiros(prev => [r.data!, ...prev]);
+        setBrebRetValor('');
+        setBrebRetMsg({ ok: true, text: `Retiro simulado creado. Ref: ${r.data.referenciaInterna} — ${r.data.estado}` });
+      } else {
+        setBrebRetMsg({ ok: false, text: r.message ?? 'Error creando retiro.' });
+      }
+    } catch (err) {
+      setBrebRetMsg({ ok: false, text: (err as Error).message || 'Error creando retiro.' });
+    } finally { setBrebRetBusy(false); }
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   function resetEnviar() {
     setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
@@ -631,10 +726,10 @@ export function UserWalletPage() {
 
       {/* Tab navigation */}
       <div className="wallet-tabs">
-        {(['saldo', 'recibir', 'enviar', 'pagar', 'movimientos'] as Tab[]).map(t => {
+        {(['saldo', 'recibir', 'enviar', 'pagar', 'movimientos', 'banco'] as Tab[]).map(t => {
           const labels: Record<Tab, string> = {
             saldo: 'Mi Saldo', recibir: 'Recibir', enviar: 'Enviar',
-            pagar: 'Pagar QR', movimientos: 'Movimientos',
+            pagar: 'Pagar QR', movimientos: 'Movimientos', banco: 'Retirar a mi banco',
           };
           return (
             <button
@@ -1028,6 +1123,145 @@ export function UserWalletPage() {
             </>
           ) : (
             <div className="empty">Sin movimientos registrados.</div>
+          )}
+        </div>
+      )}
+
+      {/* ── RETIRAR A MI BANCO (Bre-B) ───────────────────────────────────── */}
+      {tab === 'banco' && (
+        <div className="breb-section">
+          <span className="breb-sandbox-badge">Sandbox Passport — retiro simulado, sin dinero real</span>
+
+          {brebLlaveLoad ? (
+            <div className="loading">Cargando llave Bre-B...</div>
+          ) : (
+            <>
+              {/* Estado de la llave */}
+              <div className="breb-status-card">
+                <div className="breb-status-row">
+                  <span className="breb-status-label">Llave Bre-B:</span>
+                  {brebLlave ? (
+                    <>
+                      <span className={`breb-badge breb-badge-${brebLlave.estado.toLowerCase().replace(/_/g, '-')}`}>
+                        {brebLlave.estado.replace(/_/g, ' ')}
+                      </span>
+                      <span className="breb-key-masked">{brebLlave.keyType} · {brebLlave.keyValueMasked}</span>
+                    </>
+                  ) : (
+                    <span className="breb-badge breb-badge-no-registrada">NO REGISTRADA</span>
+                  )}
+                </div>
+                {brebLlave?.fechaValidacion && (
+                  <div style={{ fontSize: '0.75rem', color: '#718096' }}>
+                    Validada: {fmtDate(brebLlave.fechaValidacion)}
+                  </div>
+                )}
+              </div>
+
+              {/* Formulario registro de llave */}
+              <h4 style={{ margin: '0 0 0.3rem', fontSize: '0.88rem', color: '#2d3748' }}>
+                {brebLlave ? 'Actualizar llave Bre-B' : 'Registrar llave Bre-B'}
+              </h4>
+              <form className="breb-form" onSubmit={(e) => void handleRegistrarLlave(e)}>
+                <label>
+                  Tipo de llave
+                  <select value={brebKeyType} onChange={e => setBrebKeyType(e.target.value)}>
+                    <option value="ID">Cédula / ID</option>
+                    <option value="PHONE">Número de celular</option>
+                    <option value="EMAIL">Correo electrónico</option>
+                    <option value="ALPHA">Alias alfanumérico</option>
+                    <option value="BCODE">Código Bre-B</option>
+                  </select>
+                </label>
+                <label>
+                  Valor de la llave
+                  <input
+                    type="text"
+                    value={brebKeyValue}
+                    onChange={e => setBrebKeyValue(e.target.value)}
+                    placeholder={
+                      brebKeyType === 'ID'    ? 'Ej: 1234567890' :
+                      brebKeyType === 'PHONE' ? 'Ej: 3001234567' :
+                      brebKeyType === 'EMAIL' ? 'Ej: correo@banco.com' :
+                      brebKeyType === 'ALPHA' ? 'Ej: mi-alias-breb' : 'Ej: BREB-XXXXXX'
+                    }
+                  />
+                </label>
+                <p className="breb-confirm-text">
+                  Al registrar confirmas que esta llave Bre-B te pertenece y corresponde a tu cuenta bancaria.
+                  No se puede retirar a llaves de terceros.
+                </p>
+                <button type="submit" className="btn-breb" disabled={brebRegBusy || !brebKeyValue.trim()}>
+                  {brebRegBusy ? 'Registrando...' : brebLlave ? 'Actualizar llave' : 'Registrar llave'}
+                </button>
+                {brebRegMsg && (
+                  <span className={brebRegMsg.ok ? 'breb-msg-ok' : 'breb-msg-err'}>{brebRegMsg.text}</span>
+                )}
+              </form>
+
+              {/* Formulario retiro — solo si llave VALIDADA */}
+              {brebLlave?.estado === 'VALIDADA' && (
+                <form className="breb-retiro-form" onSubmit={(e) => void handleSolicitarRetiro(e)}>
+                  <h4 style={{ margin: '0', fontSize: '0.88rem', color: '#2d3748' }}>Solicitar retiro</h4>
+                  <p className="breb-retiro-note">
+                    El retiro se enviará a: <strong>{brebLlave.keyType} · {brebLlave.keyValueMasked}</strong>
+                  </p>
+                  <label>
+                    Valor a retirar (COP ficticio)
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={brebRetValor}
+                      onChange={e => setBrebRetValor(e.target.value)}
+                      placeholder="Ej: 50000"
+                    />
+                  </label>
+                  <button type="submit" className="btn-breb" disabled={brebRetBusy || !brebRetValor}>
+                    {brebRetBusy ? 'Procesando...' : 'Solicitar retiro simulado'}
+                  </button>
+                  {brebRetMsg && (
+                    <span className={brebRetMsg.ok ? 'breb-msg-ok' : 'breb-msg-err'}>{brebRetMsg.text}</span>
+                  )}
+                </form>
+              )}
+
+              {brebLlave && brebLlave.estado !== 'VALIDADA' && (
+                <p className="breb-retiro-note" style={{ marginTop: '0.75rem' }}>
+                  Solo puedes solicitar retiros una vez que tu llave esté <strong>VALIDADA</strong>.
+                  En QA: usa el endpoint admin <code>POST /api/breb/admin/simular-validacion-llave</code>.
+                </p>
+              )}
+
+              {/* Historial de retiros */}
+              {brebRetiros.length > 0 && (
+                <>
+                  <h4 style={{ margin: '1rem 0 0.3rem', fontSize: '0.88rem', color: '#2d3748' }}>Historial de retiros</h4>
+                  <table className="breb-retiros-table">
+                    <thead>
+                      <tr>
+                        <th>Ref</th>
+                        <th>Valor</th>
+                        <th>Estado</th>
+                        <th>Llave</th>
+                        <th>Fecha</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {brebRetiros.map(r => (
+                        <tr key={r.idBrebRetiro}>
+                          <td className="mono">{r.referenciaInterna}</td>
+                          <td>{fmtMoney(r.valor)}</td>
+                          <td><span className={`breb-badge breb-badge-${r.estado.toLowerCase().replace(/_/g, '-')}`}>{r.estado}</span></td>
+                          <td>{r.keyValueMasked}</td>
+                          <td>{fmtDate(r.fechaSolicitud)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </>
           )}
         </div>
       )}

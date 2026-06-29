@@ -645,3 +645,56 @@ tr:hover td { background: #f7fafc; }
 .btn-kyc-start:disabled { opacity: 0.55; cursor: not-allowed; }
 .kyc-nota-aprobado { color: #276749 !important; font-weight: 600; font-style: normal; }
 .kyc-nota-error    { color: #c53030 !important; font-weight: 600; font-style: normal; }
+
+/* ── Fase 64: Bre-B withdrawal section ────────────────────────────────── */
+.breb-section { margin-top: 1.25rem; max-width: 480px; }
+.breb-sandbox-badge {
+  display: inline-block;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+.breb-status-card {
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+}
+.breb-status-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.35rem; }
+.breb-status-label { font-size: 0.8rem; color: #4a5568; font-weight: 600; }
+.breb-key-masked { font-family: monospace; font-size: 0.85rem; color: #2d3748; background: #edf2f7; padding: 0.1rem 0.4rem; border-radius: 3px; }
+.breb-badge { display: inline-block; padding: 0.12rem 0.55rem; border-radius: 10px; font-size: 0.72rem; font-weight: 700; }
+.breb-badge-no-registrada        { background: #edf2f7; color: #718096; }
+.breb-badge-pendiente-validacion { background: #ebf8ff; color: #2b6cb0; }
+.breb-badge-validada             { background: #f0fff4; color: #276749; }
+.breb-badge-rechazada            { background: #fff5f5; color: #c53030; }
+.breb-badge-suspendida           { background: #fffaf0; color: #c05621; }
+
+.breb-form { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.75rem; }
+.breb-form label { font-size: 0.82rem; color: #4a5568; font-weight: 600; }
+.breb-form select,
+.breb-form input { width: 100%; padding: 0.4rem 0.6rem; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 0.85rem; font-family: inherit; }
+.breb-form input:focus,
+.breb-form select:focus { outline: 2px solid #276749; border-color: #276749; }
+.breb-confirm-text { font-size: 0.75rem; color: #718096; }
+
+.btn-breb { background: #276749; color: #fff; border: none; padding: 0.45rem 1.1rem; border-radius: 4px; cursor: pointer; font-size: 0.82rem; font-weight: 700; font-family: inherit; transition: background 0.12s; margin-top: 0.25rem; }
+.btn-breb:hover:not(:disabled) { background: #22543d; }
+.btn-breb:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.breb-retiro-form { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.75rem; border-top: 1px solid #e2e8f0; padding-top: 0.75rem; }
+.breb-retiro-note { font-size: 0.77rem; color: #718096; font-style: italic; }
+
+.breb-msg-ok  { font-size: 0.82rem; color: #276749; font-weight: 600; }
+.breb-msg-err { font-size: 0.82rem; color: #c53030; font-weight: 600; }
+
+.breb-retiros-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-top: 0.75rem; }
+.breb-retiros-table th { background: #f7fafc; color: #4a5568; font-weight: 700; padding: 0.35rem 0.5rem; text-align: left; border-bottom: 2px solid #e2e8f0; }
+.breb-retiros-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid #f0f0f0; color: #2d3748; }
+.breb-retiros-table tr:hover td { background: #f7fafc; }
