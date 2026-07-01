@@ -44,6 +44,21 @@ public class BrebRetiroResponse
     public string? MotivoRechazo     { get; set; }
 }
 
+public class AdminLlaveResponse
+{
+    public long    IdBrebLlave     { get; set; }
+    public string  TipoSujeto      { get; set; } = string.Empty;
+    public long?   IdUsuario       { get; set; }
+    public long?   IdComercio      { get; set; }
+    public long    IdWallet        { get; set; }
+    public string  KeyType         { get; set; } = string.Empty;
+    public string  KeyValueMasked  { get; set; } = string.Empty;
+    public string  Estado          { get; set; } = string.Empty;
+    public DateTime  FechaRegistro   { get; set; }
+    public DateTime? FechaValidacion { get; set; }
+    public bool    EsActiva        { get; set; }
+}
+
 public class PassportHealthResponse
 {
     public bool PassportBaseUrl      { get; set; }

@@ -87,6 +87,26 @@ public class BrebService
         return await UpsertLlave(comercio.IdWalletComercio.Value, "COMERCIO", null, idComercio, req, idUsuario);
     }
 
+    // ── Listar todas las llaves (Admin) ──────────────────────────────────
+    public async Task<List<AdminLlaveResponse>> GetAdminLlavesAsync() =>
+        await _db.PassportBrebLlaves
+            .OrderByDescending(l => l.FechaRegistro)
+            .Select(l => new AdminLlaveResponse
+            {
+                IdBrebLlave     = l.IdBrebLlave,
+                TipoSujeto      = l.TipoSujeto,
+                IdUsuario       = l.IdUsuario,
+                IdComercio      = l.IdComercio,
+                IdWallet        = l.IdWallet,
+                KeyType         = l.KeyType,
+                KeyValueMasked  = l.KeyValueMasked,
+                Estado          = l.Estado,
+                FechaRegistro   = l.FechaRegistro,
+                FechaValidacion = l.FechaValidacion,
+                EsActiva        = l.EsActiva,
+            })
+            .ToListAsync();
+
     // ── Simular validación (Admin/QA) ─────────────────────────────────────
     public async Task<string> SimularValidacionAsync(SimularValidacionLlaveRequest req, long adminId)
     {

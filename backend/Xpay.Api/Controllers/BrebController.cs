@@ -135,6 +135,24 @@ public class BrebController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // GET /api/breb/admin/llaves
+    // Solo ADMIN_XPAY/SUPERUSUARIO. Lista todas las llaves Bre-B.
+    // No devuelve keyValueHash, keyValueEncrypted ni datos sensibles.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("api/breb/admin/llaves")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> GetAdminLlaves()
+    {
+        try
+        {
+            var llaves = await _breb.GetAdminLlavesAsync();
+            return Ok(new { success = true, data = llaves });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // POST /api/breb/admin/simular-validacion-llave
     // Solo ADMIN_XPAY/SUPERUSUARIO. QA only.
     // Marca llave como VALIDADA o RECHAZADA sin llamar Passport real.
