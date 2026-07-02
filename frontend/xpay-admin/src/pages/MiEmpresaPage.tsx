@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.tsx';
 
 export function MiEmpresaPage() {
@@ -72,6 +73,14 @@ export function MiEmpresaPage() {
             </span>
           </li>
         </ol>
+      </div>
+
+      <div className="info-section" style={{ marginTop: '1.25rem', borderLeft: '3px solid #3b82f6', background: '#eff6ff' }}>
+        <h3 style={{ color: '#1e40af' }}>Módulo activo</h3>
+        <p style={{ fontSize: '0.9rem', color: '#1d4ed8' }}>
+          El módulo de empleados ya está disponible.{' '}
+          <Link to="/mi-empresa/libranza" style={{ fontWeight: 600 }}>Ver empleados y carga de padrón →</Link>
+        </p>
       </div>
 
       <div className="info-section" style={{ marginTop: '1.25rem', borderLeft: '3px solid #f59e0b', background: '#fffbeb' }}>

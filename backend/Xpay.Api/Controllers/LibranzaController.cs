@@ -9,13 +9,17 @@ namespace Xpay.Api.Controllers;
 [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
 public class LibranzaController : ControllerBase
 {
-    private readonly LibranzaService  _libranza;
-    private readonly AuditLogService  _audit;
+    private readonly LibranzaService             _libranza;
+    private readonly LibranzaEmpleadosService    _empleados;
+    private readonly AuditLogService             _audit;
+    private readonly ILogger<LibranzaController> _logger;
 
-    public LibranzaController(LibranzaService libranza, AuditLogService audit)
+    public LibranzaController(LibranzaService libranza, LibranzaEmpleadosService empleados, AuditLogService audit, ILogger<LibranzaController> logger)
     {
-        _libranza = libranza;
-        _audit    = audit;
+        _libranza  = libranza;
+        _empleados = empleados;
+        _audit     = audit;
+        _logger    = logger;
     }
 
     private bool TryGetIdUsuario(out long id) =>
@@ -199,5 +203,78 @@ public class LibranzaController : ControllerBase
         catch (InvalidOperationException ex)
         { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno actualizando rango." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // EMPLEADOS (admin)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [HttpGet("api/libranza/admin/convenios/{id:long}/empleados")]
+    public async Task<IActionResult> GetEmpleados(long id)
+    {
+        try
+        {
+            var data = await _empleados.GetEmpleadosAsync(id);
+            return Ok(new { success = true, data, total = data.Count });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error GetEmpleados convenio={Id}", id);
+            return StatusCode(500, new { success = false, message = "Error interno." });
+        }
+    }
+
+    [HttpGet("api/libranza/admin/convenios/{id:long}/importaciones")]
+    public async Task<IActionResult> GetImportaciones(long id)
+    {
+        try
+        {
+            var data = await _empleados.GetImportacionesAsync(id);
+            return Ok(new { success = true, data, total = data.Count });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error GetImportaciones convenio={Id}", id);
+            return StatusCode(500, new { success = false, message = "Error interno." });
+        }
+    }
+
+    [HttpGet("api/libranza/admin/convenios/{id:long}/usuarios-empresa")]
+    public async Task<IActionResult> GetUsuariosEmpresa(long id)
+    {
+        try
+        {
+            var data = await _empleados.GetUsuariosEmpresaAsync(id);
+            return Ok(new { success = true, data, total = data.Count });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error GetUsuariosEmpresa convenio={Id}", id);
+            return StatusCode(500, new { success = false, message = "Error interno." });
+        }
+    }
+
+    [HttpPost("api/libranza/admin/convenios/{id:long}/usuarios-empresa")]
+    public async Task<IActionResult> AsociarUsuarioEmpresa(long id, [FromBody] AsociarUsuarioEmpresaRequest request)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "LIBRANZA_ASOCIAR_USUARIO_EMPRESA",
+            new { idConvenio = id, idUsuario = request.IdUsuario, rol = request.RolEmpresa, adminId });
+        try
+        {
+            var result = await _empleados.AsociarUsuarioEmpresaAsync(id, request, adminId);
+            return Ok(new { success = true, data = result });
+        }
+        catch (KeyNotFoundException ex)
+        { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex)
+        { return BadRequest(new { success = false, message = ex.Message }); }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error AsociarUsuarioEmpresa convenio={Id}", id);
+            return StatusCode(500, new { success = false, message = "Error interno." });
+        }
     }
 }

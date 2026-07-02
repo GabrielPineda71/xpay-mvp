@@ -53,7 +53,48 @@ interface Rango {
   updatedAt:  string | null;
 }
 
+interface Empleado {
+  idEmpleado: number;
+  tipoDocumento: string;
+  numeroDocumento: string;
+  nombres: string;
+  apellidos?: string;
+  cargo?: string;
+  salarioMensual: number;
+  periodicidadPago: string;
+  estado: string;
+  cupoPreliminar: number;
+  origenCarga: string;
+  loteImportacion?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+interface Importacion {
+  idImportacion: number;
+  nombreArchivo?: string;
+  loteImportacion: string;
+  totalFilas: number;
+  filasValidas: number;
+  filasError: number;
+  empleadosCreados: number;
+  empleadosActualizados: number;
+  estado: string;
+  errores: { fila: number; campo: string; mensaje: string }[];
+  createdAt: string;
+}
+
+interface UsuarioEmpresa {
+  idUsuarioEmpresa: number;
+  idUsuario: number;
+  idConvenio: number;
+  rolEmpresa: string;
+  estado: string;
+  createdAt: string;
+}
+
 type Vista = 'lista' | 'crear' | 'editar' | 'detalle';
+type DetalleTab = 'parametros' | 'rangos' | 'empleados' | 'importaciones' | 'usuarios';
 
 const ESTADOS_CONVENIO = ['ACTIVO', 'SUSPENDIDO', 'CANCELADO'];
 const PERIODICIDADES   = ['MENSUAL', 'QUINCENAL'];
@@ -126,6 +167,16 @@ export function LibranzaConveniosAdminPage() {
     ivaPorcentaje: '19', momentoCobroComision: 'VENCIDO', estado: 'ACTIVO',
   });
 
+  // Empleados / importaciones / usuarios empresa
+  const [detalleTab, setDetalleTab]         = useState<DetalleTab>('parametros');
+  const [empleados, setEmpleados]           = useState<Empleado[]>([]);
+  const [importaciones, setImportaciones]   = useState<Importacion[]>([]);
+  const [usuariosEmp, setUsuariosEmp]       = useState<UsuarioEmpresa[]>([]);
+  const [loadingEmp, setLoadingEmp]         = useState(false);
+  const [newUsuario, setNewUsuario]         = useState({ idUsuario: '', rolEmpresa: 'ADMIN_EMPRESA' });
+  const [savingUsuario, setSavingUsuario]   = useState(false);
+  const [expandImport, setExpandImport]     = useState<number | null>(null);
+
   // Formulario rango
   const [showNewRango, setShowNewRango] = useState(false);
   const [newRango, setNewRango] = useState({
@@ -149,12 +200,52 @@ export function LibranzaConveniosAdminPage() {
   function cargarDetalle(conv: Convenio) {
     setSelected(conv);
     setVista('detalle');
+    setDetalleTab('parametros');
     limpiarMsg();
     Promise.all([
       get<{ success: boolean; data: Parametros[] }>(`/api/libranza/admin/convenios/${conv.idConvenio}/parametros`),
       get<{ success: boolean; data: Rango[] }>(`/api/libranza/admin/convenios/${conv.idConvenio}/rangos`),
     ]).then(([p, r]) => { setParametros(p.data); setRangos(r.data); })
       .catch(e => setError((e as Error).message));
+  }
+
+  async function cargarEmpleados(id: number) {
+    setLoadingEmp(true);
+    try {
+      const [e, i, u] = await Promise.all([
+        get<{ success: boolean; data: Empleado[] }>(`/api/libranza/admin/convenios/${id}/empleados`),
+        get<{ success: boolean; data: Importacion[] }>(`/api/libranza/admin/convenios/${id}/importaciones`),
+        get<{ success: boolean; data: UsuarioEmpresa[] }>(`/api/libranza/admin/convenios/${id}/usuarios-empresa`),
+      ]);
+      setEmpleados(e.data);
+      setImportaciones(i.data);
+      setUsuariosEmp(u.data);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoadingEmp(false);
+    }
+  }
+
+  async function asociarUsuario() {
+    if (!selected) return;
+    if (!newUsuario.idUsuario || isNaN(Number(newUsuario.idUsuario))) {
+      setError('Ingresa un ID de usuario válido.'); return;
+    }
+    setSavingUsuario(true); limpiarMsg();
+    try {
+      await post(`/api/libranza/admin/convenios/${selected.idConvenio}/usuarios-empresa`, {
+        idUsuario: Number(newUsuario.idUsuario),
+        rolEmpresa: newUsuario.rolEmpresa,
+      });
+      setMsg('Usuario asociado exitosamente.');
+      setNewUsuario({ idUsuario: '', rolEmpresa: 'ADMIN_EMPRESA' });
+      await cargarEmpleados(selected.idConvenio);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingUsuario(false);
+    }
   }
 
   useEffect(cargarConvenios, []);
@@ -449,8 +540,33 @@ export function LibranzaConveniosAdminPage() {
         {selected.observaciones && <div style={{ gridColumn:'1/-1' }}><span style={{ fontSize:'0.78rem', color:'#718096' }}>Observaciones</span><div>{selected.observaciones}</div></div>}
       </div>
 
+      {/* ── Tabs ── */}
+      <div style={{ display:'flex', gap:'0.4rem', borderBottom:'2px solid #e2e8f0', marginBottom:'1.5rem', flexWrap:'wrap' }}>
+        {([
+          ['parametros', 'Parámetros'],
+          ['rangos', 'Rangos de cobro'],
+          ['empleados', `Empleados (${empleados.length})`],
+          ['importaciones', `Importaciones (${importaciones.length})`],
+          ['usuarios', `Usuarios empresa (${usuariosEmp.length})`],
+        ] as [DetalleTab, string][]).map(([t, label]) => (
+          <button key={t} onClick={() => {
+            setDetalleTab(t);
+            if ((t === 'empleados' || t === 'importaciones' || t === 'usuarios') && selected && empleados.length === 0 && importaciones.length === 0) {
+              cargarEmpleados(selected.idConvenio);
+            }
+          }}
+            style={{
+              padding:'0.45rem 0.9rem', border:'none', background:'none',
+              borderBottom: detalleTab === t ? '2px solid #3182ce' : '2px solid transparent',
+              color: detalleTab === t ? '#3182ce' : '#718096',
+              fontWeight: detalleTab === t ? 700 : 400,
+              cursor:'pointer', fontSize:'0.85rem', marginBottom:'-2px'
+            }}>{label}</button>
+        ))}
+      </div>
+
       {/* ── Parámetros ── */}
-      <div style={{ marginBottom:'2rem' }}>
+      {detalleTab === 'parametros' && <div style={{ marginBottom:'2rem' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
           <h3 style={{ margin:0 }}>Parámetros del convenio</h3>
           {btn('+ Agregar parámetros', () => { setShowNewParam(true); setEditParam(null); limpiarMsg(); }, 'secondary')}
@@ -485,6 +601,7 @@ export function LibranzaConveniosAdminPage() {
         )}
 
         {parametros.length === 0 && !showNewParam && <div className="empty">Sin parámetros. Agrega uno.</div>}
+
         {parametros.map(p => (
           editParam?.idParametro === p.idParametro ? (
             <div key={p.idParametro} style={{ ...formStyle, background:'#f7fafc' }}>
@@ -541,10 +658,10 @@ export function LibranzaConveniosAdminPage() {
             </div>
           )
         ))}
-      </div>
+      </div>}
 
       {/* ── Rangos ── */}
-      <div>
+      {detalleTab === 'rangos' && <div>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
           <h3 style={{ margin:0 }}>Rangos de cobro</h3>
           {btn('+ Agregar rango', () => { setShowNewRango(true); setEditRango(null); limpiarMsg(); }, 'secondary')}
@@ -568,6 +685,7 @@ export function LibranzaConveniosAdminPage() {
 
         {rangos.length === 0 && !showNewRango && <div className="empty">Sin rangos de cobro. Agrega uno.</div>}
         {rangos.length > 0 && (
+
           <div className="table-wrapper">
             <table>
               <thead><tr>
@@ -621,7 +739,153 @@ export function LibranzaConveniosAdminPage() {
             </table>
           </div>
         )}
-      </div>
+      </div>}
+
+      {/* ── Empleados (admin) ── */}
+      {detalleTab === 'empleados' && (
+        <div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+            <h3 style={{ margin:0 }}>Empleados del convenio</h3>
+            {btn('↺ Refrescar', () => selected && cargarEmpleados(selected.idConvenio), 'secondary')}
+          </div>
+          {loadingEmp && <p>Cargando...</p>}
+          {!loadingEmp && empleados.length === 0 && <div className="empty">Sin empleados registrados.</div>}
+          {empleados.length > 0 && (
+            <div style={{ overflowX:'auto' }}>
+              <table>
+                <thead><tr>
+                  <th>Doc</th><th>Nombres</th><th>Cargo</th><th>Salario</th>
+                  <th>Cupo prelim.</th><th>Período</th><th>Estado</th><th>Origen</th><th>Lote</th>
+                </tr></thead>
+                <tbody>
+                  {empleados.map(e => (
+                    <tr key={e.idEmpleado}>
+                      <td className="mono">{e.tipoDocumento} {e.numeroDocumento}</td>
+                      <td style={{ fontWeight:600 }}>{e.nombres}{e.apellidos ? ` ${e.apellidos}` : ''}</td>
+                      <td>{e.cargo ?? '—'}</td>
+                      <td className="mono">{fmtMoney(e.salarioMensual)}</td>
+                      <td className="mono" style={{ fontWeight:700, color:'#1e40af' }}>{fmtMoney(e.cupoPreliminar)}</td>
+                      <td>{e.periodicidadPago}</td>
+                      <td>{estadoBadge(e.estado)}</td>
+                      <td><span className={`badge ${e.origenCarga === 'EXCEL' ? 'badge-info' : 'badge-warn'}`}>{e.origenCarga}</span></td>
+                      <td className="mono" style={{ fontSize:'0.75rem', color:'#718096' }}>{e.loteImportacion ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Importaciones ── */}
+      {detalleTab === 'importaciones' && (
+        <div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+            <h3 style={{ margin:0 }}>Historial de importaciones</h3>
+            {btn('↺ Refrescar', () => selected && cargarEmpleados(selected.idConvenio), 'secondary')}
+          </div>
+          {loadingEmp && <p>Cargando...</p>}
+          {!loadingEmp && importaciones.length === 0 && <div className="empty">Sin importaciones.</div>}
+          {importaciones.length > 0 && (
+            <div>
+              {importaciones.map(i => (
+                <div key={i.idImportacion} style={{ background:'#fff', border:'1px solid #e2e8f0', borderRadius:'8px', padding:'1rem 1.25rem', marginBottom:'0.75rem' }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))', gap:'0.4rem 1.5rem', marginBottom:'0.5rem' }}>
+                    <div><span style={{ fontSize:'0.75rem', color:'#718096' }}>Lote</span><div className="mono" style={{ fontSize:'0.8rem' }}>{i.loteImportacion}</div></div>
+                    <div><span style={{ fontSize:'0.75rem', color:'#718096' }}>Archivo</span><div style={{ fontSize:'0.8rem' }}>{i.nombreArchivo ?? '—'}</div></div>
+                    <div><span style={{ fontSize:'0.75rem', color:'#718096' }}>Total filas</span><div style={{ fontWeight:700 }}>{i.totalFilas}</div></div>
+                    <div><span style={{ fontSize:'0.75rem', color:'#718096' }}>Válidas</span><div style={{ fontWeight:700, color:'#166534' }}>{i.filasValidas}</div></div>
+                    <div><span style={{ fontSize:'0.75rem', color:'#718096' }}>Errores</span><div style={{ fontWeight:700, color: i.filasError > 0 ? '#c05621' : '#718096' }}>{i.filasError}</div></div>
+                    <div><span style={{ fontSize:'0.75rem', color:'#718096' }}>Creados</span><div style={{ fontWeight:700 }}>{i.empleadosCreados}</div></div>
+                    <div><span style={{ fontSize:'0.75rem', color:'#718096' }}>Actualizados</span><div style={{ fontWeight:700 }}>{i.empleadosActualizados}</div></div>
+                    <div><span style={{ fontSize:'0.75rem', color:'#718096' }}>Estado</span><div>{estadoBadge(i.estado)}</div></div>
+                    <div><span style={{ fontSize:'0.75rem', color:'#718096' }}>Fecha</span><div style={{ fontSize:'0.8rem' }}>{fmtDate(i.createdAt)}</div></div>
+                  </div>
+                  {i.errores.length > 0 && (
+                    <div>
+                      <button className="btn-link" style={{ fontSize:'0.8rem' }}
+                        onClick={() => setExpandImport(expandImport === i.idImportacion ? null : i.idImportacion)}>
+                        {expandImport === i.idImportacion ? 'Ocultar errores' : `Ver ${i.errores.length} errores`}
+                      </button>
+                      {expandImport === i.idImportacion && (
+                        <table style={{ marginTop:'0.5rem', width:'100%', borderCollapse:'collapse', fontSize:'0.78rem' }}>
+                          <thead><tr>
+                            {['Fila','Campo','Mensaje'].map(h => <th key={h} style={{ textAlign:'left', padding:'0.3rem', background:'#fef9c3', borderBottom:'1px solid #fcd34d' }}>{h}</th>)}
+                          </tr></thead>
+                          <tbody>
+                            {i.errores.map((er, idx) => (
+                              <tr key={idx}>
+                                <td style={{ padding:'0.3rem', borderBottom:'1px solid #fef3c7' }}>{er.fila}</td>
+                                <td style={{ padding:'0.3rem', borderBottom:'1px solid #fef3c7' }}>{er.campo}</td>
+                                <td style={{ padding:'0.3rem', borderBottom:'1px solid #fef3c7' }}>{er.mensaje}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Usuarios empresa ── */}
+      {detalleTab === 'usuarios' && (
+        <div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+            <h3 style={{ margin:0 }}>Usuarios empresa</h3>
+            {btn('↺ Refrescar', () => selected && cargarEmpleados(selected.idConvenio), 'secondary')}
+          </div>
+          {loadingEmp && <p>Cargando...</p>}
+
+          {/* Form asociar usuario */}
+          <div style={{ background:'#f7fafc', border:'1px solid #e2e8f0', borderRadius:'8px', padding:'1rem 1.25rem', marginBottom:'1.25rem' }}>
+            <h4 style={{ margin:'0 0 0.75rem' }}>Asociar usuario al convenio</h4>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr auto', gap:'0.75rem', alignItems:'flex-end', flexWrap:'wrap' }}>
+              <label style={{ display:'block' }}>
+                <span style={{ fontSize:'0.83rem', fontWeight:600, display:'block', marginBottom:'0.2rem' }}>ID usuario *</span>
+                <input type="number" value={newUsuario.idUsuario}
+                  onChange={e => setNewUsuario(p=>({...p, idUsuario: e.target.value}))}
+                  placeholder="ej: 12"
+                  style={{ width:'100%', padding:'0.4rem 0.6rem', border:'1px solid #cbd5e0', borderRadius:'4px', fontSize:'0.9rem' }} />
+              </label>
+              <label style={{ display:'block' }}>
+                <span style={{ fontSize:'0.83rem', fontWeight:600, display:'block', marginBottom:'0.2rem' }}>Rol empresa</span>
+                <select value={newUsuario.rolEmpresa}
+                  onChange={e => setNewUsuario(p=>({...p, rolEmpresa: e.target.value}))}
+                  style={{ width:'100%', padding:'0.4rem 0.6rem', border:'1px solid #cbd5e0', borderRadius:'4px', fontSize:'0.9rem' }}>
+                  {['ADMIN_EMPRESA','OPERADOR_EMPRESA','CONSULTA_EMPRESA'].map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
+              {btn(savingUsuario ? 'Guardando...' : 'Asociar', asociarUsuario, 'primary', savingUsuario)}
+            </div>
+          </div>
+
+          {usuariosEmp.length === 0 && !loadingEmp && <div className="empty">Sin usuarios asociados.</div>}
+          {usuariosEmp.length > 0 && (
+            <table>
+              <thead><tr>
+                <th>ID asoc.</th><th>ID usuario</th><th>Rol</th><th>Estado</th><th>Desde</th>
+              </tr></thead>
+              <tbody>
+                {usuariosEmp.map(u => (
+                  <tr key={u.idUsuarioEmpresa}>
+                    <td className="mono">{u.idUsuarioEmpresa}</td>
+                    <td className="mono">{u.idUsuario}</td>
+                    <td>{u.rolEmpresa}</td>
+                    <td>{estadoBadge(u.estado)}</td>
+                    <td className="mono">{fmtDate(u.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 

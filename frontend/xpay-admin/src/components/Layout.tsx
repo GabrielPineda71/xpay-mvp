@@ -46,7 +46,12 @@ export function Layout() {
           )}
           {view === 'wallet'   && <Link to="/mi-wallet">Mi Wallet</Link>}
           {view === 'comercio' && <Link to="/mi-comercio">Mi Comercio</Link>}
-          {view === 'empresa'  && <Link to="/mi-empresa">Mi Empresa</Link>}
+          {view === 'empresa'  && (
+            <>
+              <Link to="/mi-empresa">Mi Empresa</Link>
+              <Link to="/mi-empresa/libranza">Empleados Libranza</Link>
+            </>
+          )}
         </div>
 
         <div className="nav-user">

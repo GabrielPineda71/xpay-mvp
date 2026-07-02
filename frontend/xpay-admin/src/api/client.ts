@@ -61,6 +61,20 @@ export async function post<T>(path: string, body: unknown): Promise<T> {
   return handleResponse<T>(res);
 }
 
+export async function postForm<T>(path: string, form: FormData): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { ...authHeaders() },
+      body: form,
+    });
+  } catch {
+    throw new Error(NET_ERR);
+  }
+  return handleResponse<T>(res);
+}
+
 export async function put<T>(path: string, body: unknown): Promise<T> {
   let res: Response;
   try {
