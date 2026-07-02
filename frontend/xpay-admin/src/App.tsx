@@ -17,6 +17,7 @@ import { UserWalletPage } from './pages/UserWalletPage.tsx';
 import { MiComercioPage } from './pages/MiComercioPage.tsx';
 import { MiEmpresaPage } from './pages/MiEmpresaPage.tsx';
 import { BrebLlavesAdminPage } from './pages/BrebLlavesAdminPage.tsx';
+import { BrebRetirosAdminPage } from './pages/BrebRetirosAdminPage.tsx';
 
 // Smart redirect based on user role/view
 function UserRedirect() {
@@ -53,7 +54,8 @@ export default function App() {
               <Route path="retiros/listado" element={<RetirosListPage />} />
               <Route path="retiros" element={<RetiroPage />} />
               <Route path="retiros/:idRetiro" element={<RetiroPage />} />
-              <Route path="admin/breb-llaves" element={<BrebLlavesAdminPage />} />
+              <Route path="admin/breb-llaves"   element={<BrebLlavesAdminPage />} />
+              <Route path="admin/breb-retiros" element={<BrebRetirosAdminPage />} />
               {/* Demo user routes */}
               <Route path="mi-wallet"   element={<UserWalletPage />} />
               <Route path="mi-comercio" element={<MiComercioPage />} />

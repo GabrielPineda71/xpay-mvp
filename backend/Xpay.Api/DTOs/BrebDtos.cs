@@ -44,6 +44,31 @@ public class BrebRetiroResponse
     public string? MotivoRechazo     { get; set; }
 }
 
+public class AdminRetiroResponse
+{
+    public long    IdBrebRetiro        { get; set; }
+    public string  TipoSujeto          { get; set; } = string.Empty;
+    public long?   IdUsuario           { get; set; }
+    public long?   IdComercio          { get; set; }
+    public long    IdWallet            { get; set; }
+    public decimal Valor               { get; set; }
+    public string  Moneda              { get; set; } = "COP";
+    public string  Estado              { get; set; } = string.Empty;
+    public string  ReferenciaInterna   { get; set; } = string.Empty;
+    public string  KeyValueMasked      { get; set; } = string.Empty;
+    public string? MotivoRechazo       { get; set; }
+    public long?   IdTransaccionLedger { get; set; }
+    public DateTime  FechaSolicitud    { get; set; }
+    public DateTime? FechaConfirmacion { get; set; }
+    public DateTime? FechaLiquidacion  { get; set; }
+    public DateTime? FechaRechazo      { get; set; }
+}
+
+public class RechazarRetiroRequest
+{
+    public string? Motivo { get; set; }
+}
+
 public class AdminLlaveResponse
 {
     public long    IdBrebLlave     { get; set; }

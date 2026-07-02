@@ -135,6 +135,95 @@ public class BrebController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // GET /api/breb/admin/retiros
+    // Solo ADMIN_XPAY/SUPERUSUARIO. Lista todos los retiros Bre-B.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("api/breb/admin/retiros")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> GetAdminRetiros()
+    {
+        try
+        {
+            var retiros = await _breb.GetAdminRetirosAsync();
+            return Ok(new { success = true, data = retiros });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/admin/retiros/{id}/confirmar
+    // CREADO → CONFIRMADO. Descuenta saldo y crea ledger DR 210101 / CR 210204.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpPost("api/breb/admin/retiros/{id:long}/confirmar")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> ConfirmarRetiro(long id)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_CONFIRMAR_ATTEMPT", new { idBrebRetiro = id, adminId });
+        try
+        {
+            var msg = await _breb.ConfirmarRetiroAsync(id, adminId);
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_CONFIRMAR_OK", new { idBrebRetiro = id });
+            return Ok(new { success = true, message = msg });
+        }
+        catch (InvalidOperationException ex)
+        { return BadRequest(new { success = false, message = ex.Message }); }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno confirmando retiro." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/admin/retiros/{id}/liquidar
+    // CONFIRMADO → LIQUIDADO. Crea ledger DR 210204 / CR 110102.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpPost("api/breb/admin/retiros/{id:long}/liquidar")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> LiquidarRetiro(long id)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_LIQUIDAR_ATTEMPT", new { idBrebRetiro = id, adminId });
+        try
+        {
+            var msg = await _breb.LiquidarRetiroAsync(id, adminId);
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_LIQUIDAR_OK", new { idBrebRetiro = id });
+            return Ok(new { success = true, message = msg });
+        }
+        catch (InvalidOperationException ex)
+        { return BadRequest(new { success = false, message = ex.Message }); }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno liquidando retiro." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/admin/retiros/{id}/rechazar
+    // CREADO → RECHAZADO (sin ledger) o CONFIRMADO → RECHAZADO (reverso ledger).
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpPost("api/breb/admin/retiros/{id:long}/rechazar")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> RechazarRetiro(long id, [FromBody] RechazarRetiroRequest request)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_RECHAZAR_ATTEMPT", new { idBrebRetiro = id, adminId });
+        try
+        {
+            var msg = await _breb.RechazarRetiroAsync(id, request.Motivo, adminId);
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_RECHAZAR_OK", new { idBrebRetiro = id });
+            return Ok(new { success = true, message = msg });
+        }
+        catch (InvalidOperationException ex)
+        { return BadRequest(new { success = false, message = ex.Message }); }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno rechazando retiro." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // GET /api/breb/admin/llaves
     // Solo ADMIN_XPAY/SUPERUSUARIO. Lista todas las llaves Bre-B.
     // No devuelve keyValueHash, keyValueEncrypted ni datos sensibles.
