@@ -688,7 +688,7 @@ STATUS_SWAGGER_JSON=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   || fail "GET /swagger/v1/swagger.json esperado 200 — verificar ApiDocs:EnableSwagger=true, obtenido $STATUS_SWAGGER_JSON"
 SWAGGER_JSON=$(get_json "$API_URL/swagger/v1/swagger.json") \
   || fail "GET /swagger/v1/swagger.json no respondió"
-echo "$SWAGGER_JSON" | grep -qi "bearer" \
+grep -qi "bearer" <<< "$SWAGGER_JSON" \
   || fail "swagger.json no contiene configuración Bearer"
 ok "GET /swagger/v1/swagger.json → 200 / contiene definición Bearer ✓"
 
