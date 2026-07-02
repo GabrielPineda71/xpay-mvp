@@ -28,6 +28,7 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<KycService>();
 builder.Services.AddScoped<BrebService>();
+builder.Services.AddScoped<LibranzaService>();
 builder.Services.AddHttpClient();
 
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)

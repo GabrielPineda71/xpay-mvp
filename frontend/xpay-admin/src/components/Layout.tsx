@@ -41,6 +41,7 @@ export function Layout() {
               <Link to="/retiros">Buscar retiro</Link>
               <Link to="/admin/breb-llaves">Llaves Bre-B</Link>
               <Link to="/admin/breb-retiros">Retiros Bre-B</Link>
+              <Link to="/admin/libranza-convenios">Convenios Libranza</Link>
             </>
           )}
           {view === 'wallet'   && <Link to="/mi-wallet">Mi Wallet</Link>}
