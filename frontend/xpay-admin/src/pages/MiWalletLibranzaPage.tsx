@@ -89,8 +89,12 @@ export function MiWalletLibranzaPage() {
 
   async function solicitarAnticipo(e: React.FormEvent) {
     e.preventDefault();
-    const v = parseFloat(valor.replace(/[^\d.]/g, ''));
-    if (!v || v <= 0) { setSolicErr('Ingresa un valor válido.'); return; }
+    const v = Number(valor);
+    if (!Number.isFinite(v) || v <= 0) { setSolicErr('Ingresa un valor numérico.'); return; }
+    if (cupo?.corteVigente && v > cupo.corteVigente.cupoDisponible) {
+      setSolicErr(`El valor supera tu cupo disponible (${fmt(cupo.corteVigente.cupoDisponible)}).`);
+      return;
+    }
     setSolicitando(true); setSolicErr(null); setSolicOk(null);
     try {
       const r = await post<ApiOk<AnticipoResponse>>('/api/libranza/cliente/anticipos', {
@@ -205,7 +209,7 @@ export function MiWalletLibranzaPage() {
                             Valor (máx. {fmt(cupo.corteVigente.cupoDisponible)})
                           </label>
                           <input
-                            type="number" min="1" step="1000"
+                            type="number" inputMode="numeric" min="1000" step="1000"
                             value={valor}
                             onChange={e => setValor(e.target.value)}
                             placeholder="100000"
