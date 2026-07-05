@@ -11,7 +11,7 @@ public class LibranzaService
     private readonly ILogger<LibranzaService> _logger;
 
     private static readonly HashSet<string> EstadosConvenio  = ["ACTIVO", "SUSPENDIDO", "CANCELADO"];
-    private static readonly HashSet<string> Periodicidades   = ["MENSUAL", "QUINCENAL"];
+    private static readonly HashSet<string> Periodicidades   = ["MENSUAL", "QUINCENAL", "DECADAL"];
     private static readonly HashSet<string> MomentosCobro    = ["ANTICIPADO", "VENCIDO"];
     private static readonly HashSet<string> TiposCobro       = ["FIJO", "PORCENTAJE"];
     private static readonly HashSet<string> EstadosParam     = ["ACTIVO", "INACTIVO"];
@@ -47,24 +47,28 @@ public class LibranzaService
         if (await _db.LibranzaEmpresasConvenio.AnyAsync(c => c.Nit == req.Nit.Trim()))
             throw new InvalidOperationException($"Ya existe un convenio con NIT '{req.Nit}'.");
 
+        ValidarDiasPagoSegunPeriodicidad(req.PeriodicidadPago, req.DiaPago1, req.DiaPago2, req.DiaPago3);
+
         var convenio = new LibranzaEmpresaConvenio
         {
-            NombreEmpresa        = req.NombreEmpresa.Trim(),
-            Nit                  = req.Nit.Trim(),
-            RepresentanteLegal   = req.RepresentanteLegal?.Trim(),
-            EmailContacto        = req.EmailContacto?.Trim(),
-            TelefonoContacto     = req.TelefonoContacto?.Trim(),
-            Direccion            = req.Direccion?.Trim(),
-            Estado               = req.Estado.Trim().ToUpperInvariant(),
-            DiaPago1             = req.DiaPago1,
-            DiaPago2             = req.DiaPago2,
-            PeriodicidadPago     = req.PeriodicidadPago.Trim().ToUpperInvariant(),
-            PorcentajeMaximoCupo = req.PorcentajeMaximoCupo,
-            Observaciones        = req.Observaciones?.Trim(),
-            FechaInicio          = req.FechaInicio == default ? DateTime.UtcNow : req.FechaInicio,
-            FechaFin             = req.FechaFin,
-            CreatedAt            = DateTime.UtcNow,
-            CreatedByUsuario     = adminId,
+            NombreEmpresa           = req.NombreEmpresa.Trim(),
+            Nit                     = req.Nit.Trim(),
+            RepresentanteLegal      = req.RepresentanteLegal?.Trim(),
+            EmailContacto           = req.EmailContacto?.Trim(),
+            TelefonoContacto        = req.TelefonoContacto?.Trim(),
+            Direccion               = req.Direccion?.Trim(),
+            Estado                  = req.Estado.Trim().ToUpperInvariant(),
+            DiaPago1                = req.DiaPago1,
+            DiaPago2                = req.DiaPago2,
+            DiaPago3                = req.DiaPago3,
+            PermiteAnticipodiaPago  = req.PermiteAnticipodiaPago,
+            PeriodicidadPago        = req.PeriodicidadPago.Trim().ToUpperInvariant(),
+            PorcentajeMaximoCupo    = req.PorcentajeMaximoCupo,
+            Observaciones           = req.Observaciones?.Trim(),
+            FechaInicio             = req.FechaInicio == default ? DateTime.UtcNow : req.FechaInicio,
+            FechaFin                = req.FechaFin,
+            CreatedAt               = DateTime.UtcNow,
+            CreatedByUsuario        = adminId,
         };
 
         _db.LibranzaEmpresasConvenio.Add(convenio);
@@ -108,15 +112,19 @@ public class LibranzaService
             throw new InvalidOperationException("dia_pago_1 debe estar entre 1 y 31.");
         if (req.DiaPago2.HasValue && (req.DiaPago2 < 1 || req.DiaPago2 > 31))
             throw new InvalidOperationException("dia_pago_2 debe estar entre 1 y 31.");
+        if (req.DiaPago3.HasValue && (req.DiaPago3 < 1 || req.DiaPago3 > 31))
+            throw new InvalidOperationException("dia_pago_3 debe estar entre 1 y 31.");
 
-        convenio.RepresentanteLegal = req.RepresentanteLegal?.Trim() ?? convenio.RepresentanteLegal;
-        convenio.EmailContacto      = req.EmailContacto?.Trim()      ?? convenio.EmailContacto;
-        convenio.TelefonoContacto   = req.TelefonoContacto?.Trim()   ?? convenio.TelefonoContacto;
-        convenio.Direccion          = req.Direccion?.Trim()           ?? convenio.Direccion;
-        convenio.Observaciones      = req.Observaciones?.Trim()       ?? convenio.Observaciones;
-        if (req.DiaPago1.HasValue) convenio.DiaPago1 = req.DiaPago1;
-        if (req.DiaPago2.HasValue) convenio.DiaPago2 = req.DiaPago2;
-        convenio.FechaFin           = req.FechaFin ?? convenio.FechaFin;
+        convenio.RepresentanteLegal    = req.RepresentanteLegal?.Trim()  ?? convenio.RepresentanteLegal;
+        convenio.EmailContacto         = req.EmailContacto?.Trim()       ?? convenio.EmailContacto;
+        convenio.TelefonoContacto      = req.TelefonoContacto?.Trim()    ?? convenio.TelefonoContacto;
+        convenio.Direccion             = req.Direccion?.Trim()            ?? convenio.Direccion;
+        convenio.Observaciones         = req.Observaciones?.Trim()        ?? convenio.Observaciones;
+        if (req.DiaPago1.HasValue)          convenio.DiaPago1               = req.DiaPago1;
+        if (req.DiaPago2.HasValue)          convenio.DiaPago2               = req.DiaPago2;
+        if (req.DiaPago3.HasValue)          convenio.DiaPago3               = req.DiaPago3;
+        if (req.PermiteAnticipodiaPago.HasValue) convenio.PermiteAnticipodiaPago = req.PermiteAnticipodiaPago.Value;
+        convenio.FechaFin              = req.FechaFin ?? convenio.FechaFin;
         convenio.UpdatedAt          = DateTime.UtcNow;
         convenio.UpdatedByUsuario   = adminId;
 
@@ -311,13 +319,25 @@ public class LibranzaService
         if (!EstadosConvenio.Contains(estado.Trim().ToUpperInvariant()))
             throw new InvalidOperationException($"estado inválido: '{estado}'. Valores: ACTIVO, SUSPENDIDO, CANCELADO.");
         if (!Periodicidades.Contains(periodicidad.Trim().ToUpperInvariant()))
-            throw new InvalidOperationException($"periodicidad_pago inválida: '{periodicidad}'. Valores: MENSUAL, QUINCENAL.");
+            throw new InvalidOperationException($"periodicidad_pago inválida: '{periodicidad}'. Valores: MENSUAL, QUINCENAL, DECADAL.");
         if (cupo < 1 || cupo > 100)
             throw new InvalidOperationException("porcentaje_maximo_cupo debe estar entre 1 y 100.");
         if (dia1.HasValue && (dia1 < 1 || dia1 > 31))
             throw new InvalidOperationException("dia_pago_1 debe estar entre 1 y 31.");
         if (dia2.HasValue && (dia2 < 1 || dia2 > 31))
             throw new InvalidOperationException("dia_pago_2 debe estar entre 1 y 31.");
+    }
+
+    private static void ValidarDiasPagoSegunPeriodicidad(string periodicidad, int? dia1, int? dia2, int? dia3)
+    {
+        var per = periodicidad.Trim().ToUpperInvariant();
+        if (per == "QUINCENAL" && (!dia1.HasValue || !dia2.HasValue))
+            throw new InvalidOperationException("QUINCENAL requiere dia_pago_1 y dia_pago_2.");
+        if (per == "DECADAL" && (!dia1.HasValue || !dia2.HasValue || !dia3.HasValue))
+            throw new InvalidOperationException("DECADAL requiere dia_pago_1, dia_pago_2 y dia_pago_3.");
+        var dias = new[] { dia1, dia2, dia3 }.Where(d => d.HasValue).Select(d => d!.Value).ToList();
+        if (dias.Distinct().Count() != dias.Count)
+            throw new InvalidOperationException("Los días de pago no deben repetirse.");
     }
 
     private static void ValidarParametrosRequest(decimal cupo, decimal iva, int maxAnt, string momento, string estado)
@@ -366,23 +386,25 @@ public class LibranzaService
 
     private static ConvenioResponse ToConvenioResponse(LibranzaEmpresaConvenio c) => new()
     {
-        IdConvenio           = c.IdConvenio,
-        NombreEmpresa        = c.NombreEmpresa,
-        Nit                  = c.Nit,
-        RepresentanteLegal   = c.RepresentanteLegal,
-        EmailContacto        = c.EmailContacto,
-        TelefonoContacto     = c.TelefonoContacto,
-        Direccion            = c.Direccion,
-        Estado               = c.Estado,
-        DiaPago1             = c.DiaPago1,
-        DiaPago2             = c.DiaPago2,
-        PeriodicidadPago     = c.PeriodicidadPago,
-        PorcentajeMaximoCupo = c.PorcentajeMaximoCupo,
-        Observaciones        = c.Observaciones,
-        FechaInicio          = c.FechaInicio,
-        FechaFin             = c.FechaFin,
-        CreatedAt            = c.CreatedAt,
-        UpdatedAt            = c.UpdatedAt,
+        IdConvenio              = c.IdConvenio,
+        NombreEmpresa           = c.NombreEmpresa,
+        Nit                     = c.Nit,
+        RepresentanteLegal      = c.RepresentanteLegal,
+        EmailContacto           = c.EmailContacto,
+        TelefonoContacto        = c.TelefonoContacto,
+        Direccion               = c.Direccion,
+        Estado                  = c.Estado,
+        DiaPago1                = c.DiaPago1,
+        DiaPago2                = c.DiaPago2,
+        DiaPago3                = c.DiaPago3,
+        PermiteAnticipodiaPago  = c.PermiteAnticipodiaPago,
+        PeriodicidadPago        = c.PeriodicidadPago,
+        PorcentajeMaximoCupo    = c.PorcentajeMaximoCupo,
+        Observaciones           = c.Observaciones,
+        FechaInicio             = c.FechaInicio,
+        FechaFin                = c.FechaFin,
+        CreatedAt               = c.CreatedAt,
+        UpdatedAt               = c.UpdatedAt,
     };
 
     private static ParametrosResponse ToParametrosResponse(LibranzaParametrosEmpresa p) => new()

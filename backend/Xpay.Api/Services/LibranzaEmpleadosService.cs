@@ -13,16 +13,18 @@ public class LibranzaEmpleadosService
     private readonly ILogger<LibranzaEmpleadosService> _logger;
 
     private static readonly HashSet<string> TiposDoc       = ["CC", "CE", "NIT", "PASAPORTE", "OTRO"];
-    private static readonly HashSet<string> Periodicidades  = ["MENSUAL", "QUINCENAL"];
+    private static readonly HashSet<string> Periodicidades  = ["MENSUAL", "QUINCENAL", "DECADAL"];
     private static readonly HashSet<string> RolesEmpresa    = ["ADMIN_EMPRESA", "OPERADOR_EMPRESA", "CONSULTA_EMPRESA"];
 
     private const int MaxFilasImport = 500;
-    private static readonly string[] PlantillaHeaders =
+    private static readonly string[] PlantillaHeadersBase =
     [
         "tipo_documento", "numero_documento", "nombres", "apellidos",
         "celular", "correo", "cargo", "salario_mensual", "periodicidad_pago",
         "dia_pago_1", "dia_pago_2", "fecha_ingreso"
     ];
+    private static readonly string[] PlantillaHeaders = [..PlantillaHeadersBase,
+        "pago_corte_1", "pago_corte_2", "pago_corte_3", "dia_pago_3"];
 
     public LibranzaEmpleadosService(XpayDbContext db, ILogger<LibranzaEmpleadosService> logger)
     {
@@ -32,11 +34,35 @@ public class LibranzaEmpleadosService
 
     // ── Autorización empresa ──────────────────────────────────────────────
 
-    public async Task<LibranzaUsuarioEmpresa?> GetAsociacionAsync(long idUsuario)
+    public async Task<LibranzaUsuarioEmpresa?> GetAsociacionAsync(long idUsuario, long? idConvenio = null)
     {
-        return await _db.LibranzaUsuariosEmpresa
+        var q = _db.LibranzaUsuariosEmpresa.Where(u => u.IdUsuario == idUsuario && u.Estado == "ACTIVO");
+        if (idConvenio.HasValue)
+            q = q.Where(u => u.IdConvenio == idConvenio.Value);
+        return await q.OrderByDescending(u => u.IdUsuarioEmpresa).FirstOrDefaultAsync();
+    }
+
+    public async Task<List<MisConveniosItem>> GetMisConveniosAsync(long idUsuario)
+    {
+        var asocs = await _db.LibranzaUsuariosEmpresa
             .Where(u => u.IdUsuario == idUsuario && u.Estado == "ACTIVO")
-            .FirstOrDefaultAsync();
+            .ToListAsync();
+
+        var result = new List<MisConveniosItem>();
+        foreach (var a in asocs)
+        {
+            var conv = await _db.LibranzaEmpresasConvenio.FindAsync(a.IdConvenio);
+            if (conv is not null)
+                result.Add(new MisConveniosItem
+                {
+                    IdConvenio       = conv.IdConvenio,
+                    NombreEmpresa    = conv.NombreEmpresa,
+                    PeriodicidadPago = conv.PeriodicidadPago,
+                    Estado           = conv.Estado,
+                    RolEmpresa       = a.RolEmpresa,
+                });
+        }
+        return result;
     }
 
     // ── Mi convenio ───────────────────────────────────────────────────────
@@ -53,22 +79,31 @@ public class LibranzaEmpleadosService
         var total   = await _db.LibranzaEmpleados.CountAsync(e => e.IdConvenio == idConvenio);
         var activos = await _db.LibranzaEmpleados.CountAsync(e => e.IdConvenio == idConvenio && e.Estado == "ACTIVO");
 
+        var param = await _db.LibranzaParametrosEmpresas
+            .Where(p => p.IdConvenio == idConvenio && p.Estado == "ACTIVO")
+            .OrderByDescending(p => p.IdParametro)
+            .FirstOrDefaultAsync();
+
         return new MiConvenioResponse
         {
-            IdConvenio           = conv.IdConvenio,
-            NombreEmpresa        = conv.NombreEmpresa,
-            Nit                  = conv.Nit,
-            RepresentanteLegal   = conv.RepresentanteLegal,
-            EmailContacto        = conv.EmailContacto,
-            TelefonoContacto     = conv.TelefonoContacto,
-            Estado               = conv.Estado,
-            PeriodicidadPago     = conv.PeriodicidadPago,
-            DiaPago1             = conv.DiaPago1,
-            DiaPago2             = conv.DiaPago2,
-            PorcentajeMaximoCupo = conv.PorcentajeMaximoCupo,
-            TotalEmpleados       = total,
-            EmpleadosActivos     = activos,
-            RolEmpresa           = asoc.RolEmpresa,
+            IdConvenio              = conv.IdConvenio,
+            NombreEmpresa           = conv.NombreEmpresa,
+            Nit                     = conv.Nit,
+            RepresentanteLegal      = conv.RepresentanteLegal,
+            EmailContacto           = conv.EmailContacto,
+            TelefonoContacto        = conv.TelefonoContacto,
+            Estado                  = conv.Estado,
+            PeriodicidadPago        = conv.PeriodicidadPago,
+            DiaPago1                = conv.DiaPago1,
+            DiaPago2                = conv.DiaPago2,
+            DiaPago3                = conv.DiaPago3,
+            PermiteAnticipodiaPago  = conv.PermiteAnticipodiaPago,
+            PorcentajeMaximoCupo    = conv.PorcentajeMaximoCupo,
+            IvaPorcentaje           = param?.IvaPorcentaje ?? 0m,
+            MomentoCobroComision    = param?.MomentoCobroComision ?? string.Empty,
+            TotalEmpleados          = total,
+            EmpleadosActivos        = activos,
+            RolEmpresa              = asoc.RolEmpresa,
         };
     }
 
@@ -89,9 +124,13 @@ public class LibranzaEmpleadosService
     {
         var sb = new StringBuilder();
         sb.AppendLine(string.Join(",", PlantillaHeaders));
-        sb.AppendLine("CC,1000099999,Juan,Pérez,3001234567,juan@demo.com,Auxiliar,2000000,MENSUAL,30,,2025-01-15");
-        sb.AppendLine("CC,1000099998,María,López,3007654321,maria@demo.com,Analista,3000000,QUINCENAL,15,30,2024-08-01");
-        var bom = Encoding.UTF8.GetPreamble();
+        // MENSUAL: solo corte 1
+        sb.AppendLine("CC,1000099999,Juan,Pérez,3001234567,juan@demo.com,Auxiliar,2000000,MENSUAL,30,,2025-01-15,2000000,,,");
+        // QUINCENAL: cortes 1 y 2
+        sb.AppendLine("CC,1000099998,María,López,3007654321,maria@demo.com,Analista,3000000,QUINCENAL,15,30,2024-08-01,1500000,1500000,,");
+        // DECADAL: cortes 1, 2 y 3
+        sb.AppendLine("CC,1000099997,Carlos,Ruiz,3009876543,carlos@demo.com,Operario,3700000,DECADAL,10,20,2024-06-01,1200000,1000000,1500000,30");
+        var bom  = Encoding.UTF8.GetPreamble();
         var body = Encoding.UTF8.GetBytes(sb.ToString());
         return [..bom, ..body];
     }
@@ -125,9 +164,9 @@ public class LibranzaEmpleadosService
         if (allLines.Length - 1 > MaxFilasImport)
             throw new InvalidOperationException($"El archivo excede el máximo de {MaxFilasImport} filas.");
 
-        // Validate header
+        // Validate header — only base headers are required; corte columns are optional
         var headers = ParseCsvLine(allLines[0]).Select(h => h.ToLowerInvariant().Trim()).ToArray();
-        foreach (var req in PlantillaHeaders)
+        foreach (var req in PlantillaHeadersBase)
         {
             if (!headers.Contains(req))
                 throw new InvalidOperationException($"El CSV no contiene la columna requerida: '{req}'.");
@@ -174,11 +213,18 @@ public class LibranzaEmpleadosService
             else fila.SalarioMensual = sal;
 
             var per = Get("periodicidad_pago").ToUpperInvariant();
-            if (!Periodicidades.Contains(per)) { errors.Add(new() { Fila = i + 1, Campo = "periodicidad_pago", Mensaje = $"Valor '{per}' no válido (MENSUAL o QUINCENAL)." }); rowOk = false; }
+            if (!Periodicidades.Contains(per)) { errors.Add(new() { Fila = i + 1, Campo = "periodicidad_pago", Mensaje = $"Valor '{per}' no válido (MENSUAL, QUINCENAL o DECADAL)." }); rowOk = false; }
             else fila.PeriodicidadPago = per;
 
             if (int.TryParse(Get("dia_pago_1"), out var dp1) && dp1 is >= 1 and <= 31) fila.DiaPago1 = dp1;
             if (int.TryParse(Get("dia_pago_2"), out var dp2) && dp2 is >= 1 and <= 31) fila.DiaPago2 = dp2;
+
+            // Optional corte columns
+            string SafeGet(string col) => idx.ContainsKey(col) ? cols[idx[col]].Trim() : string.Empty;
+            if (int.TryParse(SafeGet("dia_pago_3"), out var dp3) && dp3 is >= 1 and <= 31) fila.DiaPago3 = dp3;
+            if (decimal.TryParse(SafeGet("pago_corte_1"), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pc1) && pc1 > 0) fila.PagoCorte1 = pc1;
+            if (decimal.TryParse(SafeGet("pago_corte_2"), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pc2) && pc2 > 0) fila.PagoCorte2 = pc2;
+            if (decimal.TryParse(SafeGet("pago_corte_3"), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pc3) && pc3 > 0) fila.PagoCorte3 = pc3;
 
             if (DateOnly.TryParse(Get("fecha_ingreso"), out var fi)) fila.FechaIngreso = fi;
 
@@ -196,31 +242,36 @@ public class LibranzaEmpleadosService
                     && e.TipoDocumento == f.TipoDocumento
                     && e.NumeroDocumento == f.NumeroDocumento
                     && e.Estado == "ACTIVO");
+            long idEmpleado;
             if (existing is null)
             {
-                _db.LibranzaEmpleados.Add(new LibranzaEmpleado
+                var emp = new LibranzaEmpleado
                 {
-                    IdConvenio            = idConvenio,
-                    TipoDocumento         = f.TipoDocumento,
-                    NumeroDocumento       = f.NumeroDocumento,
-                    Nombres               = f.Nombres,
-                    Apellidos             = f.Apellidos,
-                    Celular               = f.Celular,
-                    Correo                = f.Correo,
-                    Cargo                 = f.Cargo,
-                    SalarioMensual        = f.SalarioMensual,
-                    PeriodicidadPago      = f.PeriodicidadPago,
-                    DiaPago1              = f.DiaPago1,
-                    DiaPago2              = f.DiaPago2,
-                    FechaIngreso          = f.FechaIngreso,
-                    Estado                = "ACTIVO",
-                    CupoPreliminar        = cupo,
+                    IdConvenio             = idConvenio,
+                    TipoDocumento          = f.TipoDocumento,
+                    NumeroDocumento        = f.NumeroDocumento,
+                    Nombres                = f.Nombres,
+                    Apellidos              = f.Apellidos,
+                    Celular                = f.Celular,
+                    Correo                 = f.Correo,
+                    Cargo                  = f.Cargo,
+                    SalarioMensual         = f.SalarioMensual,
+                    PeriodicidadPago       = f.PeriodicidadPago,
+                    DiaPago1               = f.DiaPago1,
+                    DiaPago2               = f.DiaPago2,
+                    DiaPago3               = f.DiaPago3,
+                    FechaIngreso           = f.FechaIngreso,
+                    Estado                 = "ACTIVO",
+                    CupoPreliminar         = cupo,
                     FechaUltimoCalculoCupo = now,
-                    OrigenCarga           = "EXCEL",
-                    LoteImportacion       = lote,
-                    CreatedAt             = now,
-                    CreatedByUsuario      = operadorId,
-                });
+                    OrigenCarga            = "EXCEL",
+                    LoteImportacion        = lote,
+                    CreatedAt              = now,
+                    CreatedByUsuario       = operadorId,
+                };
+                _db.LibranzaEmpleados.Add(emp);
+                await _db.SaveChangesAsync();
+                idEmpleado = emp.IdEmpleado;
                 creados++;
             }
             else
@@ -234,6 +285,7 @@ public class LibranzaEmpleadosService
                 existing.PeriodicidadPago      = f.PeriodicidadPago;
                 existing.DiaPago1              = f.DiaPago1;
                 existing.DiaPago2              = f.DiaPago2;
+                existing.DiaPago3              = f.DiaPago3;
                 existing.FechaIngreso          = f.FechaIngreso;
                 existing.CupoPreliminar        = cupo;
                 existing.FechaUltimoCalculoCupo = now;
@@ -241,8 +293,12 @@ public class LibranzaEmpleadosService
                 existing.LoteImportacion       = lote;
                 existing.UpdatedAt             = now;
                 existing.UpdatedByUsuario      = operadorId;
+                idEmpleado = existing.IdEmpleado;
                 actualizados++;
             }
+
+            // Upsert cortes de pago si se proveyeron
+            await UpsertCortesPagoAsync(idEmpleado, f, now, operadorId);
         }
 
         // Persist import audit record
@@ -278,6 +334,74 @@ public class LibranzaEmpleadosService
             LoteImportacion       = lote,
             Errores               = errors,
         };
+    }
+
+    // ── Cortes de pago ────────────────────────────────────────────────────
+
+    public async Task<List<CortesPagoResponse>> GetCortesPagoAsync(long idEmpleado)
+    {
+        var rows = await _db.LibranzaEmpleadoCortesPago
+            .Where(c => c.IdEmpleado == idEmpleado && c.Estado == "ACTIVO")
+            .OrderBy(c => c.NumeroCorte)
+            .ToListAsync();
+
+        return rows.Select(c => new CortesPagoResponse
+        {
+            IdCortePago         = c.IdCortePago,
+            NumeroCorte         = c.NumeroCorte,
+            DiaPago             = c.DiaPago,
+            ValorPagoProgramado = c.ValorPagoProgramado,
+            Estado              = c.Estado,
+        }).ToList();
+    }
+
+    private async Task UpsertCortesPagoAsync(long idEmpleado, EmpleadoFilaParsed f, DateTime now, long operadorId)
+    {
+        var cortesData = new (int Num, int? Dia, decimal? Valor)[]
+        {
+            (1, f.DiaPago1, f.PagoCorte1),
+            (2, f.DiaPago2, f.PagoCorte2),
+            (3, f.DiaPago3, f.PagoCorte3),
+        };
+
+        int maxCortes = f.PeriodicidadPago switch
+        {
+            "MENSUAL"   => 1,
+            "QUINCENAL" => 2,
+            "DECADAL"   => 3,
+            _           => 0
+        };
+
+        for (int n = 1; n <= maxCortes; n++)
+        {
+            var (num, dia, valor) = cortesData[n - 1];
+            if (!dia.HasValue || !valor.HasValue) continue;
+
+            var existing = await _db.LibranzaEmpleadoCortesPago
+                .FirstOrDefaultAsync(c => c.IdEmpleado == idEmpleado && c.NumeroCorte == num && c.Estado == "ACTIVO");
+
+            if (existing is null)
+            {
+                _db.LibranzaEmpleadoCortesPago.Add(new LibranzaEmpleadoCortesPago
+                {
+                    IdEmpleado          = idEmpleado,
+                    NumeroCorte         = num,
+                    DiaPago             = dia.Value,
+                    ValorPagoProgramado = valor.Value,
+                    Estado              = "ACTIVO",
+                    CreatedAt           = now,
+                    CreatedByUsuario    = operadorId,
+                });
+            }
+            else
+            {
+                existing.DiaPago             = dia.Value;
+                existing.ValorPagoProgramado = valor.Value;
+                existing.UpdatedAt           = now;
+                existing.UpdatedByUsuario    = operadorId;
+            }
+        }
+        await _db.SaveChangesAsync();
     }
 
     // ── Admin: importaciones log ──────────────────────────────────────────
@@ -400,6 +524,7 @@ public class LibranzaEmpleadosService
         PeriodicidadPago = e.PeriodicidadPago,
         DiaPago1         = e.DiaPago1,
         DiaPago2         = e.DiaPago2,
+        DiaPago3         = e.DiaPago3,
         FechaIngreso     = e.FechaIngreso?.ToString("yyyy-MM-dd"),
         Estado           = e.Estado,
         CupoPreliminar   = e.CupoPreliminar,
@@ -447,6 +572,10 @@ public class LibranzaEmpleadosService
         public string   PeriodicidadPago { get; set; } = string.Empty;
         public int?     DiaPago1         { get; set; }
         public int?     DiaPago2         { get; set; }
+        public int?     DiaPago3         { get; set; }
+        public decimal? PagoCorte1       { get; set; }
+        public decimal? PagoCorte2       { get; set; }
+        public decimal? PagoCorte3       { get; set; }
         public DateOnly? FechaIngreso    { get; set; }
     }
 }

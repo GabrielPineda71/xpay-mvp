@@ -45,6 +45,7 @@ export function Layout() {
             </>
           )}
           {view === 'wallet'   && <Link to="/mi-wallet">Mi Wallet</Link>}
+          {view === 'wallet'   && <Link to="/mi-wallet/libranza">Anticipo Nómina</Link>}
           {view === 'comercio' && <Link to="/mi-comercio">Mi Comercio</Link>}
           {view === 'empresa'  && (
             <>

@@ -17,10 +17,12 @@ public class EmpleadoResponse
     public string   PeriodicidadPago     { get; set; } = string.Empty;
     public int?     DiaPago1             { get; set; }
     public int?     DiaPago2             { get; set; }
+    public int?     DiaPago3             { get; set; }
     public string?  FechaIngreso         { get; set; }
     public string   Estado               { get; set; } = string.Empty;
     public decimal  CupoPreliminar       { get; set; }
     public string   OrigenCarga          { get; set; } = string.Empty;
+    public List<CortesPagoResponse> Cortes { get; set; } = [];
     public string?  LoteImportacion      { get; set; }
     public string?  Observaciones        { get; set; }
     public DateTime  CreatedAt           { get; set; }
@@ -40,6 +42,7 @@ public class CrearEmpleadoRequest
     public string   PeriodicidadPago     { get; set; } = string.Empty;
     public int?     DiaPago1             { get; set; }
     public int?     DiaPago2             { get; set; }
+    public int?     DiaPago3             { get; set; }
     public string?  FechaIngreso         { get; set; }
     public string?  Observaciones        { get; set; }
 }
@@ -98,6 +101,17 @@ public class AsociarUsuarioEmpresaRequest
     public string  RolEmpresa   { get; set; } = "ADMIN_EMPRESA";
 }
 
+// ── Cortes de pago ────────────────────────────────────────────────────────────
+
+public class CortesPagoResponse
+{
+    public long    IdCortePago         { get; set; }
+    public int     NumeroCorte         { get; set; }
+    public int     DiaPago             { get; set; }
+    public decimal ValorPagoProgramado { get; set; }
+    public string  Estado              { get; set; } = string.Empty;
+}
+
 // ── Vista empresa (mi-convenio) ────────────────────────────────────────────
 
 public class MiConvenioResponse
@@ -112,8 +126,23 @@ public class MiConvenioResponse
     public string   PeriodicidadPago     { get; set; } = string.Empty;
     public int?     DiaPago1             { get; set; }
     public int?     DiaPago2             { get; set; }
+    public int?     DiaPago3             { get; set; }
     public decimal  PorcentajeMaximoCupo { get; set; }
+    public decimal  IvaPorcentaje        { get; set; }
+    public string   MomentoCobroComision { get; set; } = string.Empty;
+    public bool     PermiteAnticipodiaPago { get; set; }
     public int      TotalEmpleados       { get; set; }
     public int      EmpleadosActivos     { get; set; }
     public string   RolEmpresa           { get; set; } = string.Empty;
+}
+
+// ── Vista empresa: lista de convenios ─────────────────────────────────────────
+
+public class MisConveniosItem
+{
+    public long   IdConvenio      { get; set; }
+    public string NombreEmpresa   { get; set; } = string.Empty;
+    public string PeriodicidadPago { get; set; } = string.Empty;
+    public string Estado          { get; set; } = string.Empty;
+    public string RolEmpresa      { get; set; } = string.Empty;
 }

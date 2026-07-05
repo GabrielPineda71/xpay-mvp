@@ -11,12 +11,17 @@ namespace Xpay.Api.Controllers;
 public class LibranzaEmpresaController : ControllerBase
 {
     private readonly LibranzaEmpleadosService            _svc;
+    private readonly LibranzaAnticipoService             _anticipoSvc;
     private readonly ILogger<LibranzaEmpresaController>  _logger;
 
-    public LibranzaEmpresaController(LibranzaEmpleadosService svc, ILogger<LibranzaEmpresaController> logger)
+    public LibranzaEmpresaController(
+        LibranzaEmpleadosService svc,
+        LibranzaAnticipoService anticipoSvc,
+        ILogger<LibranzaEmpresaController> logger)
     {
-        _svc    = svc;
-        _logger = logger;
+        _svc         = svc;
+        _anticipoSvc = anticipoSvc;
+        _logger      = logger;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────
@@ -24,24 +29,43 @@ public class LibranzaEmpresaController : ControllerBase
     private bool TryGetIdUsuario(out long id) =>
         long.TryParse(User.FindFirst("idUsuario")?.Value, out id) && id > 0;
 
-    // Returns (idConvenio, rol) if the caller is associated to a convenio, or 403.
-    private async Task<(long IdConvenio, string Rol)?> GetConvenioEmpresaAsync()
+    private async Task<(long IdConvenio, string Rol)?> GetConvenioEmpresaAsync(long? idConvenio = null)
     {
         if (!TryGetIdUsuario(out var idUsuario)) return null;
-        var asoc = await _svc.GetAsociacionAsync(idUsuario);
+        var asoc = await _svc.GetAsociacionAsync(idUsuario, idConvenio);
         if (asoc is null) return null;
         return (asoc.IdConvenio, asoc.RolEmpresa);
     }
 
-    // ── GET /api/libranza/empresa/mi-convenio ─────────────────────────────
+    // ── GET /api/libranza/empresa/mis-convenios ───────────────────────────
 
-    [HttpGet("mi-convenio")]
-    public async Task<IActionResult> GetMiConvenio()
+    [HttpGet("mis-convenios")]
+    public async Task<IActionResult> GetMisConvenios()
     {
         if (!TryGetIdUsuario(out var idUsuario))
             return Unauthorized(new { message = "Token inválido." });
 
-        var ctx = await GetConvenioEmpresaAsync();
+        try
+        {
+            var result = await _svc.GetMisConveniosAsync(idUsuario);
+            return Ok(new { success = true, data = result });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error GetMisConvenios idUsuario={Id}", idUsuario);
+            return StatusCode(500, new { message = "Error interno." });
+        }
+    }
+
+    // ── GET /api/libranza/empresa/mi-convenio?idConvenio=N ───────────────
+
+    [HttpGet("mi-convenio")]
+    public async Task<IActionResult> GetMiConvenio([FromQuery] long? idConvenio)
+    {
+        if (!TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { message = "Token inválido." });
+
+        var ctx = await GetConvenioEmpresaAsync(idConvenio);
         if (ctx is null)
             return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
 
@@ -61,12 +85,12 @@ public class LibranzaEmpresaController : ControllerBase
         }
     }
 
-    // ── GET /api/libranza/empresa/empleados ───────────────────────────────
+    // ── GET /api/libranza/empresa/empleados?idConvenio=N ─────────────────
 
     [HttpGet("empleados")]
-    public async Task<IActionResult> GetEmpleados()
+    public async Task<IActionResult> GetEmpleados([FromQuery] long? idConvenio)
     {
-        var ctx = await GetConvenioEmpresaAsync();
+        var ctx = await GetConvenioEmpresaAsync(idConvenio);
         if (ctx is null)
             return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
 
@@ -99,16 +123,16 @@ public class LibranzaEmpresaController : ControllerBase
         }
     }
 
-    // ── POST /api/libranza/empresa/empleados/importar ─────────────────────
+    // ── POST /api/libranza/empresa/empleados/importar?idConvenio=N ────────
 
     [HttpPost("empleados/importar")]
     [RequestSizeLimit(2 * 1024 * 1024)]
-    public async Task<IActionResult> ImportarEmpleados(IFormFile archivo)
+    public async Task<IActionResult> ImportarEmpleados(IFormFile archivo, [FromQuery] long? idConvenio)
     {
         if (!TryGetIdUsuario(out var idUsuario))
             return Unauthorized(new { message = "Token inválido." });
 
-        var ctx = await GetConvenioEmpresaAsync();
+        var ctx = await GetConvenioEmpresaAsync(idConvenio);
         if (ctx is null)
             return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
 
@@ -137,6 +161,60 @@ public class LibranzaEmpresaController : ControllerBase
         {
             _logger.LogError(ex, "Error ImportarEmpleados convenio={Id}", ctx.Value.IdConvenio);
             return StatusCode(500, new { message = "Error interno procesando el archivo." });
+        }
+    }
+
+    // ── GET /api/libranza/empresa/cobros?fechaPago=YYYY-MM-DD&idConvenio=N ─
+
+    [HttpGet("cobros")]
+    public async Task<IActionResult> GetCobros(
+        [FromQuery] string fechaPago, [FromQuery] long? idConvenio)
+    {
+        var ctx = await GetConvenioEmpresaAsync(idConvenio);
+        if (ctx is null)
+            return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+
+        if (string.IsNullOrWhiteSpace(fechaPago) || !DateOnly.TryParse(fechaPago, out var fecha))
+            return BadRequest(new { message = "Parámetro fechaPago inválido. Use YYYY-MM-DD." });
+
+        try
+        {
+            var data = await _anticipoSvc.GetCobrosAsync(ctx.Value.IdConvenio, fecha);
+            return Ok(new { success = true, data, total = data.Count });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error GetCobros convenio={Id}", ctx.Value.IdConvenio);
+            return StatusCode(500, new { message = "Error interno." });
+        }
+    }
+
+    // ── POST /api/libranza/empresa/cobros/aplicar?idConvenio=N ───────────
+
+    [HttpPost("cobros/aplicar")]
+    public async Task<IActionResult> AplicarPago(
+        [FromBody] AplicarPagoRequest req, [FromQuery] long? idConvenio)
+    {
+        if (!TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { message = "Token inválido." });
+
+        var ctx = await GetConvenioEmpresaAsync(idConvenio);
+        if (ctx is null)
+            return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+
+        try
+        {
+            var result = await _anticipoSvc.AplicarPagoEmpresaAsync(ctx.Value.IdConvenio, req, idUsuario);
+            return Ok(new { success = true, data = result });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error AplicarPago convenio={Id}", ctx.Value.IdConvenio);
+            return StatusCode(500, new { message = "Error interno." });
         }
     }
 }

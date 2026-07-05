@@ -10,8 +10,10 @@ public class LibranzaEmpresaConvenio
     public string?  TelefonoContacto     { get; set; }
     public string?  Direccion            { get; set; }
     public string   Estado               { get; set; } = "ACTIVO";
-    public int?     DiaPago1             { get; set; }
-    public int?     DiaPago2             { get; set; }
+    public int?     DiaPago1                  { get; set; }
+    public int?     DiaPago2                  { get; set; }
+    public int?     DiaPago3                  { get; set; }
+    public bool     PermiteAnticipodiaPago    { get; set; }
     public string   PeriodicidadPago     { get; set; } = string.Empty;
     public decimal  PorcentajeMaximoCupo { get; set; }
     public string?  Observaciones        { get; set; }

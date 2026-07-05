@@ -11,13 +11,16 @@ public class LibranzaController : ControllerBase
 {
     private readonly LibranzaService             _libranza;
     private readonly LibranzaEmpleadosService    _empleados;
+    private readonly LibranzaAnticipoService     _anticipos;
     private readonly AuditLogService             _audit;
     private readonly ILogger<LibranzaController> _logger;
 
-    public LibranzaController(LibranzaService libranza, LibranzaEmpleadosService empleados, AuditLogService audit, ILogger<LibranzaController> logger)
+    public LibranzaController(LibranzaService libranza, LibranzaEmpleadosService empleados,
+        LibranzaAnticipoService anticipos, AuditLogService audit, ILogger<LibranzaController> logger)
     {
         _libranza  = libranza;
         _empleados = empleados;
+        _anticipos = anticipos;
         _audit     = audit;
         _logger    = logger;
     }
@@ -274,6 +277,82 @@ public class LibranzaController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error AsociarUsuarioEmpresa convenio={Id}", id);
+            return StatusCode(500, new { success = false, message = "Error interno." });
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // ANTICIPOS (admin)
+    // ──────────────────────────────────────────────────────────────────────
+
+    [HttpGet("api/libranza/admin/convenios/{id:long}/anticipos")]
+    public async Task<IActionResult> GetAnticipos(long id)
+    {
+        try
+        {
+            var data = await _anticipos.GetAnticiposConvenioAsync(id);
+            return Ok(new { success = true, data, total = data.Count });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error GetAnticipos convenio={Id}", id);
+            return StatusCode(500, new { success = false, message = "Error interno." });
+        }
+    }
+
+    [HttpGet("api/libranza/admin/anticipos/{id:long}/ledger")]
+    public async Task<IActionResult> GetAnticipoLedger(long id)
+    {
+        try
+        {
+            var data = await _anticipos.GetAnticipoLedgerAsync(id);
+            return Ok(new { success = true, data });
+        }
+        catch (KeyNotFoundException ex)
+        { return NotFound(new { success = false, message = ex.Message }); }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error GetAnticipoLedger anticipo={Id}", id);
+            return StatusCode(500, new { success = false, message = "Error interno." });
+        }
+    }
+
+    [HttpGet("api/libranza/admin/convenios/{id:long}/cortes-demo")]
+    public async Task<IActionResult> GetCortesDemoAsync(long id, [FromQuery] string? fecha)
+    {
+        DateOnly f = string.IsNullOrWhiteSpace(fecha)
+            ? DateOnly.FromDateTime(DateTime.UtcNow)
+            : DateOnly.Parse(fecha);
+        try
+        {
+            var data = await _anticipos.GetDiagnosticoCorteAsync(id, f);
+            return Ok(new { success = true, data, fecha = f.ToString("yyyy-MM-dd") });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error GetCortesDemo convenio={Id}", id);
+            return StatusCode(500, new { success = false, message = "Error interno." });
+        }
+    }
+
+    [HttpPost("api/libranza/admin/empleados/{id:long}/asociar-usuario")]
+    public async Task<IActionResult> AsociarEmpleadoUsuario(long id, [FromBody] AsociarEmpleadoUsuarioRequest request)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        try
+        {
+            await _anticipos.AsociarEmpleadoUsuarioAsync(id, request, adminId);
+            return Ok(new { success = true, message = "Asociación actualizada." });
+        }
+        catch (KeyNotFoundException ex)
+        { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex)
+        { return BadRequest(new { success = false, message = ex.Message }); }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error AsociarEmpleadoUsuario empleado={Id}", id);
             return StatusCode(500, new { success = false, message = "Error interno." });
         }
     }

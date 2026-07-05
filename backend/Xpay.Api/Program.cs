@@ -30,6 +30,7 @@ builder.Services.AddScoped<KycService>();
 builder.Services.AddScoped<BrebService>();
 builder.Services.AddScoped<LibranzaService>();
 builder.Services.AddScoped<LibranzaEmpleadosService>();
+builder.Services.AddScoped<LibranzaAnticipoService>();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 {
     o.MultipartBodyLengthLimit = 2 * 1024 * 1024;

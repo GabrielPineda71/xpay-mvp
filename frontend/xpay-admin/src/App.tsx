@@ -20,6 +20,7 @@ import { BrebLlavesAdminPage } from './pages/BrebLlavesAdminPage.tsx';
 import { BrebRetirosAdminPage } from './pages/BrebRetirosAdminPage.tsx';
 import { LibranzaConveniosAdminPage } from './pages/LibranzaConveniosAdminPage.tsx';
 import { MiEmpresaLibranzaPage } from './pages/MiEmpresaLibranzaPage.tsx';
+import { MiWalletLibranzaPage } from './pages/MiWalletLibranzaPage.tsx';
 
 // Smart redirect based on user role/view
 function UserRedirect() {
@@ -64,6 +65,7 @@ export default function App() {
               <Route path="mi-comercio" element={<MiComercioPage />} />
               <Route path="mi-empresa"  element={<MiEmpresaPage />} />
               <Route path="mi-empresa/libranza" element={<MiEmpresaLibranzaPage />} />
+              <Route path="mi-wallet/libranza" element={<MiWalletLibranzaPage />} />
               {/* Catch-all: smart redirect per role */}
               <Route path="*" element={<UserRedirect />} />
             </Route>
