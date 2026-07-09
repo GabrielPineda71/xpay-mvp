@@ -16,6 +16,7 @@ public class LibranzaEmpleado
     public int?     DiaPago1                 { get; set; }
     public int?     DiaPago2                 { get; set; }
     public int?     DiaPago3                 { get; set; }
+    public int?     DiaPago4                 { get; set; }
     public DateOnly? FechaIngreso            { get; set; }
     public string   Estado                   { get; set; } = "ACTIVO";
     public decimal  CupoPreliminar           { get; set; }

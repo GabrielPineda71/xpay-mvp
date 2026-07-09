@@ -15,6 +15,8 @@ interface Convenio {
   estado:               string;
   diaPago1:             number | null;
   diaPago2:             number | null;
+  diaPago3:             number | null;
+  diaPago4:             number | null;
   periodicidadPago:     string;
   porcentajeMaximoCupo: number;
   observaciones:        string | null;
@@ -97,7 +99,7 @@ type Vista = 'lista' | 'crear' | 'editar' | 'detalle';
 type DetalleTab = 'parametros' | 'rangos' | 'empleados' | 'importaciones' | 'usuarios';
 
 const ESTADOS_CONVENIO = ['ACTIVO', 'SUSPENDIDO', 'CANCELADO'];
-const PERIODICIDADES   = ['MENSUAL', 'QUINCENAL'];
+const PERIODICIDADES   = ['MENSUAL', 'QUINCENAL', 'DECADAL', 'SEMANAL'];
 const MOMENTOS_COBRO   = ['ANTICIPADO', 'VENCIDO'];
 const TIPOS_COBRO      = ['FIJO', 'PORCENTAJE'];
 const ESTADOS_PARAM    = ['ACTIVO', 'INACTIVO'];
@@ -115,14 +117,16 @@ function estadoBadge(estado: string) {
 interface FormConvenio {
   nombreEmpresa: string; nit: string; representanteLegal: string;
   emailContacto: string; telefonoContacto: string; direccion: string;
-  estado: string; diaPago1: string; diaPago2: string; periodicidadPago: string;
+  estado: string; diaPago1: string; diaPago2: string; diaPago3: string; diaPago4: string;
+  periodicidadPago: string;
   porcentajeMaximoCupo: string; observaciones: string; fechaInicio: string; fechaFin: string;
 }
 
 const EMPTY_FORM_CONV: FormConvenio = {
   nombreEmpresa: '', nit: '', representanteLegal: '', emailContacto: '',
   telefonoContacto: '', direccion: '', estado: 'ACTIVO', diaPago1: '',
-  diaPago2: '', periodicidadPago: 'MENSUAL', porcentajeMaximoCupo: '30',
+  diaPago2: '', diaPago3: '', diaPago4: '', periodicidadPago: 'MENSUAL',
+  porcentajeMaximoCupo: '30',
   observaciones: '', fechaInicio: new Date().toISOString().slice(0,10), fechaFin: '',
 };
 
@@ -132,7 +136,8 @@ function convToForm(c: Convenio): FormConvenio {
     representanteLegal: c.representanteLegal ?? '', emailContacto: c.emailContacto ?? '',
     telefonoContacto: c.telefonoContacto ?? '', direccion: c.direccion ?? '',
     estado: c.estado, diaPago1: c.diaPago1?.toString() ?? '',
-    diaPago2: c.diaPago2?.toString() ?? '', periodicidadPago: c.periodicidadPago,
+    diaPago2: c.diaPago2?.toString() ?? '', diaPago3: c.diaPago3?.toString() ?? '',
+    diaPago4: c.diaPago4?.toString() ?? '', periodicidadPago: c.periodicidadPago,
     porcentajeMaximoCupo: c.porcentajeMaximoCupo.toString(),
     observaciones: c.observaciones ?? '',
     fechaInicio: c.fechaInicio.slice(0,10), fechaFin: c.fechaFin?.slice(0,10) ?? '',
@@ -264,6 +269,8 @@ export function LibranzaConveniosAdminPage() {
       estado:               formConv.estado,
       diaPago1:             formConv.diaPago1 ? Number(formConv.diaPago1) : null,
       diaPago2:             formConv.diaPago2 ? Number(formConv.diaPago2) : null,
+      diaPago3:             formConv.diaPago3 ? Number(formConv.diaPago3) : null,
+      diaPago4:             formConv.diaPago4 ? Number(formConv.diaPago4) : null,
       periodicidadPago:     formConv.periodicidadPago,
       porcentajeMaximoCupo: Number(formConv.porcentajeMaximoCupo),
       observaciones:        formConv.observaciones || null,
@@ -460,7 +467,7 @@ export function LibranzaConveniosAdminPage() {
                   <td className="mono">{c.nit}</td>
                   <td>{estadoBadge(c.estado)}</td>
                   <td>{c.periodicidadPago}</td>
-                  <td className="mono">{c.diaPago1}{c.diaPago2 ? ` / ${c.diaPago2}` : ''}</td>
+                  <td className="mono">{c.diaPago1 ?? '—'}{c.diaPago2 ? ` / ${c.diaPago2}` : ''}{c.diaPago3 ? ` / ${c.diaPago3}` : ''}{c.diaPago4 ? ` / ${c.diaPago4}` : ''}</td>
                   <td className="mono">{c.porcentajeMaximoCupo}%</td>
                   <td className="mono">{fmtDate(c.fechaInicio)}</td>
                   <td>
@@ -498,8 +505,13 @@ export function LibranzaConveniosAdminPage() {
           {inp('Dirección', formConv.direccion, v => setFormConv(p=>({...p,direccion:v})))}
           {sel('Estado', formConv.estado, v => setFormConv(p=>({...p,estado:v})), ESTADOS_CONVENIO)}
           {sel('Periodicidad de pago', formConv.periodicidadPago, v => setFormConv(p=>({...p,periodicidadPago:v})), PERIODICIDADES)}
-          {inp('Día de pago 1 (1-31)', formConv.diaPago1, v => setFormConv(p=>({...p,diaPago1:v})), 'number')}
-          {inp('Día de pago 2 (opcional)', formConv.diaPago2, v => setFormConv(p=>({...p,diaPago2:v})), 'number')}
+          {inp('Día de pago 1 (1-31) *', formConv.diaPago1, v => setFormConv(p=>({...p,diaPago1:v})), 'number')}
+          {['QUINCENAL','DECADAL','SEMANAL'].includes(formConv.periodicidadPago) &&
+            inp('Día de pago 2 (1-31) *', formConv.diaPago2, v => setFormConv(p=>({...p,diaPago2:v})), 'number')}
+          {['DECADAL','SEMANAL'].includes(formConv.periodicidadPago) &&
+            inp('Día de pago 3 (1-31) *', formConv.diaPago3, v => setFormConv(p=>({...p,diaPago3:v})), 'number')}
+          {formConv.periodicidadPago === 'SEMANAL' &&
+            inp('Día de pago 4 (1-31) *', formConv.diaPago4, v => setFormConv(p=>({...p,diaPago4:v})), 'number')}
           {inp('% máximo cupo (1-100) *', formConv.porcentajeMaximoCupo, v => setFormConv(p=>({...p,porcentajeMaximoCupo:v})), 'number', true)}
           {inp('Fecha inicio *', formConv.fechaInicio, v => setFormConv(p=>({...p,fechaInicio:v})), 'date', true)}
           {inp('Fecha fin (opcional)', formConv.fechaFin, v => setFormConv(p=>({...p,fechaFin:v})), 'date')}
@@ -534,7 +546,7 @@ export function LibranzaConveniosAdminPage() {
         <div><span style={{ fontSize:'0.78rem', color:'#718096' }}>Email</span><div>{selected.emailContacto ?? '—'}</div></div>
         <div><span style={{ fontSize:'0.78rem', color:'#718096' }}>Teléfono</span><div className="mono">{selected.telefonoContacto ?? '—'}</div></div>
         <div><span style={{ fontSize:'0.78rem', color:'#718096' }}>Periodicidad</span><div>{selected.periodicidadPago}</div></div>
-        <div><span style={{ fontSize:'0.78rem', color:'#718096' }}>Días de pago</span><div className="mono">{selected.diaPago1 ?? '—'}{selected.diaPago2 ? ` / ${selected.diaPago2}` : ''}</div></div>
+        <div><span style={{ fontSize:'0.78rem', color:'#718096' }}>Días de pago</span><div className="mono">{selected.diaPago1 ?? '—'}{selected.diaPago2 ? ` / ${selected.diaPago2}` : ''}{selected.diaPago3 ? ` / ${selected.diaPago3}` : ''}{selected.diaPago4 ? ` / ${selected.diaPago4}` : ''}</div></div>
         <div><span style={{ fontSize:'0.78rem', color:'#718096' }}>% máx cupo</span><div className="mono">{selected.porcentajeMaximoCupo}%</div></div>
         <div><span style={{ fontSize:'0.78rem', color:'#718096' }}>Inicio</span><div className="mono">{fmtDate(selected.fechaInicio)}</div></div>
         {selected.observaciones && <div style={{ gridColumn:'1/-1' }}><span style={{ fontSize:'0.78rem', color:'#718096' }}>Observaciones</span><div>{selected.observaciones}</div></div>}

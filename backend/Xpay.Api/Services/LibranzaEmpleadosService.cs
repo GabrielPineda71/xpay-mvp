@@ -13,7 +13,7 @@ public class LibranzaEmpleadosService
     private readonly ILogger<LibranzaEmpleadosService> _logger;
 
     private static readonly HashSet<string> TiposDoc       = ["CC", "CE", "NIT", "PASAPORTE", "OTRO"];
-    private static readonly HashSet<string> Periodicidades  = ["MENSUAL", "QUINCENAL", "DECADAL"];
+    private static readonly HashSet<string> Periodicidades  = ["MENSUAL", "QUINCENAL", "DECADAL", "SEMANAL"];
     private static readonly HashSet<string> RolesEmpresa    = ["ADMIN_EMPRESA", "OPERADOR_EMPRESA", "CONSULTA_EMPRESA"];
 
     private const int MaxFilasImport = 500;
@@ -24,7 +24,8 @@ public class LibranzaEmpleadosService
         "dia_pago_1", "dia_pago_2", "fecha_ingreso"
     ];
     private static readonly string[] PlantillaHeaders = [..PlantillaHeadersBase,
-        "pago_corte_1", "pago_corte_2", "pago_corte_3", "dia_pago_3"];
+        "pago_corte_1", "dia_pago_3",
+        "pago_corte_2", "pago_corte_3", "dia_pago_4", "pago_corte_4"];
 
     public LibranzaEmpleadosService(XpayDbContext db, ILogger<LibranzaEmpleadosService> logger)
     {
@@ -97,6 +98,7 @@ public class LibranzaEmpleadosService
             DiaPago1                = conv.DiaPago1,
             DiaPago2                = conv.DiaPago2,
             DiaPago3                = conv.DiaPago3,
+            DiaPago4                = conv.DiaPago4,
             PermiteAnticipodiaPago  = conv.PermiteAnticipodiaPago,
             PorcentajeMaximoCupo    = conv.PorcentajeMaximoCupo,
             IvaPorcentaje           = param?.IvaPorcentaje ?? 0m,
@@ -124,12 +126,14 @@ public class LibranzaEmpleadosService
     {
         var sb = new StringBuilder();
         sb.AppendLine(string.Join(",", PlantillaHeaders));
-        // MENSUAL: solo corte 1
-        sb.AppendLine("CC,1000099999,Juan,Pérez,3001234567,juan@demo.com,Auxiliar,2000000,MENSUAL,30,,2025-01-15,2000000,,,");
+        // MENSUAL: solo corte 1  (pago_corte_1,dia_pago_3,pago_corte_2,pago_corte_3,dia_pago_4,pago_corte_4)
+        sb.AppendLine("CC,1000099999,Juan,Pérez,3001234567,juan@demo.com,Auxiliar,2000000,MENSUAL,30,,2025-01-15,2000000,,,,,");
         // QUINCENAL: cortes 1 y 2
-        sb.AppendLine("CC,1000099998,María,López,3007654321,maria@demo.com,Analista,3000000,QUINCENAL,15,30,2024-08-01,1500000,1500000,,");
+        sb.AppendLine("CC,1000099998,María,López,3007654321,maria@demo.com,Analista,3000000,QUINCENAL,15,30,2024-08-01,1500000,,1500000,,,");
         // DECADAL: cortes 1, 2 y 3
-        sb.AppendLine("CC,1000099997,Carlos,Ruiz,3009876543,carlos@demo.com,Operario,3700000,DECADAL,10,20,2024-06-01,1200000,1000000,1500000,30");
+        sb.AppendLine("CC,1000099997,Carlos,Ruiz,3009876543,carlos@demo.com,Operario,3700000,DECADAL,10,20,2024-06-01,1200000,30,1000000,1500000,,");
+        // SEMANAL: cortes 1, 2, 3 y 4
+        sb.AppendLine("CC,1000099996,Laura,Torres,3005555555,laura@demo.com,Operaria,2350000,SEMANAL,7,14,2024-01-01,500000,21,600000,550000,28,700000");
         var bom  = Encoding.UTF8.GetPreamble();
         var body = Encoding.UTF8.GetBytes(sb.ToString());
         return [..bom, ..body];
@@ -213,7 +217,7 @@ public class LibranzaEmpleadosService
             else fila.SalarioMensual = sal;
 
             var per = Get("periodicidad_pago").ToUpperInvariant();
-            if (!Periodicidades.Contains(per)) { errors.Add(new() { Fila = i + 1, Campo = "periodicidad_pago", Mensaje = $"Valor '{per}' no válido (MENSUAL, QUINCENAL o DECADAL)." }); rowOk = false; }
+            if (!Periodicidades.Contains(per)) { errors.Add(new() { Fila = i + 1, Campo = "periodicidad_pago", Mensaje = $"Valor '{per}' no válido (MENSUAL, QUINCENAL, DECADAL o SEMANAL)." }); rowOk = false; }
             else fila.PeriodicidadPago = per;
 
             if (int.TryParse(Get("dia_pago_1"), out var dp1) && dp1 is >= 1 and <= 31) fila.DiaPago1 = dp1;
@@ -221,10 +225,12 @@ public class LibranzaEmpleadosService
 
             // Optional corte columns
             string SafeGet(string col) => idx.ContainsKey(col) ? cols[idx[col]].Trim() : string.Empty;
-            if (int.TryParse(SafeGet("dia_pago_3"), out var dp3) && dp3 is >= 1 and <= 31) fila.DiaPago3 = dp3;
             if (decimal.TryParse(SafeGet("pago_corte_1"), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pc1) && pc1 > 0) fila.PagoCorte1 = pc1;
+            if (int.TryParse(SafeGet("dia_pago_3"), out var dp3) && dp3 is >= 1 and <= 31) fila.DiaPago3 = dp3;
             if (decimal.TryParse(SafeGet("pago_corte_2"), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pc2) && pc2 > 0) fila.PagoCorte2 = pc2;
             if (decimal.TryParse(SafeGet("pago_corte_3"), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pc3) && pc3 > 0) fila.PagoCorte3 = pc3;
+            if (int.TryParse(SafeGet("dia_pago_4"), out var dp4) && dp4 is >= 1 and <= 31) fila.DiaPago4 = dp4;
+            if (decimal.TryParse(SafeGet("pago_corte_4"), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var pc4) && pc4 > 0) fila.PagoCorte4 = pc4;
 
             if (DateOnly.TryParse(Get("fecha_ingreso"), out var fi)) fila.FechaIngreso = fi;
 
@@ -260,6 +266,7 @@ public class LibranzaEmpleadosService
                     DiaPago1               = f.DiaPago1,
                     DiaPago2               = f.DiaPago2,
                     DiaPago3               = f.DiaPago3,
+                    DiaPago4               = f.DiaPago4,
                     FechaIngreso           = f.FechaIngreso,
                     Estado                 = "ACTIVO",
                     CupoPreliminar         = cupo,
@@ -286,6 +293,7 @@ public class LibranzaEmpleadosService
                 existing.DiaPago1              = f.DiaPago1;
                 existing.DiaPago2              = f.DiaPago2;
                 existing.DiaPago3              = f.DiaPago3;
+                existing.DiaPago4              = f.DiaPago4;
                 existing.FechaIngreso          = f.FechaIngreso;
                 existing.CupoPreliminar        = cupo;
                 existing.FechaUltimoCalculoCupo = now;
@@ -362,6 +370,7 @@ public class LibranzaEmpleadosService
             (1, f.DiaPago1, f.PagoCorte1),
             (2, f.DiaPago2, f.PagoCorte2),
             (3, f.DiaPago3, f.PagoCorte3),
+            (4, f.DiaPago4, f.PagoCorte4),
         };
 
         int maxCortes = f.PeriodicidadPago switch
@@ -369,6 +378,7 @@ public class LibranzaEmpleadosService
             "MENSUAL"   => 1,
             "QUINCENAL" => 2,
             "DECADAL"   => 3,
+            "SEMANAL"   => 4,
             _           => 0
         };
 
@@ -525,6 +535,7 @@ public class LibranzaEmpleadosService
         DiaPago1         = e.DiaPago1,
         DiaPago2         = e.DiaPago2,
         DiaPago3         = e.DiaPago3,
+        DiaPago4         = e.DiaPago4,
         FechaIngreso     = e.FechaIngreso?.ToString("yyyy-MM-dd"),
         Estado           = e.Estado,
         CupoPreliminar   = e.CupoPreliminar,
@@ -573,9 +584,11 @@ public class LibranzaEmpleadosService
         public int?     DiaPago1         { get; set; }
         public int?     DiaPago2         { get; set; }
         public int?     DiaPago3         { get; set; }
+        public int?     DiaPago4         { get; set; }
         public decimal? PagoCorte1       { get; set; }
         public decimal? PagoCorte2       { get; set; }
         public decimal? PagoCorte3       { get; set; }
+        public decimal? PagoCorte4       { get; set; }
         public DateOnly? FechaIngreso    { get; set; }
     }
 }

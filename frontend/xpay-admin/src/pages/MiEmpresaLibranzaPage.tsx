@@ -22,6 +22,7 @@ interface MiConvenio {
   diaPago1?: number;
   diaPago2?: number;
   diaPago3?: number;
+  diaPago4?: number;
   permiteAnticipodiaPago?: boolean;
   ivaPorcentaje?: number;
   momentoCobroComision?: string;
@@ -45,6 +46,7 @@ interface Empleado {
   diaPago1?: number;
   diaPago2?: number;
   diaPago3?: number;
+  diaPago4?: number;
   fechaIngreso?: string;
   estado: string;
   cupoPreliminar: number;
@@ -230,7 +232,7 @@ export function MiEmpresaLibranzaPage() {
   if (error) return <div className="page"><h2>Mi Empresa — Libranza</h2><div className="msg-error">{error}</div></div>;
   if (!convenio) return <div className="page"><h2>Mi Empresa — Libranza</h2><p>No tienes un convenio activo asignado.</p></div>;
 
-  const diasPago = [convenio.diaPago1, convenio.diaPago2, convenio.diaPago3].filter(Boolean).join(' / ') || '—';
+  const diasPago = [convenio.diaPago1, convenio.diaPago2, convenio.diaPago3, convenio.diaPago4].filter(Boolean).join(' / ') || '—';
   const tabs = ['empleados', 'importar', 'cobros'] as const;
 
   return (
@@ -330,7 +332,7 @@ export function MiEmpresaLibranzaPage() {
         <div className="info-section" style={{ marginTop: '1rem' }}>
           <h3>Importar empleados desde CSV</h3>
           <p style={{ fontSize: '0.87rem', color: '#718096', marginBottom: '1rem' }}>
-            Máximo 500 filas, 2 MB. Para DECADAL incluir columnas <code>dia_pago_3</code>, <code>pago_corte_1/2/3</code>.
+            Máximo 500 filas, 2 MB. Para DECADAL: <code>dia_pago_3, pago_corte_1/2/3</code>. Para SEMANAL: <code>dia_pago_3/4, pago_corte_1/2/3/4</code>.
             Cupo = salario × {convenio.porcentajeMaximoCupo}%.
           </p>
 

@@ -41,7 +41,7 @@ public class LibranzaAnticipoService
             .OrderBy(c => c.DiaPago)
             .ToListAsync();
 
-        if (cortes.Count == 0) return null;
+        if (cortes.Count == 0) throw new InvalidOperationException("El empleado no tiene cortes de pago configurados.");
 
         var diaActual = fechaSimulada.Day;
 
@@ -112,7 +112,32 @@ public class LibranzaAnticipoService
             }
         }
 
-        return null; // Day 31 or after last payment day with no next period
+        // After last payment day of the month: next period is for corte 1 of next month
+        var primerCorte    = cortes.First(c => c.DiaPago == diasPago[0]);
+        var paramFinal     = await ObtenerParametrosAsync(empleado.IdConvenio);
+        var pctFinal       = paramFinal?.PorcentajeMaximoCupo ?? convenio.PorcentajeMaximoCupo;
+        var cupoBaseFinal  = primerCorte.ValorPagoProgramado * pctFinal / 100m;
+        var ultimoDia      = diasPago[^1];
+        var mesBase        = fechaSimulada.Month == 12
+            ? new DateOnly(fechaSimulada.Year + 1, 1, 1)
+            : new DateOnly(fechaSimulada.Year, fechaSimulada.Month + 1, 1);
+        var fechaPagoFinal = new DateOnly(mesBase.Year, mesBase.Month, diasPago[0]);
+        var cupoUsadoFinal = await CalcularCupoUsadoAsync(idEmpleado, diasPago[0], fechaPagoFinal);
+
+        return new CorteVigenteResponse
+        {
+            DiaPago             = diasPago[0],
+            PeriodoInicio       = ultimoDia + 1,
+            PeriodoFin          = diasPago[0] - 1,
+            FechaPago           = fechaPagoFinal,
+            ValorPagoProgramado = primerCorte.ValorPagoProgramado,
+            PorcentajeCupo      = pctFinal,
+            CupoBase            = cupoBaseFinal,
+            CupoUsado           = cupoUsadoFinal,
+            CupoDisponible      = Math.Max(0, cupoBaseFinal - cupoUsadoFinal),
+            FechaSimulada       = fechaSimulada.ToString("yyyy-MM-dd"),
+            EsDiaPago           = false,
+        };
     }
 
     private async Task<decimal> CalcularCupoUsadoAsync(long idEmpleado, int diaPago, DateOnly fechaPago)

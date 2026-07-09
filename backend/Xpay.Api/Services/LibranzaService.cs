@@ -11,7 +11,7 @@ public class LibranzaService
     private readonly ILogger<LibranzaService> _logger;
 
     private static readonly HashSet<string> EstadosConvenio  = ["ACTIVO", "SUSPENDIDO", "CANCELADO"];
-    private static readonly HashSet<string> Periodicidades   = ["MENSUAL", "QUINCENAL", "DECADAL"];
+    private static readonly HashSet<string> Periodicidades   = ["MENSUAL", "QUINCENAL", "DECADAL", "SEMANAL"];
     private static readonly HashSet<string> MomentosCobro    = ["ANTICIPADO", "VENCIDO"];
     private static readonly HashSet<string> TiposCobro       = ["FIJO", "PORCENTAJE"];
     private static readonly HashSet<string> EstadosParam     = ["ACTIVO", "INACTIVO"];
@@ -47,7 +47,7 @@ public class LibranzaService
         if (await _db.LibranzaEmpresasConvenio.AnyAsync(c => c.Nit == req.Nit.Trim()))
             throw new InvalidOperationException($"Ya existe un convenio con NIT '{req.Nit}'.");
 
-        ValidarDiasPagoSegunPeriodicidad(req.PeriodicidadPago, req.DiaPago1, req.DiaPago2, req.DiaPago3);
+        ValidarDiasPagoSegunPeriodicidad(req.PeriodicidadPago, req.DiaPago1, req.DiaPago2, req.DiaPago3, req.DiaPago4);
 
         var convenio = new LibranzaEmpresaConvenio
         {
@@ -61,6 +61,7 @@ public class LibranzaService
             DiaPago1                = req.DiaPago1,
             DiaPago2                = req.DiaPago2,
             DiaPago3                = req.DiaPago3,
+            DiaPago4                = req.DiaPago4,
             PermiteAnticipodiaPago  = req.PermiteAnticipodiaPago,
             PeriodicidadPago        = req.PeriodicidadPago.Trim().ToUpperInvariant(),
             PorcentajeMaximoCupo    = req.PorcentajeMaximoCupo,
@@ -97,7 +98,7 @@ public class LibranzaService
         {
             var per = req.PeriodicidadPago.Trim().ToUpperInvariant();
             if (!Periodicidades.Contains(per))
-                throw new InvalidOperationException($"Periodicidad inválida: {per}. Valores: MENSUAL, QUINCENAL.");
+                throw new InvalidOperationException($"Periodicidad inválida: {per}. Valores: MENSUAL, QUINCENAL, DECADAL, SEMANAL.");
             convenio.PeriodicidadPago = per;
         }
 
@@ -114,6 +115,8 @@ public class LibranzaService
             throw new InvalidOperationException("dia_pago_2 debe estar entre 1 y 31.");
         if (req.DiaPago3.HasValue && (req.DiaPago3 < 1 || req.DiaPago3 > 31))
             throw new InvalidOperationException("dia_pago_3 debe estar entre 1 y 31.");
+        if (req.DiaPago4.HasValue && (req.DiaPago4 < 1 || req.DiaPago4 > 31))
+            throw new InvalidOperationException("dia_pago_4 debe estar entre 1 y 31.");
 
         convenio.RepresentanteLegal    = req.RepresentanteLegal?.Trim()  ?? convenio.RepresentanteLegal;
         convenio.EmailContacto         = req.EmailContacto?.Trim()       ?? convenio.EmailContacto;
@@ -123,6 +126,7 @@ public class LibranzaService
         if (req.DiaPago1.HasValue)          convenio.DiaPago1               = req.DiaPago1;
         if (req.DiaPago2.HasValue)          convenio.DiaPago2               = req.DiaPago2;
         if (req.DiaPago3.HasValue)          convenio.DiaPago3               = req.DiaPago3;
+        if (req.DiaPago4.HasValue)          convenio.DiaPago4               = req.DiaPago4;
         if (req.PermiteAnticipodiaPago.HasValue) convenio.PermiteAnticipodiaPago = req.PermiteAnticipodiaPago.Value;
         convenio.FechaFin              = req.FechaFin ?? convenio.FechaFin;
         convenio.UpdatedAt          = DateTime.UtcNow;
@@ -319,7 +323,7 @@ public class LibranzaService
         if (!EstadosConvenio.Contains(estado.Trim().ToUpperInvariant()))
             throw new InvalidOperationException($"estado inválido: '{estado}'. Valores: ACTIVO, SUSPENDIDO, CANCELADO.");
         if (!Periodicidades.Contains(periodicidad.Trim().ToUpperInvariant()))
-            throw new InvalidOperationException($"periodicidad_pago inválida: '{periodicidad}'. Valores: MENSUAL, QUINCENAL, DECADAL.");
+            throw new InvalidOperationException($"periodicidad_pago inválida: '{periodicidad}'. Valores: MENSUAL, QUINCENAL, DECADAL, SEMANAL.");
         if (cupo < 1 || cupo > 100)
             throw new InvalidOperationException("porcentaje_maximo_cupo debe estar entre 1 y 100.");
         if (dia1.HasValue && (dia1 < 1 || dia1 > 31))
@@ -328,14 +332,16 @@ public class LibranzaService
             throw new InvalidOperationException("dia_pago_2 debe estar entre 1 y 31.");
     }
 
-    private static void ValidarDiasPagoSegunPeriodicidad(string periodicidad, int? dia1, int? dia2, int? dia3)
+    private static void ValidarDiasPagoSegunPeriodicidad(string periodicidad, int? dia1, int? dia2, int? dia3, int? dia4 = null)
     {
         var per = periodicidad.Trim().ToUpperInvariant();
         if (per == "QUINCENAL" && (!dia1.HasValue || !dia2.HasValue))
             throw new InvalidOperationException("QUINCENAL requiere dia_pago_1 y dia_pago_2.");
         if (per == "DECADAL" && (!dia1.HasValue || !dia2.HasValue || !dia3.HasValue))
             throw new InvalidOperationException("DECADAL requiere dia_pago_1, dia_pago_2 y dia_pago_3.");
-        var dias = new[] { dia1, dia2, dia3 }.Where(d => d.HasValue).Select(d => d!.Value).ToList();
+        if (per == "SEMANAL" && (!dia1.HasValue || !dia2.HasValue || !dia3.HasValue || !dia4.HasValue))
+            throw new InvalidOperationException("SEMANAL requiere dia_pago_1, dia_pago_2, dia_pago_3 y dia_pago_4.");
+        var dias = new[] { dia1, dia2, dia3, dia4 }.Where(d => d.HasValue).Select(d => d!.Value).ToList();
         if (dias.Distinct().Count() != dias.Count)
             throw new InvalidOperationException("Los días de pago no deben repetirse.");
     }
@@ -397,6 +403,7 @@ public class LibranzaService
         DiaPago1                = c.DiaPago1,
         DiaPago2                = c.DiaPago2,
         DiaPago3                = c.DiaPago3,
+        DiaPago4                = c.DiaPago4,
         PermiteAnticipodiaPago  = c.PermiteAnticipodiaPago,
         PeriodicidadPago        = c.PeriodicidadPago,
         PorcentajeMaximoCupo    = c.PorcentajeMaximoCupo,

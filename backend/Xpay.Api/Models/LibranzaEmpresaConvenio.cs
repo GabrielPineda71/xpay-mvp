@@ -13,6 +13,7 @@ public class LibranzaEmpresaConvenio
     public int?     DiaPago1                  { get; set; }
     public int?     DiaPago2                  { get; set; }
     public int?     DiaPago3                  { get; set; }
+    public int?     DiaPago4                  { get; set; }
     public bool     PermiteAnticipodiaPago    { get; set; }
     public string   PeriodicidadPago     { get; set; } = string.Empty;
     public decimal  PorcentajeMaximoCupo { get; set; }

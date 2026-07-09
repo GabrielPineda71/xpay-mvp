@@ -18,6 +18,7 @@ public class EmpleadoResponse
     public int?     DiaPago1             { get; set; }
     public int?     DiaPago2             { get; set; }
     public int?     DiaPago3             { get; set; }
+    public int?     DiaPago4             { get; set; }
     public string?  FechaIngreso         { get; set; }
     public string   Estado               { get; set; } = string.Empty;
     public decimal  CupoPreliminar       { get; set; }
@@ -43,6 +44,7 @@ public class CrearEmpleadoRequest
     public int?     DiaPago1             { get; set; }
     public int?     DiaPago2             { get; set; }
     public int?     DiaPago3             { get; set; }
+    public int?     DiaPago4             { get; set; }
     public string?  FechaIngreso         { get; set; }
     public string?  Observaciones        { get; set; }
 }
@@ -127,6 +129,7 @@ public class MiConvenioResponse
     public int?     DiaPago1             { get; set; }
     public int?     DiaPago2             { get; set; }
     public int?     DiaPago3             { get; set; }
+    public int?     DiaPago4             { get; set; }
     public decimal  PorcentajeMaximoCupo { get; set; }
     public decimal  IvaPorcentaje        { get; set; }
     public string   MomentoCobroComision { get; set; } = string.Empty;
