@@ -31,9 +31,10 @@ builder.Services.AddScoped<BrebService>();
 builder.Services.AddScoped<LibranzaService>();
 builder.Services.AddScoped<LibranzaEmpleadosService>();
 builder.Services.AddScoped<LibranzaAnticipoService>();
+builder.Services.AddScoped<ComercioAliadoService>();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 {
-    o.MultipartBodyLengthLimit = 2 * 1024 * 1024;
+    o.MultipartBodyLengthLimit = 6 * 1024 * 1024; // 6 MB global — per-endpoint can restrict further
 });
 builder.Services.AddHttpClient();
 

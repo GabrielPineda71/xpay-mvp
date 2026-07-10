@@ -21,6 +21,7 @@ import { BrebRetirosAdminPage } from './pages/BrebRetirosAdminPage.tsx';
 import { LibranzaConveniosAdminPage } from './pages/LibranzaConveniosAdminPage.tsx';
 import { MiEmpresaLibranzaPage } from './pages/MiEmpresaLibranzaPage.tsx';
 import { MiWalletLibranzaPage } from './pages/MiWalletLibranzaPage.tsx';
+import { ComerciosAliadosPage } from './pages/ComerciosAliadosPage.tsx';
 
 // Smart redirect based on user role/view
 function UserRedirect() {
@@ -60,6 +61,7 @@ export default function App() {
               <Route path="admin/breb-llaves"   element={<BrebLlavesAdminPage />} />
               <Route path="admin/breb-retiros"        element={<BrebRetirosAdminPage />} />
               <Route path="admin/libranza-convenios" element={<LibranzaConveniosAdminPage />} />
+              <Route path="admin/comercios-aliados" element={<ComerciosAliadosPage />} />
               {/* Demo user routes */}
               <Route path="mi-wallet"   element={<UserWalletPage />} />
               <Route path="mi-comercio" element={<MiComercioPage />} />
