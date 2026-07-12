@@ -134,13 +134,26 @@ interface DisponibilidadVenta {
   valorNetoLiberado?: number;
 }
 
+interface UsuarioOperativo {
+  idComercioUsuario: number;
+  idComercioAliado: number;
+  idComercioExistente?: number;
+  idEstablecimiento?: number;
+  nombreEstablecimiento?: string;
+  idUsuario: number;
+  nombreUsuario: string;
+  rolComercio: string;
+  estado: string;
+  createdAt: string;
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const ESTADOS        = ['BORRADOR','EN_REVISION','APROBADO','RECHAZADO','ACTIVO','INACTIVO'];
 const TIPOS_PERSONA  = ['NATURAL','JURIDICA'];
 const TIPOS_DOC_REP  = ['CC','CE','NIT','PASAPORTE','OTRO'];
 const TIPOS_DOC_ARCH = ['CONTRATO','CAMARA_COMERCIO','RUT','DOCUMENTO_REPRESENTANTE','FORMULARIO_SOLICITUD'];
-const ROLES_SOL      = ['ADMIN_COMERCIO','CAJERO'];
+const ROLES_SOL      = ['ADMIN_COMERCIO','ADMIN_SEDE_COMERCIO','CAJERO'];
 
 type Vista      = 'lista' | 'crear' | 'editar' | 'detalle';
 type DetalleTab = 'datos' | 'representante' | 'establecimientos' | 'usuarios' | 'documentos' | 'convenio' | 'condiciones' | 'operativo';
@@ -225,7 +238,7 @@ const emptyEst = () => ({
 });
 
 const emptyUsr = () => ({
-  nombres: '', correo: '', celular: '', rolSolicitado: 'ADMIN_COMERCIO',
+  nombres: '', correo: '', celular: '', rolSolicitado: 'ADMIN_COMERCIO', idEstablecimiento: '' as string,
 });
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -283,6 +296,13 @@ export function ComerciosAliadosPage() {
   const [disponibilidad,  setDisponibilidad]  = useState<DisponibilidadVenta[]>([]);
   const [liberando,       setLiberando]       = useState<number | null>(null);
 
+  // Usuarios operativos
+  const [usuariosOp,       setUsuariosOp]      = useState<UsuarioOperativo[]>([]);
+  const [showFormOp,       setShowFormOp]      = useState(false);
+  const [formOp,           setFormOp]          = useState({ idUsuario: '', rolComercio: 'ADMIN_COMERCIO', idEstablecimiento: '' });
+  const [editOpId,         setEditOpId]        = useState<number | null>(null);
+  const [savingOp,         setSavingOp]        = useState(false);
+
   const limpiarMsg = () => { setError(''); setMsg(''); };
 
   // ── Carga lista ─────────────────────────────────────────────────────────────
@@ -304,7 +324,7 @@ export function ComerciosAliadosPage() {
     setSelected(c); setTab('datos'); limpiarMsg();
     setRepresentantes([]); setEstablecimientos([]);
     setUsuariosSolicitados([]); setDocumentos([]); setCompleitud(null);
-    setCondiciones([]); setDisponibilidad([]);
+    setCondiciones([]); setDisponibilidad([]); setUsuariosOp([]);
     setVista('detalle');
     const id = c.idComercioAliado;
     try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/representantes`); setRepresentantes(r.data); } catch { /**/ }
@@ -312,6 +332,7 @@ export function ComerciosAliadosPage() {
     try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/usuarios-solicitados`); setUsuariosSolicitados(r.data); } catch { /**/ }
     try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/documentos`); setDocumentos(r.data.documentos); setCompleitud(r.data.compleitud); } catch { /**/ }
     try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/condiciones`); setCondiciones(r.data ?? []); } catch { /**/ }
+    try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/usuarios-operativos`); setUsuariosOp(r.data ?? []); } catch { /**/ }
     if (c.idComercioExistente) {
       try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/disponibilidad`); setDisponibilidad(r.data ?? []); } catch { /**/ }
     }
@@ -419,9 +440,12 @@ export function ComerciosAliadosPage() {
 
   const guardarUsr = async () => {
     if (!selected) return;
+    if ((formUsr.rolSolicitado === 'ADMIN_SEDE_COMERCIO' || formUsr.rolSolicitado === 'CAJERO') && !formUsr.idEstablecimiento) {
+      setError('Sede obligatoria para este rol.'); return;
+    }
     limpiarMsg(); setSavingSub(true);
     try {
-      const body = { ...formUsr };
+      const body = { ...formUsr, idEstablecimiento: formUsr.idEstablecimiento ? Number(formUsr.idEstablecimiento) : null };
       if (editUsrId) {
         await put(`/api/comercios-aliados/admin/usuarios-solicitados/${editUsrId}`, body);
       } else {
@@ -768,6 +792,15 @@ export function ComerciosAliadosPage() {
                 {inp('Correo', formUsr.correo, v => setFormUsr(p=>({...p,correo:v})), 'email')}
                 {inp('Celular', formUsr.celular, v => setFormUsr(p=>({...p,celular:v})))}
                 {sel('Rol solicitado', formUsr.rolSolicitado, v => setFormUsr(p=>({...p,rolSolicitado:v})), ROLES_SOL)}
+                {(formUsr.rolSolicitado === 'ADMIN_SEDE_COMERCIO' || formUsr.rolSolicitado === 'CAJERO') && (
+                  <div>
+                    <label style={{ display:'block', fontSize:'0.82rem', color:'#4a5568', marginBottom:'0.25rem' }}>Sede *</label>
+                    <select value={formUsr.idEstablecimiento} onChange={e => setFormUsr(p=>({...p,idEstablecimiento:e.target.value}))} style={{ width:'100%', padding:'0.4rem', borderRadius:'4px', border:'1px solid #cbd5e0', fontSize:'0.87rem' }}>
+                      <option value="">Selecciona sede</option>
+                      {establecimientos.filter(e=>e.estado==='ACTIVO').map(e => <option key={e.idEstablecimiento} value={e.idEstablecimiento}>{e.nombreEstablecimiento}</option>)}
+                    </select>
+                  </div>
+                )}
                 <div style={{ display:'flex', gap:'0.75rem' }}>
                   {btn(savingSub ? 'Guardando...' : 'Guardar', guardarUsr, 'primary', savingSub)}
                   {btn('Cancelar', () => { setShowFormUsr(false); setFormUsr(emptyUsr()); }, 'secondary')}
@@ -787,7 +820,7 @@ export function ComerciosAliadosPage() {
                         <td style={tdStyle}>{estadoBadge(u.estado)}</td>
                         <td style={tdStyle}>
                           <button className="btn-link" style={{ fontSize:'0.8rem' }} onClick={() => {
-                            setFormUsr({ nombres: u.nombres, correo: u.correo ?? '', celular: u.celular ?? '', rolSolicitado: u.rolSolicitado });
+                            setFormUsr({ nombres: u.nombres, correo: u.correo ?? '', celular: u.celular ?? '', rolSolicitado: u.rolSolicitado, idEstablecimiento: '' });
                             setEditUsrId(u.idUsuarioSolicitado); setShowFormUsr(true);
                           }}>Editar</button>
                         </td>
@@ -988,6 +1021,81 @@ export function ComerciosAliadosPage() {
                   finally { setSavingVinculo(false); }
                 }, 'primary', savingVinculo)}
               </div>
+            </div>
+
+            {/* Usuarios operativos */}
+            <div style={{ marginBottom:'1.5rem' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.75rem' }}>
+                <h3 style={{ margin:0, fontSize:'1rem' }}>Usuarios operativos ({usuariosOp.length})</h3>
+                <button className="btn btn-primary" style={{ fontSize:'0.82rem', padding:'0.3rem 0.75rem' }}
+                  onClick={() => { setShowFormOp(!showFormOp); setEditOpId(null); setFormOp({ idUsuario:'', rolComercio:'ADMIN_COMERCIO', idEstablecimiento:'' }); }}>
+                  {showFormOp ? 'Cancelar' : '+ Agregar'}
+                </button>
+              </div>
+              {showFormOp && (
+                <div style={{ background:'#f7fafc', border:'1px solid #e2e8f0', borderRadius:'8px', padding:'1rem', marginBottom:'1rem', display:'grid', gap:'0.6rem' }}>
+                  {inp('ID Usuario *', formOp.idUsuario, v => setFormOp(p=>({...p,idUsuario:v})), 'number', true)}
+                  <div>
+                    <label style={{ display:'block', fontSize:'0.82rem', color:'#4a5568', marginBottom:'0.25rem' }}>Rol *</label>
+                    <select value={formOp.rolComercio} onChange={e => setFormOp(p=>({...p,rolComercio:e.target.value}))} style={{ width:'100%', padding:'0.4rem', borderRadius:'4px', border:'1px solid #cbd5e0', fontSize:'0.87rem' }}>
+                      {['ADMIN_COMERCIO','ADMIN_SEDE_COMERCIO','CAJERO'].map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  {(formOp.rolComercio === 'ADMIN_SEDE_COMERCIO' || formOp.rolComercio === 'CAJERO') && (
+                    <div>
+                      <label style={{ display:'block', fontSize:'0.82rem', color:'#4a5568', marginBottom:'0.25rem' }}>Sede *</label>
+                      <select value={formOp.idEstablecimiento} onChange={e => setFormOp(p=>({...p,idEstablecimiento:e.target.value}))} style={{ width:'100%', padding:'0.4rem', borderRadius:'4px', border:'1px solid #cbd5e0', fontSize:'0.87rem' }}>
+                        <option value="">Selecciona sede</option>
+                        {establecimientos.filter(e=>e.estado==='ACTIVO').map(e => <option key={e.idEstablecimiento} value={e.idEstablecimiento}>{e.nombreEstablecimiento}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {btn(savingOp ? 'Guardando...' : (editOpId ? 'Actualizar' : 'Crear'), async () => {
+                    const uid = Number(formOp.idUsuario);
+                    if (!uid) { setError('ID Usuario inválido.'); return; }
+                    if ((formOp.rolComercio === 'ADMIN_SEDE_COMERCIO' || formOp.rolComercio === 'CAJERO') && !formOp.idEstablecimiento) { setError('Sede obligatoria para este rol.'); return; }
+                    setSavingOp(true);
+                    try {
+                      const body = { idUsuario: uid, rolComercio: formOp.rolComercio, idEstablecimiento: formOp.idEstablecimiento ? Number(formOp.idEstablecimiento) : null };
+                      if (editOpId) {
+                        await put(`/api/comercios-aliados/admin/usuarios-operativos/${editOpId}`, body);
+                      } else {
+                        await post(`/api/comercios-aliados/admin/${selected.idComercioAliado}/usuarios-operativos`, body);
+                      }
+                      const r = await get<any>(`/api/comercios-aliados/admin/${selected.idComercioAliado}/usuarios-operativos`);
+                      setUsuariosOp(r.data ?? []);
+                      setShowFormOp(false); setEditOpId(null);
+                      setMsg(editOpId ? 'Usuario operativo actualizado.' : 'Usuario operativo creado.');
+                    } catch(e) { setError((e as Error).message); }
+                    finally { setSavingOp(false); }
+                  }, 'primary', savingOp)}
+                </div>
+              )}
+              {usuariosOp.length === 0 ? (
+                <p style={{ color:'#718096', fontSize:'0.87rem' }}>Sin usuarios operativos registrados.</p>
+              ) : (
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.82rem' }}>
+                  <thead><tr>{['ID','Usuario','Rol','Sede','Estado',''].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {usuariosOp.map(u => (
+                      <tr key={u.idComercioUsuario}>
+                        <td style={tdStyle} className="mono">{u.idComercioUsuario}</td>
+                        <td style={tdStyle} className="mono">{u.nombreUsuario}</td>
+                        <td style={tdStyle}><span className={`badge ${u.rolComercio === 'ADMIN_COMERCIO' ? 'badge-ok' : u.rolComercio === 'ADMIN_SEDE_COMERCIO' ? 'badge-warn' : 'badge-info'}`}>{u.rolComercio}</span></td>
+                        <td style={tdStyle}>{u.nombreEstablecimiento ?? '—'}</td>
+                        <td style={tdStyle}>{estadoBadge(u.estado)}</td>
+                        <td style={tdStyle}>
+                          <button className="btn-link" style={{ fontSize:'0.8rem' }} onClick={() => {
+                            setEditOpId(u.idComercioUsuario);
+                            setFormOp({ idUsuario: String(u.idUsuario), rolComercio: u.rolComercio, idEstablecimiento: u.idEstablecimiento ? String(u.idEstablecimiento) : '' });
+                            setShowFormOp(true);
+                          }}>Editar</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
 
             {/* Disponibilidad ventas */}

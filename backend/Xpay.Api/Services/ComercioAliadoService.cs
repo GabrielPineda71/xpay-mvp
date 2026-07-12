@@ -20,7 +20,7 @@ public class ComercioAliadoService
     private static readonly HashSet<string> TiposDocArchivo  = [
         "CONTRATO","CAMARA_COMERCIO","RUT","DOCUMENTO_REPRESENTANTE","FORMULARIO_SOLICITUD"
     ];
-    private static readonly HashSet<string> RolesSolicitados  = ["ADMIN_COMERCIO","CAJERO"];
+    private static readonly HashSet<string> RolesSolicitados  = ["ADMIN_COMERCIO","ADMIN_SEDE_COMERCIO","CAJERO"];
     private static readonly HashSet<string> ContentTypesOk    = ["application/pdf","image/jpeg","image/png","image/jpg"];
     private static readonly HashSet<string> ExtensionesOk     = [".pdf",".jpg",".jpeg",".png"];
     private const long MaxFileBytes = 5 * 1024 * 1024; // 5 MB
@@ -301,7 +301,9 @@ public class ComercioAliadoService
         await ExistirComercioAsync(idComercioAliado);
         if (string.IsNullOrWhiteSpace(req.Nombres)) throw new InvalidOperationException("nombres es obligatorio.");
         var rol = (req.RolSolicitado ?? string.Empty).Trim().ToUpperInvariant();
-        if (!RolesSolicitados.Contains(rol)) throw new InvalidOperationException($"rol_solicitado inválido: {rol}. Valores: ADMIN_COMERCIO, CAJERO.");
+        if (!RolesSolicitados.Contains(rol)) throw new InvalidOperationException($"rol_solicitado inválido: {rol}. Valores: ADMIN_COMERCIO, ADMIN_SEDE_COMERCIO, CAJERO.");
+        if (rol is "ADMIN_SEDE_COMERCIO" or "CAJERO" && !req.IdEstablecimiento.HasValue)
+            throw new InvalidOperationException($"id_establecimiento es obligatorio para rol {rol}.");
 
         var now = DateTime.UtcNow;
         var u = new ComercioUsuarioSolicitado

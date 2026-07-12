@@ -98,6 +98,20 @@ interface VentaNoDisponible {
   estado:                   string;
 }
 
+interface ComercioScope {
+  idUsuario:               number;
+  rolComercio:             string;
+  idComercioAliado:        number;
+  idComercioExistente?:    number;
+  idEstablecimiento?:      number;
+  puedeVerTodoComercio:    boolean;
+  puedeDisponerRecursos:   boolean;
+  puedeLiquidarAnticipado: boolean;
+  puedeEnviarBreb:         boolean;
+  puedeAnularVentasDiaActual: boolean;
+  puedeGenerarQr:          boolean;
+}
+
 export function MiComercioPage() {
   const { user } = useAuth();
   const demoInfo = user ? DEMO_COMERCIO_MAP[user.usuario] : undefined;
@@ -123,6 +137,9 @@ export function MiComercioPage() {
   const [brebRetValor, setBrebRetValor] = useState('');
   const [brebRetBusy,  setBrebRetBusy]  = useState(false);
   const [brebRetMsg,   setBrebRetMsg]   = useState<Msg | null>(null);
+
+  // ── Scope operativo ───────────────────────────────────────────────────────
+  const [scope, setScope] = useState<ComercioScope | null>(null);
 
   // ── Disponibilidad ventas ─────────────────────────────────────────────────
   const [dispResumen,   setDispResumen]   = useState<ResumenDisponibilidad | null>(null);
@@ -163,6 +180,12 @@ export function MiComercioPage() {
 
   useEffect(() => {
     void loadData();
+    void (async () => {
+      try {
+        const r = await get<{ success: boolean; data: ComercioScope | null }>('/api/comercio/mi-scope');
+        setScope(r.data ?? null);
+      } catch { /* non-critical */ }
+    })();
     if (demoInfo) {
       void (async () => {
         try {
@@ -307,6 +330,7 @@ export function MiComercioPage() {
         {resumen?.nombreComercial ?? 'Cargando...'}
         {' · '}idComercio #{demoInfo.idComercio}
         {' · '}<span className="badge badge-info">QA / Demo</span>
+        {scope && <>{' · '}<span className="badge badge-ok">{scope.rolComercio}</span></>}
       </p>
 
       {loading ? (
@@ -529,7 +553,7 @@ export function MiComercioPage() {
       ) : null}
 
       {/* ── DISPONIBILIDAD VENTAS (liquidación anticipada) ──────────────── */}
-      {dispResumen && (
+      {(scope == null || scope.puedeLiquidarAnticipado) && dispResumen && (
         <>
           <hr style={{ margin: '1.5rem 0', borderColor: '#e2e8f0' }} />
           <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', color: '#2d3748' }}>Disponibilidad de ventas</h3>
@@ -637,14 +661,16 @@ export function MiComercioPage() {
       )}
 
       {/* ── RETIRAR SALDO DEL COMERCIO (Bre-B) ──────────────────────────── */}
-      <hr style={{ margin: '1.5rem 0', borderColor: '#e2e8f0' }} />
+      {/* Visible only for ADMIN_COMERCIO (puedeEnviarBreb) or when scope not loaded (legacy) */}
+      {(scope == null || scope.puedeEnviarBreb) && <hr style={{ margin: '1.5rem 0', borderColor: '#e2e8f0' }} />}
+      {(scope == null || scope.puedeEnviarBreb) && <>
       <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem', color: '#2d3748' }}>Retirar saldo del comercio</h3>
       <div className="breb-section">
         <span className="breb-sandbox-badge">Sandbox Passport — retiro simulado, sin dinero real</span>
 
         <div className="breb-status-card">
           <div className="breb-status-row">
-            <span className="breb-status-label">Llave Bre-B comercio:</span>
+            <span className="breb-status-label">Llave Bre-B del comercio aliado:</span>
             {brebLlave ? (
               <>
                 <span className={`breb-badge breb-badge-${brebLlave.estado.toLowerCase().replace(/_/g, '-')}`}>
@@ -682,7 +708,7 @@ export function MiComercioPage() {
             />
           </label>
           <p className="breb-confirm-text">
-            Esta llave debe corresponder a la cuenta bancaria del comercio en Coopcentral.
+            Esta es la llave Bre-B del comercio aliado como destinatario. XPAY realizará el pago desde su cuenta bancaria operativa en Coopcentral.
           </p>
           <button type="submit" className="btn-breb" disabled={brebRegBusy || !brebKeyValue.trim()}>
             {brebRegBusy ? 'Registrando...' : brebLlave ? 'Actualizar llave' : 'Registrar llave'}
@@ -740,6 +766,13 @@ export function MiComercioPage() {
           </>
         )}
       </div>
+      </>}
+
+      {scope && !scope.puedeEnviarBreb && (
+        <p style={{ fontSize:'0.82rem', color:'#a0aec0', margin:'1.5rem 0 0' }}>
+          Tu rol ({scope.rolComercio}) no tiene acceso a la sección de retiros Bre-B.
+        </p>
+      )}
 
       <p className="user-wallet-footer">
         Ambiente QA/Demo · datos ficticios · sin dinero real · sin producción

@@ -12,11 +12,13 @@ public class ComerciosAliadosController : ControllerBase
 {
     private readonly ComercioAliadoService             _svc;
     private readonly ComercioDisponibilidadService     _disp;
+    private readonly ComercioScopeService              _scope;
 
-    public ComerciosAliadosController(ComercioAliadoService svc, ComercioDisponibilidadService disp)
+    public ComerciosAliadosController(ComercioAliadoService svc, ComercioDisponibilidadService disp, ComercioScopeService scope)
     {
-        _svc  = svc;
-        _disp = disp;
+        _svc   = svc;
+        _disp  = disp;
+        _scope = scope;
     }
 
     private bool TryGetAdminId(out long id) =>
@@ -314,5 +316,56 @@ public class ComerciosAliadosController : ControllerBase
         catch (KeyNotFoundException ex)      { return NotFound(new { success = false, message = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno liberando fondos." }); }
+    }
+
+    // ── Usuarios operativos ────────────────────────────────────────────────────
+
+    [HttpGet("{id:long}/usuarios-operativos")]
+    public async Task<IActionResult> ListarUsuariosOperativos(long id)
+    {
+        try { return Ok(new { success = true, data = await _scope.ListarUsuariosOperativosAsync(id) }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    [HttpPost("{id:long}/usuarios-operativos")]
+    public async Task<IActionResult> CrearUsuarioOperativo(long id, [FromBody] CrearComercioUsuarioRequest req)
+    {
+        if (!TryGetAdminId(out var adminId)) return Unauthorized(new { success = false, message = "Token inválido." });
+        try { return Ok(new { success = true, data = await _scope.CrearUsuarioOperativoAsync(id, req, adminId) }); }
+        catch (KeyNotFoundException ex)      { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno creando usuario operativo." }); }
+    }
+
+    [HttpPut("usuarios-operativos/{idComercioUsuario:long}")]
+    public async Task<IActionResult> ActualizarUsuarioOperativo(long idComercioUsuario, [FromBody] ActualizarComercioUsuarioRequest req)
+    {
+        if (!TryGetAdminId(out var adminId)) return Unauthorized(new { success = false, message = "Token inválido." });
+        try { return Ok(new { success = true, data = await _scope.ActualizarUsuarioOperativoAsync(idComercioUsuario, req, adminId) }); }
+        catch (KeyNotFoundException ex)      { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno actualizando usuario operativo." }); }
+    }
+
+    // ── Contexto ventas ────────────────────────────────────────────────────────
+
+    [HttpGet("{id:long}/ventas-contexto")]
+    public async Task<IActionResult> ListarVentasContexto(long id)
+    {
+        try { return Ok(new { success = true, data = await _scope.ListarVentasContextoAsync(id) }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    [HttpPost("ventas-contexto/backfill-demo")]
+    public async Task<IActionResult> BackfillDemoContexto([FromBody] BackfillDemoContextoRequest req)
+    {
+        if (!TryGetAdminId(out _)) return Unauthorized(new { success = false, message = "Token inválido." });
+        try
+        {
+            var count = await _scope.BackfillDemoContextoAsync(req.IdComercioAliado, req.IdComercioExistente, req.IdEstablecimiento);
+            return Ok(new { success = true, message = $"{count} ventas backfilled.", count });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno en backfill." }); }
     }
 }
