@@ -73,6 +73,31 @@ interface BrebRetiro {
   motivoRechazo?:    string;
 }
 
+interface ResumenDisponibilidad {
+  totalNoDisponibleBruto:          number;
+  totalNoDisponibleNetoProgramado: number;
+  totalDisponibleBruto:            number;
+  totalLiquidado:                  number;
+  cantidadNoDisponible:            number;
+  proximaFechaDisponibilidad?:     string;
+  valorEstimadoProximaLiberacion:  number;
+}
+
+interface VentaNoDisponible {
+  idDisponibilidad:         number;
+  idVentaQr:                number;
+  valorBruto:               number;
+  valorDescuento:           number;
+  valorNetoProgramado:      number;
+  diasDisponibilidad:       number;
+  fechaDisponibleProgramada:string;
+  diasFaltantes:            number;
+  tasaAnticipada:           number;
+  valorDescuentoAnticipado: number;
+  valorNetoSiLiquidaAhora:  number;
+  estado:                   string;
+}
+
 export function MiComercioPage() {
   const { user } = useAuth();
   const demoInfo = user ? DEMO_COMERCIO_MAP[user.usuario] : undefined;
@@ -98,6 +123,12 @@ export function MiComercioPage() {
   const [brebRetValor, setBrebRetValor] = useState('');
   const [brebRetBusy,  setBrebRetBusy]  = useState(false);
   const [brebRetMsg,   setBrebRetMsg]   = useState<Msg | null>(null);
+
+  // ── Disponibilidad ventas ─────────────────────────────────────────────────
+  const [dispResumen,   setDispResumen]   = useState<ResumenDisponibilidad | null>(null);
+  const [ventasNoDisp,  setVentasNoDisp]  = useState<VentaNoDisponible[]>([]);
+  const [liquidando,    setLiquidando]    = useState<number | null>(null);
+  const [dispMsg,       setDispMsg]       = useState<Msg | null>(null);
 
   // ── QR del comercio ───────────────────────────────────────────────────────
   const [qrComValor,   setQrComValor]   = useState('');
@@ -144,6 +175,18 @@ export function MiComercioPage() {
           setBrebLlave(llaveR.data);
           setBrebRetiros(retirosR.data ?? []);
         } catch { /* non-critical */ }
+      })();
+      void (async () => {
+        try {
+          const [resR, listR] = await Promise.all([
+            get<{ success: boolean; data: ResumenDisponibilidad }>(
+              `/api/comercio/ventas-disponibilidad/resumen?idComercio=${demoInfo.idComercio}`),
+            get<{ success: boolean; data: VentaNoDisponible[] }>(
+              `/api/comercio/ventas-no-disponibles?idComercio=${demoInfo.idComercio}`),
+          ]);
+          setDispResumen(resR.data);
+          setVentasNoDisp(listR.data ?? []);
+        } catch { /* non-critical — tablas pueden no existir aún */ }
       })();
     }
   }, [loadData, demoInfo]);
@@ -484,6 +527,114 @@ export function MiComercioPage() {
           </div>
         </>
       ) : null}
+
+      {/* ── DISPONIBILIDAD VENTAS (liquidación anticipada) ──────────────── */}
+      {dispResumen && (
+        <>
+          <hr style={{ margin: '1.5rem 0', borderColor: '#e2e8f0' }} />
+          <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', color: '#2d3748' }}>Disponibilidad de ventas</h3>
+          <div className="cards" style={{ marginBottom: '1rem' }}>
+            <div className="card" style={{ borderLeftColor: '#f6ad55' }}>
+              <div className="card-label">No disponibles</div>
+              <div className="card-value">{dispResumen.cantidadNoDisponible}</div>
+            </div>
+            <div className="card" style={{ borderLeftColor: '#f6ad55' }}>
+              <div className="card-label">Bruto retenido</div>
+              <div className="card-value" style={{ fontSize: '1.1rem' }}>{fmtMoney(dispResumen.totalNoDisponibleBruto)}</div>
+            </div>
+            <div className="card" style={{ borderLeftColor: '#4299e1' }}>
+              <div className="card-label">Neto programado</div>
+              <div className="card-value" style={{ fontSize: '1.1rem' }}>{fmtMoney(dispResumen.totalNoDisponibleNetoProgramado)}</div>
+            </div>
+            <div className="card" style={{ borderLeftColor: '#68d391' }}>
+              <div className="card-label">Ya liquidado</div>
+              <div className="card-value" style={{ fontSize: '1.1rem', color:'#276749' }}>{fmtMoney(dispResumen.totalLiquidado)}</div>
+            </div>
+          </div>
+          {dispResumen.proximaFechaDisponibilidad && (
+            <p style={{ fontSize: '0.84rem', color: '#4a5568', marginBottom: '1rem' }}>
+              Próxima liberación automática: <strong>{dispResumen.proximaFechaDisponibilidad}</strong> · valor estimado: <strong>{fmtMoney(dispResumen.valorEstimadoProximaLiberacion)}</strong>
+            </p>
+          )}
+
+          {dispMsg && (
+            <div className={dispMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginBottom: '0.75rem' }}>{dispMsg.text}</div>
+          )}
+
+          {ventasNoDisp.length === 0 ? (
+            <p style={{ color: '#718096', fontSize: '0.87rem' }}>Sin ventas en periodo de indisponibilidad.</p>
+          ) : (
+            <div className="table-wrapper">
+              <div className="table-title">Ventas no disponibles — Liquidar anticipadamente</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>#Venta</th>
+                      <th>Bruto</th>
+                      <th>Neto prog.</th>
+                      <th>Días falt.</th>
+                      <th>Tasa ant.</th>
+                      <th>Neto si liquida ahora</th>
+                      <th>Disponible el</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ventasNoDisp.map(v => (
+                      <tr key={v.idDisponibilidad}>
+                        <td className="mono">{v.idVentaQr}</td>
+                        <td className="mono">{fmtMoney(v.valorBruto)}</td>
+                        <td className="mono">{fmtMoney(v.valorNetoProgramado)}</td>
+                        <td className="mono">{v.diasFaltantes}</td>
+                        <td className="mono">{v.tasaAnticipada}%</td>
+                        <td className="credit">{fmtMoney(v.valorNetoSiLiquidaAhora)}</td>
+                        <td className="mono" style={{ fontSize: '0.8rem' }}>{v.fechaDisponibleProgramada.replace('T', ' ').slice(0, 16)}</td>
+                        <td>
+                          <button
+                            className="btn-confirm"
+                            style={{ fontSize: '0.78rem', padding: '0.25rem 0.7rem' }}
+                            disabled={liquidando === v.idDisponibilidad}
+                            onClick={async () => {
+                              if (!confirm(`¿Liquidar anticipadamente venta #${v.idVentaQr}?\nRecibirás ${fmtMoney(v.valorNetoSiLiquidaAhora)} (descuento de ${v.tasaAnticipada}%).`)) return;
+                              setLiquidando(v.idDisponibilidad);
+                              setDispMsg(null);
+                              try {
+                                const r = await post<{ success: boolean; data: any; message?: string }>(
+                                  `/api/comercio/ventas-no-disponibles/${v.idDisponibilidad}/liquidar-ahora?idComercio=${demoInfo.idComercio}`, {}
+                                );
+                                if (r.success) {
+                                  setDispMsg({ ok: true, text: `Venta #${v.idVentaQr} liquidada. Neto recibido: ${fmtMoney(r.data.valorNetoLiberado)}` });
+                                  // Refresh
+                                  const [rR, lR] = await Promise.all([
+                                    get<{ success: boolean; data: ResumenDisponibilidad }>(`/api/comercio/ventas-disponibilidad/resumen?idComercio=${demoInfo.idComercio}`),
+                                    get<{ success: boolean; data: VentaNoDisponible[] }>(`/api/comercio/ventas-no-disponibles?idComercio=${demoInfo.idComercio}`),
+                                  ]);
+                                  setDispResumen(rR.data);
+                                  setVentasNoDisp(lR.data ?? []);
+                                  await loadData(); // refresh wallet balance
+                                } else {
+                                  setDispMsg({ ok: false, text: r.message ?? 'Error liquidando.' });
+                                }
+                              } catch(e) {
+                                setDispMsg({ ok: false, text: (e as Error).message });
+                              } finally {
+                                setLiquidando(null);
+                              }
+                            }}
+                          >
+                            {liquidando === v.idDisponibilidad ? '...' : 'Liquidar ahora'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       {/* ── RETIRAR SALDO DEL COMERCIO (Bre-B) ──────────────────────────── */}
       <hr style={{ margin: '1.5rem 0', borderColor: '#e2e8f0' }} />

@@ -101,6 +101,39 @@ interface Compleitud {
   totalRequeridos: number;
 }
 
+interface CondicionNegociacion {
+  idCondicion: number;
+  idComercioAliado: number;
+  diasDisponibilidad: number;
+  porcentajeDescuento: number;
+  aplicaIva: boolean;
+  estado: string;
+  fechaInicio: string;
+  fechaFin?: string;
+  observaciones?: string;
+  createdAt: string;
+}
+
+interface DisponibilidadVenta {
+  idDisponibilidad: number;
+  idVentaQr: number;
+  valorBruto: number;
+  valorDescuento: number;
+  valorNetoProgramado: number;
+  diasDisponibilidad: number;
+  porcentajeDescuento: number;
+  fechaVenta: string;
+  fechaDisponibleProgramada: string;
+  diasFaltantes: number;
+  tasaAnticipada: number;
+  valorDescuentoAnticipado: number;
+  valorNetoSiLiquidaAhora: number;
+  estado: string;
+  tipoLiberacion?: string;
+  fechaLiberacion?: string;
+  valorNetoLiberado?: number;
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const ESTADOS        = ['BORRADOR','EN_REVISION','APROBADO','RECHAZADO','ACTIVO','INACTIVO'];
@@ -110,7 +143,7 @@ const TIPOS_DOC_ARCH = ['CONTRATO','CAMARA_COMERCIO','RUT','DOCUMENTO_REPRESENTA
 const ROLES_SOL      = ['ADMIN_COMERCIO','CAJERO'];
 
 type Vista      = 'lista' | 'crear' | 'editar' | 'detalle';
-type DetalleTab = 'datos' | 'representante' | 'establecimientos' | 'usuarios' | 'documentos' | 'convenio';
+type DetalleTab = 'datos' | 'representante' | 'establecimientos' | 'usuarios' | 'documentos' | 'convenio' | 'condiciones' | 'operativo';
 
 // ── Pequeños helpers de estilo ────────────────────────────────────────────────
 
@@ -236,6 +269,20 @@ export function ComerciosAliadosPage() {
   const [uploading,     setUploading]     = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Condiciones de negociación
+  const [condiciones,      setCondiciones]      = useState<CondicionNegociacion[]>([]);
+  const [showFormCond,     setShowFormCond]      = useState(false);
+  const [formCond, setFormCond] = useState({ diasDisponibilidad: '2', porcentajeDescuento: '3', aplicaIva: false, fechaInicio: new Date().toISOString().slice(0,10), fechaFin: '', observaciones: '' });
+  const [savingCond,       setSavingCond]        = useState(false);
+
+  // Vinculación comercio operativo
+  const [idComercioExistente, setIdComercioExistente] = useState('');
+  const [savingVinculo,       setSavingVinculo]        = useState(false);
+
+  // Disponibilidad admin
+  const [disponibilidad,  setDisponibilidad]  = useState<DisponibilidadVenta[]>([]);
+  const [liberando,       setLiberando]       = useState<number | null>(null);
+
   const limpiarMsg = () => { setError(''); setMsg(''); };
 
   // ── Carga lista ─────────────────────────────────────────────────────────────
@@ -257,13 +304,17 @@ export function ComerciosAliadosPage() {
     setSelected(c); setTab('datos'); limpiarMsg();
     setRepresentantes([]); setEstablecimientos([]);
     setUsuariosSolicitados([]); setDocumentos([]); setCompleitud(null);
+    setCondiciones([]); setDisponibilidad([]);
     setVista('detalle');
-    // Precargar datos sub-entidades
     const id = c.idComercioAliado;
     try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/representantes`); setRepresentantes(r.data); } catch { /**/ }
     try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/establecimientos`); setEstablecimientos(r.data); } catch { /**/ }
     try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/usuarios-solicitados`); setUsuariosSolicitados(r.data); } catch { /**/ }
     try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/documentos`); setDocumentos(r.data.documentos); setCompleitud(r.data.compleitud); } catch { /**/ }
+    try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/condiciones`); setCondiciones(r.data ?? []); } catch { /**/ }
+    if (c.idComercioExistente) {
+      try { const r = await get<any>(`/api/comercios-aliados/admin/${id}/disponibilidad`); setDisponibilidad(r.data ?? []); } catch { /**/ }
+    }
   };
 
   // ── Guardar comercio ────────────────────────────────────────────────────────
@@ -553,6 +604,7 @@ export function ComerciosAliadosPage() {
       ['establecimientos',`Sedes (${establecimientos.length})`],
       ['usuarios',`Usuarios (${usuariosSolicitados.length})`],
       ['documentos','Documentos'],['convenio','Convenio'],
+      ['condiciones','Condiciones'],['operativo','Operativo'],
     ];
 
     return (
@@ -838,6 +890,151 @@ export function ComerciosAliadosPage() {
               <div style={{ gridColumn:'1/-1' }}>
                 <span style={{ fontSize:'0.75rem', color:'#718096' }}>Condiciones comerciales</span>
                 <div style={{ fontSize:'0.87rem', whiteSpace:'pre-line' }}>{selected.condicionesComerciales}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Condiciones de negociación */}
+        {tab === 'condiciones' && (
+          <div>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1rem' }}>
+              <h3 style={{ margin:0 }}>Condiciones de negociación</h3>
+              {btn('+ Nueva condición', () => { setFormCond({ diasDisponibilidad:'2', porcentajeDescuento:'3', aplicaIva:false, fechaInicio:new Date().toISOString().slice(0,10), fechaFin:'', observaciones:'' }); setShowFormCond(true); }, 'secondary')}
+            </div>
+            {showFormCond && (
+              <div style={{ ...formStyle, marginBottom:'1.5rem', background:'#f7fafc', padding:'1rem', borderRadius:'8px', border:'1px solid #e2e8f0' }}>
+                {inp('Días disponibilidad *', formCond.diasDisponibilidad, v => setFormCond(p=>({...p,diasDisponibilidad:v})), 'number', true)}
+                {inp('Descuento (%) *', formCond.porcentajeDescuento, v => setFormCond(p=>({...p,porcentajeDescuento:v})), 'number', true)}
+                <label style={{ display:'flex', alignItems:'center', gap:'0.5rem', fontSize:'0.85rem', fontWeight:600 }}>
+                  <input type="checkbox" checked={formCond.aplicaIva} onChange={e => setFormCond(p=>({...p,aplicaIva:e.target.checked}))} />
+                  Aplica IVA al descuento
+                </label>
+                {inp('Fecha inicio *', formCond.fechaInicio, v => setFormCond(p=>({...p,fechaInicio:v})), 'date', true)}
+                {inp('Fecha fin (opcional)', formCond.fechaFin, v => setFormCond(p=>({...p,fechaFin:v})), 'date')}
+                {inp('Observaciones', formCond.observaciones, v => setFormCond(p=>({...p,observaciones:v})))}
+                <div style={{ display:'flex', gap:'0.75rem' }}>
+                  {btn(savingCond ? 'Guardando...' : 'Guardar', async () => {
+                    setSavingCond(true);
+                    try {
+                      await post<any>(`/api/comercios-aliados/admin/${selected.idComercioAliado}/condiciones`, {
+                        diasDisponibilidad: Number(formCond.diasDisponibilidad),
+                        porcentajeDescuento: Number(formCond.porcentajeDescuento),
+                        aplicaIva: formCond.aplicaIva,
+                        fechaInicio: formCond.fechaInicio,
+                        fechaFin: formCond.fechaFin || null,
+                        observaciones: formCond.observaciones || null,
+                      });
+                      const r = await get<any>(`/api/comercios-aliados/admin/${selected.idComercioAliado}/condiciones`);
+                      setCondiciones(r.data ?? []);
+                      setShowFormCond(false);
+                      setMsg('Condición creada.');
+                    } catch(e) { setError((e as Error).message); }
+                    finally { setSavingCond(false); }
+                  }, 'primary', savingCond)}
+                  {btn('Cancelar', () => setShowFormCond(false), 'secondary')}
+                </div>
+              </div>
+            )}
+            {condiciones.length === 0 ? <p style={{ color:'#718096' }}>Sin condiciones registradas.</p> : (
+              <div style={{ overflowX:'auto' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.82rem' }}>
+                  <thead><tr>{['Días disp.','Descuento %','IVA','Estado','Inicio','Fin','Obs.'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {condiciones.map(c => (
+                      <tr key={c.idCondicion}>
+                        <td style={tdStyle} className="mono">{c.diasDisponibilidad}</td>
+                        <td style={tdStyle} className="mono">{c.porcentajeDescuento}%</td>
+                        <td style={tdStyle}>{c.aplicaIva ? 'Sí' : 'No'}</td>
+                        <td style={tdStyle}>{estadoBadge(c.estado)}</td>
+                        <td style={tdStyle} className="mono">{c.fechaInicio}</td>
+                        <td style={tdStyle} className="mono">{c.fechaFin ?? '—'}</td>
+                        <td style={tdStyle}>{c.observaciones ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Operativo (vinculación + disponibilidad) */}
+        {tab === 'operativo' && (
+          <div>
+            {/* Vincular comercio */}
+            <div style={{ background:'#f7fafc', border:'1px solid #e2e8f0', borderRadius:'8px', padding:'1rem 1.25rem', marginBottom:'1.5rem' }}>
+              <h3 style={{ margin:'0 0 0.75rem', fontSize:'1rem' }}>Comercio operativo vinculado</h3>
+              <div style={{ marginBottom:'0.5rem', fontSize:'0.87rem' }}>
+                {selected.idComercioExistente
+                  ? <span>ID Comercio: <strong className="mono">{selected.idComercioExistente}</strong></span>
+                  : <span style={{ color:'#e53e3e' }}>Sin vincular</span>}
+              </div>
+              <div style={{ display:'flex', gap:'0.75rem', alignItems:'center', flexWrap:'wrap' }}>
+                {inp('ID Comercio operativo', idComercioExistente, setIdComercioExistente, 'number')}
+                {btn(savingVinculo ? 'Guardando...' : 'Vincular', async () => {
+                  const idOp = Number(idComercioExistente);
+                  if (!idOp) { setError('Ingresa un ID válido.'); return; }
+                  setSavingVinculo(true);
+                  try {
+                    await post<any>(`/api/comercios-aliados/admin/${selected.idComercioAliado}/vincular-operativo`, { idComercioExistente: idOp });
+                    setSelected(prev => prev ? { ...prev, idComercioExistente: idOp } : prev);
+                    setMsg('Comercio operativo vinculado.');
+                    setIdComercioExistente('');
+                    // Load disponibilidad now that it's linked
+                    const r = await get<any>(`/api/comercios-aliados/admin/${selected.idComercioAliado}/disponibilidad`);
+                    setDisponibilidad(r.data ?? []);
+                  } catch(e) { setError((e as Error).message); }
+                  finally { setSavingVinculo(false); }
+                }, 'primary', savingVinculo)}
+              </div>
+            </div>
+
+            {/* Disponibilidad ventas */}
+            <h3 style={{ margin:'0 0 0.75rem', fontSize:'1rem' }}>Disponibilidad de ventas QR</h3>
+            {!selected.idComercioExistente ? (
+              <p style={{ color:'#718096' }}>Vincula primero el comercio operativo para ver la disponibilidad.</p>
+            ) : disponibilidad.length === 0 ? (
+              <p style={{ color:'#718096' }}>Sin ventas en disponibilidad.</p>
+            ) : (
+              <div style={{ overflowX:'auto' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'0.82rem' }}>
+                  <thead>
+                    <tr>{['ID Venta','Bruto','Dto. Conv.','Neto prog.','Días falt.','Tasa ant.','Neto si libera','Estado',''].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {disponibilidad.map(d => (
+                      <tr key={d.idDisponibilidad}>
+                        <td style={tdStyle} className="mono">{d.idVentaQr}</td>
+                        <td style={tdStyle} className="mono">${d.valorBruto.toLocaleString()}</td>
+                        <td style={tdStyle} className="mono">${d.valorDescuento.toLocaleString()}</td>
+                        <td style={tdStyle} className="mono">${d.valorNetoProgramado.toLocaleString()}</td>
+                        <td style={tdStyle} className="mono">{d.diasFaltantes}</td>
+                        <td style={tdStyle} className="mono">{d.tasaAnticipada}%</td>
+                        <td style={tdStyle} className="mono">${d.valorNetoSiLiquidaAhora.toLocaleString()}</td>
+                        <td style={tdStyle}>{estadoBadge(d.estado)}</td>
+                        <td style={tdStyle}>
+                          {d.estado === 'NO_DISPONIBLE' && (
+                            <button className="btn-link" style={{ fontSize:'0.8rem', color:'#38a169' }}
+                              disabled={liberando === d.idDisponibilidad}
+                              onClick={async () => {
+                                if (!confirm(`¿Liberar manualmente venta #${d.idVentaQr}?`)) return;
+                                setLiberando(d.idDisponibilidad);
+                                try {
+                                  await post<any>(`/api/comercios-aliados/admin/disponibilidad/${d.idDisponibilidad}/liberar`, {});
+                                  setMsg(`Venta #${d.idVentaQr} liberada.`);
+                                  const r = await get<any>(`/api/comercios-aliados/admin/${selected.idComercioAliado}/disponibilidad`);
+                                  setDisponibilidad(r.data ?? []);
+                                } catch(e) { setError((e as Error).message); }
+                                finally { setLiberando(null); }
+                              }}>{liberando === d.idDisponibilidad ? '...' : 'Liberar'}</button>
+                          )}
+                          {d.estado === 'LIQUIDADA_ANTICIPADA' && <span style={{ color:'#38a169', fontSize:'0.8rem' }}>Liquidada</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
