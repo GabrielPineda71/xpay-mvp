@@ -21,7 +21,10 @@ public class ComercioLiquidacionAutomaticaService
     }
 
     public async Task<LiquidacionAutomaticaResult> LiquidarVentasVencidasAsync(
-        DateTime fechaCorte, long? soloComercioAliadoId)
+        DateTime    fechaCorte,
+        long?       soloComercioAliadoId,
+        long?       soloIdDisponibilidad = null,
+        long?       actorId = null)
     {
         var query = _db.ComercioVentasQrDisponibilidad
             .Where(d => d.Estado == "NO_DISPONIBLE" && d.FechaDisponibleProgramada <= fechaCorte);
@@ -29,13 +32,16 @@ public class ComercioLiquidacionAutomaticaService
         if (soloComercioAliadoId.HasValue)
             query = query.Where(d => d.IdComercioAliado == soloComercioAliadoId.Value);
 
+        if (soloIdDisponibilidad.HasValue)
+            query = query.Where(d => d.IdDisponibilidad == soloIdDisponibilidad.Value);
+
         var pendientes = await query
             .Select(d => new { d.IdDisponibilidad, d.IdVentaQr })
             .ToListAsync();
 
         _logger.LogInformation(
-            "Liquidación automática iniciada: {Count} ventas vencidas al corte {Corte}",
-            pendientes.Count, fechaCorte);
+            "Liquidación automática iniciada: {Count} ventas vencidas al corte {Corte}, actor={Actor}",
+            pendientes.Count, fechaCorte, actorId?.ToString() ?? "sistema");
 
         var resultados = new List<ResultadoLiquidacionIndividual>();
         var errores    = new List<ErrorLiquidacionIndividual>();
@@ -44,7 +50,7 @@ public class ComercioLiquidacionAutomaticaService
         {
             try
             {
-                var r = await _disp.LiquidarAutomaticaAsync(item.IdDisponibilidad);
+                var r = await _disp.LiquidarAutomaticaAsync(item.IdDisponibilidad, actorId);
                 resultados.Add(new ResultadoLiquidacionIndividual(
                     item.IdDisponibilidad,
                     r.IdVentaQr,
@@ -55,11 +61,15 @@ public class ComercioLiquidacionAutomaticaService
             }
             catch (Exception ex)
             {
+                var inner   = ex.InnerException?.Message ?? string.Empty;
+                var mensaje = string.IsNullOrEmpty(inner) ? ex.Message : $"{ex.Message} | Inner: {inner}";
+
                 _logger.LogError(ex,
-                    "Error liquidando automáticamente disp={IdDisp} venta={IdVenta}",
-                    item.IdDisponibilidad, item.IdVentaQr);
+                    "Error liquidando automáticamente disp={IdDisp} venta={IdVenta}: {Msg}",
+                    item.IdDisponibilidad, item.IdVentaQr, mensaje);
+
                 errores.Add(new ErrorLiquidacionIndividual(
-                    item.IdDisponibilidad, item.IdVentaQr, ex.Message));
+                    item.IdDisponibilidad, item.IdVentaQr, mensaje));
             }
         }
 
@@ -73,6 +83,7 @@ public class ComercioLiquidacionAutomaticaService
             resultados.Sum(r => r.ValorNeto),
             resultados.Sum(r => r.ValorDescuento),
             resultados.Select(r => r.IdVentaQr).ToList(),
+            resultados,
             errores,
             fechaCorte.ToString("yyyy-MM-dd HH:mm:ss"));
     }

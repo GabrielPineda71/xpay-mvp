@@ -190,9 +190,9 @@ public class ComercioDisponibilidadService
         return await EjecutarLiberacionAsync(idDisponibilidad, adminId, esAnticipada: false);
     }
 
-    public async Task<LiquidarAhoraResponse> LiquidarAutomaticaAsync(long idDisponibilidad)
+    public async Task<LiquidarAhoraResponse> LiquidarAutomaticaAsync(long idDisponibilidad, long? actorId = null)
     {
-        return await EjecutarLiberacionAsync(idDisponibilidad, 0, esAnticipada: false, tipoOverride: "AUTOMATICA");
+        return await EjecutarLiberacionAsync(idDisponibilidad, actorId, esAnticipada: false, tipoOverride: "AUTOMATICA");
     }
 
     // ── Disponibilidad ventas (comercio) ─────────────────────────────────────
@@ -261,7 +261,7 @@ public class ComercioDisponibilidadService
     // ── Implementación central de liberación ─────────────────────────────────
 
     private async Task<LiquidarAhoraResponse> EjecutarLiberacionAsync(
-        long idDisponibilidad, long actorId, bool esAnticipada, string? tipoOverride = null)
+        long idDisponibilidad, long? actorId, bool esAnticipada, string? tipoOverride = null)
     {
         await using var tx = await _db.Database.BeginTransactionAsync();
         try

@@ -2,8 +2,9 @@ namespace Xpay.Api.DTOs;
 
 public class EjecutarLiquidacionAutomaticaRequest
 {
-    public DateTime? FechaCorte           { get; set; }
-    public long?     SoloComercioAliadoId { get; set; }
+    public DateTime? FechaCorte            { get; set; }
+    public long?     SoloComercioAliadoId  { get; set; }
+    public long?     SoloIdDisponibilidad  { get; set; }
 }
 
 public record ResultadoLiquidacionIndividual(
@@ -22,11 +23,12 @@ public record ErrorLiquidacionIndividual(
 );
 
 public record LiquidacionAutomaticaResult(
-    int                                 CantidadProcesadas,
-    decimal                             TotalBruto,
-    decimal                             TotalNetoLiberado,
-    decimal                             TotalDescuento,
-    List<long>                          IdsVentasLiquidadas,
-    List<ErrorLiquidacionIndividual>    Errores,
-    string                              FechaCorteUsada
+    int                                   CantidadProcesadas,
+    decimal                               TotalBruto,
+    decimal                               TotalNetoLiberado,
+    decimal                               TotalDescuento,
+    List<long>                            IdsVentasLiquidadas,
+    List<ResultadoLiquidacionIndividual>  Procesadas,
+    List<ErrorLiquidacionIndividual>      Errores,
+    string                                FechaCorteUsada
 );

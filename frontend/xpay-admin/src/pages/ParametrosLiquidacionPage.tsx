@@ -9,14 +9,30 @@ interface Parametro {
   estado:              string;
 }
 
+interface LiquidacionProcesada {
+  idDisponibilidad:  number;
+  idVentaQr:         number;
+  valorBruto:        number;
+  valorDescuento:    number;
+  valorNeto:         number;
+  idTransaccionLedger: number;
+}
+
+interface LiquidacionError {
+  idDisponibilidad: number;
+  idVentaQr:        number;
+  mensaje:          string;
+}
+
 interface LiquidacionResult {
-  cantidadProcesadas:   number;
-  totalBruto:           number;
-  totalNetoLiberado:    number;
-  totalDescuento:       number;
-  idsVentasLiquidadas:  number[];
-  errores:              { idDisponibilidad: number; idVentaQr: number; mensaje: string }[];
-  fechaCorteUsada:      string;
+  cantidadProcesadas:  number;
+  totalBruto:          number;
+  totalNetoLiberado:   number;
+  totalDescuento:      number;
+  idsVentasLiquidadas: number[];
+  procesadas:          LiquidacionProcesada[];
+  errores:             LiquidacionError[];
+  fechaCorteUsada:     string;
 }
 
 type Msg = { ok: boolean; text: string };
@@ -29,11 +45,12 @@ export function ParametrosLiquidacionPage() {
   const [saving,  setSaving]  = useState<number | null>(null);
   const [saveMsg, setSaveMsg] = useState<Record<number, Msg>>({});
 
-  const [liqFechaCorte, setLiqFechaCorte] = useState('');
-  const [liqComercioId, setLiqComercioId] = useState('');
-  const [liqBusy,       setLiqBusy]       = useState(false);
-  const [liqMsg,        setLiqMsg]        = useState<Msg | null>(null);
-  const [liqResult,     setLiqResult]     = useState<LiquidacionResult | null>(null);
+  const [liqFechaCorte,  setLiqFechaCorte]  = useState('');
+  const [liqComercioId,  setLiqComercioId]  = useState('');
+  const [liqDispId,      setLiqDispId]      = useState('');
+  const [liqBusy,        setLiqBusy]        = useState(false);
+  const [liqMsg,         setLiqMsg]         = useState<Msg | null>(null);
+  const [liqResult,      setLiqResult]      = useState<LiquidacionResult | null>(null);
 
   useEffect(() => { void loadParams(); }, []);
 
@@ -76,11 +93,17 @@ export function ParametrosLiquidacionPage() {
       const body: Record<string, unknown> = {};
       if (liqFechaCorte) body.fechaCorte = liqFechaCorte + 'T23:59:59';
       if (liqComercioId) body.soloComercioAliadoId = Number(liqComercioId);
+      if (liqDispId)     body.soloIdDisponibilidad  = Number(liqDispId);
       const r = await post<{ success: boolean; data: LiquidacionResult; message?: string }>(
         '/api/comercios-aliados/admin/liquidacion-automatica/ejecutar', body);
       if (r.success) {
         setLiqResult(r.data);
-        setLiqMsg({ ok: true, text: `Liquidación ejecutada: ${r.data.cantidadProcesadas} ventas procesadas.` });
+        const ok = r.data.cantidadProcesadas;
+        const err = r.data.errores.length;
+        setLiqMsg({
+          ok: err === 0,
+          text: `${ok} ventas procesadas${err > 0 ? ` · ${err} error(es)` : ''}`,
+        });
       } else {
         setLiqMsg({ ok: false, text: r.message ?? 'Error en liquidación.' });
       }
@@ -98,7 +121,7 @@ export function ParametrosLiquidacionPage() {
         La liquidación automática (vencida) no aplica descuento adicional.
       </p>
 
-      {/* Ejecutar liquidación automática */}
+      {/* ── Ejecutar liquidación automática ── */}
       <div style={{
         marginBottom: '2rem', background: '#f7fafc',
         border: '1px solid #e2e8f0', borderRadius: '8px', padding: '1rem',
@@ -109,62 +132,126 @@ export function ParametrosLiquidacionPage() {
         <p style={{ fontSize: '0.83rem', color: '#4a5568', margin: '0 0 0.75rem' }}>
           Procesa ventas con <code>estado = NO_DISPONIBLE</code> y{' '}
           <code>fecha_disponible_programada ≤ fecha_corte</code>.
-          Sin descuento anticipado · tipo <code>AUTOMATICA</code>.
+          Sin descuento anticipado · tipo <code>AUTOMATICA</code> · <code>creado_por = admin ejecutor</code>.
         </p>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.84rem' }}>
             Fecha de corte (opcional — default: ahora)
-            <input
-              type="date"
-              value={liqFechaCorte}
-              onChange={e => setLiqFechaCorte(e.target.value)}
-              style={{ maxWidth: '180px' }}
-            />
+            <input type="date" value={liqFechaCorte}
+              onChange={e => setLiqFechaCorte(e.target.value)} style={{ maxWidth: '180px' }} />
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.84rem' }}>
-            Solo comercio aliado ID (opcional)
-            <input
-              type="number"
-              value={liqComercioId}
+            Solo comercio aliado ID
+            <input type="number" value={liqComercioId}
               onChange={e => setLiqComercioId(e.target.value)}
-              placeholder="Todos"
-              style={{ maxWidth: '140px' }}
-            />
+              placeholder="Todos" style={{ maxWidth: '130px' }} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.84rem' }}>
+            Solo id_disponibilidad (prueba unitaria)
+            <input type="number" value={liqDispId}
+              onChange={e => setLiqDispId(e.target.value)}
+              placeholder="Todas" style={{ maxWidth: '150px' }} />
           </label>
           <button className="btn-confirm" onClick={() => void handleEjecutarLiquidacion()} disabled={liqBusy}>
             {liqBusy ? 'Ejecutando...' : 'Ejecutar liquidación'}
           </button>
         </div>
+
         {liqMsg && (
           <div className={liqMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginTop: '0.5rem' }}>
             {liqMsg.text}
           </div>
         )}
+
         {liqResult && (
-          <div style={{
-            marginTop: '0.75rem', fontSize: '0.83rem',
-            background: '#edf2f7', borderRadius: '6px', padding: '0.75rem',
-          }}>
-            <strong>Resultado</strong> · {liqResult.cantidadProcesadas} ventas ·
-            Bruto: {fmtMoney(liqResult.totalBruto)} ·
-            Neto liberado: {fmtMoney(liqResult.totalNetoLiberado)} ·
-            Descuento: {fmtMoney(liqResult.totalDescuento)} ·
-            Corte: {liqResult.fechaCorteUsada}
+          <div style={{ marginTop: '0.75rem' }}>
+            {/* Resumen totales */}
+            <div style={{
+              fontSize: '0.83rem', background: '#edf2f7',
+              borderRadius: '6px', padding: '0.6rem 0.75rem', marginBottom: '0.5rem',
+            }}>
+              <strong>Resumen</strong> · {liqResult.cantidadProcesadas} ventas ·
+              Bruto total: <strong>{fmtMoney(liqResult.totalBruto)}</strong> ·
+              Descuento: {fmtMoney(liqResult.totalDescuento)} ·
+              Neto liberado: <strong>{fmtMoney(liqResult.totalNetoLiberado)}</strong> ·
+              Corte: {liqResult.fechaCorteUsada}
+            </div>
+
+            {/* Tabla de procesadas */}
+            {liqResult.procesadas.length > 0 && (
+              <div className="table-wrapper" style={{ marginBottom: '0.5rem' }}>
+                <div className="table-title" style={{ fontSize: '0.82rem' }}>
+                  Ventas procesadas ({liqResult.procesadas.length})
+                </div>
+                <table style={{ fontSize: '0.8rem' }}>
+                  <thead>
+                    <tr>
+                      <th>#Venta</th>
+                      <th>#Disp</th>
+                      <th>Bruto</th>
+                      <th>Descuento</th>
+                      <th>Neto</th>
+                      <th>#Ledger</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {liqResult.procesadas.map(p => (
+                      <tr key={p.idDisponibilidad}>
+                        <td className="mono">{p.idVentaQr}</td>
+                        <td className="mono">{p.idDisponibilidad}</td>
+                        <td>{fmtMoney(p.valorBruto)}</td>
+                        <td>{fmtMoney(p.valorDescuento)}</td>
+                        <td className="credit">{fmtMoney(p.valorNeto)}</td>
+                        <td className="mono">{p.idTransaccionLedger}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Errores detallados */}
             {liqResult.errores.length > 0 && (
-              <div style={{ color: '#c53030', marginTop: '0.25rem' }}>
-                {liqResult.errores.length} error(es):{' '}
-                {liqResult.errores.map(e => `#${e.idVentaQr}: ${e.mensaje}`).join(' · ')}
+              <div style={{
+                background: '#fff5f5', border: '1px solid #fc8181',
+                borderRadius: '6px', padding: '0.6rem 0.75rem',
+              }}>
+                <div style={{ fontWeight: 600, color: '#c53030', fontSize: '0.83rem', marginBottom: '0.4rem' }}>
+                  {liqResult.errores.length} error(es)
+                </div>
+                <table style={{ fontSize: '0.78rem', width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '0.15rem 0.4rem' }}>#Venta</th>
+                      <th style={{ textAlign: 'left', padding: '0.15rem 0.4rem' }}>#Disp</th>
+                      <th style={{ textAlign: 'left', padding: '0.15rem 0.4rem' }}>Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {liqResult.errores.map(e => (
+                      <tr key={e.idDisponibilidad} style={{ verticalAlign: 'top' }}>
+                        <td style={{ padding: '0.15rem 0.4rem' }} className="mono">{e.idVentaQr}</td>
+                        <td style={{ padding: '0.15rem 0.4rem' }} className="mono">{e.idDisponibilidad}</td>
+                        <td style={{ padding: '0.15rem 0.4rem', color: '#c53030', wordBreak: 'break-word' }}>
+                          {e.mensaje}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
         )}
+
         <p style={{ fontSize: '0.78rem', color: '#a0aec0', margin: '0.75rem 0 0' }}>
-          Programación automática diaria: Azure Logic App → POST /api/comercios-aliados/admin/liquidacion-automatica/ejecutar
-          · 6:00 AM Colombia (11:00 UTC) · ver docs/COMERCIO_LIQUIDACION_AUTOMATICA.md
+          Programación diaria automática: Azure Logic App → POST
+          /api/comercios-aliados/admin/liquidacion-automatica/ejecutar ·
+          6:00 AM Colombia (11:00 UTC) · ver docs/COMERCIO_LIQUIDACION_AUTOMATICA.md
         </p>
       </div>
 
-      {/* Lista de parámetros */}
+      {/* ── Lista de parámetros ── */}
       {loading ? (
         <div className="loading">Cargando parámetros...</div>
       ) : err ? (

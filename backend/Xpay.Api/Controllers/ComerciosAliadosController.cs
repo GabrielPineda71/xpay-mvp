@@ -381,16 +381,22 @@ public class ComerciosAliadosController : ControllerBase
     public async Task<IActionResult> EjecutarLiquidacionAutomatica(
         [FromBody] EjecutarLiquidacionAutomaticaRequest? req)
     {
-        if (!TryGetAdminId(out _)) return Unauthorized(new { success = false, message = "Token inválido." });
+        if (!TryGetAdminId(out var adminId)) return Unauthorized(new { success = false, message = "Token inválido." });
         try
         {
             var fechaCorte = req?.FechaCorte ?? DateTime.UtcNow;
-            var result = await _liquidacion.LiquidarVentasVencidasAsync(fechaCorte, req?.SoloComercioAliadoId);
+            var result = await _liquidacion.LiquidarVentasVencidasAsync(
+                fechaCorte,
+                req?.SoloComercioAliadoId,
+                req?.SoloIdDisponibilidad,
+                actorId: adminId);
             return Ok(new { success = true, data = result });
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { success = false, message = $"Error en liquidación automática: {ex.Message}" });
+            var inner = ex.InnerException?.Message ?? string.Empty;
+            var msg   = string.IsNullOrEmpty(inner) ? ex.Message : $"{ex.Message} | Inner: {inner}";
+            return StatusCode(500, new { success = false, message = $"Error en liquidación automática: {msg}" });
         }
     }
 }
