@@ -10,15 +10,21 @@ namespace Xpay.Api.Controllers;
 [Route("api/comercios-aliados/admin")]
 public class ComerciosAliadosController : ControllerBase
 {
-    private readonly ComercioAliadoService             _svc;
-    private readonly ComercioDisponibilidadService     _disp;
-    private readonly ComercioScopeService              _scope;
+    private readonly ComercioAliadoService                    _svc;
+    private readonly ComercioDisponibilidadService            _disp;
+    private readonly ComercioScopeService                     _scope;
+    private readonly ComercioLiquidacionAutomaticaService     _liquidacion;
 
-    public ComerciosAliadosController(ComercioAliadoService svc, ComercioDisponibilidadService disp, ComercioScopeService scope)
+    public ComerciosAliadosController(
+        ComercioAliadoService svc,
+        ComercioDisponibilidadService disp,
+        ComercioScopeService scope,
+        ComercioLiquidacionAutomaticaService liquidacion)
     {
-        _svc   = svc;
-        _disp  = disp;
-        _scope = scope;
+        _svc         = svc;
+        _disp        = disp;
+        _scope       = scope;
+        _liquidacion = liquidacion;
     }
 
     private bool TryGetAdminId(out long id) =>
@@ -367,5 +373,24 @@ public class ComerciosAliadosController : ControllerBase
         }
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno en backfill." }); }
+    }
+
+    // ── Liquidación automática ─────────────────────────────────────────────────
+
+    [HttpPost("liquidacion-automatica/ejecutar")]
+    public async Task<IActionResult> EjecutarLiquidacionAutomatica(
+        [FromBody] EjecutarLiquidacionAutomaticaRequest? req)
+    {
+        if (!TryGetAdminId(out _)) return Unauthorized(new { success = false, message = "Token inválido." });
+        try
+        {
+            var fechaCorte = req?.FechaCorte ?? DateTime.UtcNow;
+            var result = await _liquidacion.LiquidarVentasVencidasAsync(fechaCorte, req?.SoloComercioAliadoId);
+            return Ok(new { success = true, data = result });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, message = $"Error en liquidación automática: {ex.Message}" });
+        }
     }
 }

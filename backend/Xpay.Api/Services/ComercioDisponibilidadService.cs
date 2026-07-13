@@ -190,17 +190,26 @@ public class ComercioDisponibilidadService
         return await EjecutarLiberacionAsync(idDisponibilidad, adminId, esAnticipada: false);
     }
 
+    public async Task<LiquidarAhoraResponse> LiquidarAutomaticaAsync(long idDisponibilidad)
+    {
+        return await EjecutarLiberacionAsync(idDisponibilidad, 0, esAnticipada: false, tipoOverride: "AUTOMATICA");
+    }
+
     // ── Disponibilidad ventas (comercio) ─────────────────────────────────────
 
-    public async Task<MiDisponibilidadResponse> GetMiDisponibilidadAsync(long idComercio)
+    public async Task<MiDisponibilidadResponse> GetMiDisponibilidadAsync(
+        long idComercio, DateTime? desde = null, DateTime? hasta = null)
     {
-        var disp = await _db.ComercioVentasQrDisponibilidad
-            .Where(d => d.IdComercioExistente == idComercio)
-            .ToListAsync();
+        var query = _db.ComercioVentasQrDisponibilidad
+            .Where(d => d.IdComercioExistente == idComercio);
+        if (desde.HasValue) query = query.Where(d => d.FechaVenta >= desde.Value);
+        if (hasta.HasValue) query = query.Where(d => d.FechaVenta <= hasta.Value.AddDays(1));
+
+        var disp = await query.ToListAsync();
 
         var now        = DateTime.UtcNow;
         var noDisp     = disp.Where(d => d.Estado == "NO_DISPONIBLE").ToList();
-        var liquidadas = disp.Where(d => d.Estado == "LIQUIDADA_ANTICIPADA").ToList();
+        var liquidadas = disp.Where(d => d.Estado == "LIQUIDADA_ANTICIPADA" || d.Estado == "DISPONIBLE").ToList();
 
         var proxima = noDisp
             .OrderBy(d => d.FechaDisponibleProgramada)
@@ -217,12 +226,15 @@ public class ComercioDisponibilidadService
         );
     }
 
-    public async Task<List<DisponibilidadVentaResponse>> ListarVentasNoDisponiblesAsync(long idComercio)
+    public async Task<List<DisponibilidadVentaResponse>> ListarVentasNoDisponiblesAsync(
+        long idComercio, DateTime? desde = null, DateTime? hasta = null)
     {
-        var items = await _db.ComercioVentasQrDisponibilidad
-            .Where(d => d.IdComercioExistente == idComercio && d.Estado == "NO_DISPONIBLE")
-            .OrderBy(d => d.FechaDisponibleProgramada)
-            .ToListAsync();
+        var query = _db.ComercioVentasQrDisponibilidad
+            .Where(d => d.IdComercioExistente == idComercio && d.Estado == "NO_DISPONIBLE");
+        if (desde.HasValue) query = query.Where(d => d.FechaVenta >= desde.Value);
+        if (hasta.HasValue) query = query.Where(d => d.FechaVenta <= hasta.Value.AddDays(1));
+
+        var items = await query.OrderBy(d => d.FechaDisponibleProgramada).ToListAsync();
 
         var now = DateTime.UtcNow;
         var result = new List<DisponibilidadVentaResponse>();
@@ -249,7 +261,7 @@ public class ComercioDisponibilidadService
     // ── Implementación central de liberación ─────────────────────────────────
 
     private async Task<LiquidarAhoraResponse> EjecutarLiberacionAsync(
-        long idDisponibilidad, long actorId, bool esAnticipada)
+        long idDisponibilidad, long actorId, bool esAnticipada, string? tipoOverride = null)
     {
         await using var tx = await _db.Database.BeginTransactionAsync();
         try
@@ -321,10 +333,12 @@ public class ComercioDisponibilidadService
                     ?? throw new InvalidOperationException("Cuenta 410202 no encontrada.");
             }
 
-            var tipoLiberacion = esAnticipada ? "ANTICIPADA_COMERCIO" : "MANUAL_ADMIN";
-            var desc = esAnticipada
-                ? $"Liquidación anticipada por comercio #{disp.IdComercioExistente}, venta #{disp.IdVentaQr}."
-                : $"Liberación manual admin, venta #{disp.IdVentaQr}.";
+            var tipoLiberacion = tipoOverride ?? (esAnticipada ? "ANTICIPADA_COMERCIO" : "MANUAL_ADMIN");
+            var desc = tipoLiberacion == "AUTOMATICA"
+                ? $"Liquidación automática programada, venta #{disp.IdVentaQr}."
+                : esAnticipada
+                    ? $"Liquidación anticipada por comercio #{disp.IdComercioExistente}, venta #{disp.IdVentaQr}."
+                    : $"Liberación manual admin, venta #{disp.IdVentaQr}.";
 
             // Crear transacción ledger
             var ledgerTx = new LedgerTransaccion
@@ -421,7 +435,7 @@ public class ComercioDisponibilidadService
             saldo.FechaActualizacion = now;
 
             // Actualizar disponibilidad
-            disp.Estado                        = "LIQUIDADA_ANTICIPADA";
+            disp.Estado                        = tipoLiberacion == "AUTOMATICA" ? "DISPONIBLE" : "LIQUIDADA_ANTICIPADA";
             disp.TipoLiberacion                = tipoLiberacion;
             disp.FechaLiberacion               = now;
             disp.PorcentajeDescuentoAnticipado = esAnticipada ? tasa : 0;

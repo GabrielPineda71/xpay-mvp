@@ -122,10 +122,13 @@ export function MiComercioPage() {
   const [loading,  setLoading]  = useState(true);
   const [dataErr,  setDataErr]  = useState<string | null>(null);
 
-  const [retValor, setRetValor] = useState('');
-  const [retObs,   setRetObs]   = useState('Solicitud retiro demo QA desde UI');
-  const [retBusy,  setRetBusy]  = useState(false);
-  const [retMsg,   setRetMsg]   = useState<Msg | null>(null);
+  // ── Filtros de fecha ─────────────────────────────────────────────────────
+  const defaultDesde = (() => {
+    const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10);
+  })();
+  const defaultHasta = new Date().toISOString().slice(0, 10);
+  const [fechaDesde, setFechaDesde] = useState(defaultDesde);
+  const [fechaHasta, setFechaHasta] = useState(defaultHasta);
 
   // ── Bre-B comercio ───────────────────────────────────────────────────────
   const [brebLlave,    setBrebLlave]    = useState<BrebLlave | null>(null);
@@ -161,8 +164,10 @@ export function MiComercioPage() {
     try {
       const [resumenResp, ventasResp, retirosResp] = await Promise.all([
         get<{ success: boolean; data: ResumenComercio }>(`/api/reportes/comercios/${demoInfo.idComercio}/resumen`),
-        get<{ success: boolean; data: { items?: VentaQr[] } | VentaQr[] }>(`/api/admin/ventas-qr?idComercio=${demoInfo.idComercio}&pageSize=10`),
-        get<{ success: boolean; data: { items?: RetiroComercio[] } | RetiroComercio[] }>(`/api/comercios/retiros?idComercio=${demoInfo.idComercio}&pageSize=10`),
+        get<{ success: boolean; data: { items?: VentaQr[] } | VentaQr[] }>(
+          `/api/admin/ventas-qr?idComercio=${demoInfo.idComercio}&pageSize=50&desde=${fechaDesde}&hasta=${fechaHasta}`),
+        get<{ success: boolean; data: { items?: RetiroComercio[] } | RetiroComercio[] }>(
+          `/api/comercios/retiros?idComercio=${demoInfo.idComercio}&pageSize=50&desde=${fechaDesde}&hasta=${fechaHasta}`),
       ]);
       setResumen(resumenResp.data);
 
@@ -176,7 +181,7 @@ export function MiComercioPage() {
     } finally {
       setLoading(false);
     }
-  }, [demoInfo]);
+  }, [demoInfo, fechaDesde, fechaHasta]);
 
   useEffect(() => {
     void loadData();
@@ -203,9 +208,9 @@ export function MiComercioPage() {
         try {
           const [resR, listR] = await Promise.all([
             get<{ success: boolean; data: ResumenDisponibilidad }>(
-              `/api/comercio/ventas-disponibilidad/resumen?idComercio=${demoInfo.idComercio}`),
+              `/api/comercio/ventas-disponibilidad/resumen?idComercio=${demoInfo.idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
             get<{ success: boolean; data: VentaNoDisponible[] }>(
-              `/api/comercio/ventas-no-disponibles?idComercio=${demoInfo.idComercio}`),
+              `/api/comercio/ventas-no-disponibles?idComercio=${demoInfo.idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
           ]);
           setDispResumen(resR.data);
           setVentasNoDisp(listR.data ?? []);
@@ -257,27 +262,6 @@ export function MiComercioPage() {
       setQrComCopied(true);
       setTimeout(() => setQrComCopied(false), 2000);
     } catch { /* clipboard not available */ }
-  }
-
-  async function handleSolicitarRetiro(e: FormEvent) {
-    e.preventDefault();
-    if (!resumen) return;
-    setRetBusy(true);
-    setRetMsg(null);
-    try {
-      const r = await post<{ success: boolean; message?: string }>('/api/comercios/solicitar-retiro', {
-        idComercio: demoInfo!.idComercio,
-        valor: Number(retValor),
-        medioRetiro: 'TRANSFERENCIA_BANCARIA',
-        observacion: retObs,
-      });
-      setRetMsg({ ok: r.success, text: r.message ?? (r.success ? 'Solicitud de retiro enviada.' : 'Error al solicitar retiro.') });
-      if (r.success) { setRetValor(''); await loadData(); }
-    } catch (e) {
-      setRetMsg({ ok: false, text: (e as Error).message });
-    } finally {
-      setRetBusy(false);
-    }
   }
 
   async function handleRegistrarLlaveComercio(e: FormEvent) {
@@ -370,64 +354,33 @@ export function MiComercioPage() {
             </div>
           </div>
 
-          {/* Solicitar retiro */}
-          <div className="action-row" style={{ marginBottom: '1.5rem' }}>
-            <div className="action-section">
-              <h3>Solicitar retiro</h3>
-              <form className="action-form" onSubmit={e => void handleSolicitarRetiro(e)}>
-                <label>
-                  Valor a retirar (COP ficticio)
-                  <input
-                    type="number"
-                    value={retValor}
-                    onChange={e => setRetValor(e.target.value)}
-                    required
-                    min={1}
-                    max={resumen.saldoDisponible || undefined}
-                    placeholder="Ingresa monto"
-                  />
-                </label>
-                <label>
-                  Observación
-                  <input
-                    type="text"
-                    value={retObs}
-                    onChange={e => setRetObs(e.target.value)}
-                    maxLength={200}
-                  />
-                </label>
-                <button
-                  className="btn-confirm"
-                  type="submit"
-                  disabled={retBusy || resumen.saldoDisponible <= 0}
-                >
-                  {retBusy ? 'Procesando...' : 'Solicitar retiro'}
-                </button>
-                {resumen.saldoDisponible <= 0 && (
-                  <p style={{ fontSize: '0.82rem', color: '#a0aec0', marginTop: '0.25rem' }}>
-                    Saldo $0 — requiere ventas liquidadas para habilitar retiro.
-                  </p>
-                )}
-              </form>
-              {retMsg && (
-                <div className={retMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginTop: '0.75rem' }}>
-                  {retMsg.text}
-                </div>
-              )}
-            </div>
-            <div className="action-section" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <h3>Flujo de liquidación QA</h3>
-              <ol style={{ paddingLeft: '1.25rem', fontSize: '0.9rem', color: '#4a5568', lineHeight: '1.8' }}>
-                <li>Usuario paga con QR → venta en <strong>CONTINGENCIA</strong></li>
-                <li>Admin liquida venta QR → estado <strong>LIQUIDADA</strong></li>
-                <li>Saldo del comercio aumenta</li>
-                <li>Comercio solicita retiro → estado <strong>PENDIENTE</strong></li>
-                <li>Admin confirma pago → estado <strong>PAGADO</strong></li>
-              </ol>
-              <p style={{ fontSize: '0.78rem', color: '#a0aec0', marginTop: '0.75rem' }}>
-                Datos ficticios · QA/Demo · sin dinero real
-              </p>
-            </div>
+          {/* Filtros de fecha */}
+          <div style={{
+            display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'flex-end',
+            marginBottom: '1.25rem', padding: '0.75rem 1rem',
+            background: '#f7fafc', border: '1px solid #e2e8f0', borderRadius: '8px',
+          }}>
+            <span style={{ fontSize: '0.85rem', color: '#4a5568', fontWeight: 600, alignSelf: 'center' }}>
+              Filtrar por fecha
+            </span>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', fontSize: '0.82rem' }}>
+              Desde
+              <input type="date" value={fechaDesde}
+                onChange={e => setFechaDesde(e.target.value)}
+                style={{ maxWidth: '160px' }} />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem', fontSize: '0.82rem' }}>
+              Hasta
+              <input type="date" value={fechaHasta}
+                onChange={e => setFechaHasta(e.target.value)}
+                style={{ maxWidth: '160px' }} />
+            </label>
+            <button className="btn-secondary" onClick={() => void loadData()}>
+              Actualizar
+            </button>
+            <span style={{ fontSize: '0.78rem', color: '#a0aec0', alignSelf: 'center' }}>
+              Aplica a ventas QR, retiros y disponibilidad
+            </span>
           </div>
 
           {/* QR del comercio */}
@@ -631,8 +584,8 @@ export function MiComercioPage() {
                                   setDispMsg({ ok: true, text: `Venta #${v.idVentaQr} liquidada. Neto recibido: ${fmtMoney(r.data.valorNetoLiberado)}` });
                                   // Refresh
                                   const [rR, lR] = await Promise.all([
-                                    get<{ success: boolean; data: ResumenDisponibilidad }>(`/api/comercio/ventas-disponibilidad/resumen?idComercio=${demoInfo.idComercio}`),
-                                    get<{ success: boolean; data: VentaNoDisponible[] }>(`/api/comercio/ventas-no-disponibles?idComercio=${demoInfo.idComercio}`),
+                                    get<{ success: boolean; data: ResumenDisponibilidad }>(`/api/comercio/ventas-disponibilidad/resumen?idComercio=${demoInfo.idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
+                                    get<{ success: boolean; data: VentaNoDisponible[] }>(`/api/comercio/ventas-no-disponibles?idComercio=${demoInfo.idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
                                   ]);
                                   setDispResumen(rR.data);
                                   setVentasNoDisp(lR.data ?? []);

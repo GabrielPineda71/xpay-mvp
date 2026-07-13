@@ -37,12 +37,13 @@ export function Layout() {
               <Link to="/ventas-qr/listado">Ventas QR</Link>
               <Link to="/ledger/listado">Ledger</Link>
               <Link to="/ledger">Buscar ledger</Link>
-              <Link to="/retiros/listado">Retiros</Link>
+              <Link to="/retiros/listado">Retiros Manuales</Link>
               <Link to="/retiros">Buscar retiro</Link>
               <Link to="/admin/breb-llaves">Llaves Bre-B</Link>
               <Link to="/admin/breb-retiros">Retiros Bre-B</Link>
               <Link to="/admin/libranza-convenios">Convenios Libranza</Link>
               <Link to="/admin/comercios-aliados">Comercios Aliados</Link>
+              <Link to="/admin/parametros-liquidacion-comercio">Parámetros Liquidación</Link>
             </>
           )}
           {view === 'wallet'   && <Link to="/mi-wallet">Mi Wallet</Link>}

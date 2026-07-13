@@ -23,7 +23,10 @@ public class ComercioDisponibilidadController : ControllerBase
         long.TryParse(User.FindFirst("idUsuario")?.Value, out id) && id > 0;
 
     [HttpGet("ventas-disponibilidad/resumen")]
-    public async Task<IActionResult> GetResumen([FromQuery] long idComercio)
+    public async Task<IActionResult> GetResumen(
+        [FromQuery] long idComercio,
+        [FromQuery] DateTime? desde = null,
+        [FromQuery] DateTime? hasta = null)
     {
         if (!TryGetUsuarioId(out var uid)) return Unauthorized(new { success = false, message = "Token inválido." });
         if (idComercio <= 0) return BadRequest(new { success = false, message = "idComercio inválido." });
@@ -32,14 +35,17 @@ public class ComercioDisponibilidadController : ControllerBase
             var s = await _scope.RequireScopeAsync(uid);
             if (!s.PuedeLiquidarAnticipado)
                 return Forbid();
-            return Ok(new { success = true, data = await _disp.GetMiDisponibilidadAsync(idComercio) });
+            return Ok(new { success = true, data = await _disp.GetMiDisponibilidadAsync(idComercio, desde, hasta) });
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
     }
 
     [HttpGet("ventas-no-disponibles")]
-    public async Task<IActionResult> ListarNoDisponibles([FromQuery] long idComercio)
+    public async Task<IActionResult> ListarNoDisponibles(
+        [FromQuery] long idComercio,
+        [FromQuery] DateTime? desde = null,
+        [FromQuery] DateTime? hasta = null)
     {
         if (!TryGetUsuarioId(out var uid)) return Unauthorized(new { success = false, message = "Token inválido." });
         if (idComercio <= 0) return BadRequest(new { success = false, message = "idComercio inválido." });
@@ -48,7 +54,7 @@ public class ComercioDisponibilidadController : ControllerBase
             var s = await _scope.RequireScopeAsync(uid);
             if (!s.PuedeLiquidarAnticipado)
                 return Forbid();
-            return Ok(new { success = true, data = await _disp.ListarVentasNoDisponiblesAsync(idComercio) });
+            return Ok(new { success = true, data = await _disp.ListarVentasNoDisponiblesAsync(idComercio, desde, hasta) });
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
