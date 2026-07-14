@@ -11,6 +11,9 @@ public class ComercioVentaQrDisponibilidad
     public int      DiasDisponibilidad               { get; set; }
     public decimal  PorcentajeDescuento              { get; set; }
     public decimal  ValorDescuento                   { get; set; }
+    public bool     AplicaIvaConvenio                { get; set; }
+    public decimal? PorcentajeIvaConvenio            { get; set; }
+    public decimal  ValorIvaConvenio                 { get; set; }
     public decimal  ValorNetoProgramado              { get; set; }
     public DateTime FechaVenta                       { get; set; }
     public DateTime FechaDisponibleProgramada        { get; set; }

@@ -34,9 +34,8 @@ public class ComercioDisponibilidadService
         _ = await _db.ComerciosAliados.FindAsync(idComercioAliado)
             ?? throw new KeyNotFoundException($"Comercio aliado {idComercioAliado} no encontrado.");
 
-        ValidarCondicion(req.DiasDisponibilidad, req.PorcentajeDescuento);
+        ValidarCondicion(req.DiasDisponibilidad, req.PorcentajeDescuento, req.AplicaIva, req.PorcentajeIva);
 
-        // Solo una ACTIVA vigente por comercio aliado
         var activa = await _db.ComercioCondicionesNegociacion
             .FirstOrDefaultAsync(c => c.IdComercioAliado == idComercioAliado && c.Estado == "ACTIVO");
         if (activa != null)
@@ -52,6 +51,7 @@ public class ComercioDisponibilidadService
             DiasDisponibilidad  = req.DiasDisponibilidad,
             PorcentajeDescuento = req.PorcentajeDescuento,
             AplicaIva           = req.AplicaIva,
+            PorcentajeIva       = req.AplicaIva ? req.PorcentajeIva : null,
             Estado              = "ACTIVO",
             FechaInicio         = ParseDate(req.FechaInicio),
             FechaFin            = req.FechaFin != null ? ParseDate(req.FechaFin) : null,
@@ -72,19 +72,19 @@ public class ComercioDisponibilidadService
 
         if (req.DiasDisponibilidad.HasValue)
         {
-            ValidarCondicion(req.DiasDisponibilidad.Value, req.PorcentajeDescuento ?? c.PorcentajeDescuento);
+            ValidarCondicion(req.DiasDisponibilidad.Value,
+                req.PorcentajeDescuento ?? c.PorcentajeDescuento,
+                req.AplicaIva ?? c.AplicaIva,
+                req.PorcentajeIva ?? c.PorcentajeIva ?? 0);
             c.DiasDisponibilidad = req.DiasDisponibilidad.Value;
         }
-        if (req.PorcentajeDescuento.HasValue)
-        {
-            ValidarCondicion(c.DiasDisponibilidad, req.PorcentajeDescuento.Value);
-            c.PorcentajeDescuento = req.PorcentajeDescuento.Value;
-        }
-        if (req.AplicaIva.HasValue)  c.AplicaIva   = req.AplicaIva.Value;
-        if (req.Estado != null)      c.Estado       = req.Estado;
-        if (req.FechaInicio != null) c.FechaInicio  = ParseDate(req.FechaInicio);
-        if (req.FechaFin    != null) c.FechaFin     = ParseDate(req.FechaFin);
-        if (req.Observaciones != null) c.Observaciones = req.Observaciones;
+        if (req.PorcentajeDescuento.HasValue) c.PorcentajeDescuento = req.PorcentajeDescuento.Value;
+        if (req.AplicaIva.HasValue)           c.AplicaIva           = req.AplicaIva.Value;
+        if (req.PorcentajeIva.HasValue)       c.PorcentajeIva       = c.AplicaIva ? req.PorcentajeIva : null;
+        if (req.Estado != null)               c.Estado              = req.Estado;
+        if (req.FechaInicio != null)          c.FechaInicio         = ParseDate(req.FechaInicio);
+        if (req.FechaFin    != null)          c.FechaFin            = ParseDate(req.FechaFin);
+        if (req.Observaciones != null)        c.Observaciones        = req.Observaciones;
         c.UpdatedAt = DateTime.UtcNow;
         c.UpdatedByUsuario = adminId;
         await _db.SaveChangesAsync();
@@ -113,11 +113,13 @@ public class ComercioDisponibilidadService
 
     // ── Parámetros liquidación anticipada ────────────────────────────────────
 
-    public async Task<List<ParametroLiquidacionResponse>> ListarParametrosAsync()
+    public async Task<List<ParametroLiquidacionResponse>> ListarParametrosAsync(long? idComercioAliado = null)
     {
-        var items = await _db.XpayParametrosLiquidacionAnticipada
-            .OrderBy(p => p.DiasFaltantes)
-            .ToListAsync();
+        var query = _db.XpayParametrosLiquidacionAnticipada.AsQueryable();
+        query = idComercioAliado.HasValue
+            ? query.Where(p => p.IdComercioAliado == idComercioAliado.Value)
+            : query.Where(p => p.IdComercioAliado == null);
+        var items = await query.OrderBy(p => p.DiasFaltantes).ToListAsync();
         return items.Select(ToParametroResponse).ToList();
     }
 
@@ -128,16 +130,23 @@ public class ComercioDisponibilidadService
             throw new InvalidOperationException("dias_faltantes debe ser entre 0 y 60.");
         if (req.PorcentajeDescuento < 0 || req.PorcentajeDescuento > 100)
             throw new InvalidOperationException("porcentaje_descuento debe ser entre 0 y 100.");
+        if (req.AplicaIva && (req.PorcentajeIva <= 0 || req.PorcentajeIva > 100))
+            throw new InvalidOperationException("porcentaje_iva debe ser > 0 y <= 100 cuando aplica_iva=true.");
 
         var existe = await _db.XpayParametrosLiquidacionAnticipada
-            .AnyAsync(p => p.DiasFaltantes == req.DiasFaltantes && p.Estado == "ACTIVO");
+            .AnyAsync(p => p.IdComercioAliado == req.IdComercioAliado
+                        && p.DiasFaltantes == req.DiasFaltantes
+                        && p.Estado == "ACTIVO");
         if (existe)
             throw new InvalidOperationException($"Ya existe un parámetro ACTIVO para {req.DiasFaltantes} días.");
 
         var param = new XpayParametroLiquidacionAnticipada
         {
+            IdComercioAliado    = req.IdComercioAliado,
             DiasFaltantes       = req.DiasFaltantes,
             PorcentajeDescuento = req.PorcentajeDescuento,
+            AplicaIva           = req.AplicaIva,
+            PorcentajeIva       = req.AplicaIva ? req.PorcentajeIva : null,
             Estado              = "ACTIVO",
             CreatedAt           = DateTime.UtcNow,
             CreatedByUsuario    = adminId,
@@ -159,6 +168,13 @@ public class ComercioDisponibilidadService
                 throw new InvalidOperationException("porcentaje_descuento debe ser entre 0 y 100.");
             p.PorcentajeDescuento = req.PorcentajeDescuento.Value;
         }
+        if (req.AplicaIva.HasValue)  p.AplicaIva = req.AplicaIva.Value;
+        if (req.PorcentajeIva.HasValue)
+        {
+            if (p.AplicaIva && (req.PorcentajeIva <= 0 || req.PorcentajeIva > 100))
+                throw new InvalidOperationException("porcentaje_iva debe ser > 0 y <= 100 cuando aplica_iva=true.");
+            p.PorcentajeIva = p.AplicaIva ? req.PorcentajeIva : null;
+        }
         if (req.Estado != null) p.Estado = req.Estado;
         p.UpdatedAt = DateTime.UtcNow;
         p.UpdatedByUsuario = adminId;
@@ -179,8 +195,8 @@ public class ComercioDisponibilidadService
         var result = new List<DisponibilidadVentaResponse>();
         foreach (var d in items)
         {
-            var (tasa, descAnticipado) = await CalcularDescuentoAnticipadoAsync(d, now);
-            result.Add(ToDisponibilidadResponse(d, now, tasa, descAnticipado));
+            var calc = await CalcularDescuentoAnticipadoAsync(d, now);
+            result.Add(ToDisponibilidadResponse(d, now, calc));
         }
         return result;
     }
@@ -207,7 +223,6 @@ public class ComercioDisponibilidadService
 
         var disp = await query.ToListAsync();
 
-        var now        = DateTime.UtcNow;
         var noDisp     = disp.Where(d => d.Estado == "NO_DISPONIBLE").ToList();
         var liquidadas = disp.Where(d => d.Estado == "LIQUIDADA_ANTICIPADA" || d.Estado == "DISPONIBLE").ToList();
 
@@ -217,6 +232,8 @@ public class ComercioDisponibilidadService
 
         return new MiDisponibilidadResponse(
             TotalNoDisponibleBruto:          noDisp.Sum(d => d.ValorBruto),
+            TotalDescuentoConvenio:          noDisp.Sum(d => d.ValorDescuento),
+            TotalIvaConvenio:                noDisp.Sum(d => d.ValorIvaConvenio),
             TotalNoDisponibleNetoProgramado: noDisp.Sum(d => d.ValorNetoProgramado),
             TotalDisponibleBruto:            0,
             TotalLiquidado:                  liquidadas.Sum(d => d.ValorNetoLiberado ?? 0),
@@ -240,8 +257,8 @@ public class ComercioDisponibilidadService
         var result = new List<DisponibilidadVentaResponse>();
         foreach (var d in items)
         {
-            var (tasa, descAnticipado) = await CalcularDescuentoAnticipadoAsync(d, now);
-            result.Add(ToDisponibilidadResponse(d, now, tasa, descAnticipado));
+            var calc = await CalcularDescuentoAnticipadoAsync(d, now);
+            result.Add(ToDisponibilidadResponse(d, now, calc));
         }
         return result;
     }
@@ -293,26 +310,33 @@ public class ComercioDisponibilidadService
                 ?? throw new InvalidOperationException("No existe registro de saldo del comercio.");
 
             var now = DateTime.UtcNow;
-            var (tasa, valDescAnticipado) = await CalcularDescuentoAnticipadoAsync(disp, now);
 
-            var valBruto         = disp.ValorBruto;
-            var valDescConvenio  = disp.ValorDescuento;
-            var valNeto          = esAnticipada
-                ? disp.ValorNetoProgramado - valDescAnticipado
+            // Valores del convenio (ya calculados y guardados en disponibilidad)
+            var valBruto        = disp.ValorBruto;
+            var valDescConvenio = disp.ValorDescuento;
+            var valIvaConvenio  = disp.ValorIvaConvenio;
+
+            // Descuento anticipado (calculado en tiempo real desde parámetros)
+            var calc = await CalcularDescuentoAnticipadoAsync(disp, now);
+
+            var valDescAnticipado = esAnticipada ? calc.ValorDescuento : 0m;
+            var valIvaAnticipado  = esAnticipada ? calc.ValorIva       : 0m;
+
+            // Neto a acreditar en wallet
+            var valNeto = esAnticipada
+                ? disp.ValorNetoProgramado - valDescAnticipado - valIvaAnticipado
                 : disp.ValorNetoProgramado;
 
-            // Verificar balance antes de crear:
-            // DR 210201 = valBruto
-            // CR 210202 = valNeto
-            // CR 410201 = valDescConvenio
-            // CR 410202 = valDescAnticipado (solo si anticipada > 0)
-            var crTotal = valNeto + valDescConvenio + (esAnticipada ? valDescAnticipado : 0);
+            // Verificar balance (pre-check)
+            var ivaTotal  = valIvaConvenio + (esAnticipada ? valIvaAnticipado : 0m);
+            var crTotal   = valNeto + valDescConvenio + ivaTotal + (esAnticipada ? valDescAnticipado : 0m);
             if (Math.Abs(crTotal - valBruto) > 0.01m)
                 throw new InvalidOperationException(
                     $"Error contable: DR={valBruto:0.00} ≠ CR={crTotal:0.00}. No se ejecutó la transacción.");
 
-            // Obtener cuentas ledger
+            // Cuentas ledger
             var idUnidad = comercio.IdUnidadNegocio;
+
             var ctaContingencia = await _db.LedgerCuentas
                 .FirstOrDefaultAsync(c => c.IdUnidadNegocio == idUnidad && c.Codigo == "210201" && c.Estado == "ACTIVA")
                 ?? throw new InvalidOperationException("Cuenta 210201 no encontrada.");
@@ -333,6 +357,14 @@ public class ComercioDisponibilidadService
                     ?? throw new InvalidOperationException("Cuenta 410202 no encontrada.");
             }
 
+            LedgerCuenta? ctaIva = null;
+            if (ivaTotal > 0)
+            {
+                ctaIva = await _db.LedgerCuentas
+                    .FirstOrDefaultAsync(c => c.IdUnidadNegocio == idUnidad && c.Codigo == "240802" && c.Estado == "ACTIVA")
+                    ?? throw new InvalidOperationException("Cuenta 240802 no encontrada.");
+            }
+
             var tipoLiberacion = tipoOverride ?? (esAnticipada ? "ANTICIPADA_COMERCIO" : "MANUAL_ADMIN");
             var desc = tipoLiberacion == "AUTOMATICA"
                 ? $"Liquidación automática programada, venta #{disp.IdVentaQr}."
@@ -340,7 +372,6 @@ public class ComercioDisponibilidadService
                     ? $"Liquidación anticipada por comercio #{disp.IdComercioExistente}, venta #{disp.IdVentaQr}."
                     : $"Liberación manual admin, venta #{disp.IdVentaQr}.";
 
-            // Crear transacción ledger
             var ledgerTx = new LedgerTransaccion
             {
                 IdUnidadNegocio  = idUnidad,
@@ -356,9 +387,9 @@ public class ComercioDisponibilidadService
             _db.LedgerTransacciones.Add(ledgerTx);
             await _db.SaveChangesAsync();
 
-            // Movimientos ledger
             var movimientos = new List<LedgerMovimiento>
             {
+                // DR 210201 — liberar contingencia
                 new() {
                     IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
                     IdCuenta            = ctaContingencia.IdCuenta,
@@ -370,6 +401,7 @@ public class ComercioDisponibilidadService
                     Descripcion         = $"Débito contingencia venta #{disp.IdVentaQr}.",
                     FechaMovimiento     = now,
                 },
+                // CR 210202 — acreditar neto a wallet comercio
                 new() {
                     IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
                     IdCuenta            = ctaObligacion.IdCuenta,
@@ -381,6 +413,7 @@ public class ComercioDisponibilidadService
                     Descripcion         = $"Crédito wallet comercio #{disp.IdComercioExistente}.",
                     FechaMovimiento     = now,
                 },
+                // CR 410201 — ingreso descuento convenio
                 new() {
                     IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
                     IdCuenta            = ctaDescConvenio.IdCuenta,
@@ -389,11 +422,32 @@ public class ComercioDisponibilidadService
                     Concepto            = "INGRESO_DESCUENTO_COMERCIO",
                     ReferenciaTipo      = "comercio_condiciones_negociacion",
                     ReferenciaId        = disp.IdComercioAliado,
-                    Descripcion         = $"Descuento convenio {disp.PorcentajeDescuento}%.",
+                    Descripcion         = $"Descuento convenio {disp.PorcentajeDescuento}% venta #{disp.IdVentaQr}.",
                     FechaMovimiento     = now,
                 },
             };
 
+            // CR 240802 — IVA total (convenio + anticipado consolidado)
+            if (ctaIva != null && ivaTotal > 0)
+            {
+                movimientos.Add(new LedgerMovimiento
+                {
+                    IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
+                    IdCuenta            = ctaIva.IdCuenta,
+                    Naturaleza          = "C",
+                    Valor               = ivaTotal,
+                    Concepto            = "IVA_DESCUENTO_COMERCIO",
+                    ReferenciaTipo      = "comercio_ventas_qr_disponibilidad",
+                    ReferenciaId        = disp.IdDisponibilidad,
+                    Descripcion         = $"IVA convenio {valIvaConvenio:0.00}" +
+                                          (esAnticipada && valIvaAnticipado > 0
+                                              ? $" + IVA anticipado {valIvaAnticipado:0.00}" : "") +
+                                          $" venta #{disp.IdVentaQr}.",
+                    FechaMovimiento     = now,
+                });
+            }
+
+            // CR 410202 — ingreso descuento anticipado
             if (ctaDescAnticipado != null && valDescAnticipado > 0)
             {
                 movimientos.Add(new LedgerMovimiento
@@ -405,10 +459,11 @@ public class ComercioDisponibilidadService
                     Concepto            = "INGRESO_DESCUENTO_ANTICIPADO",
                     ReferenciaTipo      = "comercio_ventas_qr_disponibilidad",
                     ReferenciaId        = disp.IdDisponibilidad,
-                    Descripcion         = $"Descuento anticipado {tasa}% ({now:yyyy-MM-dd}).",
+                    Descripcion         = $"Descuento anticipado {calc.Tasa}% venta #{disp.IdVentaQr}.",
                     FechaMovimiento     = now,
                 });
             }
+
             _db.LedgerMovimientos.AddRange(movimientos);
 
             // Wallet movimiento
@@ -438,13 +493,12 @@ public class ComercioDisponibilidadService
             disp.Estado                        = tipoLiberacion == "AUTOMATICA" ? "DISPONIBLE" : "LIQUIDADA_ANTICIPADA";
             disp.TipoLiberacion                = tipoLiberacion;
             disp.FechaLiberacion               = now;
-            disp.PorcentajeDescuentoAnticipado = esAnticipada ? tasa : 0;
+            disp.PorcentajeDescuentoAnticipado = esAnticipada ? calc.Tasa : 0;
             disp.ValorDescuentoAnticipado      = esAnticipada ? valDescAnticipado : 0;
             disp.ValorNetoLiberado             = valNeto;
             disp.IdTransaccionLedgerLiberacion = ledgerTx.IdTransaccionLedger;
             disp.UpdatedAt                     = now;
 
-            // Actualizar venta QR subyacente
             ventaQr.Estado                   = "LIQUIDADA";
             ventaQr.IdTransaccionLiquidacion = ledgerTx.IdTransaccionLedger;
 
@@ -465,17 +519,21 @@ public class ComercioDisponibilidadService
             await tx.CommitAsync();
 
             _logger.LogInformation(
-                "Liberación {Tipo} ejecutada: disp={Disp} venta={Venta} valNeto={Neto} saldoNuevo={Saldo}",
-                tipoLiberacion, idDisponibilidad, disp.IdVentaQr, valNeto, saldoDespues);
+                "Liberación {Tipo}: disp={Disp} venta={Venta} bruto={Bruto} descConv={DC} ivaConv={IC} descAnt={DA} ivaAnt={IA} neto={Neto} saldoNuevo={Saldo}",
+                tipoLiberacion, idDisponibilidad, disp.IdVentaQr,
+                valBruto, valDescConvenio, valIvaConvenio,
+                valDescAnticipado, valIvaAnticipado, valNeto, saldoDespues);
 
             return new LiquidarAhoraResponse(
                 disp.IdDisponibilidad,
                 disp.IdVentaQr,
                 valBruto,
                 valDescConvenio,
+                valIvaConvenio,
                 valDescAnticipado,
+                valIvaAnticipado,
                 valNeto,
-                tasa,
+                calc.Tasa,
                 Math.Max(0, (int)(disp.FechaDisponibleProgramada - now).TotalDays),
                 disp.Estado,
                 tipoLiberacion,
@@ -493,34 +551,68 @@ public class ComercioDisponibilidadService
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private async Task<(decimal Tasa, decimal ValorDescuento)> CalcularDescuentoAnticipadoAsync(
+    private record AnticipadoCalc(
+        decimal Tasa,
+        decimal ValorDescuento,
+        bool    AplicaIva,
+        decimal PorcentajeIva,
+        decimal ValorIva
+    );
+
+    private async Task<AnticipadoCalc> CalcularDescuentoAnticipadoAsync(
         ComercioVentaQrDisponibilidad disp, DateTime ahora)
     {
         var diasFaltantes = (int)Math.Max(0, Math.Ceiling((disp.FechaDisponibleProgramada - ahora).TotalDays));
 
+        // 1. Específico del comercio aliado — exacto
         var param = await _db.XpayParametrosLiquidacionAnticipada
-            .FirstOrDefaultAsync(p => p.DiasFaltantes == diasFaltantes && p.Estado == "ACTIVO");
+            .FirstOrDefaultAsync(p => p.IdComercioAliado == disp.IdComercioAliado
+                                   && p.DiasFaltantes    == diasFaltantes
+                                   && p.Estado           == "ACTIVO");
 
-        // Si no hay parámetro exacto, buscar por el más cercano <= diasFaltantes
+        // 2. Específico — más cercano <=
         if (param == null)
-        {
             param = await _db.XpayParametrosLiquidacionAnticipada
-                .Where(p => p.DiasFaltantes <= diasFaltantes && p.Estado == "ACTIVO")
+                .Where(p => p.IdComercioAliado == disp.IdComercioAliado
+                         && p.DiasFaltantes    <= diasFaltantes
+                         && p.Estado           == "ACTIVO")
                 .OrderByDescending(p => p.DiasFaltantes)
                 .FirstOrDefaultAsync();
-        }
 
-        var tasa = param?.PorcentajeDescuento ?? 0m;
-        var desc = Math.Round(disp.ValorNetoProgramado * tasa / 100m, 2);
-        return (tasa, desc);
+        // 3. Global — exacto
+        if (param == null)
+            param = await _db.XpayParametrosLiquidacionAnticipada
+                .FirstOrDefaultAsync(p => p.IdComercioAliado == null
+                                       && p.DiasFaltantes    == diasFaltantes
+                                       && p.Estado           == "ACTIVO");
+
+        // 4. Global — más cercano <=
+        if (param == null)
+            param = await _db.XpayParametrosLiquidacionAnticipada
+                .Where(p => p.IdComercioAliado == null
+                         && p.DiasFaltantes    <= diasFaltantes
+                         && p.Estado           == "ACTIVO")
+                .OrderByDescending(p => p.DiasFaltantes)
+                .FirstOrDefaultAsync();
+
+        var tasa     = param?.PorcentajeDescuento ?? 0m;
+        // CORRECTO: descuento anticipado sobre valor bruto, no sobre neto programado
+        var valDesc  = Math.Round(disp.ValorBruto * tasa / 100m, 2);
+        var aplicaIva = param?.AplicaIva ?? false;
+        var pctIva    = (aplicaIva ? (param?.PorcentajeIva ?? 0m) : 0m);
+        var valIva    = aplicaIva ? Math.Round(valDesc * pctIva / 100m, 2) : 0m;
+
+        return new AnticipadoCalc(tasa, valDesc, aplicaIva, pctIva, valIva);
     }
 
-    private static void ValidarCondicion(int dias, decimal pct)
+    private static void ValidarCondicion(int dias, decimal pct, bool aplicaIva, decimal pctIva)
     {
         if (dias < 0)
             throw new InvalidOperationException("dias_disponibilidad debe ser >= 0.");
         if (pct < 0 || pct > 100)
             throw new InvalidOperationException("porcentaje_descuento debe ser entre 0 y 100.");
+        if (aplicaIva && (pctIva <= 0 || pctIva > 100))
+            throw new InvalidOperationException("porcentaje_iva debe ser > 0 y <= 100 cuando aplica_iva=true.");
     }
 
     private static DateOnly ParseDate(string? s)
@@ -530,33 +622,45 @@ public class ComercioDisponibilidadService
     }
 
     private static CondicionNegociacionResponse ToCondicionResponse(ComercioCondicionNegociacion c) =>
-        new(c.IdCondicion, c.IdComercioAliado, c.DiasDisponibilidad, c.PorcentajeDescuento,
-            c.AplicaIva, c.Estado, c.FechaInicio.ToString("yyyy-MM-dd"),
+        new(c.IdCondicion, c.IdComercioAliado, c.DiasDisponibilidad,
+            c.PorcentajeDescuento, c.AplicaIva, c.PorcentajeIva ?? 0m,
+            c.Estado, c.FechaInicio.ToString("yyyy-MM-dd"),
             c.FechaFin?.ToString("yyyy-MM-dd"), c.Observaciones, c.CreatedAt.ToString("o"));
 
     private static ParametroLiquidacionResponse ToParametroResponse(XpayParametroLiquidacionAnticipada p) =>
-        new(p.IdParametro, p.DiasFaltantes, p.PorcentajeDescuento, p.Estado, p.CreatedAt.ToString("o"));
+        new(p.IdParametro, p.IdComercioAliado, p.DiasFaltantes,
+            p.PorcentajeDescuento, p.AplicaIva, p.PorcentajeIva ?? 0m,
+            p.Estado, p.CreatedAt.ToString("o"));
 
     private static DisponibilidadVentaResponse ToDisponibilidadResponse(
-        ComercioVentaQrDisponibilidad d, DateTime now, decimal tasa, decimal descAnticipado) =>
-        new(
+        ComercioVentaQrDisponibilidad d, DateTime now, AnticipadoCalc calc)
+    {
+        var netoSiLiquidaAhora = d.ValorNetoProgramado - calc.ValorDescuento - calc.ValorIva;
+        return new DisponibilidadVentaResponse(
             d.IdDisponibilidad,
             d.IdVentaQr,
             d.ValorBruto,
+            d.PorcentajeDescuento,
             d.ValorDescuento,
+            d.AplicaIvaConvenio,
+            d.PorcentajeIvaConvenio ?? 0m,
+            d.ValorIvaConvenio,
             d.ValorNetoProgramado,
             d.DiasDisponibilidad,
-            d.PorcentajeDescuento,
             d.FechaVenta.ToString("o"),
             d.FechaDisponibleProgramada.ToString("o"),
             (int)Math.Max(0, Math.Ceiling((d.FechaDisponibleProgramada - now).TotalDays)),
-            tasa,
-            descAnticipado,
-            d.ValorNetoProgramado - descAnticipado,
+            calc.Tasa,
+            calc.ValorDescuento,
+            calc.AplicaIva,
+            calc.PorcentajeIva,
+            calc.ValorIva,
+            netoSiLiquidaAhora,
             d.Estado,
             d.TipoLiberacion,
             d.FechaLiberacion?.ToString("o"),
             d.ValorNetoLiberado,
             d.IdTransaccionLedgerLiberacion
         );
+    }
 }

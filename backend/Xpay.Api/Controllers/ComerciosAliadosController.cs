@@ -280,9 +280,9 @@ public class ComerciosAliadosController : ControllerBase
     // ── Parámetros liquidación anticipada ─────────────────────────────────────
 
     [HttpGet("parametros-liquidacion")]
-    public async Task<IActionResult> ListarParametros()
+    public async Task<IActionResult> ListarParametros([FromQuery] long? idComercioAliado = null)
     {
-        try { return Ok(new { success = true, data = await _disp.ListarParametrosAsync() }); }
+        try { return Ok(new { success = true, data = await _disp.ListarParametrosAsync(idComercioAliado) }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
     }
 

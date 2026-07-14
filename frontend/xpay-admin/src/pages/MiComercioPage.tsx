@@ -75,6 +75,8 @@ interface BrebRetiro {
 
 interface ResumenDisponibilidad {
   totalNoDisponibleBruto:          number;
+  totalDescuentoConvenio:          number;
+  totalIvaConvenio:                number;
   totalNoDisponibleNetoProgramado: number;
   totalDisponibleBruto:            number;
   totalLiquidado:                  number;
@@ -84,18 +86,28 @@ interface ResumenDisponibilidad {
 }
 
 interface VentaNoDisponible {
-  idDisponibilidad:         number;
-  idVentaQr:                number;
-  valorBruto:               number;
-  valorDescuento:           number;
-  valorNetoProgramado:      number;
-  diasDisponibilidad:       number;
-  fechaDisponibleProgramada:string;
-  diasFaltantes:            number;
-  tasaAnticipada:           number;
-  valorDescuentoAnticipado: number;
-  valorNetoSiLiquidaAhora:  number;
-  estado:                   string;
+  idDisponibilidad:               number;
+  idVentaQr:                      number;
+  valorBruto:                     number;
+  // Convenio
+  porcentajeDescuentoConvenio:    number;
+  valorDescuentoConvenio:         number;
+  aplicaIvaConvenio:              boolean;
+  porcentajeIvaConvenio:          number;
+  valorIvaConvenio:               number;
+  valorNetoProgramado:            number;
+  // Metadata
+  diasDisponibilidad:             number;
+  fechaDisponibleProgramada:      string;
+  diasFaltantes:                  number;
+  // Anticipado
+  porcentajeDescuentoAnticipado:  number;
+  valorDescuentoAnticipado:       number;
+  aplicaIvaAnticipado:            boolean;
+  porcentajeIvaAnticipado:        number;
+  valorIvaAnticipado:             number;
+  valorNetoSiLiquidaAhora:        number;
+  estado:                         string;
 }
 
 interface ComercioScope {
@@ -519,6 +531,14 @@ export function MiComercioPage() {
               <div className="card-label">Bruto retenido</div>
               <div className="card-value" style={{ fontSize: '1.1rem' }}>{fmtMoney(dispResumen.totalNoDisponibleBruto)}</div>
             </div>
+            <div className="card" style={{ borderLeftColor: '#e53e3e' }}>
+              <div className="card-label">Desc. convenio</div>
+              <div className="card-value" style={{ fontSize: '1rem', color: '#c53030' }}>−{fmtMoney(dispResumen.totalDescuentoConvenio ?? 0)}</div>
+            </div>
+            <div className="card" style={{ borderLeftColor: '#fc8181' }}>
+              <div className="card-label">IVA convenio</div>
+              <div className="card-value" style={{ fontSize: '1rem', color: '#c53030' }}>−{fmtMoney(dispResumen.totalIvaConvenio ?? 0)}</div>
+            </div>
             <div className="card" style={{ borderLeftColor: '#4299e1' }}>
               <div className="card-label">Neto programado</div>
               <div className="card-value" style={{ fontSize: '1.1rem' }}>{fmtMoney(dispResumen.totalNoDisponibleNetoProgramado)}</div>
@@ -543,17 +563,25 @@ export function MiComercioPage() {
           ) : (
             <div className="table-wrapper">
               <div className="table-title">Ventas no disponibles — Liquidar anticipadamente</div>
+              <p style={{ fontSize: '0.8rem', color: '#718096', margin: '0.25rem 0 0.5rem' }}>
+                Desc. convenio y desc. anticipado se calculan sobre el valor bruto. El IVA se aplica sobre cada descuento según la parametrización del comercio aliado.
+              </p>
               <div style={{ overflowX: 'auto' }}>
                 <table>
                   <thead>
                     <tr>
                       <th>#Venta</th>
                       <th>Bruto</th>
-                      <th>Neto prog.</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>% conv.</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Desc. conv.</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>IVA conv.</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Neto prog.</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>% ant.</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Desc. ant.</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>IVA ant.</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Neto si liquida ahora</th>
                       <th>Días falt.</th>
-                      <th>Tasa ant.</th>
-                      <th>Neto si liquida ahora</th>
-                      <th>Disponible el</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Disponible el</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -562,10 +590,19 @@ export function MiComercioPage() {
                       <tr key={v.idDisponibilidad}>
                         <td className="mono">{v.idVentaQr}</td>
                         <td className="mono">{fmtMoney(v.valorBruto)}</td>
+                        <td className="mono">{v.porcentajeDescuentoConvenio}%</td>
+                        <td className="mono" style={{ color: '#c53030' }}>−{fmtMoney(v.valorDescuentoConvenio)}</td>
+                        <td className="mono" style={{ color: '#c53030' }}>
+                          {v.aplicaIvaConvenio ? `−${fmtMoney(v.valorIvaConvenio)}` : '—'}
+                        </td>
                         <td className="mono">{fmtMoney(v.valorNetoProgramado)}</td>
+                        <td className="mono">{v.porcentajeDescuentoAnticipado}%</td>
+                        <td className="mono" style={{ color: '#c53030' }}>−{fmtMoney(v.valorDescuentoAnticipado)}</td>
+                        <td className="mono" style={{ color: '#c53030' }}>
+                          {v.aplicaIvaAnticipado ? `−${fmtMoney(v.valorIvaAnticipado)}` : '—'}
+                        </td>
+                        <td className="credit" style={{ fontWeight: 700 }}>{fmtMoney(v.valorNetoSiLiquidaAhora)}</td>
                         <td className="mono">{v.diasFaltantes}</td>
-                        <td className="mono">{v.tasaAnticipada}%</td>
-                        <td className="credit">{fmtMoney(v.valorNetoSiLiquidaAhora)}</td>
                         <td className="mono" style={{ fontSize: '0.8rem' }}>{v.fechaDisponibleProgramada.replace('T', ' ').slice(0, 16)}</td>
                         <td>
                           <button
@@ -573,7 +610,15 @@ export function MiComercioPage() {
                             style={{ fontSize: '0.78rem', padding: '0.25rem 0.7rem' }}
                             disabled={liquidando === v.idDisponibilidad}
                             onClick={async () => {
-                              if (!confirm(`¿Liquidar anticipadamente venta #${v.idVentaQr}?\nRecibirás ${fmtMoney(v.valorNetoSiLiquidaAhora)} (descuento de ${v.tasaAnticipada}%).`)) return;
+                              if (!confirm(
+                                `¿Liquidar anticipadamente venta #${v.idVentaQr}?\n` +
+                                `Bruto: ${fmtMoney(v.valorBruto)}\n` +
+                                `− Desc. convenio ${v.porcentajeDescuentoConvenio}%: ${fmtMoney(v.valorDescuentoConvenio)}\n` +
+                                (v.aplicaIvaConvenio ? `− IVA convenio ${v.porcentajeIvaConvenio}%: ${fmtMoney(v.valorIvaConvenio)}\n` : '') +
+                                `− Desc. anticipado ${v.porcentajeDescuentoAnticipado}%: ${fmtMoney(v.valorDescuentoAnticipado)}\n` +
+                                (v.aplicaIvaAnticipado ? `− IVA anticipado ${v.porcentajeIvaAnticipado}%: ${fmtMoney(v.valorIvaAnticipado)}\n` : '') +
+                                `Recibirás: ${fmtMoney(v.valorNetoSiLiquidaAhora)}`
+                              )) return;
                               setLiquidando(v.idDisponibilidad);
                               setDispMsg(null);
                               try {

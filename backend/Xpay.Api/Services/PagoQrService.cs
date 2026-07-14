@@ -212,8 +212,11 @@ public class PagoQrService
             return;
         }
 
-        var descuento = Math.Round(venta.ValorBruto * condicion.PorcentajeDescuento / 100m, 2);
-        var neto      = venta.ValorBruto - descuento;
+        var descuento    = Math.Round(venta.ValorBruto * condicion.PorcentajeDescuento / 100m, 2);
+        var aplIva       = condicion.AplicaIva;
+        var pctIva       = aplIva ? (condicion.PorcentajeIva ?? 0m) : 0m;
+        var ivaConvenio  = aplIva ? Math.Round(descuento * pctIva / 100m, 2) : 0m;
+        var neto         = venta.ValorBruto - descuento - ivaConvenio;
 
         _db.ComercioVentasQrDisponibilidad.Add(new ComercioVentaQrDisponibilidad
         {
@@ -225,6 +228,9 @@ public class PagoQrService
             DiasDisponibilidad        = condicion.DiasDisponibilidad,
             PorcentajeDescuento       = condicion.PorcentajeDescuento,
             ValorDescuento            = descuento,
+            AplicaIvaConvenio         = aplIva,
+            PorcentajeIvaConvenio     = aplIva ? pctIva : null,
+            ValorIvaConvenio          = ivaConvenio,
             ValorNetoProgramado       = neto,
             FechaVenta                = now,
             FechaDisponibleProgramada = now.AddDays(condicion.DiasDisponibilidad),

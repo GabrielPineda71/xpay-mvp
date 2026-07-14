@@ -7,6 +7,7 @@ public class ComercioCondicionNegociacion
     public int      DiasDisponibilidad   { get; set; }
     public decimal  PorcentajeDescuento  { get; set; }
     public bool     AplicaIva            { get; set; }
+    public decimal? PorcentajeIva        { get; set; }
     public string   Estado               { get; set; } = "ACTIVO";
     public DateOnly FechaInicio          { get; set; }
     public DateOnly? FechaFin            { get; set; }

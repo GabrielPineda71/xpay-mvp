@@ -8,6 +8,7 @@ public record CondicionNegociacionResponse(
     int     DiasDisponibilidad,
     decimal PorcentajeDescuento,
     bool    AplicaIva,
+    decimal PorcentajeIva,
     string  Estado,
     string  FechaInicio,
     string? FechaFin,
@@ -19,6 +20,7 @@ public record CrearCondicionRequest(
     int     DiasDisponibilidad,
     decimal PorcentajeDescuento,
     bool    AplicaIva,
+    decimal PorcentajeIva,
     string  FechaInicio,
     string? FechaFin,
     string? Observaciones
@@ -28,6 +30,7 @@ public record ActualizarCondicionRequest(
     int?    DiasDisponibilidad,
     decimal? PorcentajeDescuento,
     bool?   AplicaIva,
+    decimal? PorcentajeIva,
     string? Estado,
     string? FechaInicio,
     string? FechaFin,
@@ -38,19 +41,27 @@ public record ActualizarCondicionRequest(
 
 public record ParametroLiquidacionResponse(
     long    IdParametro,
+    long?   IdComercioAliado,
     int     DiasFaltantes,
     decimal PorcentajeDescuento,
+    bool    AplicaIva,
+    decimal PorcentajeIva,
     string  Estado,
     string  CreatedAt
 );
 
 public record CrearParametroLiquidacionRequest(
+    long?   IdComercioAliado,
     int     DiasFaltantes,
-    decimal PorcentajeDescuento
+    decimal PorcentajeDescuento,
+    bool    AplicaIva,
+    decimal PorcentajeIva
 );
 
 public record ActualizarParametroLiquidacionRequest(
     decimal? PorcentajeDescuento,
+    bool?    AplicaIva,
+    decimal? PorcentajeIva,
     string?  Estado
 );
 
@@ -60,16 +71,26 @@ public record DisponibilidadVentaResponse(
     long    IdDisponibilidad,
     long    IdVentaQr,
     decimal ValorBruto,
-    decimal ValorDescuento,
+    // Convenio
+    decimal PorcentajeDescuentoConvenio,
+    decimal ValorDescuentoConvenio,
+    bool    AplicaIvaConvenio,
+    decimal PorcentajeIvaConvenio,
+    decimal ValorIvaConvenio,
     decimal ValorNetoProgramado,
+    // Metadata
     int     DiasDisponibilidad,
-    decimal PorcentajeDescuento,
     string  FechaVenta,
     string  FechaDisponibleProgramada,
     int     DiasFaltantes,
-    decimal TasaAnticipada,
+    // Anticipado
+    decimal PorcentajeDescuentoAnticipado,
     decimal ValorDescuentoAnticipado,
+    bool    AplicaIvaAnticipado,
+    decimal PorcentajeIvaAnticipado,
+    decimal ValorIvaAnticipado,
     decimal ValorNetoSiLiquidaAhora,
+    // Estado
     string  Estado,
     string? TipoLiberacion,
     string? FechaLiberacion,
@@ -86,10 +107,15 @@ public record LiquidarAhoraResponse(
     long    IdDisponibilidad,
     long    IdVentaQr,
     decimal ValorBruto,
+    // Convenio
     decimal ValorDescuentoConvenio,
+    decimal ValorIvaConvenio,
+    // Anticipado
     decimal ValorDescuentoAnticipado,
+    decimal ValorIvaAnticipado,
+    // Resultado
     decimal ValorNetoLiberado,
-    decimal TasaAnticipada,
+    decimal PorcentajeDescuentoAnticipado,
     int     DiasFaltantes,
     string  Estado,
     string  TipoLiberacion,
@@ -106,6 +132,8 @@ public record LiberarManualRequest(
 
 public record MiDisponibilidadResponse(
     decimal TotalNoDisponibleBruto,
+    decimal TotalDescuentoConvenio,
+    decimal TotalIvaConvenio,
     decimal TotalNoDisponibleNetoProgramado,
     decimal TotalDisponibleBruto,
     decimal TotalLiquidado,
