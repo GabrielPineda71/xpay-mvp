@@ -7,8 +7,14 @@ namespace Xpay.Api.Services;
 
 public class PagoQrService
 {
-    private readonly XpayDbContext _db;
-    public PagoQrService(XpayDbContext db) => _db = db;
+    private readonly XpayDbContext                          _db;
+    private readonly ILogger<PagoQrService>                _logger;
+
+    public PagoQrService(XpayDbContext db, ILogger<PagoQrService> logger)
+    {
+        _db     = db;
+        _logger = logger;
+    }
 
     public async Task<VentaQr> PagarQrAsync(PagoQrRequest request)
     {
@@ -133,6 +139,10 @@ public class PagoQrService
                 FechaVenta          = now
             };
             _db.VentasQr.Add(venta);
+            await _db.SaveChangesAsync(); // persiste venta → asigna IdVentaQr
+
+            // Registrar disponibilidad + contexto para comercios aliados (idempotente)
+            await TryRegistrarDisponibilidadAsync(comercio, venta, now);
 
             _db.Auditorias.Add(new Auditoria
             {
@@ -168,5 +178,64 @@ public class PagoQrService
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+    private async Task TryRegistrarDisponibilidadAsync(Comercio comercio, VentaQr venta, DateTime now)
+    {
+        if (comercio.IdWalletComercio == null) return;
+
+        var aliado = await _db.ComerciosAliados
+            .FirstOrDefaultAsync(a => a.IdComercioExistente == comercio.IdComercio && a.Estado == "ACTIVO");
+        if (aliado == null) return;
+
+        // Idempotencia: no duplicar
+        var existe = await _db.ComercioVentasQrDisponibilidad
+            .AnyAsync(d => d.IdVentaQr == venta.IdVentaQr);
+        if (existe) return;
+
+        var condicion = await _db.ComercioCondicionesNegociacion
+            .FirstOrDefaultAsync(c => c.IdComercioAliado == aliado.IdComercioAliado && c.Estado == "ACTIVO");
+        if (condicion == null)
+        {
+            _logger.LogWarning(
+                "Venta QR #{IdVenta}: comercio aliado {IdAliado} no tiene condición activa — sin disponibilidad.",
+                venta.IdVentaQr, aliado.IdComercioAliado);
+            return;
+        }
+
+        var descuento = Math.Round(venta.ValorBruto * condicion.PorcentajeDescuento / 100m, 2);
+        var neto      = venta.ValorBruto - descuento;
+
+        _db.ComercioVentasQrDisponibilidad.Add(new ComercioVentaQrDisponibilidad
+        {
+            IdVentaQr                 = venta.IdVentaQr,
+            IdComercioAliado          = aliado.IdComercioAliado,
+            IdComercioExistente       = comercio.IdComercio,
+            IdWalletComercio          = comercio.IdWalletComercio.Value,
+            ValorBruto                = venta.ValorBruto,
+            DiasDisponibilidad        = condicion.DiasDisponibilidad,
+            PorcentajeDescuento       = condicion.PorcentajeDescuento,
+            ValorDescuento            = descuento,
+            ValorNetoProgramado       = neto,
+            FechaVenta                = now,
+            FechaDisponibleProgramada = now.AddDays(condicion.DiasDisponibilidad),
+            Estado                    = "NO_DISPONIBLE",
+            CreatedAt                 = now,
+        });
+
+        _db.ComercioVentasQrContexto.Add(new ComercioVentaQrContexto
+        {
+            IdVentaQr           = venta.IdVentaQr,
+            IdComercioAliado    = aliado.IdComercioAliado,
+            IdComercioExistente = comercio.IdComercio,
+            IdEstablecimiento   = null,
+            IdCajeroUsuario     = null,
+            CreatedAt           = now,
+        });
+
+        _logger.LogInformation(
+            "Venta QR #{IdVenta}: disponibilidad registrada — aliado {IdAliado}, neto={Neto}, disp={Disp:d}",
+            venta.IdVentaQr, aliado.IdComercioAliado, neto,
+            now.AddDays(condicion.DiasDisponibilidad));
     }
 }
