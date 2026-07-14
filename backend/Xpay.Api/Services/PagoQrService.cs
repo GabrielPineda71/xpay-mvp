@@ -141,8 +141,17 @@ public class PagoQrService
             _db.VentasQr.Add(venta);
             await _db.SaveChangesAsync(); // persiste venta → asigna IdVentaQr
 
-            // Registrar disponibilidad + contexto para comercios aliados (idempotente)
-            await TryRegistrarDisponibilidadAsync(comercio, venta, now);
+            // Registrar disponibilidad + contexto para comercios aliados (idempotente, best-effort)
+            try
+            {
+                await TryRegistrarDisponibilidadAsync(comercio, venta, now);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Venta QR #{IdVenta}: no se pudo registrar disponibilidad de comercio aliado. El pago continúa.",
+                    venta.IdVentaQr);
+            }
 
             _db.Auditorias.Add(new Auditoria
             {
