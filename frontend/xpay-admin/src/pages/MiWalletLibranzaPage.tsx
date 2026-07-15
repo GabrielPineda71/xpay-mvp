@@ -242,13 +242,30 @@ export function MiWalletLibranzaPage() {
                 </div>
               )}
 
-              {/* Anticipos activos */}
-              {cupo.anticiposActivos.length > 0 && (
-                <div className="info-section" style={{ marginTop: '1rem' }}>
-                  <h3>Anticipos activos (DESEMBOLSADO)</h3>
-                  <AnticipasTable rows={cupo.anticiposActivos} />
-                </div>
-              )}
+              {/* Anticipos del período */}
+              <div className="info-section" style={{ marginTop: '1rem' }}>
+                <h3>Anticipos del período vigente</h3>
+                {cupo.anticiposActivos.length === 0 ? (
+                  <p style={{ color: '#718096', fontSize: '0.9rem' }}>
+                    No hay anticipos activos para este período.
+                    {cupo.corteVigente && cupo.corteVigente.cupoDisponible > 0 &&
+                      ' Puedes solicitar hasta ' + fmt(cupo.corteVigente.cupoDisponible) + '.'}
+                  </p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: '0.82rem', color: '#4a5568', marginBottom: '0.5rem' }}>
+                      Múltiples anticipos permitidos — el único límite es el cupo disponible del período.
+                    </p>
+                    <AnticipasTable rows={cupo.anticiposActivos} />
+                  </>
+                )}
+                {cupo.corteVigente && cupo.corteVigente.cupoDisponible <= 0 && (
+                  <div style={{ marginTop: '0.5rem', padding: '0.5rem 0.75rem', background: '#fff5f5',
+                    border: '1px solid #fc8181', borderRadius: '0.5rem', fontSize: '0.85rem', color: '#c53030', fontWeight: 500 }}>
+                    Ya usaste el cupo disponible para este período.
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

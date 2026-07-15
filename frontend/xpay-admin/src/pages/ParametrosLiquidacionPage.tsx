@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { get, post, put } from '../api/client.ts';
 import { fmtMoney } from '../utils.ts';
 
@@ -45,6 +45,19 @@ interface LiquidacionResult {
 
 type Msg = { ok: boolean; text: string };
 
+interface ImportResult {
+  scope:            string;
+  idComercioAliado: number | null;
+  modo:             string;
+  lineasLeidas:     number;
+  lineasValidas:    number;
+  lineasConError:   number;
+  diasCreados:      number;
+  diasActualizados: number;
+  aplicado:         boolean;
+  errores:          Array<{ linea: number; mensaje: string }>;
+}
+
 // Opciones de selección de scope de parámetros
 const SCOPE_GLOBAL  = 'global';
 const SCOPE_CA      = 'ca';
@@ -71,6 +84,17 @@ export function ParametrosLiquidacionPage() {
   const [liqBusy,        setLiqBusy]        = useState(false);
   const [liqMsg,         setLiqMsg]         = useState<Msg | null>(null);
   const [liqResult,      setLiqResult]      = useState<LiquidacionResult | null>(null);
+
+  // Import CSV state
+  const [impScope,   setImpScope]   = useState<typeof SCOPE_GLOBAL | typeof SCOPE_CA>(SCOPE_CA);
+  const [impCaId,    setImpCaId]    = useState<number>(1);
+  const [impFile,    setImpFile]    = useState<File | null>(null);
+  const [impBusy,    setImpBusy]    = useState(false);
+  const [impMsg,     setImpMsg]     = useState<Msg | null>(null);
+  const [impResult,  setImpResult]  = useState<ImportResult | null>(null);
+  const [copyBusy,   setCopyBusy]   = useState(false);
+  const [copyMsg,    setCopyMsg]    = useState<Msg | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { void loadParams(); }, [scope, caId]);
 
@@ -159,6 +183,62 @@ export function ParametrosLiquidacionPage() {
       ...prev,
       [idParam]: { ...(prev[idParam] ?? {}), [field]: val },
     }));
+  }
+
+  function buildFormData(modo: 'VALIDAR' | 'APLICAR') {
+    const fd = new FormData();
+    if (impFile) fd.append('archivo', impFile);
+    if (impScope === SCOPE_CA) fd.append('idComercioAliado', String(impCaId));
+    fd.append('modo', modo);
+    return fd;
+  }
+
+  async function handleImportarCsv(modo: 'VALIDAR' | 'APLICAR') {
+    if (!impFile) { setImpMsg({ ok: false, text: 'Selecciona un archivo CSV primero.' }); return; }
+    setImpBusy(true); setImpMsg(null); setImpResult(null);
+    try {
+      const fd = buildFormData(modo);
+      const r = await post<{ success: boolean; data: ImportResult; message?: string }>(
+        '/api/comercios-aliados/admin/parametros-liquidacion/importar', fd);
+      if (r.success) {
+        setImpResult(r.data);
+        if (r.data.errores.length > 0) {
+          setImpMsg({ ok: false, text: `${r.data.errores.length} error(es) de validación — archivo NO aplicado.` });
+        } else if (r.data.aplicado) {
+          setImpMsg({ ok: true, text: `Aplicado: ${r.data.diasCreados} creados, ${r.data.diasActualizados} actualizados.` });
+          void loadParams();
+        } else {
+          setImpMsg({ ok: true, text: `Validación OK: ${r.data.lineasValidas} filas válidas. Pulsa "Aplicar" para guardar.` });
+        }
+      } else {
+        setImpMsg({ ok: false, text: r.message ?? 'Error en importación.' });
+      }
+    } catch (e) {
+      setImpMsg({ ok: false, text: (e as Error).message });
+    } finally { setImpBusy(false); }
+  }
+
+  async function handleCopiarGlobal() {
+    setCopyBusy(true); setCopyMsg(null);
+    try {
+      const r = await post<{ success: boolean; data: ImportResult; message?: string }>(
+        `/api/comercios-aliados/admin/parametros-liquidacion/copiar-global/${impCaId}`, {});
+      if (r.success) {
+        setCopyMsg({ ok: true, text: `Copiados: ${r.data.diasCreados} creados, ${r.data.diasActualizados} actualizados.` });
+        void loadParams();
+      } else {
+        setCopyMsg({ ok: false, text: r.message ?? 'Error.' });
+      }
+    } catch (e) {
+      setCopyMsg({ ok: false, text: (e as Error).message });
+    } finally { setCopyBusy(false); }
+  }
+
+  function handleDescargarPlantilla() {
+    const a = document.createElement('a');
+    a.href = '/api/comercios-aliados/admin/parametros-liquidacion/plantilla';
+    a.download = 'plantilla_parametros_liquidacion.csv';
+    a.click();
   }
 
   function isDirty(p: Parametro) {
@@ -308,6 +388,132 @@ export function ParametrosLiquidacionPage() {
           </div>
         </div>
       )}
+
+      {/* ── Carga masiva de parámetros ── */}
+      <div style={{
+        marginBottom: '2rem', background: '#f0fdf4',
+        border: '1px solid #86efac', borderRadius: '8px', padding: '1rem',
+      }}>
+        <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.95rem', color: '#166534' }}>
+          Carga masiva de parámetros (CSV)
+        </h3>
+        <p style={{ fontSize: '0.82rem', color: '#4a5568', margin: '0 0 0.75rem' }}>
+          Los parámetros <strong>Global XPAY</strong> son valores base/default.
+          Los parámetros por <strong>Comercio Aliado</strong> prevalecen sobre los globales.
+          El archivo debe tener columnas: <code>dias_faltantes, porcentaje_descuento, aplica_iva, porcentaje_iva</code>.
+          La carga es todo o nada: si hay errores no se aplica ningún cambio.
+        </p>
+
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <span style={{ fontSize: '0.84rem', fontWeight: 600 }}>Scope:</span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.84rem', cursor: 'pointer' }}>
+            <input type="radio" value={SCOPE_CA} checked={impScope === SCOPE_CA}
+              onChange={() => setImpScope(SCOPE_CA)} />
+            Comercio Aliado
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.84rem', cursor: 'pointer' }}>
+            <input type="radio" value={SCOPE_GLOBAL} checked={impScope === SCOPE_GLOBAL}
+              onChange={() => setImpScope(SCOPE_GLOBAL)} />
+            Global XPAY
+          </label>
+          {impScope === SCOPE_CA && (
+            <select value={impCaId} onChange={e => setImpCaId(Number(e.target.value))}
+              style={{ fontSize: '0.84rem', padding: '0.2rem 0.4rem' }}>
+              {COMERCIOS_ALIADOS.map(ca => (
+                <option key={ca.idComercioAliado} value={ca.idComercioAliado}>
+                  #{ca.idComercioAliado} — {ca.nombreComercial}
+                </option>
+              ))}
+            </select>
+          )}
+          <button onClick={handleDescargarPlantilla}
+            style={{ padding: '0.3rem 0.75rem', background: '#fff', border: '1px solid #86efac',
+              borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem', color: '#166534', fontWeight: 600 }}>
+            ↓ Descargar plantilla
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.6rem' }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv"
+            onChange={e => { setImpFile(e.target.files?.[0] ?? null); setImpMsg(null); setImpResult(null); }}
+            style={{ fontSize: '0.83rem' }}
+          />
+          <button
+            onClick={() => void handleImportarCsv('VALIDAR')}
+            disabled={impBusy || !impFile}
+            style={{ padding: '0.3rem 0.75rem', background: '#fff', border: '1px solid #93c5fd',
+              borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem', color: '#1e40af', fontWeight: 600,
+              opacity: (!impFile || impBusy) ? 0.5 : 1 }}>
+            {impBusy ? '...' : '✓ Validar'}
+          </button>
+          <button
+            onClick={() => void handleImportarCsv('APLICAR')}
+            disabled={impBusy || !impFile}
+            style={{ padding: '0.3rem 0.75rem', background: '#1e40af', border: 'none',
+              borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem', color: '#fff', fontWeight: 600,
+              opacity: (!impFile || impBusy) ? 0.5 : 1 }}>
+            {impBusy ? '...' : '⬆ Aplicar archivo'}
+          </button>
+          {impScope === SCOPE_CA && (
+            <button
+              onClick={() => void handleCopiarGlobal()}
+              disabled={copyBusy}
+              style={{ padding: '0.3rem 0.75rem', background: '#d97706', border: 'none',
+                borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem', color: '#fff', fontWeight: 600,
+                opacity: copyBusy ? 0.5 : 1 }}>
+              {copyBusy ? '...' : '↙ Copiar global a comercio'}
+            </button>
+          )}
+        </div>
+
+        {impMsg && (
+          <div className={impMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginBottom: '0.5rem' }}>
+            {impMsg.text}
+          </div>
+        )}
+        {copyMsg && (
+          <div className={copyMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginBottom: '0.5rem' }}>
+            {copyMsg.text}
+          </div>
+        )}
+
+        {impResult && (
+          <div style={{ marginTop: '0.5rem', fontSize: '0.83rem' }}>
+            <div style={{ background: '#edf2f7', borderRadius: '6px', padding: '0.5rem 0.75rem', marginBottom: '0.4rem' }}>
+              <strong>Resumen</strong> · Scope: {impResult.scope} · Modo: {impResult.modo} ·
+              Leídas: {impResult.lineasLeidas} · Válidas: {impResult.lineasValidas} · Errores: {impResult.lineasConError}
+              {impResult.aplicado && <> · <span style={{ color: '#166534' }}>Creados: {impResult.diasCreados} · Actualizados: {impResult.diasActualizados}</span></>}
+              {!impResult.aplicado && impResult.lineasConError === 0 && <span style={{ color: '#1e40af' }}> · Listo para aplicar</span>}
+            </div>
+            {impResult.errores.length > 0 && (
+              <div style={{ background: '#fff5f5', border: '1px solid #fc8181', borderRadius: '6px', padding: '0.5rem 0.75rem' }}>
+                <div style={{ fontWeight: 600, color: '#c53030', marginBottom: '0.3rem' }}>
+                  Errores ({impResult.errores.length}) — archivo NO aplicado
+                </div>
+                <table style={{ fontSize: '0.79rem', width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '0.1rem 0.3rem', color: '#c53030' }}>Línea</th>
+                      <th style={{ textAlign: 'left', padding: '0.1rem 0.3rem', color: '#c53030' }}>Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {impResult.errores.map((e, i) => (
+                      <tr key={i}>
+                        <td style={{ padding: '0.1rem 0.3rem' }}>{e.linea}</td>
+                        <td style={{ padding: '0.1rem 0.3rem', color: '#c53030' }}>{e.mensaje}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* ── Ejecutar liquidación automática ── */}
       <div style={{

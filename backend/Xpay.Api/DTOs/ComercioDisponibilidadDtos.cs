@@ -145,3 +145,30 @@ public record MiDisponibilidadResponse(
 // ── Vincular ──────────────────────────────────────────────────────────────────
 
 public record VincularComercioOperativoRequest(long IdComercioExistente);
+
+// ── Importación masiva CSV de parámetros ──────────────────────────────────────
+
+public enum ModoImportacion { VALIDAR, APLICAR }
+
+public record FilaImportacionParametro(
+    int     Linea,
+    int     DiasFaltantes,
+    decimal PorcentajeDescuento,
+    bool    AplicaIva,
+    decimal PorcentajeIva
+);
+
+public record FilaImportacionError(int Linea, string Mensaje);
+
+public record ImportarParametrosResult(
+    string  Scope,
+    long?   IdComercioAliado,
+    string  Modo,
+    int     LineasLeidas,
+    int     LineasValidas,
+    int     LineasConError,
+    int     DiasCreados,
+    int     DiasActualizados,
+    bool    Aplicado,
+    List<FilaImportacionError> Errores
+);

@@ -375,6 +375,60 @@ public class ComerciosAliadosController : ControllerBase
         catch { return StatusCode(500, new { success = false, message = "Error interno en backfill." }); }
     }
 
+    // ── Importación CSV parámetros ────────────────────────────────────────────
+
+    [HttpGet("parametros-liquidacion/plantilla")]
+    public IActionResult DescargarPlantilla()
+    {
+        var csv   = _disp.GenerarPlantillaCsv();
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
+        return File(bytes, "text/csv", "plantilla_parametros_liquidacion.csv");
+    }
+
+    [HttpPost("parametros-liquidacion/importar")]
+    [RequestSizeLimit(3 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 3 * 1024 * 1024)]
+    public async Task<IActionResult> ImportarParametros(
+        IFormFile archivo,
+        [FromForm] long?   idComercioAliado = null,
+        [FromForm] string  modo             = "VALIDAR")
+    {
+        if (!TryGetAdminId(out var adminId)) return Unauthorized(new { success = false, message = "Token inválido." });
+
+        if (archivo == null || archivo.Length == 0)
+            return BadRequest(new { success = false, message = "Archivo vacío o no recibido." });
+
+        var ext = Path.GetExtension(archivo.FileName).ToLowerInvariant();
+        if (ext != ".csv")
+            return BadRequest(new { success = false, message = "Solo se aceptan archivos .csv." });
+
+        if (!Enum.TryParse<ModoImportacion>(modo.ToUpperInvariant(), out var modoEnum))
+            return BadRequest(new { success = false, message = "modo debe ser VALIDAR o APLICAR." });
+
+        try
+        {
+            await using var stream = archivo.OpenReadStream();
+            var result = await _disp.ImportarParametrosCsvAsync(stream, idComercioAliado, modoEnum, adminId);
+            return Ok(new { success = true, data = result });
+        }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno importando parámetros." }); }
+    }
+
+    [HttpPost("parametros-liquidacion/copiar-global/{idComercioAliado:long}")]
+    public async Task<IActionResult> CopiarGlobalAComercio(long idComercioAliado)
+    {
+        if (!TryGetAdminId(out var adminId)) return Unauthorized(new { success = false, message = "Token inválido." });
+        try
+        {
+            var result = await _disp.CopiarGlobalAComercioAsync(idComercioAliado, adminId);
+            return Ok(new { success = true, data = result });
+        }
+        catch (KeyNotFoundException ex)      { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno copiando parámetros globales." }); }
+    }
+
     // ── Liquidación automática ─────────────────────────────────────────────────
 
     [HttpPost("liquidacion-automatica/ejecutar")]

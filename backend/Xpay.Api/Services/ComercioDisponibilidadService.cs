@@ -663,4 +663,252 @@ public class ComercioDisponibilidadService
             d.IdTransaccionLedgerLiberacion
         );
     }
+
+    // ── Importación CSV de parámetros ────────────────────────────────────────
+
+    public string GenerarPlantillaCsv()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("dias_faltantes,porcentaje_descuento,aplica_iva,porcentaje_iva");
+        for (int d = 0; d <= 60; d++)
+            sb.AppendLine($"{d},{(d * 0.5m).ToString(System.Globalization.CultureInfo.InvariantCulture)},true,19");
+        return sb.ToString();
+    }
+
+    public async Task<ImportarParametrosResult> ImportarParametrosCsvAsync(
+        Stream csvStream, long? idComercioAliado, ModoImportacion modo, long adminId)
+    {
+        if (csvStream.Length > 2 * 1024 * 1024)
+            throw new InvalidOperationException("El archivo supera el límite de 2 MB.");
+
+        var scope = idComercioAliado.HasValue ? $"Comercio Aliado #{idComercioAliado}" : "Global XPAY";
+
+        // Parse CSV
+        var filas  = new List<FilaImportacionParametro>();
+        var errores = new List<FilaImportacionError>();
+
+        using var reader = new System.IO.StreamReader(csvStream, leaveOpen: true);
+        string? linea;
+        int nLinea = 0;
+
+        while ((linea = await reader.ReadLineAsync()) != null)
+        {
+            nLinea++;
+            if (nLinea == 1 && linea.TrimStart().StartsWith("dias_faltantes", StringComparison.OrdinalIgnoreCase))
+                continue; // skip header
+
+            if (string.IsNullOrWhiteSpace(linea)) continue;
+
+            var partes = linea.Split(',');
+            if (partes.Length < 3)
+            {
+                errores.Add(new FilaImportacionError(nLinea, "Columnas insuficientes (mínimo 3: dias_faltantes, porcentaje_descuento, aplica_iva)."));
+                continue;
+            }
+
+            if (!int.TryParse(partes[0].Trim(), out var dias) || dias < 0 || dias > 60)
+            {
+                errores.Add(new FilaImportacionError(nLinea, $"dias_faltantes inválido: '{partes[0].Trim()}'. Debe ser entero 0–60."));
+                continue;
+            }
+
+            if (!decimal.TryParse(partes[1].Trim(), System.Globalization.NumberStyles.Any,
+                    System.Globalization.CultureInfo.InvariantCulture, out var pct) || pct < 0 || pct > 100)
+            {
+                errores.Add(new FilaImportacionError(nLinea, $"porcentaje_descuento inválido: '{partes[1].Trim()}'. Debe ser número 0–100."));
+                continue;
+            }
+
+            var aplIvaRaw = partes[2].Trim().ToUpperInvariant();
+            bool aplIva = aplIvaRaw is "TRUE" or "1" or "SI" or "S" or "YES" or "Y";
+            if (!aplIva && aplIvaRaw is not ("FALSE" or "0" or "NO" or "N"))
+            {
+                errores.Add(new FilaImportacionError(nLinea, $"aplica_iva inválido: '{partes[2].Trim()}'. Use true/false, 1/0, SI/NO."));
+                continue;
+            }
+
+            decimal pctIva = 0;
+            if (partes.Length >= 4 && !string.IsNullOrWhiteSpace(partes[3]))
+            {
+                if (!decimal.TryParse(partes[3].Trim(), System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out pctIva))
+                {
+                    errores.Add(new FilaImportacionError(nLinea, $"porcentaje_iva inválido: '{partes[3].Trim()}'."));
+                    continue;
+                }
+            }
+
+            if (aplIva && (pctIva <= 0 || pctIva > 100))
+            {
+                errores.Add(new FilaImportacionError(nLinea, $"porcentaje_iva debe ser > 0 y ≤ 100 cuando aplica_iva=true (día {dias})."));
+                continue;
+            }
+
+            if (filas.Any(f => f.DiasFaltantes == dias))
+            {
+                errores.Add(new FilaImportacionError(nLinea, $"Día {dias} duplicado en el archivo."));
+                continue;
+            }
+
+            filas.Add(new FilaImportacionParametro(nLinea, dias, pct, aplIva, pctIva));
+        }
+
+        // Check for days outside range (already handled above via 0-60 validation)
+        var diasPresentes = filas.Select(f => f.DiasFaltantes).ToHashSet();
+        var diasFaltantes = Enumerable.Range(0, 61).Where(d => !diasPresentes.Contains(d)).ToList();
+        if (diasFaltantes.Count > 0 && diasFaltantes.Count <= 61)
+        {
+            // Only warn — spec says "reportar cuáles faltan", not block
+            _logger.LogInformation("CSV import: días sin cubrir: {Dias}", string.Join(", ", diasFaltantes));
+        }
+
+        var lineasLeidas = nLinea;
+        var lineasValidas = filas.Count;
+
+        // Si hay errores, no aplicar (todo o nada)
+        if (errores.Count > 0)
+        {
+            return new ImportarParametrosResult(
+                scope, idComercioAliado, modo.ToString(),
+                lineasLeidas, lineasValidas, errores.Count,
+                0, 0, Aplicado: false, errores);
+        }
+
+        if (modo == ModoImportacion.VALIDAR)
+        {
+            return new ImportarParametrosResult(
+                scope, idComercioAliado, "VALIDAR",
+                lineasLeidas, lineasValidas, 0,
+                0, 0, Aplicado: false, []);
+        }
+
+        // APLICAR — upsert dentro de transacción
+        int creados = 0, actualizados = 0;
+        var now = DateTime.UtcNow;
+
+        await using var dbTx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            foreach (var fila in filas)
+            {
+                var existente = await _db.XpayParametrosLiquidacionAnticipada
+                    .FirstOrDefaultAsync(p => p.IdComercioAliado == idComercioAliado
+                                           && p.DiasFaltantes    == fila.DiasFaltantes
+                                           && p.Estado           == "ACTIVO");
+
+                if (existente != null)
+                {
+                    existente.PorcentajeDescuento = fila.PorcentajeDescuento;
+                    existente.AplicaIva           = fila.AplicaIva;
+                    existente.PorcentajeIva       = fila.AplicaIva ? fila.PorcentajeIva : null;
+                    existente.UpdatedAt           = now;
+                    existente.UpdatedByUsuario    = adminId;
+                    actualizados++;
+                }
+                else
+                {
+                    _db.XpayParametrosLiquidacionAnticipada.Add(new XpayParametroLiquidacionAnticipada
+                    {
+                        IdComercioAliado    = idComercioAliado,
+                        DiasFaltantes       = fila.DiasFaltantes,
+                        PorcentajeDescuento = fila.PorcentajeDescuento,
+                        AplicaIva           = fila.AplicaIva,
+                        PorcentajeIva       = fila.AplicaIva ? fila.PorcentajeIva : null,
+                        Estado              = "ACTIVO",
+                        CreatedAt           = now,
+                        CreatedByUsuario    = adminId,
+                    });
+                    creados++;
+                }
+            }
+
+            await _db.SaveChangesAsync();
+            await dbTx.CommitAsync();
+
+            _logger.LogInformation(
+                "CSV_IMPORT: scope={Scope} modo=APLICAR creados={C} actualizados={A} admin={Admin}",
+                scope, creados, actualizados, adminId);
+        }
+        catch
+        {
+            await dbTx.RollbackAsync();
+            throw;
+        }
+
+        return new ImportarParametrosResult(
+            scope, idComercioAliado, "APLICAR",
+            lineasLeidas, lineasValidas, 0,
+            creados, actualizados, Aplicado: true, []);
+    }
+
+    public async Task<ImportarParametrosResult> CopiarGlobalAComercioAsync(
+        long idComercioAliado, long adminId)
+    {
+        if (!await _db.ComerciosAliados.AnyAsync(c => c.IdComercioAliado == idComercioAliado))
+            throw new KeyNotFoundException($"Comercio aliado {idComercioAliado} no encontrado.");
+
+        var globales = await _db.XpayParametrosLiquidacionAnticipada
+            .Where(p => p.IdComercioAliado == null && p.Estado == "ACTIVO")
+            .OrderBy(p => p.DiasFaltantes)
+            .ToListAsync();
+
+        if (globales.Count == 0)
+            throw new InvalidOperationException("No hay parámetros globales ACTIVOS para copiar.");
+
+        int creados = 0, actualizados = 0;
+        var now = DateTime.UtcNow;
+
+        await using var dbTx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            foreach (var g in globales)
+            {
+                var existente = await _db.XpayParametrosLiquidacionAnticipada
+                    .FirstOrDefaultAsync(p => p.IdComercioAliado == idComercioAliado
+                                           && p.DiasFaltantes    == g.DiasFaltantes
+                                           && p.Estado           == "ACTIVO");
+                if (existente != null)
+                {
+                    existente.PorcentajeDescuento = g.PorcentajeDescuento;
+                    existente.AplicaIva           = g.AplicaIva;
+                    existente.PorcentajeIva       = g.PorcentajeIva;
+                    existente.UpdatedAt           = now;
+                    existente.UpdatedByUsuario    = adminId;
+                    actualizados++;
+                }
+                else
+                {
+                    _db.XpayParametrosLiquidacionAnticipada.Add(new XpayParametroLiquidacionAnticipada
+                    {
+                        IdComercioAliado    = idComercioAliado,
+                        DiasFaltantes       = g.DiasFaltantes,
+                        PorcentajeDescuento = g.PorcentajeDescuento,
+                        AplicaIva           = g.AplicaIva,
+                        PorcentajeIva       = g.PorcentajeIva,
+                        Estado              = "ACTIVO",
+                        CreatedAt           = now,
+                        CreatedByUsuario    = adminId,
+                    });
+                    creados++;
+                }
+            }
+
+            await _db.SaveChangesAsync();
+            await dbTx.CommitAsync();
+
+            _logger.LogInformation(
+                "COPIAR_GLOBAL: comercio={CA} creados={C} actualizados={A} admin={Admin}",
+                idComercioAliado, creados, actualizados, adminId);
+        }
+        catch
+        {
+            await dbTx.RollbackAsync();
+            throw;
+        }
+
+        return new ImportarParametrosResult(
+            $"Comercio Aliado #{idComercioAliado}", idComercioAliado, "COPIAR_GLOBAL",
+            globales.Count, globales.Count, 0,
+            creados, actualizados, Aplicado: true, []);
+    }
 }

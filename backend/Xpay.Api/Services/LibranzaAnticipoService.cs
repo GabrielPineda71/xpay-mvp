@@ -140,13 +140,16 @@ public class LibranzaAnticipoService
         };
     }
 
+    private static readonly HashSet<string> EstadosActivos =
+        ["DESEMBOLSADO", "PENDIENTE", "APROBADO", "EN_PROCESO", "CREADO"];
+
     private async Task<decimal> CalcularCupoUsadoAsync(long idEmpleado, int diaPago, DateOnly fechaPago)
     {
         return await _db.LibranzaAnticipos
-            .Where(a => a.IdEmpleado == idEmpleado
-                     && a.DiaPagoCorte == diaPago
+            .Where(a => a.IdEmpleado         == idEmpleado
+                     && a.DiaPagoCorte        == diaPago
                      && a.FechaPagoProgramada == fechaPago
-                     && (a.Estado == "DESEMBOLSADO"))
+                     && EstadosActivos.Contains(a.Estado))
             .SumAsync(a => (decimal?)a.ValorSolicitado) ?? 0m;
     }
 
@@ -174,13 +177,22 @@ public class LibranzaAnticipoService
         try { corte = await ObtenerCorteVigenteAsync(empleado.IdEmpleado, fechaSimulada); }
         catch (InvalidOperationException) { /* día de pago bloqueado, corte null */ }
 
-        var anticiposActivos = await _db.LibranzaAnticipos
-            .Where(a => a.IdEmpleado == empleado.IdEmpleado && a.Estado == "DESEMBOLSADO")
-            .OrderByDescending(a => a.FechaSolicitud)
-            .ToListAsync();
+        // Anticipos del período vigente (todos los estados activos que consumen cupo)
+        var anticiposActivos = corte != null
+            ? await _db.LibranzaAnticipos
+                .Where(a => a.IdEmpleado         == empleado.IdEmpleado
+                         && a.DiaPagoCorte        == corte.DiaPago
+                         && a.FechaPagoProgramada == corte.FechaPago
+                         && EstadosActivos.Contains(a.Estado))
+                .OrderByDescending(a => a.FechaSolicitud)
+                .ToListAsync()
+            : await _db.LibranzaAnticipos
+                .Where(a => a.IdEmpleado == empleado.IdEmpleado && EstadosActivos.Contains(a.Estado))
+                .OrderByDescending(a => a.FechaSolicitud)
+                .ToListAsync();
 
         var historial = await _db.LibranzaAnticipos
-            .Where(a => a.IdEmpleado == empleado.IdEmpleado && a.Estado != "DESEMBOLSADO")
+            .Where(a => a.IdEmpleado == empleado.IdEmpleado && !EstadosActivos.Contains(a.Estado))
             .OrderByDescending(a => a.FechaSolicitud)
             .Take(20)
             .ToListAsync();
