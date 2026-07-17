@@ -44,10 +44,12 @@ export function Layout() {
               <Link to="/admin/libranza-convenios">Convenios Libranza</Link>
               <Link to="/admin/comercios-aliados">Comercios Aliados</Link>
               <Link to="/admin/parametros-liquidacion-comercio">Parámetros Liquidación</Link>
+              <Link to="/admin/cartera-ordinaria">Cartera Ordinaria</Link>
             </>
           )}
           {view === 'wallet'   && <Link to="/mi-wallet">Mi Wallet</Link>}
           {view === 'wallet'   && <Link to="/mi-wallet/libranza">Anticipo Nómina</Link>}
+          {view === 'wallet'   && <Link to="/mi-wallet/cartera">Cartera Ordinaria</Link>}
           {view === 'comercio' && <Link to="/mi-comercio">Mi Comercio</Link>}
           {view === 'empresa'  && (
             <>

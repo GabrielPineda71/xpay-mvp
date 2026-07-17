@@ -23,6 +23,8 @@ import { MiEmpresaLibranzaPage } from './pages/MiEmpresaLibranzaPage.tsx';
 import { MiWalletLibranzaPage } from './pages/MiWalletLibranzaPage.tsx';
 import { ComerciosAliadosPage } from './pages/ComerciosAliadosPage.tsx';
 import { ParametrosLiquidacionPage } from './pages/ParametrosLiquidacionPage.tsx';
+import { CarteraOrdinariaAdminPage } from './pages/CarteraOrdinariaAdminPage.tsx';
+import { MiCarteraOrdinariaPage } from './pages/MiCarteraOrdinariaPage.tsx';
 
 // Smart redirect based on user role/view
 function UserRedirect() {
@@ -64,12 +66,14 @@ export default function App() {
               <Route path="admin/libranza-convenios" element={<LibranzaConveniosAdminPage />} />
               <Route path="admin/comercios-aliados" element={<ComerciosAliadosPage />} />
               <Route path="admin/parametros-liquidacion-comercio" element={<ParametrosLiquidacionPage />} />
+              <Route path="admin/cartera-ordinaria" element={<CarteraOrdinariaAdminPage />} />
               {/* Demo user routes */}
               <Route path="mi-wallet"   element={<UserWalletPage />} />
               <Route path="mi-comercio" element={<MiComercioPage />} />
               <Route path="mi-empresa"  element={<MiEmpresaPage />} />
               <Route path="mi-empresa/libranza" element={<MiEmpresaLibranzaPage />} />
               <Route path="mi-wallet/libranza" element={<MiWalletLibranzaPage />} />
+              <Route path="mi-wallet/cartera" element={<MiCarteraOrdinariaPage />} />
               {/* Catch-all: smart redirect per role */}
               <Route path="*" element={<UserRedirect />} />
             </Route>

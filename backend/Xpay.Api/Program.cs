@@ -35,6 +35,7 @@ builder.Services.AddScoped<ComercioAliadoService>();
 builder.Services.AddScoped<ComercioDisponibilidadService>();
 builder.Services.AddScoped<ComercioScopeService>();
 builder.Services.AddScoped<ComercioLiquidacionAutomaticaService>();
+builder.Services.AddScoped<CarteraOrdinariaService>();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 {
     o.MultipartBodyLengthLimit = 6 * 1024 * 1024; // 6 MB global — per-endpoint can restrict further
