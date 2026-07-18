@@ -17,6 +17,14 @@ public class CarteraCuota
     public string   Estado                  { get; set; } = "PENDIENTE";
     public DateTime? FechaPago              { get; set; }
     public long?    IdPago                  { get; set; }
+    public decimal  PagadoCapital           { get; set; }
+    public decimal  PagadoInteres           { get; set; }
+    public decimal  PagadoAval              { get; set; }
+    public decimal  PagadoAdmin             { get; set; }
+    public decimal  PagadoIva               { get; set; }
+    public decimal  PagadoGastosCobranza    { get; set; }
+    public decimal  PagadoIvaGastosCobranza { get; set; }
+    public decimal  SaldoCuota              { get; set; }
     public DateTime CreatedAt               { get; set; }
     public DateTime? UpdatedAt              { get; set; }
 }

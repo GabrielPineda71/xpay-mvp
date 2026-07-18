@@ -138,9 +138,78 @@ public record ConfirmacionUtilizacionDto(
 // ── Mi cupo (vista usuario) ────────────────────────────────────────────
 public record MiCupoOrdinarioDto(
     long    IdCupo,
+    long    IdWallet,
     decimal CupoAprobado,
     decimal CupoUsado,
     decimal CupoDisponible,
     string  Estado,
     DateTime FechaAprobacion,
     DateTime? FechaVencimiento);
+
+// ── Mis créditos (vista usuario) ────────────────────────────────────────
+public record MiCreditoDto(
+    long    IdUtilizacion,
+    long    NroCredito,
+    string  TipoUtilizacion,
+    decimal ValorCapital,
+    string  Estado,
+    DateTime? FechaDesembolso,
+    int     TotalCuotas,
+    int     CuotasPagadas,
+    decimal SaldoPendiente,
+    int?    ProximaCuota,
+    decimal? ValorProximaCuota);
+
+public record CuotaDetalleDto(
+    long    IdCuota,
+    int     NumeroCuota,
+    string  FechaVencimiento,
+    decimal ValorCapital,
+    decimal ValorInteres,
+    decimal ValorAval,
+    decimal ValorAdmin,
+    decimal ValorIva,
+    decimal ValorGastosCobranza,
+    decimal ValorTotal,
+    decimal PagadoCapital,
+    decimal PagadoInteres,
+    decimal PagadoAval,
+    decimal PagadoAdmin,
+    decimal PagadoIva,
+    decimal SaldoCuota,
+    string  Estado);
+
+// ── Pago manual de cuota desde Wallet ───────────────────────────────────
+public record PagarCuotaWalletRequest(
+    long    IdUtilizacion,
+    decimal ValorPago,
+    string  Pin);
+
+public record CuotaAfectadaDto(
+    long    IdCuota,
+    int     NumeroCuota,
+    decimal CapitalPagado,
+    decimal InteresPagado,
+    decimal AvalPagado,
+    decimal AdminPagado,
+    decimal IvaPagado,
+    decimal ValorPagado,
+    decimal SaldoCuotaDespues,
+    string  Estado);
+
+public record PagoCuotaResultDto(
+    long    IdPago,
+    long?   IdTransaccionLedger,
+    decimal ValorPago,
+    decimal SaldoWalletAntes,
+    decimal SaldoWalletDespues,
+    decimal CupoUsadoAntes,
+    decimal CupoUsadoDespues,
+    decimal CupoDisponibleAntes,
+    decimal CupoDisponibleDespues,
+    decimal CapitalPagado,
+    decimal InteresesPagados,
+    decimal AvalPagado,
+    decimal AdminPagado,
+    decimal IvaPagado,
+    List<CuotaAfectadaDto> CuotasAfectadas);

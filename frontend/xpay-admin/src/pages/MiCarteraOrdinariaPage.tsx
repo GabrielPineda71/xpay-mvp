@@ -4,12 +4,83 @@ import { get, post } from '../api/client.ts';
 
 interface MiCupo {
   idCupo: number;
+  idWallet: number;
   cupoAprobado: number;
   cupoUsado: number;
   cupoDisponible: number;
   estado: string;
   fechaAprobacion: string;
   fechaVencimiento: string | null;
+}
+
+interface MiCredito {
+  idUtilizacion: number;
+  nroCredito: number;
+  tipoUtilizacion: string;
+  valorCapital: number;
+  estado: string;
+  fechaDesembolso: string | null;
+  totalCuotas: number;
+  cuotasPagadas: number;
+  saldoPendiente: number;
+  proximaCuota: number | null;
+  valorProximaCuota: number | null;
+}
+
+interface CuotaDetalle {
+  idCuota: number;
+  numeroCuota: number;
+  fechaVencimiento: string;
+  valorCapital: number;
+  valorInteres: number;
+  valorAval: number;
+  valorAdmin: number;
+  valorIva: number;
+  valorGastosCobranza: number;
+  valorTotal: number;
+  pagadoCapital: number;
+  pagadoInteres: number;
+  pagadoAval: number;
+  pagadoAdmin: number;
+  pagadoIva: number;
+  saldoCuota: number;
+  estado: string;
+}
+
+interface CuotaAfectada {
+  idCuota: number;
+  numeroCuota: number;
+  capitalPagado: number;
+  interesPagado: number;
+  avalPagado: number;
+  adminPagado: number;
+  ivaPagado: number;
+  valorPagado: number;
+  saldoCuotaDespues: number;
+  estado: string;
+}
+
+interface PagoCuotaResult {
+  idPago: number;
+  idTransaccionLedger: number | null;
+  valorPago: number;
+  saldoWalletAntes: number;
+  saldoWalletDespues: number;
+  cupoUsadoAntes: number;
+  cupoUsadoDespues: number;
+  cupoDisponibleAntes: number;
+  cupoDisponibleDespues: number;
+  capitalPagado: number;
+  interesesPagados: number;
+  avalPagado: number;
+  adminPagado: number;
+  ivaPagado: number;
+  cuotasAfectadas: CuotaAfectada[];
+}
+
+interface WalletEstadoCuenta {
+  success: boolean;
+  data: { saldoDisponible: number };
 }
 
 interface CuotaSimulada {
@@ -96,13 +167,110 @@ export function MiCarteraOrdinariaPage() {
   const [confirmResult, setConfirmResult] = useState<ConfirmacionResult | null>(null);
   const [confirmPin, setConfirmPin]     = useState('');
 
+  // Mis créditos / pago manual de cuotas
+  const [creditos, setCreditos]           = useState<MiCredito[]>([]);
+  const [creditosError, setCreditosError] = useState('');
+  const [cuotasPorCredito, setCuotasPorCredito] = useState<Record<number, CuotaDetalle[]>>({});
+  const [cuotasVisibles, setCuotasVisibles]     = useState<Record<number, boolean>>({});
+  const [cuotasBusy, setCuotasBusy]             = useState<Record<number, boolean>>({});
+  const [walletSaldo, setWalletSaldo]     = useState<number | null>(null);
+  const [pagoAbierto, setPagoAbierto]     = useState<number | null>(null); // idUtilizacion
+  const [pagoValor, setPagoValor]         = useState('');
+  const [pagoPin, setPagoPin]             = useState('');
+  const [pagoBusy, setPagoBusy]           = useState(false);
+  const [pagoError, setPagoError]         = useState('');
+  const [pagoResult, setPagoResult]       = useState<PagoCuotaResult | null>(null);
+
+  const cargarWalletSaldo = (idWallet: number) => {
+    get<WalletEstadoCuenta>(`/api/reportes/wallet/${idWallet}/estado-cuenta`)
+      .then(res => setWalletSaldo(res.data.saldoDisponible))
+      .catch(() => { /* no bloquea la pantalla si falla */ });
+  };
+
   const cargarCupo = () => {
     get<MiCupo>('/api/cartera-ordinaria/mi-cupo')
-      .then(data => setCupo(data))
+      .then(data => { setCupo(data); cargarWalletSaldo(data.idWallet); })
       .catch(() => setCupoError('No tienes un cupo ordinario activo en este momento.'));
   };
 
+  const cargarCreditos = () => {
+    get<MiCredito[]>('/api/cartera-ordinaria/mis-creditos')
+      .then(data => setCreditos(data))
+      .catch(() => setCreditosError('No se pudieron cargar tus créditos de Cartera Ordinaria.'));
+  };
+
   useEffect(cargarCupo, []);
+  useEffect(cargarCreditos, []);
+
+  const toggleCuotas = async (idUtilizacion: number) => {
+    const yaVisible = !!cuotasVisibles[idUtilizacion];
+    setCuotasVisibles(prev => ({ ...prev, [idUtilizacion]: !yaVisible }));
+    if (!yaVisible && !cuotasPorCredito[idUtilizacion]) {
+      setCuotasBusy(prev => ({ ...prev, [idUtilizacion]: true }));
+      try {
+        const data = await get<CuotaDetalle[]>(`/api/cartera-ordinaria/mis-creditos/${idUtilizacion}/cuotas`);
+        setCuotasPorCredito(prev => ({ ...prev, [idUtilizacion]: data }));
+      } catch {
+        // silencioso: la sección simplemente queda vacía si falla
+      } finally {
+        setCuotasBusy(prev => ({ ...prev, [idUtilizacion]: false }));
+      }
+    }
+  };
+
+  const recargarCuotasSiVisibles = async (idUtilizacion: number) => {
+    if (!cuotasVisibles[idUtilizacion]) return;
+    const data = await get<CuotaDetalle[]>(`/api/cartera-ordinaria/mis-creditos/${idUtilizacion}/cuotas`);
+    setCuotasPorCredito(prev => ({ ...prev, [idUtilizacion]: data }));
+  };
+
+  const abrirPago = (credito: MiCredito) => {
+    setPagoAbierto(credito.idUtilizacion);
+    setPagoValor(credito.valorProximaCuota ? String(credito.valorProximaCuota) : '');
+    setPagoPin('');
+    setPagoError('');
+    setPagoResult(null);
+  };
+
+  const cerrarPago = () => {
+    setPagoAbierto(null);
+    setPagoValor('');
+    setPagoPin('');
+    setPagoError('');
+    setPagoResult(null);
+  };
+
+  const pagarCuota = async () => {
+    if (pagoAbierto === null) return;
+    const valorNum = Number(pagoValor) || 0;
+    if (valorNum <= 0) { setPagoError('Ingresa un valor válido'); return; }
+    if (walletSaldo !== null && valorNum > walletSaldo) {
+      setPagoError(`El valor supera tu saldo de Wallet (${fmt(walletSaldo)})`);
+      return;
+    }
+    const pinErr = validatePin(pagoPin);
+    if (pinErr) { setPagoError(pinErr); return; }
+
+    setPagoBusy(true); setPagoError(''); setPagoResult(null);
+    try {
+      const result = await post<PagoCuotaResult>('/api/cartera-ordinaria/pagar-cuota-wallet', {
+        idUtilizacion: pagoAbierto,
+        valorPago:     valorNum,
+        pin:           pagoPin,
+      });
+      setPagoResult(result);
+      setCupo(prev => prev ? {
+        ...prev,
+        cupoUsado:      result.cupoUsadoDespues,
+        cupoDisponible: result.cupoDisponibleDespues,
+      } : prev);
+      setWalletSaldo(result.saldoWalletDespues);
+      cargarCreditos();
+      await recargarCuotasSiVisibles(pagoAbierto);
+    } catch (e: unknown) {
+      setPagoError(e instanceof Error ? e.message : 'Error al procesar el pago');
+    } finally { setPagoBusy(false); setPagoPin(''); }
+  };
 
   const confirmarAvanceWallet = async () => {
     if (!sim) return;
@@ -427,6 +595,163 @@ export function MiCarteraOrdinariaPage() {
           )}
         </div>
       )}
+
+      {/* Mis créditos de Cartera Ordinaria — pago manual de cuotas desde Wallet */}
+      <div style={{ marginTop: '2.5rem', paddingTop: '1.5rem', borderTop: '2px solid #e0e0e0' }}>
+        <h2 style={{ marginBottom: '0.25rem', fontSize: 18 }}>Mis créditos de Cartera Ordinaria</h2>
+        <p style={{ fontSize: 13, color: '#666', margin: '0 0 1rem' }}>
+          Paga tus cuotas manualmente desde tu Wallet. El cupo solo se libera por la parte aplicada a capital.
+        </p>
+
+        {creditosError && <p style={{ color: '#c62828', fontSize: 13 }}>{creditosError}</p>}
+
+        {creditos.length === 0 && !creditosError ? (
+          <p style={{ color: '#888', fontSize: 13 }}>No tienes créditos de Cartera Ordinaria todavía.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            {creditos.map(c => (
+              <div key={c.idUtilizacion} style={{ border: '1px solid #ddd', borderRadius: 8, padding: '1rem', background: '#fff', maxWidth: 780 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                  <div><div style={{ fontSize: 11, color: '#666' }}>Crédito #</div><div style={{ fontWeight: 600 }}>{c.nroCredito}</div></div>
+                  <div><div style={{ fontSize: 11, color: '#666' }}>Tipo</div><div>{c.tipoUtilizacion}</div></div>
+                  <div><div style={{ fontSize: 11, color: '#666' }}>Valor desembolsado</div><div>{fmt(c.valorCapital)}</div></div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#666' }}>Estado</div>
+                    <span style={{
+                      fontSize: 11, padding: '2px 8px', borderRadius: 10,
+                      background: c.estado === 'PAGADA' ? '#e8f5e9' : '#fff3e0',
+                      color: c.estado === 'PAGADA' ? '#2e7d32' : '#e65100',
+                    }}>{c.estado}</span>
+                  </div>
+                  <div><div style={{ fontSize: 11, color: '#666' }}>Saldo pendiente</div><div style={{ fontWeight: 600 }}>{fmt(c.saldoPendiente)}</div></div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#666' }}>Próxima cuota</div>
+                    <div>{c.proximaCuota ? `#${c.proximaCuota} — ${fmt(c.valorProximaCuota ?? 0)}` : '—'}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button onClick={() => toggleCuotas(c.idUtilizacion)}
+                    style={{ background: 'none', border: '1px solid #1976d2', color: '#1976d2', borderRadius: 4, padding: '4px 12px', cursor: 'pointer', fontSize: 13 }}>
+                    {cuotasVisibles[c.idUtilizacion] ? 'Ocultar cuotas' : 'Ver cuotas'}
+                  </button>
+                  {c.saldoPendiente > 0 && (
+                    <button onClick={() => abrirPago(c)}
+                      style={{ background: '#388e3c', border: 'none', color: '#fff', borderRadius: 4, padding: '4px 12px', cursor: 'pointer', fontSize: 13 }}>
+                      Pagar desde Wallet
+                    </button>
+                  )}
+                </div>
+
+                {cuotasVisibles[c.idUtilizacion] && (
+                  <div style={{ marginTop: '0.75rem', overflowX: 'auto' }}>
+                    {cuotasBusy[c.idUtilizacion] ? (
+                      <p style={{ fontSize: 12, color: '#888' }}>Cargando cuotas…</p>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ background: '#f5f5f5' }}>
+                            {['#', 'Vencimiento', 'Capital', 'Interés', 'Aval', 'Admin', 'IVA', 'Total', 'Saldo', 'Estado'].map(h =>
+                              <th key={h} style={{ padding: '5px 8px', textAlign: 'right', borderBottom: '1px solid #ddd' }}>{h}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(cuotasPorCredito[c.idUtilizacion] ?? []).map(q => (
+                            <tr key={q.idCuota}>
+                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{q.numeroCuota}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{q.fechaVencimiento}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{fmt(q.valorCapital)}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{fmt(q.valorInteres)}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{fmt(q.valorAval)}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{fmt(q.valorAdmin)}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{fmt(q.valorIva)}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 600 }}>{fmt(q.valorTotal)}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{fmt(q.saldoCuota)}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right' }}>{q.estado}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+
+                {pagoAbierto === c.idUtilizacion && (
+                  <div style={{ marginTop: '1rem', padding: '1rem', border: '1px solid #a5d6a7', borderRadius: 6, background: '#f1f8e9', maxWidth: 420 }}>
+                    {pagoResult ? (
+                      <div style={{ fontSize: 13 }}>
+                        <strong>Pago aplicado #{pagoResult.idPago}</strong>
+                        <table style={{ width: '100%', marginTop: '0.5rem', fontSize: 12 }}>
+                          <tbody>
+                            <tr><td>Valor pagado</td><td style={{ textAlign: 'right' }}>{fmt(pagoResult.valorPago)}</td></tr>
+                            <tr><td>Capital aplicado</td><td style={{ textAlign: 'right' }}>{fmt(pagoResult.capitalPagado)}</td></tr>
+                            <tr><td>Intereses</td><td style={{ textAlign: 'right' }}>{fmt(pagoResult.interesesPagados)}</td></tr>
+                            <tr><td>Aval</td><td style={{ textAlign: 'right' }}>{fmt(pagoResult.avalPagado)}</td></tr>
+                            <tr><td>Administración</td><td style={{ textAlign: 'right' }}>{fmt(pagoResult.adminPagado)}</td></tr>
+                            <tr><td>IVA</td><td style={{ textAlign: 'right' }}>{fmt(pagoResult.ivaPagado)}</td></tr>
+                            <tr><td>Nuevo cupo disponible</td><td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(pagoResult.cupoDisponibleDespues)}</td></tr>
+                            <tr><td>Nuevo saldo Wallet</td><td style={{ textAlign: 'right', fontWeight: 600 }}>{fmt(pagoResult.saldoWalletDespues)}</td></tr>
+                            <tr><td>idPago</td><td style={{ textAlign: 'right' }}>{pagoResult.idPago}</td></tr>
+                            <tr><td>idTransaccionLedger</td><td style={{ textAlign: 'right' }}>{pagoResult.idTransaccionLedger ?? '—'}</td></tr>
+                          </tbody>
+                        </table>
+                        <button onClick={cerrarPago}
+                          style={{ marginTop: '0.75rem', padding: '6px 16px', background: '#eee', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13 }}>
+                          Cerrar
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, marginBottom: '0.6rem' }}>
+                          Valor a pagar (COP)
+                          <input type="number" value={pagoValor} onChange={e => setPagoValor(e.target.value)}
+                            style={{ marginTop: 4, padding: '6px 8px', border: '1px solid #ccc', borderRadius: 4 }} />
+                        </label>
+                        <p style={{ fontSize: 12, color: '#555', margin: '0 0 0.6rem' }}>
+                          Saldo Wallet actual: <strong>{walletSaldo !== null ? fmt(walletSaldo) : '—'}</strong>
+                        </p>
+                        <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, maxWidth: 200, marginBottom: '0.6rem' }}>
+                          Clave de 7 dígitos
+                          <input
+                            type="password"
+                            inputMode="numeric"
+                            maxLength={7}
+                            value={pagoPin}
+                            onChange={e => setPagoPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
+                            placeholder="·······"
+                            autoComplete="off"
+                            style={{ marginTop: 4, padding: '6px 8px', border: '1px solid #ccc', borderRadius: 4 }}
+                          />
+                        </label>
+                        <div style={{ padding: '0.6rem 0.8rem', background: '#fff8e1', borderRadius: 4, marginBottom: '0.6rem', fontSize: 12 }}>
+                          El pago se descontará de tu Wallet. El cupo solo se libera por la parte aplicada a capital.
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button onClick={pagarCuota}
+                            disabled={pagoBusy || !pagoValor || Number(pagoValor) <= 0 || (walletSaldo !== null && Number(pagoValor) > walletSaldo) || pagoPin.length !== 7}
+                            style={{
+                              padding: '8px 20px',
+                              background: pagoBusy || !pagoValor || Number(pagoValor) <= 0 || (walletSaldo !== null && Number(pagoValor) > walletSaldo) || pagoPin.length !== 7 ? '#ccc' : '#388e3c',
+                              color: '#fff', border: 'none', borderRadius: 4,
+                              cursor: pagoBusy || !pagoValor || Number(pagoValor) <= 0 || (walletSaldo !== null && Number(pagoValor) > walletSaldo) || pagoPin.length !== 7 ? 'not-allowed' : 'pointer', fontSize: 14,
+                            }}>
+                            {pagoBusy ? 'Pagando…' : 'Confirmar pago'}
+                          </button>
+                          <button onClick={cerrarPago}
+                            style={{ padding: '8px 16px', background: '#eee', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 14 }}>
+                            Cancelar
+                          </button>
+                        </div>
+                        {pagoError && <p style={{ color: '#c62828', marginTop: '0.5rem', fontSize: 13 }}>{pagoError}</p>}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

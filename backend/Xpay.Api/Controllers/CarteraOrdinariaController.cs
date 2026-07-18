@@ -111,6 +111,27 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // ── USUARIO: Mis créditos y pago manual de cuotas ──────────────────
+    [HttpGet("mis-creditos")]
+    public async Task<IActionResult> GetMisCreditos()
+        => Ok(await svc.GetMisCreditosAsync(IdUsuarioActual));
+
+    [HttpGet("mis-creditos/{idUtilizacion:long}/cuotas")]
+    public async Task<IActionResult> GetCuotasCredito(long idUtilizacion)
+    {
+        try { return Ok(await svc.GetCuotasCreditoAsync(idUtilizacion, IdUsuarioActual)); }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+    }
+
+    [HttpPost("pagar-cuota-wallet")]
+    public async Task<IActionResult> PagarCuotaWallet([FromBody] PagarCuotaWalletRequest req)
+    {
+        try { return Ok(await svc.PagarCuotaWalletAsync(req, IdUsuarioActual)); }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // ── CUALQUIER ROL AUTENTICADO: Parámetros públicos ────────────────
     [HttpGet("parametros/{tipo}")]
     public async Task<IActionResult> GetParametroPublico(string tipo)

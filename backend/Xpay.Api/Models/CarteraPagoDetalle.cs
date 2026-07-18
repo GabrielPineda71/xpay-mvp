@@ -11,5 +11,9 @@ public class CarteraPagoDetalle
     public decimal  ValorAdmin      { get; set; }
     public decimal  ValorIva        { get; set; }
     public decimal  ValorTotal      { get; set; }
+    public decimal  ValorAplicadoAdmin           { get; set; }
+    public decimal  ValorAplicadoIva              { get; set; }
+    public decimal  ValorAplicadoGastosCobranza   { get; set; }
+    public decimal  ValorAplicadoIvaGastosCobranza { get; set; }
     public DateTime CreatedAt       { get; set; }
 }

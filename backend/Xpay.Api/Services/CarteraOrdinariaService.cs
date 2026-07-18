@@ -9,6 +9,10 @@ public class CarteraOrdinariaService(XpayDbContext db)
 {
     private const string CodCarteraOrdinaria = "130105"; // Cartera Ordinaria - Avance Wallet (ACTIVO, D)
     private const string CodObligacionWallet = "210101"; // Obligación Wallet Usuarios (PASIVO, C)
+    private const string CodIngresoInteres   = "410301"; // Ingreso Intereses Cartera Ordinaria (INGRESO, C)
+    private const string CodIngresoAval      = "410302"; // Ingreso Aval Cartera Ordinaria (INGRESO, C)
+    private const string CodIngresoAdmin     = "410303"; // Ingreso Administración Cartera Ordinaria (INGRESO, C)
+    private const string CodIvaCarteraPagar  = "240803"; // IVA Cartera Ordinaria por Pagar (PASIVO, C)
     private const long IdUnidadNegocio = 1;
 
     // ── Parámetros de utilización ──────────────────────────────────────
@@ -158,6 +162,7 @@ public class CarteraOrdinariaService(XpayDbContext db)
         if (cupo is null) return null;
         return new MiCupoOrdinarioDto(
             cupo.IdCupo,
+            cupo.IdWallet,
             cupo.CupoAprobado,
             cupo.CupoUsado,
             cupo.CupoAprobado - cupo.CupoUsado,
@@ -291,6 +296,7 @@ public class CarteraOrdinariaService(XpayDbContext db)
                 ValorTotal           = c.ValorTotal,
                 SaldoCapitalAntes    = c.SaldoCapitalAntes,
                 SaldoCapitalDespues  = c.SaldoCapitalDespues,
+                SaldoCuota           = c.ValorTotal,
                 Estado               = "PENDIENTE",
                 CreatedAt            = now,
             }).ToList();
@@ -381,6 +387,366 @@ public class CarteraOrdinariaService(XpayDbContext db)
                 NuevoSaldoWallet:    saldoDespues,
                 NuevoCupoDisponible: cupo.CupoAprobado - cupo.CupoUsado,
                 Cuotas:              cuotasSimuladas);
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    // ── Mis créditos (vista usuario) ─────────────────────────────────────
+    public async Task<List<MiCreditoDto>> GetMisCreditosAsync(long idUsuario)
+    {
+        var utilizaciones = await db.CarteraUtilizaciones
+            .Where(u => u.IdUsuario == idUsuario)
+            .OrderByDescending(u => u.IdUtilizacion)
+            .ToListAsync();
+        if (utilizaciones.Count == 0) return new List<MiCreditoDto>();
+
+        var idsUtilizacion = utilizaciones.Select(u => u.IdUtilizacion).ToList();
+        var cuotas = await db.CarteraCuotas
+            .Where(c => idsUtilizacion.Contains(c.IdUtilizacion))
+            .ToListAsync();
+
+        var result = new List<MiCreditoDto>();
+        foreach (var u in utilizaciones)
+        {
+            var cuotasCredito = cuotas.Where(c => c.IdUtilizacion == u.IdUtilizacion)
+                .OrderBy(c => c.FechaVencimiento).ThenBy(c => c.NumeroCuota).ToList();
+            var saldoPendiente = cuotasCredito.Sum(c => c.SaldoCuota);
+            var cuotasPagadas  = cuotasCredito.Count(c => c.Estado == "PAGADA");
+            var proxima        = cuotasCredito.FirstOrDefault(c => c.SaldoCuota > 0);
+
+            result.Add(new MiCreditoDto(
+                IdUtilizacion:     u.IdUtilizacion,
+                NroCredito:        u.IdUtilizacion,
+                TipoUtilizacion:   u.TipoUtilizacion,
+                ValorCapital:      u.ValorCapital,
+                Estado:            u.Estado,
+                FechaDesembolso:   u.FechaDesembolso,
+                TotalCuotas:       u.TotalCuotas,
+                CuotasPagadas:     cuotasPagadas,
+                SaldoPendiente:    saldoPendiente,
+                ProximaCuota:      proxima?.NumeroCuota,
+                ValorProximaCuota: proxima?.SaldoCuota));
+        }
+        return result;
+    }
+
+    public async Task<List<CuotaDetalleDto>> GetCuotasCreditoAsync(long idUtilizacion, long idUsuario)
+    {
+        // WHERE por IdUsuario en la misma consulta — evita revelar si el crédito existe para otro usuario.
+        var utilizacion = await db.CarteraUtilizaciones
+            .FirstOrDefaultAsync(u => u.IdUtilizacion == idUtilizacion && u.IdUsuario == idUsuario)
+            ?? throw new KeyNotFoundException("Crédito no encontrado");
+
+        var cuotas = await db.CarteraCuotas
+            .Where(c => c.IdUtilizacion == utilizacion.IdUtilizacion)
+            .OrderBy(c => c.FechaVencimiento).ThenBy(c => c.NumeroCuota)
+            .ToListAsync();
+
+        return cuotas.Select(c => new CuotaDetalleDto(
+            IdCuota:             c.IdCuota,
+            NumeroCuota:         c.NumeroCuota,
+            FechaVencimiento:    c.FechaVencimiento.ToString("yyyy-MM-dd"),
+            ValorCapital:        c.ValorCapital,
+            ValorInteres:        c.ValorInteres,
+            ValorAval:           c.ValorAval,
+            ValorAdmin:          c.ValorAdmin,
+            ValorIva:            c.ValorIva,
+            ValorGastosCobranza: 0m, // sin gastos de cobranza automáticos en esta fase
+            ValorTotal:          c.ValorTotal,
+            PagadoCapital:       c.PagadoCapital,
+            PagadoInteres:       c.PagadoInteres,
+            PagadoAval:          c.PagadoAval,
+            PagadoAdmin:         c.PagadoAdmin,
+            PagadoIva:           c.PagadoIva,
+            SaldoCuota:          c.SaldoCuota,
+            Estado:              c.Estado)).ToList();
+    }
+
+    // ── Pago manual de cuotas desde Wallet ──────────────────────────────
+    public async Task<PagoCuotaResultDto> PagarCuotaWalletAsync(PagarCuotaWalletRequest req, long idUsuario)
+    {
+        if (string.IsNullOrEmpty(req.Pin) || req.Pin.Length != 7 || !req.Pin.All(char.IsDigit))
+            throw new ArgumentException("El PIN debe ser exactamente 7 dígitos numéricos");
+        if (req.ValorPago <= 0)
+            throw new ArgumentException("El valor a pagar debe ser mayor a cero");
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var utilizacion = await db.CarteraUtilizaciones
+                .FirstOrDefaultAsync(u => u.IdUtilizacion == req.IdUtilizacion && u.IdUsuario == idUsuario)
+                ?? throw new KeyNotFoundException("Crédito no encontrado");
+            if (utilizacion.Estado == "ANULADA")
+                throw new InvalidOperationException("Este crédito fue anulado y no admite pagos");
+            if (utilizacion.Estado == "PAGADA")
+                throw new InvalidOperationException("Este crédito ya está pagado en su totalidad");
+
+            // Lock pesimista sobre cupo y wallet — mismo patrón que ConfirmarAvanceWalletAsync.
+            var cupo = await db.CarteraCuposOrdinarios
+                .FromSqlInterpolated($"SELECT * FROM cartera_cupos_ordinarios WITH (UPDLOCK, ROWLOCK) WHERE id_usuario = {idUsuario}")
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException("No tienes un cupo ordinario asignado");
+
+            var saldo = await db.WalletSaldos
+                .FromSqlInterpolated($"SELECT * FROM wallet_saldos WITH (UPDLOCK, ROWLOCK) WHERE id_wallet = {cupo.IdWallet}")
+                .FirstOrDefaultAsync()
+                ?? throw new InvalidOperationException("La wallet no tiene registro de saldo");
+
+            // Lock pesimista sobre las cuotas pendientes/parciales de este crédito, ordenadas por
+            // vencimiento — evita que dos pagos concurrentes sobre el mismo crédito se pisen.
+            var cuotas = await db.CarteraCuotas
+                .FromSqlInterpolated($"SELECT * FROM cartera_cuotas WITH (UPDLOCK, ROWLOCK) WHERE id_utilizacion = {req.IdUtilizacion} AND estado IN ('PENDIENTE','PARCIAL') ORDER BY fecha_vencimiento, numero_cuota")
+                .ToListAsync();
+            if (cuotas.Count == 0)
+                throw new InvalidOperationException("No hay saldo pendiente en este crédito");
+
+            decimal saldoPendienteCredito = cuotas.Sum(c => c.SaldoCuota);
+            if (req.ValorPago > saldoPendienteCredito)
+                throw new InvalidOperationException($"El valor a pagar ({req.ValorPago:N0}) supera el saldo pendiente del crédito ({saldoPendienteCredito:N0})");
+            if (req.ValorPago > saldo.SaldoDisponible)
+                throw new InvalidOperationException($"El valor a pagar ({req.ValorPago:N0}) supera tu saldo disponible en Wallet ({saldo.SaldoDisponible:N0})");
+
+            var now = DateTime.UtcNow;
+            decimal montoRestante = req.ValorPago;
+            decimal totalCapital = 0, totalInteres = 0, totalAval = 0, totalAdmin = 0, totalIva = 0;
+            var detalles         = new List<CarteraPagoDetalle>();
+            var cuotasAfectadas  = new List<CuotaAfectadaDto>();
+
+            foreach (var cuota in cuotas)
+            {
+                if (montoRestante <= 0) break;
+                decimal aplicadoCuota   = Math.Min(montoRestante, cuota.SaldoCuota);
+                decimal disponibleCuota = aplicadoCuota;
+
+                decimal AplicarConcepto(decimal valorTotalConcepto, decimal yaPagado)
+                {
+                    decimal pendiente = valorTotalConcepto - yaPagado;
+                    decimal aplicado  = Math.Min(disponibleCuota, pendiente);
+                    disponibleCuota  -= aplicado;
+                    return aplicado;
+                }
+
+                // Orden de aplicación: IVA, IVA gastos cobranza, gastos cobranza, aval,
+                // administración, intereses, capital. Los gastos de cobranza no están
+                // implementados todavía en esta fase (siempre 0 pendiente, pasos no-op).
+                decimal ivaAplicado               = AplicarConcepto(cuota.ValorIva, cuota.PagadoIva);
+                decimal ivaGastosCobranzaAplicado = 0m;
+                decimal gastosCobranzaAplicado    = 0m;
+                decimal avalAplicado              = AplicarConcepto(cuota.ValorAval, cuota.PagadoAval);
+                decimal adminAplicado             = AplicarConcepto(cuota.ValorAdmin, cuota.PagadoAdmin);
+                decimal interesAplicado           = AplicarConcepto(cuota.ValorInteres, cuota.PagadoInteres);
+                decimal capitalAplicado           = AplicarConcepto(cuota.ValorCapital, cuota.PagadoCapital);
+
+                cuota.PagadoIva               += ivaAplicado;
+                cuota.PagadoIvaGastosCobranza += ivaGastosCobranzaAplicado;
+                cuota.PagadoGastosCobranza    += gastosCobranzaAplicado;
+                cuota.PagadoAval              += avalAplicado;
+                cuota.PagadoAdmin             += adminAplicado;
+                cuota.PagadoInteres           += interesAplicado;
+                cuota.PagadoCapital           += capitalAplicado;
+                cuota.SaldoCuota              -= aplicadoCuota;
+                cuota.UpdatedAt                = now;
+
+                if (cuota.SaldoCuota <= 0)
+                {
+                    cuota.SaldoCuota = 0;
+                    cuota.Estado     = "PAGADA";
+                    cuota.FechaPago  = now;
+                }
+                else
+                {
+                    cuota.Estado = "PARCIAL";
+                }
+
+                totalCapital += capitalAplicado;
+                totalInteres += interesAplicado;
+                totalAval    += avalAplicado;
+                totalAdmin   += adminAplicado;
+                totalIva     += ivaAplicado;
+
+                detalles.Add(new CarteraPagoDetalle
+                {
+                    IdCuota                        = cuota.IdCuota,
+                    ValorCapital                   = capitalAplicado,
+                    ValorInteres                   = interesAplicado,
+                    ValorAval                      = avalAplicado,
+                    ValorAdmin                     = adminAplicado,
+                    ValorIva                       = ivaAplicado,
+                    ValorTotal                     = aplicadoCuota,
+                    ValorAplicadoAdmin             = adminAplicado,
+                    ValorAplicadoIva               = ivaAplicado,
+                    ValorAplicadoGastosCobranza    = gastosCobranzaAplicado,
+                    ValorAplicadoIvaGastosCobranza = ivaGastosCobranzaAplicado,
+                    CreatedAt                      = now,
+                });
+
+                cuotasAfectadas.Add(new CuotaAfectadaDto(
+                    IdCuota:           cuota.IdCuota,
+                    NumeroCuota:       cuota.NumeroCuota,
+                    CapitalPagado:     capitalAplicado,
+                    InteresPagado:     interesAplicado,
+                    AvalPagado:        avalAplicado,
+                    AdminPagado:       adminAplicado,
+                    IvaPagado:         ivaAplicado,
+                    ValorPagado:       aplicadoCuota,
+                    SaldoCuotaDespues: cuota.SaldoCuota,
+                    Estado:            cuota.Estado));
+
+                montoRestante -= aplicadoCuota;
+            }
+
+            var ledgerTx = new LedgerTransaccion
+            {
+                IdUnidadNegocio  = IdUnidadNegocio,
+                TipoTransaccion  = "CARTERA_PAGO_CUOTA_WALLET",
+                ReferenciaTipo   = "cartera_utilizaciones",
+                ReferenciaId     = utilizacion.IdUtilizacion,
+                Descripcion      = $"Pago cartera ordinaria crédito #{utilizacion.IdUtilizacion} usuario #{idUsuario}",
+                ValorTotal       = req.ValorPago,
+                Estado           = "REGISTRADA",
+                CreadoPor        = idUsuario,
+                FechaTransaccion = now,
+            };
+            db.LedgerTransacciones.Add(ledgerTx);
+            await db.SaveChangesAsync();
+
+            var movimientos = new List<LedgerMovimiento>
+            {
+                new() {
+                    IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
+                    IdCuenta       = (await GetCuentaLedgerAsync(CodObligacionWallet)).IdCuenta,
+                    Naturaleza     = "D",
+                    Valor          = req.ValorPago,
+                    Concepto       = "CARTERA_PAGO_CUOTA",
+                    ReferenciaTipo = "cartera_utilizaciones",
+                    ReferenciaId   = utilizacion.IdUtilizacion,
+                    Descripcion    = $"Pago cartera ordinaria crédito #{utilizacion.IdUtilizacion} — total.",
+                    FechaMovimiento = now,
+                },
+            };
+
+            async Task AgregarCredito(string codigo, decimal valor, string concepto, string descripcion)
+            {
+                if (valor <= 0) return;
+                var cuenta = await GetCuentaLedgerAsync(codigo);
+                movimientos.Add(new LedgerMovimiento
+                {
+                    IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
+                    IdCuenta       = cuenta.IdCuenta,
+                    Naturaleza     = "C",
+                    Valor          = valor,
+                    Concepto       = concepto,
+                    ReferenciaTipo = "cartera_utilizaciones",
+                    ReferenciaId   = utilizacion.IdUtilizacion,
+                    Descripcion    = descripcion,
+                    FechaMovimiento = now,
+                });
+            }
+
+            await AgregarCredito(CodCarteraOrdinaria, totalCapital, "CARTERA_PAGO_CAPITAL", "Abono a capital cartera ordinaria.");
+            await AgregarCredito(CodIngresoInteres,   totalInteres, "CARTERA_PAGO_INTERES", "Interés cartera ordinaria pagado.");
+            await AgregarCredito(CodIngresoAval,      totalAval,    "CARTERA_PAGO_AVAL",    "Aval cartera ordinaria pagado.");
+            await AgregarCredito(CodIngresoAdmin,     totalAdmin,   "CARTERA_PAGO_ADMIN",   "Administración cartera ordinaria pagada.");
+            await AgregarCredito(CodIvaCarteraPagar,  totalIva,     "CARTERA_PAGO_IVA",     "IVA cartera ordinaria pagado.");
+
+            db.LedgerMovimientos.AddRange(movimientos);
+
+            var cupoUsadoAntes      = cupo.CupoUsado;
+            var cupoDisponibleAntes = cupo.CupoAprobado - cupo.CupoUsado;
+            // El capital pagado nunca debería exceder el cupo_usado registrado — si ocurre,
+            // es una inconsistencia real de datos (no un caso normal a esconder con un clamp).
+            if (totalCapital > cupo.CupoUsado)
+                throw new InvalidOperationException(
+                    $"Inconsistencia de cupo: capital pagado ({totalCapital:N0}) supera el cupo usado registrado ({cupo.CupoUsado:N0}).");
+            cupo.CupoUsado = cupo.CupoUsado - totalCapital;
+            cupo.UpdatedAt = now;
+            var cupoUsadoDespues      = cupo.CupoUsado;
+            var cupoDisponibleDespues = cupo.CupoAprobado - cupo.CupoUsado;
+
+            var saldoAntes = saldo.SaldoDisponible;
+            saldo.SaldoDisponible   -= req.ValorPago;
+            saldo.FechaActualizacion = now;
+            var saldoDespues = saldo.SaldoDisponible;
+
+            db.WalletMovimientos.Add(new WalletMovimiento
+            {
+                IdWallet            = cupo.IdWallet,
+                IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
+                TipoMovimiento      = "CARTERA_PAGO_CUOTA",
+                Naturaleza          = "D",
+                Valor               = req.ValorPago,
+                SaldoAntes          = saldoAntes,
+                SaldoDespues        = saldoDespues,
+                Descripcion         = $"Pago cartera ordinaria crédito {utilizacion.IdUtilizacion}",
+                ReferenciaTipo      = "cartera_utilizaciones",
+                ReferenciaId        = utilizacion.IdUtilizacion,
+                Estado              = "APLICADO",
+                CreadoPor           = idUsuario,
+                FechaMovimiento     = now,
+            });
+
+            bool quedanPendientes = cuotas.Any(c => c.Estado == "PENDIENTE" || c.Estado == "PARCIAL");
+            if (!quedanPendientes)
+            {
+                utilizacion.Estado    = "PAGADA";
+                utilizacion.UpdatedAt = now;
+            }
+
+            var pago = new CarteraPago
+            {
+                IdUtilizacion         = utilizacion.IdUtilizacion,
+                IdUsuario             = idUsuario,
+                IdWallet              = cupo.IdWallet,
+                ValorPago             = req.ValorPago,
+                FechaPago             = now,
+                TipoPago              = "CUOTA_NORMAL",
+                Estado                = "REGISTRADO",
+                CreatedAt             = now,
+                CreatedByUsuario      = idUsuario,
+                IdTransaccionLedger   = ledgerTx.IdTransaccionLedger,
+                SaldoWalletAntes      = saldoAntes,
+                SaldoWalletDespues    = saldoDespues,
+                CupoUsadoAntes        = cupoUsadoAntes,
+                CupoUsadoDespues      = cupoUsadoDespues,
+                CupoDisponibleAntes   = cupoDisponibleAntes,
+                CupoDisponibleDespues = cupoDisponibleDespues,
+                MetodoPago            = "WALLET",
+                PinValidadoQa         = true,
+            };
+            db.CarteraPagos.Add(pago);
+            await db.SaveChangesAsync();
+
+            foreach (var d in detalles) d.IdPago = pago.IdPago;
+            db.CarteraPagosDetalle.AddRange(detalles);
+            await db.SaveChangesAsync();
+
+            var totalD = movimientos.Where(m => m.Naturaleza == "D").Sum(m => m.Valor);
+            var totalC = movimientos.Where(m => m.Naturaleza == "C").Sum(m => m.Valor);
+            if (totalD != totalC)
+                throw new InvalidOperationException($"Ledger desbalanceado: DR={totalD} CR={totalC}.");
+
+            await tx.CommitAsync();
+
+            return new PagoCuotaResultDto(
+                IdPago:                pago.IdPago,
+                IdTransaccionLedger:   ledgerTx.IdTransaccionLedger,
+                ValorPago:             req.ValorPago,
+                SaldoWalletAntes:      saldoAntes,
+                SaldoWalletDespues:    saldoDespues,
+                CupoUsadoAntes:        cupoUsadoAntes,
+                CupoUsadoDespues:      cupoUsadoDespues,
+                CupoDisponibleAntes:   cupoDisponibleAntes,
+                CupoDisponibleDespues: cupoDisponibleDespues,
+                CapitalPagado:         totalCapital,
+                InteresesPagados:      totalInteres,
+                AvalPagado:            totalAval,
+                AdminPagado:           totalAdmin,
+                IvaPagado:             totalIva,
+                CuotasAfectadas:       cuotasAfectadas);
         }
         catch
         {
