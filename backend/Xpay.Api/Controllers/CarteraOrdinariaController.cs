@@ -10,7 +10,7 @@ namespace Xpay.Api.Controllers;
 [Authorize]
 public class CarteraOrdinariaController(CarteraOrdinariaService svc) : ControllerBase
 {
-    private long IdUsuarioActual => long.Parse(User.FindFirst("sub")?.Value ?? "0");
+    private long IdUsuarioActual => long.Parse(User.FindFirst("idUsuario")?.Value ?? "0");
 
     // ── ADMIN: Parámetros de utilización ──────────────────────────────
     [HttpGet("admin/parametros")]
