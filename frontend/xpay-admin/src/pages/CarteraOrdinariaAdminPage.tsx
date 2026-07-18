@@ -49,6 +49,7 @@ interface CupoOrdinario {
   cupoDisponible: number;
   estado: string;
   fechaAprobacion: string;
+  fechaVencimiento: string | null;
 }
 
 type Tab = 'parametros' | 'gastos' | 'politica' | 'cupos';
@@ -334,24 +335,31 @@ export function CarteraOrdinariaAdminPage() {
       {/* ── Tab: Cupos QA ────────────────────────────────────────────── */}
       {tab === 'cupos' && !tabErrors.cupos && (
         <div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, marginBottom: '1.5rem' }}>
+          <p style={{ fontSize: 12, color: '#888', marginTop: '-0.5rem', marginBottom: '0.75rem' }}>
+            Columnas idCupo/idUsuario/idWallet/Vencimiento agregadas temporalmente para diagnóstico (Fase 69.2).
+          </p>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: '1.5rem' }}>
             <thead>
               <tr style={{ background: '#f5f5f5' }}>
-                {['Usuario','Aprobado','Usado','Disponible','Estado','Aprobación'].map(h =>
-                  <th key={h} style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>{h}</th>)}
+                {['idCupo','idUsuario','idWallet','Usuario','Aprobado','Usado','Disponible','Estado','Aprobación','Vencimiento'].map(h =>
+                  <th key={h} style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd', whiteSpace: 'nowrap' }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {cupos.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: '1rem', color: '#888', textAlign: 'center' }}>Sin cupos registrados</td></tr>
+                <tr><td colSpan={10} style={{ padding: '1rem', color: '#888', textAlign: 'center' }}>Sin cupos registrados</td></tr>
               ) : cupos.map(c => (
                 <tr key={c.idCupo}>
+                  <td style={{ padding: '8px', borderBottom: '1px solid #eee', fontFamily: 'monospace' }}>{c.idCupo}</td>
+                  <td style={{ padding: '8px', borderBottom: '1px solid #eee', fontFamily: 'monospace' }}>{c.idUsuario}</td>
+                  <td style={{ padding: '8px', borderBottom: '1px solid #eee', fontFamily: 'monospace' }}>{c.idWallet}</td>
                   <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{c.nombreUsuario}</td>
                   <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{fmt(c.cupoAprobado)}</td>
                   <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{fmt(c.cupoUsado)}</td>
                   <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{fmt(c.cupoDisponible)}</td>
                   <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{c.estado}</td>
                   <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{new Date(c.fechaAprobacion).toLocaleDateString('es-CO')}</td>
+                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{c.fechaVencimiento ? new Date(c.fechaVencimiento).toLocaleDateString('es-CO') : '— (sin vencimiento)'}</td>
                 </tr>
               ))}
             </tbody>
