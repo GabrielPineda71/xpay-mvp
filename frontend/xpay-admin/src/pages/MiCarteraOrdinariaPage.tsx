@@ -60,6 +60,13 @@ const fmt = (v: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v);
 const fmtPct = (v: number) => `${v}%`;
 
+// PIN: format-only validation for QA/Demo phase — same convention as UserWalletPage.
+// Full cryptographic validation (backend hash, attempt limits, lockout) is pending for production.
+function validatePin(pin: string): string | null {
+  if (!/^\d{7}$/.test(pin)) return 'La clave debe ser exactamente 7 dígitos numéricos.';
+  return null;
+}
+
 type ModoSimulador = 'compra' | 'desembolso';
 
 export function MiCarteraOrdinariaPage() {
@@ -87,6 +94,7 @@ export function MiCarteraOrdinariaPage() {
   const [confirmBusy, setConfirmBusy]   = useState(false);
   const [confirmError, setConfirmError] = useState('');
   const [confirmResult, setConfirmResult] = useState<ConfirmacionResult | null>(null);
+  const [confirmPin, setConfirmPin]     = useState('');
 
   const cargarCupo = () => {
     get<MiCupo>('/api/cartera-ordinaria/mi-cupo')
@@ -98,6 +106,8 @@ export function MiCarteraOrdinariaPage() {
 
   const confirmarAvanceWallet = async () => {
     if (!sim) return;
+    const pinErr = validatePin(confirmPin);
+    if (pinErr) { setConfirmError(pinErr); return; }
     setConfirmBusy(true); setConfirmError(''); setConfirmResult(null);
     try {
       // Usa los valores congelados de la simulación mostrada, no el estado
@@ -117,7 +127,7 @@ export function MiCarteraOrdinariaPage() {
       } : prev);
     } catch (e: unknown) {
       setConfirmError(e instanceof Error ? e.message : 'Error al confirmar el desembolso');
-    } finally { setConfirmBusy(false); }
+    } finally { setConfirmBusy(false); setConfirmPin(''); }
   };
 
   // Derivar tipo de utilización según modo
@@ -132,7 +142,7 @@ export function MiCarteraOrdinariaPage() {
     if (!cupo)                   { setSimError('No tienes cupo activo'); return; }
     if (superaCupo)              { setSimError(`El valor supera tu cupo disponible (${fmt(cupoDisponible)})`); return; }
     setSimBusy(true); setSimError(''); setSim(null); setShowCuotas(false);
-    setConfirmResult(null); setConfirmError('');
+    setConfirmResult(null); setConfirmError(''); setConfirmPin('');
     try {
       const result = await post<SimulacionResult>('/api/cartera-ordinaria/simular', {
         tipoUtilizacion,
@@ -154,6 +164,7 @@ export function MiCarteraOrdinariaPage() {
     setShowCuotas(false);
     setConfirmResult(null);
     setConfirmError('');
+    setConfirmPin('');
     if (nuevoModo === 'compra') setMonto(qpValor);
     else setMonto('');
   };
@@ -344,12 +355,26 @@ export function MiCarteraOrdinariaPage() {
                 <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#fff8e1', borderRadius: 6, border: '1px solid #ffe082', fontSize: 13 }}>
                   Al confirmar, {fmt(sim.valorCapital)} se acreditará de inmediato a tu Wallet y se generará el plan de cuotas para el cobro.
                 </div>
-                <button onClick={confirmarAvanceWallet} disabled={confirmBusy}
+                <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, maxWidth: 200, marginBottom: '0.75rem' }}>
+                  Clave de 7 dígitos
+                  <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={7}
+                    value={confirmPin}
+                    onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
+                    placeholder="·······"
+                    autoComplete="off"
+                    style={{ marginTop: 4, padding: '6px 8px', border: '1px solid #ccc', borderRadius: 4 }}
+                  />
+                </label>
+                <button onClick={confirmarAvanceWallet} disabled={confirmBusy || confirmPin.length !== 7}
                   style={{
                     padding: '8px 24px',
-                    background: confirmBusy ? '#ccc' : '#388e3c',
+                    background: confirmBusy || confirmPin.length !== 7 ? '#ccc' : '#388e3c',
                     color: '#fff', border: 'none', borderRadius: 4,
-                    cursor: confirmBusy ? 'not-allowed' : 'pointer', marginBottom: '0.75rem', fontSize: 14,
+                    cursor: confirmBusy || confirmPin.length !== 7 ? 'not-allowed' : 'pointer', marginBottom: '0.75rem', fontSize: 14,
                   }}>
                   {confirmBusy ? 'Desembolsando…' : 'Desembolsar a Wallet'}
                 </button>
