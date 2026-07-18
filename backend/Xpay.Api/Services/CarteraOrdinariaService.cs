@@ -925,7 +925,6 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
             }).ToList();
             db.CarteraCuotas.AddRange(cuotas);
 
-            venta.IdUtilizacionCartera = utilizacion.IdUtilizacion;
             venta.IdTransaccionLedger  = ledgerTx.IdTransaccionLedger;
 
             cupo.CupoUsado = cupo.CupoUsado + req.ValorCompra;

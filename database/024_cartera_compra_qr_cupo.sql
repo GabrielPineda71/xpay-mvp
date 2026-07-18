@@ -29,12 +29,16 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('cartera_util
 
 PRINT 'OK: columna id_venta_qr de cartera_utilizaciones verificada/creada';
 
--- ── 3. ventas_qr — columna nueva ────────────────────────────────────────
-
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('ventas_qr') AND name='id_utilizacion_cartera')
-    ALTER TABLE ventas_qr ADD id_utilizacion_cartera BIGINT NULL;
-
-PRINT 'OK: columna id_utilizacion_cartera de ventas_qr verificada/creada';
+-- ── 3. (retirado) ventas_qr.id_utilizacion_cartera ─────────────────────
+-- Se planeó como referencia inversa venta→utilización, pero el código final
+-- no la necesita (basta con cartera_utilizaciones.id_venta_qr) y mapearla en
+-- EF Core rompía CI: el pipeline de CI solo aplica migraciones 001-010 sobre
+-- una base nueva, así que cualquier columna nueva mapeada en el modelo
+-- VentaQr (una tabla que sí toca el flujo QR normal ya probado en CI) hace
+-- fallar toda consulta EF sobre esa tabla, incluido /api/qr/pagar. Se
+-- retiró del modelo C# antes de este commit. Si ya aplicaste la versión
+-- anterior de este script en QA, la columna queda como campo inerte sin
+-- uso — no hace falta eliminarla.
 
 -- ── 4. Verificar resultado ──────────────────────────────────────────────
 SELECT codigo, nombre, tipo_cuenta, naturaleza, estado
