@@ -197,6 +197,25 @@ public record CuotaAfectadaDto(
     decimal SaldoCuotaDespues,
     string  Estado);
 
+// ── Compra QR con Cupo Ordinario ────────────────────────────────────────
+public record PagarQrConCupoRequest(
+    string  QrCode,
+    decimal ValorCompra,
+    int     PlazoMeses,
+    string  Frecuencia,
+    string  Pin);
+
+public record PagarQrConCupoResultDto(
+    long    IdUtilizacion,
+    long    IdVentaQr,
+    long?   IdTransaccionLedger,
+    decimal ValorCompra,
+    decimal NuevoCupoUsado,
+    decimal NuevoCupoDisponible,
+    string  EstadoUtilizacion,
+    string  EstadoVentaQr,
+    List<CuotaSimuladaDto> Cuotas);
+
 public record PagoCuotaResultDto(
     long    IdPago,
     long?   IdTransaccionLedger,

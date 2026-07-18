@@ -189,7 +189,7 @@ public class PagoQrService
         }
     }
 
-    private async Task TryRegistrarDisponibilidadAsync(Comercio comercio, VentaQr venta, DateTime now)
+    internal async Task TryRegistrarDisponibilidadAsync(Comercio comercio, VentaQr venta, DateTime now)
     {
         if (comercio.IdWalletComercio == null) return;
 

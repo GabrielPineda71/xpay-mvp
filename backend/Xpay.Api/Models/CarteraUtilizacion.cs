@@ -8,6 +8,7 @@ public class CarteraUtilizacion
     public long     IdWallet                { get; set; }
     public string   TipoUtilizacion         { get; set; } = string.Empty;
     public long?    IdComercioAliado        { get; set; }
+    public long?    IdVentaQr               { get; set; }
     public decimal  ValorCapital            { get; set; }
     public decimal  TasaEmv                 { get; set; }
     public decimal  PorcAval                { get; set; }

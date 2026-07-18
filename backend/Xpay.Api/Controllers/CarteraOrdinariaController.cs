@@ -132,6 +132,16 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // ── USUARIO: Compra QR con Cupo Ordinario ──────────────────────────
+    [HttpPost("pagar-qr-con-cupo")]
+    public async Task<IActionResult> PagarQrConCupo([FromBody] PagarQrConCupoRequest req)
+    {
+        try { return Ok(await svc.PagarQrConCupoAsync(req, IdUsuarioActual)); }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // ── CUALQUIER ROL AUTENTICADO: Parámetros públicos ────────────────
     [HttpGet("parametros/{tipo}")]
     public async Task<IActionResult> GetParametroPublico(string tipo)

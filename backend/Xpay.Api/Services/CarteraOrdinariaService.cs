@@ -5,14 +5,16 @@ using Xpay.Api.Models;
 
 namespace Xpay.Api.Services;
 
-public class CarteraOrdinariaService(XpayDbContext db)
+public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrService, ILogger<CarteraOrdinariaService> logger)
 {
-    private const string CodCarteraOrdinaria = "130105"; // Cartera Ordinaria - Avance Wallet (ACTIVO, D)
-    private const string CodObligacionWallet = "210101"; // Obligación Wallet Usuarios (PASIVO, C)
-    private const string CodIngresoInteres   = "410301"; // Ingreso Intereses Cartera Ordinaria (INGRESO, C)
-    private const string CodIngresoAval      = "410302"; // Ingreso Aval Cartera Ordinaria (INGRESO, C)
-    private const string CodIngresoAdmin     = "410303"; // Ingreso Administración Cartera Ordinaria (INGRESO, C)
-    private const string CodIvaCarteraPagar  = "240803"; // IVA Cartera Ordinaria por Pagar (PASIVO, C)
+    private const string CodCarteraOrdinaria      = "130105"; // Cartera Ordinaria - Avance Wallet (ACTIVO, D)
+    private const string CodCarteraCompraComercio = "130106"; // Cartera Ordinaria - Compra Comercio (ACTIVO, D)
+    private const string CodObligacionWallet      = "210101"; // Obligación Wallet Usuarios (PASIVO, C)
+    private const string CodContingenciaQr        = "210201"; // Ventas QR en Contingencia Comercios (PASIVO, C)
+    private const string CodIngresoInteres        = "410301"; // Ingreso Intereses Cartera Ordinaria (INGRESO, C)
+    private const string CodIngresoAval           = "410302"; // Ingreso Aval Cartera Ordinaria (INGRESO, C)
+    private const string CodIngresoAdmin          = "410303"; // Ingreso Administración Cartera Ordinaria (INGRESO, C)
+    private const string CodIvaCarteraPagar       = "240803"; // IVA Cartera Ordinaria por Pagar (PASIVO, C)
     private const long IdUnidadNegocio = 1;
 
     // ── Parámetros de utilización ──────────────────────────────────────
@@ -747,6 +749,226 @@ public class CarteraOrdinariaService(XpayDbContext db)
                 AdminPagado:           totalAdmin,
                 IvaPagado:             totalIva,
                 CuotasAfectadas:       cuotasAfectadas);
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    // ── Compra QR con Cupo Ordinario ─────────────────────────────────────
+    public async Task<PagarQrConCupoResultDto> PagarQrConCupoAsync(PagarQrConCupoRequest req, long idUsuario)
+    {
+        if (string.IsNullOrEmpty(req.Pin) || req.Pin.Length != 7 || !req.Pin.All(char.IsDigit))
+            throw new ArgumentException("El PIN debe ser exactamente 7 dígitos numéricos");
+        if (req.ValorCompra <= 0)
+            throw new ArgumentException("El valor de la compra debe ser mayor a cero");
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            // Resolución QR → comercio → tienda: misma consulta que PagoQrService.PagarQrAsync,
+            // sin modificarla, para no divergir del flujo de pago con Wallet ya existente.
+            var qr = await db.QrComercios.FirstOrDefaultAsync(q => q.CodigoQr == req.QrCode && q.Estado == "ACTIVO")
+                ?? throw new InvalidOperationException("El QR no existe o no está activo.");
+
+            var comercio = await db.Comercios.FirstOrDefaultAsync(c => c.IdComercio == qr.IdComercio && c.Estado == "ACTIVO")
+                ?? throw new InvalidOperationException("El comercio no existe o no está activo.");
+
+            var tienda = await db.ComercioTiendas.FirstOrDefaultAsync(t => t.IdTienda == qr.IdTienda && t.Estado == "ACTIVO")
+                ?? throw new InvalidOperationException("La tienda no existe o no está activa.");
+
+            var param = await GetParametroValidadoAsync(
+                new SimularUtilizacionRequest("COMPRA_COMERCIO", req.ValorCompra, req.PlazoMeses, req.Frecuencia));
+
+            // Lock pesimista sobre el cupo del usuario — mismo patrón que ConfirmarAvanceWalletAsync
+            // y PagarCuotaWalletAsync: serializa compras concurrentes contra el mismo cupo.
+            var cupo = await db.CarteraCuposOrdinarios
+                .FromSqlInterpolated($"SELECT * FROM cartera_cupos_ordinarios WITH (UPDLOCK, ROWLOCK) WHERE id_usuario = {idUsuario}")
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException("No tienes un cupo ordinario asignado");
+            if (cupo.Estado != "ACTIVO")
+                throw new InvalidOperationException("Tu cupo ordinario no está activo");
+            if (cupo.FechaVencimiento.HasValue && cupo.FechaVencimiento.Value < DateTime.UtcNow)
+                throw new InvalidOperationException("Tu cupo ordinario está vencido");
+
+            decimal cupoDisponible = cupo.CupoAprobado - cupo.CupoUsado;
+            if (req.ValorCompra > cupoDisponible)
+                throw new InvalidOperationException($"El valor de la compra supera tu cupo disponible ({cupoDisponible:N0})");
+
+            var (frecuencia, n, cuotasSimuladas, sumInteres, totalAval, totalAdmin, totalIva, valorCuota, valorTotalPagar) =
+                CalcularAmortizacion(param, req.ValorCompra, req.PlazoMeses, req.Frecuencia);
+
+            // Aliado (si el comercio lo es) — mismo criterio que TryRegistrarDisponibilidadAsync,
+            // para poblar IdComercioAliado en la utilización de forma consistente.
+            var aliado = await db.ComerciosAliados
+                .FirstOrDefaultAsync(a => a.IdComercioExistente == comercio.IdComercio && a.Estado == "ACTIVO");
+
+            var now = DateTime.UtcNow;
+
+            // Venta QR — misma forma que el pago con Wallet (Estado="CONTINGENCIA", comisión/IVA en
+            // 0), salvo que no hay débito de Wallet: IdWalletUsuario apunta a la wallet real del
+            // usuario solo por trazabilidad/auditoría (es NOT NULL en el modelo existente).
+            var venta = new VentaQr
+            {
+                IdUnidadNegocio   = comercio.IdUnidadNegocio,
+                IdComercio        = comercio.IdComercio,
+                IdTienda          = tienda.IdTienda,
+                IdQr              = qr.IdQr,
+                IdWalletUsuario   = cupo.IdWallet,
+                ValorBruto        = req.ValorCompra,
+                ValorComision     = 0,
+                ValorIvaComision  = 0,
+                ValorNetoComercio = req.ValorCompra,
+                Estado            = "CONTINGENCIA",
+                Referencia        = req.QrCode,
+                Descripcion       = "Compra QR financiada con Cupo Ordinario.",
+                FechaVenta        = now,
+            };
+            db.VentasQr.Add(venta);
+            await db.SaveChangesAsync();
+
+            var ledgerTx = new LedgerTransaccion
+            {
+                IdUnidadNegocio  = comercio.IdUnidadNegocio,
+                TipoTransaccion  = "COMPRA_QR_CUPO_ORDINARIO",
+                ReferenciaTipo   = "ventas_qr",
+                ReferenciaId     = venta.IdVentaQr,
+                Descripcion      = $"Compra QR #{venta.IdVentaQr} financiada con cupo ordinario, usuario #{idUsuario}",
+                ValorTotal       = req.ValorCompra,
+                Estado           = "REGISTRADA",
+                CreadoPor        = idUsuario,
+                FechaTransaccion = now,
+            };
+            db.LedgerTransacciones.Add(ledgerTx);
+            await db.SaveChangesAsync();
+
+            var cuentaCartera      = await GetCuentaLedgerAsync(CodCarteraCompraComercio);
+            var cuentaContingencia = await GetCuentaLedgerAsync(CodContingenciaQr);
+
+            var movimientos = new List<LedgerMovimiento>
+            {
+                new() {
+                    IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
+                    IdCuenta       = cuentaCartera.IdCuenta,
+                    Naturaleza     = "D",
+                    Valor          = req.ValorCompra,
+                    Concepto       = "COMPRA_QR_CUPO",
+                    ReferenciaTipo = "ventas_qr",
+                    ReferenciaId   = venta.IdVentaQr,
+                    Descripcion    = "Cartera ordinaria — compra en comercio por cobrar.",
+                    FechaMovimiento = now,
+                },
+                new() {
+                    IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
+                    IdCuenta       = cuentaContingencia.IdCuenta,
+                    Naturaleza     = "C",
+                    Valor          = req.ValorCompra,
+                    Concepto       = "COMPRA_QR_CUPO",
+                    ReferenciaTipo = "ventas_qr",
+                    ReferenciaId   = venta.IdVentaQr,
+                    Descripcion    = "Contingencia comercio por compra QR financiada con cupo.",
+                    FechaMovimiento = now,
+                },
+            };
+            db.LedgerMovimientos.AddRange(movimientos);
+
+            var utilizacion = new CarteraUtilizacion
+            {
+                IdCupo               = cupo.IdCupo,
+                IdUsuario            = idUsuario,
+                IdWallet             = cupo.IdWallet,
+                TipoUtilizacion      = "COMPRA_COMERCIO",
+                IdComercioAliado     = aliado?.IdComercioAliado,
+                IdVentaQr            = venta.IdVentaQr,
+                ValorCapital         = req.ValorCompra,
+                TasaEmv              = param.TasaEmv,
+                PorcAval             = param.PorcAval,
+                PorcAdmin            = param.PorcAdmin,
+                AplicaIva            = param.AplicaIva,
+                PorcIva              = param.PorcIva,
+                PlazoMeses           = req.PlazoMeses,
+                Frecuencia           = frecuencia,
+                TotalCuotas          = n,
+                ValorCuota           = valorCuota,
+                ValorTotalAval       = totalAval,
+                ValorTotalAdmin      = totalAdmin,
+                ValorTotalIva        = totalIva,
+                ValorTotalIntereses  = sumInteres,
+                ValorTotalPagar      = valorTotalPagar,
+                Estado               = "DESEMBOLSADO",
+                FechaSolicitud       = now,
+                FechaDesembolso      = now,
+                CreatedAt            = now,
+                CreatedByUsuario     = idUsuario,
+            };
+            db.CarteraUtilizaciones.Add(utilizacion);
+            await db.SaveChangesAsync();
+
+            var cuotas = cuotasSimuladas.Select(c => new CarteraCuota
+            {
+                IdUtilizacion        = utilizacion.IdUtilizacion,
+                NumeroCuota          = c.NumeroCuota,
+                FechaVencimiento     = DateOnly.Parse(c.FechaVencimiento),
+                ValorCapital         = c.ValorCapital,
+                ValorInteres         = c.ValorInteres,
+                ValorAval            = c.ValorAval,
+                ValorAdmin           = c.ValorAdmin,
+                ValorIva             = c.ValorIva,
+                ValorTotal           = c.ValorTotal,
+                SaldoCapitalAntes    = c.SaldoCapitalAntes,
+                SaldoCapitalDespues  = c.SaldoCapitalDespues,
+                SaldoCuota           = c.ValorTotal,
+                Estado               = "PENDIENTE",
+                CreatedAt            = now,
+            }).ToList();
+            db.CarteraCuotas.AddRange(cuotas);
+
+            venta.IdUtilizacionCartera = utilizacion.IdUtilizacion;
+            venta.IdTransaccionLedger  = ledgerTx.IdTransaccionLedger;
+
+            cupo.CupoUsado = cupo.CupoUsado + req.ValorCompra;
+            cupo.UpdatedAt = now;
+
+            await db.SaveChangesAsync();
+
+            // Disponibilidad del comercio aliado — reutiliza exactamente la misma lógica que el
+            // pago QR con Wallet (idempotente, best-effort: un fallo aquí no revierte la compra).
+            try
+            {
+                await pagoQrService.TryRegistrarDisponibilidadAsync(comercio, venta, now);
+            }
+            catch (Exception ex)
+            {
+                // best-effort — igual que PagoQrService.PagarQrAsync: un fallo aquí no revierte la compra.
+                logger.LogWarning(ex,
+                    "Venta QR #{IdVenta}: no se pudo registrar disponibilidad de comercio aliado (compra con cupo). La compra continúa.",
+                    venta.IdVentaQr);
+            }
+
+            // TryRegistrarDisponibilidadAsync solo hace db.Add(...) internamente, sin guardar —
+            // igual que en PagoQrService.PagarQrAsync, hace falta este SaveChangesAsync para que
+            // las filas de disponibilidad/contexto realmente se persistan antes del commit.
+            await db.SaveChangesAsync();
+
+            var totalD = movimientos.Where(m => m.Naturaleza == "D").Sum(m => m.Valor);
+            var totalC = movimientos.Where(m => m.Naturaleza == "C").Sum(m => m.Valor);
+            if (totalD != totalC)
+                throw new InvalidOperationException($"Ledger desbalanceado: DR={totalD} CR={totalC}.");
+
+            await tx.CommitAsync();
+
+            return new PagarQrConCupoResultDto(
+                IdUtilizacion:        utilizacion.IdUtilizacion,
+                IdVentaQr:            venta.IdVentaQr,
+                IdTransaccionLedger:  ledgerTx.IdTransaccionLedger,
+                ValorCompra:          req.ValorCompra,
+                NuevoCupoUsado:       cupo.CupoUsado,
+                NuevoCupoDisponible:  cupo.CupoAprobado - cupo.CupoUsado,
+                EstadoUtilizacion:    utilizacion.Estado,
+                EstadoVentaQr:        venta.Estado,
+                Cuotas:               cuotasSimuladas);
         }
         catch
         {

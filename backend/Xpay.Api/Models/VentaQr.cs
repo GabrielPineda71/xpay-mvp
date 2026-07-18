@@ -18,4 +18,5 @@ public class VentaQr
     public string? Descripcion { get; set; }
     public DateTime FechaVenta { get; set; }
     public long? IdTransaccionLiquidacion { get; set; }
+    public long? IdUtilizacionCartera { get; set; }
 }
