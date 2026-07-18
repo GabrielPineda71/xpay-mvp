@@ -7,6 +7,10 @@ namespace Xpay.Api.Services;
 
 public class CarteraOrdinariaService(XpayDbContext db)
 {
+    private const string CodCarteraOrdinaria = "130105"; // Cartera Ordinaria - Avance Wallet (ACTIVO, D)
+    private const string CodObligacionWallet = "210101"; // Obligación Wallet Usuarios (PASIVO, C)
+    private const long IdUnidadNegocio = 1;
+
     // ── Parámetros de utilización ──────────────────────────────────────
     public async Task<List<ParametroUtilizacionDto>> GetParametrosAsync()
     {
@@ -165,6 +169,229 @@ public class CarteraOrdinariaService(XpayDbContext db)
     // ── Simulador de amortización (French) ─────────────────────────────
     public async Task<SimulacionResultDto> SimularUtilizacionAsync(SimularUtilizacionRequest req, long idUsuario)
     {
+        var param = await GetParametroValidadoAsync(req);
+        var (frecuencia, n, cuotas, sumInteres, totalAval, totalAdmin, totalIva, valorCuota, valorTotalPagar) =
+            CalcularAmortizacion(param, req.ValorCapital, req.PlazoMeses, req.Frecuencia);
+
+        return new SimulacionResultDto(
+            TipoUtilizacion:     req.TipoUtilizacion,
+            ValorCapital:        req.ValorCapital,
+            TasaEmv:             param.TasaEmv,
+            PorcAval:            param.PorcAval,
+            PorcAdmin:           param.PorcAdmin,
+            AplicaIva:           param.AplicaIva,
+            PorcIva:             param.PorcIva,
+            PlazoMeses:          req.PlazoMeses,
+            Frecuencia:          frecuencia,
+            TotalCuotas:         n,
+            ValorCuota:          valorCuota,
+            ValorTotalIntereses: sumInteres,
+            ValorTotalAval:      totalAval,
+            ValorTotalAdmin:     totalAdmin,
+            ValorTotalIva:       totalIva,
+            ValorTotalPagar:     valorTotalPagar,
+            Cuotas:              cuotas);
+    }
+
+    // ── Confirmación real: AVANCE_WALLET ────────────────────────────────
+    public async Task<ConfirmacionUtilizacionDto> ConfirmarAvanceWalletAsync(SimularUtilizacionRequest req, long idUsuario)
+    {
+        if (!string.Equals(req.TipoUtilizacion, "AVANCE_WALLET", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Solo se puede confirmar utilización de tipo AVANCE_WALLET en esta fase");
+
+        // Todo lo que sigue se lee y revalida dentro de la transacción — nunca se confía en
+        // valores ya calculados por el cliente (simulación previa), solo en TipoUtilizacion/
+        // ValorCapital/PlazoMeses/Frecuencia como entrada cruda a recalcular en el servidor.
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            var param = await GetParametroValidadoAsync(req);
+
+            // ── Lock pesimista sobre el cupo del usuario ────────────────────
+            // WITH (UPDLOCK, ROWLOCK) toma un lock exclusivo de actualización sobre esa fila
+            // hasta que esta transacción haga COMMIT o ROLLBACK. Si una segunda confirmación
+            // concurrente del mismo usuario intenta leer el mismo cupo, SQL Server la bloquea
+            // hasta que esta termine; al continuar, esa segunda lectura ve el cupo_usado ya
+            // actualizado por la primera, por lo que la validación de cupo disponible que sigue
+            // no puede ser burlada por una carrera entre dos requests concurrentes.
+            var cupo = await db.CarteraCuposOrdinarios
+                .FromSqlInterpolated($"SELECT * FROM cartera_cupos_ordinarios WITH (UPDLOCK, ROWLOCK) WHERE id_usuario = {idUsuario}")
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException("No tienes un cupo ordinario asignado");
+            if (cupo.Estado != "ACTIVO")
+                throw new InvalidOperationException("Tu cupo ordinario no está activo");
+            if (cupo.FechaVencimiento.HasValue && cupo.FechaVencimiento.Value < DateTime.UtcNow)
+                throw new InvalidOperationException("Tu cupo ordinario está vencido");
+
+            decimal cupoDisponible = cupo.CupoAprobado - cupo.CupoUsado;
+            if (req.ValorCapital > cupoDisponible)
+                throw new InvalidOperationException($"El valor solicitado supera tu cupo disponible ({cupoDisponible:N0})");
+
+            var wallet = await db.Wallets
+                .FirstOrDefaultAsync(w => w.IdWallet == cupo.IdWallet && w.Estado == "ACTIVA")
+                ?? throw new InvalidOperationException("La wallet asociada al cupo no está activa");
+
+            // ── Lock pesimista sobre el saldo de la wallet ──────────────────
+            // Misma razón que el cupo: serializa desembolsos concurrentes sobre la misma wallet
+            // para que "SaldoAntes"/"SaldoDespues" y el crédito aplicado sean siempre exactos,
+            // sin condición de carrera "leer-calcular-escribir" entre dos transacciones.
+            var saldo = await db.WalletSaldos
+                .FromSqlInterpolated($"SELECT * FROM wallet_saldos WITH (UPDLOCK, ROWLOCK) WHERE id_wallet = {wallet.IdWallet}")
+                .FirstOrDefaultAsync()
+                ?? throw new InvalidOperationException("La wallet no tiene registro de saldo");
+
+            var (frecuencia, n, cuotasSimuladas, sumInteres, totalAval, totalAdmin, totalIva, valorCuota, valorTotalPagar) =
+                CalcularAmortizacion(param, req.ValorCapital, req.PlazoMeses, req.Frecuencia);
+
+            var cuentaCartera    = await GetCuentaLedgerAsync(CodCarteraOrdinaria);
+            var cuentaObligacion = await GetCuentaLedgerAsync(CodObligacionWallet);
+
+            var now = DateTime.UtcNow;
+
+            var utilizacion = new CarteraUtilizacion
+            {
+                IdCupo               = cupo.IdCupo,
+                IdUsuario            = idUsuario,
+                IdWallet             = wallet.IdWallet,
+                TipoUtilizacion      = "AVANCE_WALLET",
+                ValorCapital         = req.ValorCapital,
+                TasaEmv              = param.TasaEmv,
+                PorcAval             = param.PorcAval,
+                PorcAdmin            = param.PorcAdmin,
+                AplicaIva            = param.AplicaIva,
+                PorcIva              = param.PorcIva,
+                PlazoMeses           = req.PlazoMeses,
+                Frecuencia           = frecuencia,
+                TotalCuotas          = n,
+                ValorCuota           = valorCuota,
+                ValorTotalAval       = totalAval,
+                ValorTotalAdmin      = totalAdmin,
+                ValorTotalIva        = totalIva,
+                ValorTotalIntereses  = sumInteres,
+                ValorTotalPagar      = valorTotalPagar,
+                Estado               = "DESEMBOLSADO",
+                FechaSolicitud       = now,
+                FechaDesembolso      = now,
+                CreatedAt            = now,
+                CreatedByUsuario     = idUsuario,
+            };
+            db.CarteraUtilizaciones.Add(utilizacion);
+            await db.SaveChangesAsync();
+
+            var cuotas = cuotasSimuladas.Select(c => new CarteraCuota
+            {
+                IdUtilizacion        = utilizacion.IdUtilizacion,
+                NumeroCuota          = c.NumeroCuota,
+                FechaVencimiento     = DateOnly.Parse(c.FechaVencimiento),
+                ValorCapital         = c.ValorCapital,
+                ValorInteres         = c.ValorInteres,
+                ValorAval            = c.ValorAval,
+                ValorAdmin           = c.ValorAdmin,
+                ValorIva             = c.ValorIva,
+                ValorTotal           = c.ValorTotal,
+                SaldoCapitalAntes    = c.SaldoCapitalAntes,
+                SaldoCapitalDespues  = c.SaldoCapitalDespues,
+                Estado               = "PENDIENTE",
+                CreatedAt            = now,
+            }).ToList();
+            db.CarteraCuotas.AddRange(cuotas);
+
+            var ledgerTx = new LedgerTransaccion
+            {
+                IdUnidadNegocio  = IdUnidadNegocio,
+                TipoTransaccion  = "CARTERA_AVANCE_WALLET_DESEMBOLSO",
+                ReferenciaTipo   = "cartera_utilizaciones",
+                ReferenciaId     = utilizacion.IdUtilizacion,
+                Descripcion      = $"Desembolso avance wallet #{utilizacion.IdUtilizacion} usuario #{idUsuario}",
+                ValorTotal       = req.ValorCapital,
+                Estado           = "REGISTRADA",
+                CreadoPor        = idUsuario,
+                FechaTransaccion = now,
+            };
+            db.LedgerTransacciones.Add(ledgerTx);
+            await db.SaveChangesAsync();
+
+            var movimientos = new List<LedgerMovimiento>
+            {
+                new() {
+                    IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
+                    IdCuenta       = cuentaCartera.IdCuenta,
+                    Naturaleza     = "D",
+                    Valor          = req.ValorCapital,
+                    Concepto       = "CARTERA_AVANCE_WALLET",
+                    ReferenciaTipo = "cartera_utilizaciones",
+                    ReferenciaId   = utilizacion.IdUtilizacion,
+                    Descripcion    = "Cartera ordinaria — avance a wallet por cobrar.",
+                    FechaMovimiento = now,
+                },
+                new() {
+                    IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
+                    IdCuenta       = cuentaObligacion.IdCuenta,
+                    Naturaleza     = "C",
+                    Valor          = req.ValorCapital,
+                    Concepto       = "CARTERA_AVANCE_WALLET",
+                    ReferenciaTipo = "cartera_utilizaciones",
+                    ReferenciaId   = utilizacion.IdUtilizacion,
+                    Descripcion    = "Obligación wallet usuario por avance de cartera ordinaria.",
+                    FechaMovimiento = now,
+                },
+            };
+            db.LedgerMovimientos.AddRange(movimientos);
+
+            var saldoAntes   = saldo.SaldoDisponible;
+            var saldoDespues = saldoAntes + req.ValorCapital;
+            db.WalletMovimientos.Add(new WalletMovimiento
+            {
+                IdWallet            = wallet.IdWallet,
+                IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
+                TipoMovimiento      = "CARTERA_AVANCE_WALLET",
+                Naturaleza          = "C",
+                Valor               = req.ValorCapital,
+                SaldoAntes          = saldoAntes,
+                SaldoDespues        = saldoDespues,
+                Descripcion         = $"Avance de cartera ordinaria #{utilizacion.IdUtilizacion}",
+                ReferenciaTipo      = "cartera_utilizaciones",
+                ReferenciaId        = utilizacion.IdUtilizacion,
+                Estado              = "APLICADO",
+                CreadoPor           = idUsuario,
+                FechaMovimiento     = now,
+            });
+
+            saldo.SaldoDisponible    = saldoDespues;
+            saldo.FechaActualizacion = now;
+
+            cupo.CupoUsado = cupo.CupoUsado + req.ValorCapital;
+            cupo.UpdatedAt = now;
+
+            await db.SaveChangesAsync();
+
+            var totalD = movimientos.Where(m => m.Naturaleza == "D").Sum(m => m.Valor);
+            var totalC = movimientos.Where(m => m.Naturaleza == "C").Sum(m => m.Valor);
+            if (totalD != totalC)
+                throw new InvalidOperationException($"Ledger desbalanceado: DR={totalD} CR={totalC}.");
+
+            await tx.CommitAsync();
+
+            return new ConfirmacionUtilizacionDto(
+                IdUtilizacion:       utilizacion.IdUtilizacion,
+                TipoUtilizacion:     utilizacion.TipoUtilizacion,
+                ValorCapital:        utilizacion.ValorCapital,
+                Estado:              utilizacion.Estado,
+                FechaDesembolso:     utilizacion.FechaDesembolso!.Value,
+                NuevoSaldoWallet:    saldoDespues,
+                NuevoCupoDisponible: cupo.CupoAprobado - cupo.CupoUsado,
+                Cuotas:              cuotasSimuladas);
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    // ── Helpers de simulación/confirmación ──────────────────────────────
+    private async Task<CarteraParametroUtilizacion> GetParametroValidadoAsync(SimularUtilizacionRequest req)
+    {
         var param = await db.CarteraParametrosUtilizacion
             .FirstOrDefaultAsync(x => x.TipoUtilizacion == req.TipoUtilizacion && x.Estado == "ACTIVO")
             ?? throw new KeyNotFoundException($"No hay parámetros activos para {req.TipoUtilizacion}");
@@ -174,24 +401,31 @@ public class CarteraOrdinariaService(XpayDbContext db)
         if (req.PlazoMeses < param.PlazoMin || req.PlazoMeses > param.PlazoMax)
             throw new ArgumentException($"Plazo fuera de rango [{param.PlazoMin} – {param.PlazoMax}] meses");
 
-        var frecuencia = req.Frecuencia.ToUpperInvariant();
+        return param;
+    }
+
+    private static (string Frecuencia, int N, List<CuotaSimuladaDto> Cuotas, decimal SumInteres,
+        decimal TotalAval, decimal TotalAdmin, decimal TotalIva, decimal ValorCuota, decimal ValorTotalPagar)
+        CalcularAmortizacion(CarteraParametroUtilizacion param, decimal valorCapital, int plazoMeses, string frecuenciaReq)
+    {
+        var frecuencia = frecuenciaReq.ToUpperInvariant();
         // Total de cuotas: MENSUAL = plazo, QUINCENAL = plazo * 2
-        int n = frecuencia == "QUINCENAL" ? req.PlazoMeses * 2 : req.PlazoMeses;
+        int n = frecuencia == "QUINCENAL" ? plazoMeses * 2 : plazoMeses;
         // Tasa por periodo: EMV mensual; para quincenal dividir por 2 (approximación lineal simple)
         decimal tasaPeriodo = frecuencia == "QUINCENAL"
             ? param.TasaEmv / 2m / 100m
             : param.TasaEmv / 100m;
 
         // Cuota French: PV * (i*(1+i)^n) / ((1+i)^n - 1)
-        double pv  = (double)req.ValorCapital;
+        double pv  = (double)valorCapital;
         double i   = (double)tasaPeriodo;
         double pot = Math.Pow(1 + i, n);
         double cuotaDouble = pv * (i * pot) / (pot - 1);
         decimal cuota = Math.Round((decimal)cuotaDouble, 0); // round to pesos
 
         // Distribuir aval/admin/IVA proporcional a capital en cada cuota
-        decimal totalAval  = Math.Round(req.ValorCapital * param.PorcAval  / 100m, 0);
-        decimal totalAdmin = Math.Round(req.ValorCapital * param.PorcAdmin / 100m, 0);
+        decimal totalAval  = Math.Round(valorCapital * param.PorcAval  / 100m, 0);
+        decimal totalAdmin = Math.Round(valorCapital * param.PorcAdmin / 100m, 0);
         decimal baseIva    = totalAval + totalAdmin;
         decimal totalIva   = param.AplicaIva ? Math.Round(baseIva * param.PorcIva / 100m, 0) : 0m;
 
@@ -201,7 +435,7 @@ public class CarteraOrdinariaService(XpayDbContext db)
 
         // Build amortization table
         var cuotas   = new List<CuotaSimuladaDto>();
-        decimal saldo = req.ValorCapital;
+        decimal saldo = valorCapital;
         decimal sumInteres = 0m;
 
         var fechaBase = DateOnly.FromDateTime(DateTime.Today);
@@ -254,27 +488,13 @@ public class CarteraOrdinariaService(XpayDbContext db)
             saldo = Math.Max(0, saldoDespues);
         }
 
-        decimal valorTotalPagar = req.ValorCapital + sumInteres + totalAval + totalAdmin + totalIva;
-
-        return new SimulacionResultDto(
-            TipoUtilizacion:     req.TipoUtilizacion,
-            ValorCapital:        req.ValorCapital,
-            TasaEmv:             param.TasaEmv,
-            PorcAval:            param.PorcAval,
-            PorcAdmin:           param.PorcAdmin,
-            AplicaIva:           param.AplicaIva,
-            PorcIva:             param.PorcIva,
-            PlazoMeses:          req.PlazoMeses,
-            Frecuencia:          frecuencia,
-            TotalCuotas:         n,
-            ValorCuota:          cuota,
-            ValorTotalIntereses: sumInteres,
-            ValorTotalAval:      totalAval,
-            ValorTotalAdmin:     totalAdmin,
-            ValorTotalIva:       totalIva,
-            ValorTotalPagar:     valorTotalPagar,
-            Cuotas:              cuotas);
+        decimal valorTotalPagar = valorCapital + sumInteres + totalAval + totalAdmin + totalIva;
+        return (frecuencia, n, cuotas, sumInteres, totalAval, totalAdmin, totalIva, cuota, valorTotalPagar);
     }
+
+    private async Task<LedgerCuenta> GetCuentaLedgerAsync(string codigo) =>
+        await db.LedgerCuentas.FirstOrDefaultAsync(c => c.IdUnidadNegocio == IdUnidadNegocio && c.Codigo == codigo && c.Estado == "ACTIVA")
+        ?? throw new InvalidOperationException($"Cuenta ledger {codigo} no encontrada o inactiva");
 
     // ── Helpers ────────────────────────────────────────────────────────
     private static ParametroUtilizacionDto ToDto(CarteraParametroUtilizacion x) => new(

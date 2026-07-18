@@ -124,6 +124,17 @@ public record SimulacionResultDto(
     decimal ValorTotalPagar,
     List<CuotaSimuladaDto> Cuotas);
 
+// ── Confirmación real de utilización ────────────────────────────────────
+public record ConfirmacionUtilizacionDto(
+    long    IdUtilizacion,
+    string  TipoUtilizacion,
+    decimal ValorCapital,
+    string  Estado,
+    DateTime FechaDesembolso,
+    decimal NuevoSaldoWallet,
+    decimal NuevoCupoDisponible,
+    List<CuotaSimuladaDto> Cuotas);
+
 // ── Mi cupo (vista usuario) ────────────────────────────────────────────
 public record MiCupoOrdinarioDto(
     long    IdCupo,

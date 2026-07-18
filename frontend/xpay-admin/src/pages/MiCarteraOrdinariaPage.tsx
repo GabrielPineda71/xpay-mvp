@@ -45,6 +45,17 @@ interface SimulacionResult {
   cuotas: CuotaSimulada[];
 }
 
+interface ConfirmacionResult {
+  idUtilizacion: number;
+  tipoUtilizacion: string;
+  valorCapital: number;
+  estado: string;
+  fechaDesembolso: string;
+  nuevoSaldoWallet: number;
+  nuevoCupoDisponible: number;
+  cuotas: CuotaSimulada[];
+}
+
 const fmt = (v: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v);
 const fmtPct = (v: number) => `${v}%`;
@@ -72,11 +83,42 @@ export function MiCarteraOrdinariaPage() {
   const [simError, setSimError]       = useState('');
   const [showCuotas, setShowCuotas]   = useState(false);
 
-  useEffect(() => {
+  // Confirmación real (AVANCE_WALLET)
+  const [confirmBusy, setConfirmBusy]   = useState(false);
+  const [confirmError, setConfirmError] = useState('');
+  const [confirmResult, setConfirmResult] = useState<ConfirmacionResult | null>(null);
+
+  const cargarCupo = () => {
     get<MiCupo>('/api/cartera-ordinaria/mi-cupo')
       .then(data => setCupo(data))
       .catch(() => setCupoError('No tienes un cupo ordinario activo en este momento.'));
-  }, []);
+  };
+
+  useEffect(cargarCupo, []);
+
+  const confirmarAvanceWallet = async () => {
+    if (!sim) return;
+    setConfirmBusy(true); setConfirmError(''); setConfirmResult(null);
+    try {
+      // Usa los valores congelados de la simulación mostrada, no el estado
+      // vivo de los inputs — evita confirmar un monto/plazo distinto al
+      // que el usuario efectivamente vio y aprobó en pantalla.
+      const result = await post<ConfirmacionResult>('/api/cartera-ordinaria/confirmar-avance-wallet', {
+        tipoUtilizacion: sim.tipoUtilizacion,
+        valorCapital:    sim.valorCapital,
+        plazoMeses:      sim.plazoMeses,
+        frecuencia:      sim.frecuencia,
+      });
+      setConfirmResult(result);
+      setCupo(prev => prev ? {
+        ...prev,
+        cupoUsado:      prev.cupoAprobado - result.nuevoCupoDisponible,
+        cupoDisponible: result.nuevoCupoDisponible,
+      } : prev);
+    } catch (e: unknown) {
+      setConfirmError(e instanceof Error ? e.message : 'Error al confirmar el desembolso');
+    } finally { setConfirmBusy(false); }
+  };
 
   // Derivar tipo de utilización según modo
   const tipoUtilizacion = modo === 'desembolso' ? 'AVANCE_WALLET' : 'COMPRA_COMERCIO';
@@ -90,6 +132,7 @@ export function MiCarteraOrdinariaPage() {
     if (!cupo)                   { setSimError('No tienes cupo activo'); return; }
     if (superaCupo)              { setSimError(`El valor supera tu cupo disponible (${fmt(cupoDisponible)})`); return; }
     setSimBusy(true); setSimError(''); setSim(null); setShowCuotas(false);
+    setConfirmResult(null); setConfirmError('');
     try {
       const result = await post<SimulacionResult>('/api/cartera-ordinaria/simular', {
         tipoUtilizacion,
@@ -109,6 +152,8 @@ export function MiCarteraOrdinariaPage() {
     setSim(null);
     setSimError('');
     setShowCuotas(false);
+    setConfirmResult(null);
+    setConfirmError('');
     if (nuevoModo === 'compra') setMonto(qpValor);
     else setMonto('');
   };
@@ -117,7 +162,8 @@ export function MiCarteraOrdinariaPage() {
     <div style={{ padding: '1.5rem', maxWidth: 900 }}>
       <h2 style={{ marginBottom: '0.25rem' }}>Mi Cartera Ordinaria</h2>
       <p style={{ fontSize: 13, color: '#666', margin: '0 0 1.5rem' }}>
-        Simulación — no mueve saldo ni cupo. La confirmación real se activará en la próxima fase.
+        El simulador nunca mueve saldo ni cupo. La confirmación real de "Desembolsar a Wallet" sí acredita
+        tu Wallet y descuenta tu cupo de inmediato. La confirmación de compra en comercio llegará en una próxima fase.
       </p>
 
       {/* Contexto QR */}
@@ -191,7 +237,7 @@ export function MiCarteraOrdinariaPage() {
 
         {modo === 'desembolso' && (
           <div style={{ padding: '0.6rem 0.8rem', background: '#e8f5e9', borderRadius: 4, marginBottom: '0.75rem', fontSize: 13 }}>
-            El monto simulado se acreditaría a tu Wallet en cuotas. Confirmación real: próxima fase.
+            El monto se acredita completo a tu Wallet al confirmar; las cuotas (capital + interés + aval/admin/IVA) se cobran en el plazo elegido.
           </div>
         )}
 
@@ -255,10 +301,15 @@ export function MiCarteraOrdinariaPage() {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
             <h3 style={{ margin: 0, fontSize: 16, color: modo === 'desembolso' ? '#1b5e20' : '#0d47a1' }}>
-              Resultado de simulación — {modo === 'desembolso' ? 'Desembolso a Wallet' : 'Compra en comercio'}
+              {confirmResult ? 'Desembolso confirmado' : 'Resultado de simulación'} — {modo === 'desembolso' ? 'Desembolso a Wallet' : 'Compra en comercio'}
             </h3>
-            <span style={{ fontSize: 11, background: '#fff3e0', color: '#e65100', padding: '2px 8px', borderRadius: 10, border: '1px solid #ffe0b2' }}>
-              Solo simulación
+            <span style={{
+              fontSize: 11, padding: '2px 8px', borderRadius: 10,
+              background: confirmResult ? '#e8f5e9' : '#fff3e0',
+              color: confirmResult ? '#2e7d32' : '#e65100',
+              border: `1px solid ${confirmResult ? '#a5d6a7' : '#ffe0b2'}`,
+            }}>
+              {confirmResult ? 'Confirmado' : 'Solo simulación'}
             </span>
           </div>
 
@@ -281,16 +332,39 @@ export function MiCarteraOrdinariaPage() {
             ))}
           </div>
 
-          {/* Botón confirmar — deshabilitado hasta próxima fase */}
-          <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#fff8e1', borderRadius: 6, border: '1px solid #ffe082', fontSize: 13 }}>
-            <strong>Confirmación real:</strong> disponible en la próxima fase.
-            {modo === 'desembolso'
-              ? ' El desembolso a Wallet y el registro de cuotas se activarán cuando el flujo de confirmación esté listo.'
-              : ' El cargo al cupo y el pago al comercio se activarán cuando el flujo de confirmación esté listo.'}
-          </div>
-          <button disabled style={{ padding: '8px 24px', background: '#bdbdbd', color: '#fff', border: 'none', borderRadius: 4, cursor: 'not-allowed', marginBottom: '0.75rem', fontSize: 14 }}>
-            {modo === 'desembolso' ? 'Desembolsar a Wallet' : 'Confirmar utilización'} — próxima fase
-          </button>
+          {/* Confirmación real — solo AVANCE_WALLET (desembolso) en esta fase */}
+          {modo === 'desembolso' ? (
+            confirmResult ? (
+              <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#e8f5e9', borderRadius: 6, border: '1px solid #a5d6a7', fontSize: 13 }}>
+                <strong>Desembolso confirmado #{confirmResult.idUtilizacion}</strong> — {fmt(confirmResult.valorCapital)} acreditado a tu Wallet.
+                <br />Nuevo saldo de Wallet: <strong>{fmt(confirmResult.nuevoSaldoWallet)}</strong> · Nuevo cupo disponible: <strong>{fmt(confirmResult.nuevoCupoDisponible)}</strong>
+              </div>
+            ) : (
+              <>
+                <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#fff8e1', borderRadius: 6, border: '1px solid #ffe082', fontSize: 13 }}>
+                  Al confirmar, {fmt(sim.valorCapital)} se acreditará de inmediato a tu Wallet y se generará el plan de cuotas para el cobro.
+                </div>
+                <button onClick={confirmarAvanceWallet} disabled={confirmBusy}
+                  style={{
+                    padding: '8px 24px',
+                    background: confirmBusy ? '#ccc' : '#388e3c',
+                    color: '#fff', border: 'none', borderRadius: 4,
+                    cursor: confirmBusy ? 'not-allowed' : 'pointer', marginBottom: '0.75rem', fontSize: 14,
+                  }}>
+                  {confirmBusy ? 'Desembolsando…' : 'Desembolsar a Wallet'}
+                </button>
+                {confirmError && <p style={{ color: '#c62828', margin: '0 0 0.75rem', fontSize: 13 }}>{confirmError}</p>}
+              </>
+            )
+          ) : (
+            <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#fff8e1', borderRadius: 6, border: '1px solid #ffe082', fontSize: 13 }}>
+              <strong>Confirmación real:</strong> disponible en una próxima fase. El cargo al cupo y el pago al comercio se activarán cuando el flujo de confirmación esté listo.
+              <br />
+              <button disabled style={{ marginTop: 8, padding: '8px 24px', background: '#bdbdbd', color: '#fff', border: 'none', borderRadius: 4, cursor: 'not-allowed', fontSize: 14 }}>
+                Confirmar utilización — próxima fase
+              </button>
+            </div>
+          )}
 
           <br />
           <button onClick={() => setShowCuotas(v => !v)}

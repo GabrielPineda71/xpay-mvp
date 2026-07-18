@@ -101,6 +101,16 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
         catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
+    // ── USUARIO: Confirmación real de utilización (AVANCE_WALLET) ─────
+    [HttpPost("confirmar-avance-wallet")]
+    public async Task<IActionResult> ConfirmarAvanceWallet([FromBody] SimularUtilizacionRequest req)
+    {
+        try { return Ok(await svc.ConfirmarAvanceWalletAsync(req, IdUsuarioActual)); }
+        catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
     // ── CUALQUIER ROL AUTENTICADO: Parámetros públicos ────────────────
     [HttpGet("parametros/{tipo}")]
     public async Task<IActionResult> GetParametroPublico(string tipo)
