@@ -154,7 +154,7 @@ public class WalletRecargaComercioService(XpayDbContext db, ComercioScopeService
             saldo.SaldoDisponible    = saldoDespues;
             saldo.FechaActualizacion = now;
 
-            db.WalletMovimientos.Add(new WalletMovimiento
+            var walletMovimiento = new WalletMovimiento
             {
                 IdWallet            = wallet.IdWallet,
                 IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
@@ -169,7 +169,8 @@ public class WalletRecargaComercioService(XpayDbContext db, ComercioScopeService
                 Estado              = "APLICADO",
                 CreadoPor           = idUsuarioCajero,
                 FechaMovimiento     = now,
-            });
+            };
+            db.WalletMovimientos.Add(walletMovimiento);
 
             var recarga = new WalletRecargaComercio
             {
@@ -196,6 +197,7 @@ public class WalletRecargaComercioService(XpayDbContext db, ComercioScopeService
 
             ledgerTx.ReferenciaId = recarga.IdRecarga;
             foreach (var m in movimientos) m.ReferenciaId = recarga.IdRecarga;
+            walletMovimiento.ReferenciaId = recarga.IdRecarga;
             await db.SaveChangesAsync();
 
             var totalD = movimientos.Where(m => m.Naturaleza == "D").Sum(m => m.Valor);
