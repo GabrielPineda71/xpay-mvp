@@ -56,6 +56,7 @@ public class XpayDbContext : DbContext
     public DbSet<CarteraCuota>                         CarteraCuotas                           => Set<CarteraCuota>();
     public DbSet<CarteraPago>                          CarteraPagos                            => Set<CarteraPago>();
     public DbSet<CarteraPagoDetalle>                   CarteraPagosDetalle                     => Set<CarteraPagoDetalle>();
+    public DbSet<WalletRecargaComercio>                WalletRecargasComercio                  => Set<WalletRecargaComercio>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -108,6 +109,7 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<CarteraCuota>(e => { e.ToTable("cartera_cuotas"); e.HasKey(x => x.IdCuota); MapCarteraCuota(e); });
         modelBuilder.Entity<CarteraPago>(e => { e.ToTable("cartera_pagos"); e.HasKey(x => x.IdPago); MapCarteraPago(e); });
         modelBuilder.Entity<CarteraPagoDetalle>(e => { e.ToTable("cartera_pagos_detalle"); e.HasKey(x => x.IdDetalle); MapCarteraPagoDetalle(e); });
+        modelBuilder.Entity<WalletRecargaComercio>(e => { e.ToTable("wallet_recargas_comercio"); e.HasKey(x => x.IdRecarga); MapWalletRecargaComercio(e); });
     }
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)
@@ -230,4 +232,7 @@ public class XpayDbContext : DbContext
 
     private static void MapCarteraPagoDetalle(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<CarteraPagoDetalle> e)
     { e.Property(x => x.IdDetalle).HasColumnName("id_detalle"); e.Property(x => x.IdPago).HasColumnName("id_pago"); e.Property(x => x.IdCuota).HasColumnName("id_cuota"); e.Property(x => x.ValorCapital).HasColumnName("valor_capital").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorInteres).HasColumnName("valor_interes").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorAval).HasColumnName("valor_aval").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorAdmin).HasColumnName("valor_admin").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorIva).HasColumnName("valor_iva").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorTotal).HasColumnName("valor_total").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorAplicadoAdmin).HasColumnName("valor_aplicado_admin").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorAplicadoIva).HasColumnName("valor_aplicado_iva").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorAplicadoGastosCobranza).HasColumnName("valor_aplicado_gastos_cobranza").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorAplicadoIvaGastosCobranza).HasColumnName("valor_aplicado_iva_gastos_cobranza").HasColumnType("decimal(18,2)"); e.Property(x => x.CreatedAt).HasColumnName("created_at"); }
+
+    private static void MapWalletRecargaComercio(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WalletRecargaComercio> e)
+    { e.Property(x => x.IdRecarga).HasColumnName("id_recarga"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.IdComercio).HasColumnName("id_comercio"); e.Property(x => x.IdComercioAliado).HasColumnName("id_comercio_aliado"); e.Property(x => x.IdTienda).HasColumnName("id_tienda"); e.Property(x => x.IdUsuarioCajero).HasColumnName("id_usuario_cajero"); e.Property(x => x.IdUsuarioWallet).HasColumnName("id_usuario_wallet"); e.Property(x => x.IdWallet).HasColumnName("id_wallet"); e.Property(x => x.IdTransaccionLedger).HasColumnName("id_transaccion_ledger"); e.Property(x => x.Valor).HasColumnName("valor").HasColumnType("decimal(18,2)"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.MetodoRecaudo).HasColumnName("metodo_recaudo"); e.Property(x => x.Referencia).HasColumnName("referencia"); e.Property(x => x.PinValidadoQa).HasColumnName("pin_validado_qa"); e.Property(x => x.SaldoWalletAntes).HasColumnName("saldo_wallet_antes").HasColumnType("decimal(18,2)"); e.Property(x => x.SaldoWalletDespues).HasColumnName("saldo_wallet_despues").HasColumnType("decimal(18,2)"); e.Property(x => x.Observaciones).HasColumnName("observaciones"); e.Property(x => x.FechaRecarga).HasColumnName("fecha_recarga"); e.Property(x => x.CreatedAt).HasColumnName("created_at"); }
 }

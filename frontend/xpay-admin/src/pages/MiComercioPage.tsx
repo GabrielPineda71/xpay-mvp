@@ -110,6 +110,52 @@ interface VentaNoDisponible {
   estado:                         string;
 }
 
+interface BuscarUsuarioWalletResult {
+  idUsuario:      number;
+  nombreUsuario:  string;
+  nombreCompleto: string;
+  documento:      string;
+  celular:        string;
+  correo?:        string;
+  idWallet:       number;
+  saldoActual:    number;
+  estadoWallet:   string;
+}
+
+interface RecargaWalletResult {
+  idRecarga:            number;
+  idTransaccionLedger?: number;
+  idWallet:             number;
+  idUsuarioWallet:      number;
+  valor:                number;
+  saldoWalletAntes:     number;
+  saldoWalletDespues:   number;
+  idComercio:           number;
+  idTienda?:            number;
+  idUsuarioCajero:      number;
+  estado:               string;
+  fechaRecarga:         string;
+  comprobanteTexto:     string;
+}
+
+interface RecargaResumen {
+  idRecarga:           number;
+  idUsuarioWallet:     number;
+  nombreUsuarioWallet: string;
+  idWallet:            number;
+  valor:               number;
+  estado:              string;
+  idTienda?:           number;
+  idUsuarioCajero:     number;
+  fechaRecarga:        string;
+}
+
+// PIN: format-only validation for QA/Demo phase — same convention as UserWalletPage/MiCarteraOrdinariaPage.
+function validatePin(pin: string): string | null {
+  if (!/^\d{7}$/.test(pin)) return 'La clave debe ser exactamente 7 dígitos numéricos.';
+  return null;
+}
+
 interface ComercioScope {
   idUsuario:               number;
   rolComercio:             string;
@@ -155,6 +201,19 @@ export function MiComercioPage() {
 
   // ── Scope operativo ───────────────────────────────────────────────────────
   const [scope, setScope] = useState<ComercioScope | null>(null);
+
+  // ── Recargar Wallet (efectivo) ────────────────────────────────────────────
+  const [rcQuery,        setRcQuery]        = useState('');
+  const [rcResultados,   setRcResultados]   = useState<BuscarUsuarioWalletResult[]>([]);
+  const [rcBuscando,     setRcBuscando]     = useState(false);
+  const [rcSeleccionado, setRcSeleccionado] = useState<BuscarUsuarioWalletResult | null>(null);
+  const [rcValor,        setRcValor]        = useState('');
+  const [rcPin,          setRcPin]          = useState('');
+  const [rcObservaciones, setRcObservaciones] = useState('');
+  const [rcBusy,         setRcBusy]         = useState(false);
+  const [rcMsg,          setRcMsg]          = useState<Msg | null>(null);
+  const [rcResultado,    setRcResultado]    = useState<RecargaWalletResult | null>(null);
+  const [rcRecargas,     setRcRecargas]     = useState<RecargaResumen[]>([]);
 
   // ── Disponibilidad ventas ─────────────────────────────────────────────────
   const [dispResumen,   setDispResumen]   = useState<ResumenDisponibilidad | null>(null);
@@ -228,8 +287,80 @@ export function MiComercioPage() {
           setVentasNoDisp(listR.data ?? []);
         } catch { /* non-critical — tablas pueden no existir aún */ }
       })();
+      void (async () => {
+        try {
+          const r = await get<{ success: boolean; data: RecargaResumen[] }>('/api/comercio/wallet-recargas/mis-recargas');
+          setRcRecargas(r.data ?? []);
+        } catch { /* non-critical */ }
+      })();
     }
   }, [loadData, demoInfo]);
+
+  const cargarMisRecargas = async () => {
+    try {
+      const r = await get<{ success: boolean; data: RecargaResumen[] }>('/api/comercio/wallet-recargas/mis-recargas');
+      setRcRecargas(r.data ?? []);
+    } catch { /* non-critical */ }
+  };
+
+  async function handleBuscarUsuario(e: FormEvent) {
+    e.preventDefault();
+    if (!rcQuery.trim()) return;
+    setRcBuscando(true); setRcMsg(null);
+    try {
+      const r = await get<{ success: boolean; data: BuscarUsuarioWalletResult[] }>(
+        `/api/comercio/wallet-recargas/buscar-usuario?query=${encodeURIComponent(rcQuery.trim())}`);
+      setRcResultados(r.data ?? []);
+      if ((r.data ?? []).length === 0) setRcMsg({ ok: false, text: 'Sin resultados para esa búsqueda.' });
+    } catch (err) {
+      setRcMsg({ ok: false, text: (err as Error).message || 'Error buscando usuario.' });
+    } finally { setRcBuscando(false); }
+  }
+
+  function seleccionarUsuarioRecarga(u: BuscarUsuarioWalletResult) {
+    setRcSeleccionado(u);
+    setRcResultados([]);
+    setRcQuery('');
+    setRcValor('');
+    setRcPin('');
+    setRcObservaciones('');
+    setRcMsg(null);
+    setRcResultado(null);
+  }
+
+  function cancelarRecarga() {
+    setRcSeleccionado(null);
+    setRcValor('');
+    setRcPin('');
+    setRcObservaciones('');
+    setRcMsg(null);
+    setRcResultado(null);
+  }
+
+  async function handleConfirmarRecarga() {
+    if (!rcSeleccionado) return;
+    const valorNum = Number(rcValor) || 0;
+    if (valorNum < 1000) { setRcMsg({ ok: false, text: 'El valor mínimo de recarga es $1.000.' }); return; }
+    if (valorNum > 2000000) { setRcMsg({ ok: false, text: 'El valor máximo por operación es $2.000.000.' }); return; }
+    const pinErr = validatePin(rcPin);
+    if (pinErr) { setRcMsg({ ok: false, text: pinErr }); return; }
+
+    setRcBusy(true); setRcMsg(null);
+    try {
+      const r = await post<{ success: boolean; data?: RecargaWalletResult; message?: string }>(
+        '/api/comercio/wallet-recargas',
+        { idUsuarioWallet: rcSeleccionado.idUsuario, valor: valorNum, pin: rcPin, observaciones: rcObservaciones.trim() || null },
+      );
+      if (r.success && r.data) {
+        setRcResultado(r.data);
+        void cargarMisRecargas();
+      } else {
+        setRcMsg({ ok: false, text: r.message ?? 'Error procesando la recarga.' });
+      }
+    } catch (err) {
+      setRcMsg({ ok: false, text: (err as Error).message || 'Error procesando la recarga.' });
+    } finally { setRcBusy(false); setRcPin(''); }
+  }
 
   if (!user || !demoInfo) {
     return (
@@ -770,6 +901,168 @@ export function MiComercioPage() {
         <p style={{ fontSize:'0.82rem', color:'#a0aec0', margin:'1.5rem 0 0' }}>
           Tu rol ({scope.rolComercio}) no tiene acceso a la sección de retiros Bre-B.
         </p>
+      )}
+
+      {/* ── RECARGAR WALLET (efectivo, cajero de comercio) ──────────────── */}
+      {(scope == null || ['ADMIN_COMERCIO', 'ADMIN_SEDE_COMERCIO', 'CAJERO'].includes(scope.rolComercio)) && (
+        <>
+          <hr style={{ margin: '1.5rem 0', borderColor: '#e2e8f0' }} />
+          <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem', color: '#2d3748' }}>Recargar Wallet</h3>
+          <p className="tab-hint">
+            Recibe efectivo del usuario y recarga su Wallet XPAY. El efectivo queda en poder del
+            comercio como recaudo pendiente — no se registra como dinero recibido por XPAY todavía.
+          </p>
+
+          {!rcSeleccionado ? (
+            <>
+              <form
+                onSubmit={e => void handleBuscarUsuario(e)}
+                style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '0.75rem' }}
+              >
+                <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.82rem', flex: '1 1 260px' }}>
+                  Buscar usuario por documento, celular o usuario
+                  <input
+                    type="text"
+                    value={rcQuery}
+                    onChange={e => setRcQuery(e.target.value)}
+                    placeholder="Ej: qa.usuario1"
+                  />
+                </label>
+                <button className="btn-secondary" type="submit" disabled={rcBuscando || !rcQuery.trim()}>
+                  {rcBuscando ? 'Buscando...' : 'Buscar'}
+                </button>
+              </form>
+
+              {rcMsg && !rcSeleccionado && (
+                <div className={rcMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginBottom: '0.75rem' }}>{rcMsg.text}</div>
+              )}
+
+              {rcResultados.length > 0 && (
+                <div className="table-wrapper" style={{ marginBottom: '1rem' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Usuario</th>
+                        <th>Documento</th>
+                        <th>Celular</th>
+                        <th>Saldo Wallet</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rcResultados.map(u => (
+                        <tr key={u.idUsuario}>
+                          <td>{u.nombreUsuario} — {u.nombreCompleto}</td>
+                          <td className="mono">{u.documento}</td>
+                          <td className="mono">{u.celular}</td>
+                          <td>{fmtMoney(u.saldoActual)}</td>
+                          <td>
+                            <button
+                              className="btn-confirm"
+                              style={{ fontSize: '0.78rem', padding: '0.25rem 0.7rem' }}
+                              onClick={() => seleccionarUsuarioRecarga(u)}
+                            >
+                              Seleccionar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          ) : rcResultado ? (
+            <div className="breb-status-card" style={{ maxWidth: 480 }}>
+              <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.9rem' }}>Recarga confirmada #{rcResultado.idRecarga}</h4>
+              <table style={{ width: '100%', fontSize: '0.85rem' }}>
+                <tbody>
+                  <tr><td>Usuario</td><td style={{ textAlign: 'right' }}>{rcSeleccionado.nombreUsuario}</td></tr>
+                  <tr><td>Valor recargado</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(rcResultado.valor)}</td></tr>
+                  <tr><td>Saldo antes</td><td style={{ textAlign: 'right' }}>{fmtMoney(rcResultado.saldoWalletAntes)}</td></tr>
+                  <tr><td>Saldo después</td><td style={{ textAlign: 'right', color: '#276749', fontWeight: 700 }}>{fmtMoney(rcResultado.saldoWalletDespues)}</td></tr>
+                  <tr><td>idTransaccionLedger</td><td style={{ textAlign: 'right' }}>{rcResultado.idTransaccionLedger ?? '—'}</td></tr>
+                  <tr><td>Comercio / sede / cajero</td><td style={{ textAlign: 'right' }}>#{rcResultado.idComercio} / {rcResultado.idTienda ?? '—'} / #{rcResultado.idUsuarioCajero}</td></tr>
+                </tbody>
+              </table>
+              <p style={{ fontSize: '0.78rem', color: '#4a5568', marginTop: '0.5rem' }}>{rcResultado.comprobanteTexto}</p>
+              <button className="btn-secondary" style={{ marginTop: '0.5rem' }} onClick={cancelarRecarga}>
+                Nueva recarga
+              </button>
+            </div>
+          ) : (
+            <div className="breb-status-card" style={{ maxWidth: 420 }}>
+              <p style={{ fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
+                <strong>{rcSeleccionado.nombreUsuario}</strong> — {rcSeleccionado.nombreCompleto}
+                <br />Saldo actual: {fmtMoney(rcSeleccionado.saldoActual)}
+              </p>
+              <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.82rem', marginBottom: '0.5rem' }}>
+                Valor recibido en efectivo (COP)
+                <input type="number" min={1000} max={2000000} value={rcValor} onChange={e => setRcValor(e.target.value)} placeholder="Ej: 100000" />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.82rem', marginBottom: '0.5rem', maxWidth: 200 }}>
+                Clave de 7 dígitos
+                <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}> — QA/Demo: solo se valida formato</span>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={7}
+                  value={rcPin}
+                  onChange={e => setRcPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
+                  placeholder="·······"
+                  autoComplete="off"
+                />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.82rem', marginBottom: '0.75rem' }}>
+                Observaciones (opcional)
+                <input type="text" value={rcObservaciones} onChange={e => setRcObservaciones(e.target.value)} placeholder="Ej: Recarga efectivo caja principal" />
+              </label>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  className="btn-confirm"
+                  disabled={rcBusy || !rcValor || Number(rcValor) < 1000 || Number(rcValor) > 2000000 || rcPin.length !== 7}
+                  onClick={() => void handleConfirmarRecarga()}
+                >
+                  {rcBusy ? 'Procesando...' : 'Confirmar recarga'}
+                </button>
+                <button className="btn-secondary" onClick={cancelarRecarga}>Cancelar</button>
+              </div>
+              {rcMsg && (
+                <div className={rcMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginTop: '0.5rem' }}>{rcMsg.text}</div>
+              )}
+            </div>
+          )}
+
+          <div className="table-wrapper" style={{ marginTop: '1.25rem' }}>
+            <div className="table-title">Mis recargas recientes ({rcRecargas.length})</div>
+            {rcRecargas.length === 0 ? (
+              <div className="empty">Sin recargas registradas todavía.</div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>#Recarga</th>
+                    <th>Usuario</th>
+                    <th>Valor</th>
+                    <th>Estado</th>
+                    <th>Fecha</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rcRecargas.map(r => (
+                    <tr key={r.idRecarga}>
+                      <td className="mono">{r.idRecarga}</td>
+                      <td>{r.nombreUsuarioWallet}</td>
+                      <td className="credit">+{fmtMoney(r.valor)}</td>
+                      <td><span className="badge badge-ok">{r.estado}</span></td>
+                      <td className="mono">{fmtDate(r.fechaRecarga)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
       )}
 
       <p className="user-wallet-footer">
