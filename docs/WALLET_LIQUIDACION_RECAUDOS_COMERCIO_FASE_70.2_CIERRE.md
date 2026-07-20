@@ -235,7 +235,11 @@ cambios.
 
 ## Commits
 
-Pendiente de generar en el cierre de esta fase (ver sección Despliegue QA y CI).
+| Commit | Descripción |
+|--------|-------------|
+| `297a1f7` | feat: liquidate commerce cash recaudos to XPAY (Fase 70.2) |
+
+Pusheado a `main`.
 
 ---
 
