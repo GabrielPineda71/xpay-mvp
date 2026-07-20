@@ -21,4 +21,7 @@ public class WalletRecargaComercio
     public string?  Observaciones        { get; set; }
     public DateTime FechaRecarga         { get; set; }
     public DateTime CreatedAt            { get; set; }
+    public long?    IdLiquidacionRecaudo { get; set; }
+    public DateTime? FechaLiquidacion    { get; set; }
+    public long?    LiquidadoPorUsuario  { get; set; }
 }
