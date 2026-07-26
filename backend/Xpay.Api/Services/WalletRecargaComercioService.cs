@@ -14,10 +14,13 @@ public class WalletRecargaComercioService(XpayDbContext db, ComercioScopeService
     private const long IdUnidadNegocio = 1;
 
     // ── Búsqueda de usuario destino ──────────────────────────────────────
-    public async Task<List<BuscarUsuarioWalletDto>> BuscarUsuariosAsync(string? query)
+    // CAJERO no puede ver saldo, celular, correo ni el documento completo del
+    // cliente — solo lo mínimo para identificarlo y ejecutar la recarga.
+    public async Task<List<BuscarUsuarioWalletDto>> BuscarUsuariosAsync(string? query, long idUsuarioCajero)
     {
         if (string.IsNullOrWhiteSpace(query)) return new List<BuscarUsuarioWalletDto>();
         var q = query.Trim();
+        var esCajero = (await scope.RequireScopeAsync(idUsuarioCajero)).RolComercio == "CAJERO";
 
         var candidatos = await (
             from u in db.Usuarios
@@ -54,14 +57,21 @@ public class WalletRecargaComercioService(XpayDbContext db, ComercioScopeService
                 IdUsuario:     c.u.IdUsuario,
                 NombreUsuario: c.u.NombreUsuario,
                 NombreCompleto: nombreCompleto,
-                Documento:     c.p.NumeroDocumento,
-                Celular:       c.p.Celular,
-                Correo:        c.p.Email,
+                Documento:     esCajero ? EnmascararDocumento(c.p.NumeroDocumento) : c.p.NumeroDocumento,
+                Celular:       esCajero ? null : c.p.Celular,
+                Correo:        esCajero ? null : c.p.Email,
                 IdWallet:      wallet.IdWallet,
-                SaldoActual:   saldos.GetValueOrDefault(wallet.IdWallet, 0m),
+                SaldoActual:   esCajero ? null : saldos.GetValueOrDefault(wallet.IdWallet, 0m),
                 EstadoWallet:  wallet.Estado));
         }
         return result;
+    }
+
+    private static string EnmascararDocumento(string documento)
+    {
+        if (string.IsNullOrEmpty(documento)) return documento;
+        var visibles = Math.Min(4, documento.Length);
+        return new string('*', documento.Length - visibles) + documento[^visibles..];
     }
 
     // ── Recarga de Wallet en efectivo ────────────────────────────────────
@@ -207,11 +217,19 @@ public class WalletRecargaComercioService(XpayDbContext db, ComercioScopeService
 
             await tx.CommitAsync();
 
-            var comprobante =
-                $"Recarga de {req.Valor:N0} a {usuarioDestino.NombreUsuario} (Wallet #{wallet.IdWallet}). " +
-                $"Saldo anterior: {saldoAntes:N0}. Saldo nuevo: {saldoDespues:N0}. " +
-                $"Comercio #{idComercio}{(recarga.IdTienda.HasValue ? $", sede #{recarga.IdTienda}" : "")}, cajero #{idUsuarioCajero}. " +
-                $"{now:yyyy-MM-dd HH:mm}. Recarga #{recarga.IdRecarga}.";
+            // CAJERO no puede ver saldo anterior/posterior del cliente — el comprobante
+            // y la respuesta se reducen a lo mínimo: operación, valor, referencia y fecha.
+            // La fecha/hora NO se embebe como texto formateado aquí — el frontend la
+            // muestra en hora Colombia a partir del campo estructurado FechaRecarga.
+            var esCajero = cajeroScope.RolComercio == "CAJERO";
+            var comprobante = esCajero
+                ? $"Recarga de {req.Valor:N0} a {usuarioDestino.NombreUsuario} (Wallet #{wallet.IdWallet}). " +
+                  $"Comercio #{idComercio}{(recarga.IdTienda.HasValue ? $", sede #{recarga.IdTienda}" : "")}, cajero #{idUsuarioCajero}. " +
+                  $"Recarga #{recarga.IdRecarga}."
+                : $"Recarga de {req.Valor:N0} a {usuarioDestino.NombreUsuario} (Wallet #{wallet.IdWallet}). " +
+                  $"Saldo anterior: {saldoAntes:N0}. Saldo nuevo: {saldoDespues:N0}. " +
+                  $"Comercio #{idComercio}{(recarga.IdTienda.HasValue ? $", sede #{recarga.IdTienda}" : "")}, cajero #{idUsuarioCajero}. " +
+                  $"Recarga #{recarga.IdRecarga}.";
 
             logger.LogInformation(
                 "WALLET_RECARGA_EFECTIVO_COMERCIO: idRecarga={IdRecarga} idComercio={IdComercio} idWallet={IdWallet} valor={Valor}",
@@ -223,8 +241,8 @@ public class WalletRecargaComercioService(XpayDbContext db, ComercioScopeService
                 IdWallet:            wallet.IdWallet,
                 IdUsuarioWallet:     req.IdUsuarioWallet,
                 Valor:               req.Valor,
-                SaldoWalletAntes:    saldoAntes,
-                SaldoWalletDespues:  saldoDespues,
+                SaldoWalletAntes:    esCajero ? null : saldoAntes,
+                SaldoWalletDespues:  esCajero ? null : saldoDespues,
                 IdComercio:          idComercio,
                 IdTienda:            recarga.IdTienda,
                 IdUsuarioCajero:     idUsuarioCajero,

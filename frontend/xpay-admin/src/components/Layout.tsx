@@ -46,6 +46,7 @@ export function Layout() {
               <Link to="/admin/parametros-liquidacion-comercio">Parámetros Liquidación</Link>
               <Link to="/admin/cartera-ordinaria">Cartera Ordinaria</Link>
               <Link to="/admin/wallet-recaudos-comercio">Liquidación Recaudos Comercio</Link>
+              <Link to="/admin/wallet-cierres-comercio">Cierres Diarios Comercio</Link>
             </>
           )}
           {view === 'wallet'   && <Link to="/mi-wallet">Mi Wallet</Link>}

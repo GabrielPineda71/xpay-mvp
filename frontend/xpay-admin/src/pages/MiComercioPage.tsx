@@ -3,12 +3,7 @@ import QRCode from 'qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { get, post } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
-
-// QA/Demo mapping: username → comercio data
-// Documented in docs/QA_DEMO_BUSINESS_USERS.md
-const DEMO_COMERCIO_MAP: Record<string, { idComercio: number; idWalletComercio: number }> = {
-  'qa.comercio1': { idComercio: 2, idWalletComercio: 4 },
-};
+import { generarComprobantePdfCierre } from '../utils/comprobanteCierrePdf.ts';
 
 interface ResumenComercio {
   idComercio:        number;
@@ -110,15 +105,17 @@ interface VentaNoDisponible {
   estado:                         string;
 }
 
+// celular/correo/saldoActual vienen null cuando quien busca es CAJERO —
+// el backend los omite, no es un ocultamiento de UI (ver WalletRecargaComercioService).
 interface BuscarUsuarioWalletResult {
   idUsuario:      number;
   nombreUsuario:  string;
   nombreCompleto: string;
   documento:      string;
-  celular:        string;
-  correo?:        string;
+  celular:        string | null;
+  correo?:        string | null;
   idWallet:       number;
-  saldoActual:    number;
+  saldoActual:    number | null;
   estadoWallet:   string;
 }
 
@@ -128,8 +125,8 @@ interface RecargaWalletResult {
   idWallet:             number;
   idUsuarioWallet:      number;
   valor:                number;
-  saldoWalletAntes:     number;
-  saldoWalletDespues:   number;
+  saldoWalletAntes:     number | null;
+  saldoWalletDespues:   number | null;
   idComercio:           number;
   idTienda?:            number;
   idUsuarioCajero:      number;
@@ -156,6 +153,84 @@ function validatePin(pin: string): string | null {
   return null;
 }
 
+// ── Cierre Diario de Comercio (Fase 70.3) ─────────────────────────────────
+interface TotalesCierre {
+  cantidadRecargas: number;
+  valorTotal:       number;
+  valorLiquidado:   number;
+  valorPendiente:   number;
+}
+
+interface PreviewCierre {
+  idComercio:            number;
+  fecha:                 string;
+  yaGenerado:            boolean;
+  idCierreExistente:     number | null;
+  estadoCierreExistente: string | null;
+  cantidadRecargas:      number;
+  valorTotalRecaudado:   number;
+  valorLiquidado:        number;
+  valorPendiente:        number;
+  vistaEnVivo:           boolean;
+  mensaje:               string;
+}
+
+interface GenerarCierreResult {
+  idCierre:                number;
+  idComercio:              number;
+  fechaCierre:             string;
+  fechaHoraCorteUtc:       string;
+  codigoUnico:             string;
+  cantidadRecargas:        number;
+  valorTotalRecaudado:     number;
+  valorLiquidadoAlGenerar: number;
+  valorPendienteAlGenerar: number;
+  estado:                  string;
+  generadoPorUsuario:      number;
+  fechaGeneracion:         string;
+  notaCorte:               string;
+}
+
+interface CierreResumen {
+  idCierre:              number;
+  fechaCierre:           string;
+  estado:                string;
+  codigoUnico:           string;
+  miParticipacion:       TotalesCierre;
+  alcanceParticipacion:  string;
+}
+
+interface RecargaEnCierre {
+  idRecarga:                number;
+  idTienda:                 number | null;
+  nombreTienda:             string | null;
+  idUsuarioCajero:          number;
+  nombreUsuarioCajero:      string | null;
+  idUsuarioWallet:          number;
+  nombreUsuarioWallet:      string | null;
+  valor:                    number;
+  estabaLiquidadaAlGenerar: boolean;
+  fechaRecarga:             string;
+}
+
+interface CierreDetalle {
+  idCierre:              number;
+  idComercio:            number;
+  nombreComercio:        string | null;
+  fechaCierre:           string;
+  fechaHoraCorteUtc:     string;
+  codigoUnico:           string;
+  estado:                string;
+  fechaGeneracion:       string;
+  fechaRevision:         string | null;
+  fechaCerrado:          string | null;
+  totalesComercio:       TotalesCierre | null;
+  miParticipacion:       TotalesCierre;
+  alcanceParticipacion:  string;
+  recargas:              RecargaEnCierre[];
+}
+
+
 interface ComercioScope {
   idUsuario:               number;
   rolComercio:             string;
@@ -172,7 +247,16 @@ interface ComercioScope {
 
 export function MiComercioPage() {
   const { user } = useAuth();
-  const demoInfo = user ? DEMO_COMERCIO_MAP[user.usuario] : undefined;
+
+  // ── Scope operativo — resuelve el comercio dinámicamente vía /api/comercio/mi-scope,
+  // nunca por username. Válido para cualquier rol COMERCIO (ADMIN_COMERCIO,
+  // ADMIN_SEDE_COMERCIO, CAJERO), no solo para qa.comercio1.
+  const [scope, setScope] = useState<ComercioScope | null>(null);
+  const [scopeLoading, setScopeLoading] = useState(true);
+  const idComercio = scope?.idComercioExistente;
+  // CAJERO nunca ve saldos del cliente — el backend ya los omite (quedan null);
+  // esta bandera solo evita columnas/filas vacías en la UI, no es la protección real.
+  const esCajero = scope?.rolComercio === 'CAJERO';
 
   const [resumen,  setResumen]  = useState<ResumenComercio | null>(null);
   const [ventas,   setVentas]   = useState<VentaQr[]>([]);
@@ -199,9 +283,6 @@ export function MiComercioPage() {
   const [brebRetBusy,  setBrebRetBusy]  = useState(false);
   const [brebRetMsg,   setBrebRetMsg]   = useState<Msg | null>(null);
 
-  // ── Scope operativo ───────────────────────────────────────────────────────
-  const [scope, setScope] = useState<ComercioScope | null>(null);
-
   // ── Recargar Wallet (efectivo) ────────────────────────────────────────────
   const [rcQuery,        setRcQuery]        = useState('');
   const [rcResultados,   setRcResultados]   = useState<BuscarUsuarioWalletResult[]>([]);
@@ -214,6 +295,23 @@ export function MiComercioPage() {
   const [rcMsg,          setRcMsg]          = useState<Msg | null>(null);
   const [rcResultado,    setRcResultado]    = useState<RecargaWalletResult | null>(null);
   const [rcRecargas,     setRcRecargas]     = useState<RecargaResumen[]>([]);
+
+  // ── Cierre Diario de Comercio ───────────────────────────────────────────
+  // Fecha operativa Colombia (America/Bogota) — NO usar new Date().toISOString()
+  // aquí: eso da la fecha UTC cruda, que se adelanta un día respecto a Colombia
+  // durante la ventana 19:00-00:00 hora Colombia (00:00-05:00 UTC). El backend
+  // (HoyColombia()) ya aplica el mismo criterio — deben coincidir siempre.
+  const hoyIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
+  const [cdFecha,        setCdFecha]        = useState(hoyIso);
+  const [cdPreview,      setCdPreview]      = useState<PreviewCierre | null>(null);
+  const [cdPreviewBusy,  setCdPreviewBusy]  = useState(false);
+  const [cdConfirmHoy,   setCdConfirmHoy]   = useState(false);
+  const [cdGenerando,    setCdGenerando]    = useState(false);
+  const [cdMsg,          setCdMsg]          = useState<Msg | null>(null);
+  const [cdResultado,    setCdResultado]    = useState<GenerarCierreResult | null>(null);
+  const [cdCierres,      setCdCierres]      = useState<CierreResumen[]>([]);
+  const [cdDetalle,      setCdDetalle]      = useState<CierreDetalle | null>(null);
+  const [cdDetalleBusy,  setCdDetalleBusy]  = useState(false);
 
   // ── Disponibilidad ventas ─────────────────────────────────────────────────
   const [dispResumen,   setDispResumen]   = useState<ResumenDisponibilidad | null>(null);
@@ -229,16 +327,16 @@ export function MiComercioPage() {
   const [qrComCopied,  setQrComCopied]  = useState(false);
 
   const loadData = useCallback(async () => {
-    if (!demoInfo) return;
+    if (!idComercio) return;
     setLoading(true);
     setDataErr(null);
     try {
       const [resumenResp, ventasResp, retirosResp] = await Promise.all([
-        get<{ success: boolean; data: ResumenComercio }>(`/api/reportes/comercios/${demoInfo.idComercio}/resumen`),
+        get<{ success: boolean; data: ResumenComercio }>(`/api/reportes/comercios/${idComercio}/resumen`),
         get<{ success: boolean; data: { items?: VentaQr[] } | VentaQr[] }>(
-          `/api/admin/ventas-qr?idComercio=${demoInfo.idComercio}&pageSize=50&desde=${fechaDesde}&hasta=${fechaHasta}`),
+          `/api/admin/ventas-qr?idComercio=${idComercio}&pageSize=50&desde=${fechaDesde}&hasta=${fechaHasta}`),
         get<{ success: boolean; data: { items?: RetiroComercio[] } | RetiroComercio[] }>(
-          `/api/comercios/retiros?idComercio=${demoInfo.idComercio}&pageSize=50&desde=${fechaDesde}&hasta=${fechaHasta}`),
+          `/api/comercios/retiros?idComercio=${idComercio}&pageSize=50&desde=${fechaDesde}&hasta=${fechaHasta}`),
       ]);
       setResumen(resumenResp.data);
 
@@ -252,24 +350,36 @@ export function MiComercioPage() {
     } finally {
       setLoading(false);
     }
-  }, [demoInfo, fechaDesde, fechaHasta]);
+  }, [idComercio, fechaDesde, fechaHasta]);
 
+  // Resuelve el scope operativo una sola vez al montar — de aquí sale idComercio,
+  // nunca del username. Cualquier rol COMERCIO (ADMIN_COMERCIO, ADMIN_SEDE_COMERCIO,
+  // CAJERO) queda soportado sin lógica adicional.
   useEffect(() => {
-    void loadData();
+    let cancelled = false;
     void (async () => {
       try {
         const r = await get<{ success: boolean; data: ComercioScope | null }>('/api/comercio/mi-scope');
-        setScope(r.data ?? null);
-      } catch { /* non-critical */ }
+        if (!cancelled) setScope(r.data ?? null);
+      } catch {
+        if (!cancelled) setScope(null);
+      } finally {
+        if (!cancelled) setScopeLoading(false);
+      }
     })();
-    if (demoInfo) {
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    void loadData();
+    if (idComercio) {
       void (async () => {
         try {
           const [llaveR, retirosR] = await Promise.all([
             get<{ success: boolean; data: BrebLlave | null }>(
-              `/api/breb/mi-llave/comercio?idComercio=${demoInfo.idComercio}`),
+              `/api/breb/mi-llave/comercio?idComercio=${idComercio}`),
             get<{ success: boolean; data: BrebRetiro[] }>(
-              `/api/breb/mis-retiros/comercio?idComercio=${demoInfo.idComercio}`),
+              `/api/breb/mis-retiros/comercio?idComercio=${idComercio}`),
           ]);
           setBrebLlave(llaveR.data);
           setBrebRetiros(retirosR.data ?? []);
@@ -279,9 +389,9 @@ export function MiComercioPage() {
         try {
           const [resR, listR] = await Promise.all([
             get<{ success: boolean; data: ResumenDisponibilidad }>(
-              `/api/comercio/ventas-disponibilidad/resumen?idComercio=${demoInfo.idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
+              `/api/comercio/ventas-disponibilidad/resumen?idComercio=${idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
             get<{ success: boolean; data: VentaNoDisponible[] }>(
-              `/api/comercio/ventas-no-disponibles?idComercio=${demoInfo.idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
+              `/api/comercio/ventas-no-disponibles?idComercio=${idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
           ]);
           setDispResumen(resR.data);
           setVentasNoDisp(listR.data ?? []);
@@ -293,8 +403,64 @@ export function MiComercioPage() {
           setRcRecargas(r.data ?? []);
         } catch { /* non-critical */ }
       })();
+      void cargarMisCierres();
     }
-  }, [loadData, demoInfo]);
+  }, [loadData, idComercio]);
+
+  async function cargarMisCierres() {
+    try {
+      const r = await get<{ success: boolean; data: CierreResumen[] }>('/api/comercio/wallet-cierres/mis-cierres');
+      setCdCierres(r.data ?? []);
+    } catch { /* non-critical */ }
+  }
+
+  async function cargarPreviewCierre() {
+    setCdPreviewBusy(true); setCdMsg(null); setCdPreview(null); setCdResultado(null);
+    try {
+      const r = await get<{ success: boolean; data: PreviewCierre }>(`/api/comercio/wallet-cierres/preview?fecha=${cdFecha}`);
+      setCdPreview(r.data);
+    } catch (err) {
+      setCdMsg({ ok: false, text: (err as Error).message || 'Error consultando el preview del cierre.' });
+    } finally { setCdPreviewBusy(false); }
+  }
+
+  async function handleGenerarCierre() {
+    if (cdFecha === hoyIso && !cdConfirmHoy) {
+      setCdMsg({ ok: false, text: 'Debes confirmar explícitamente para generar el cierre del día actual.' });
+      return;
+    }
+    if (!window.confirm(
+      'Se generará el cierre definitivo para la fecha seleccionada. Los valores quedarán ' +
+      'almacenados como snapshot histórico y no podrán modificarse desde el flujo normal.'
+    )) return;
+    setCdGenerando(true); setCdMsg(null); setCdResultado(null);
+    try {
+      const r = await post<{ success: boolean; data?: GenerarCierreResult; message?: string }>(
+        '/api/comercio/wallet-cierres/generar',
+        { fecha: cdFecha, confirmacionExplicita: cdFecha === hoyIso ? cdConfirmHoy : false },
+      );
+      if (r.success && r.data) {
+        setCdResultado(r.data);
+        setCdPreview(null);
+        setCdConfirmHoy(false);
+        void cargarMisCierres();
+      } else {
+        setCdMsg({ ok: false, text: r.message ?? 'Error generando el cierre.' });
+      }
+    } catch (err) {
+      setCdMsg({ ok: false, text: (err as Error).message || 'Error generando el cierre.' });
+    } finally { setCdGenerando(false); }
+  }
+
+  async function verDetalleCierre(idCierre: number) {
+    setCdDetalleBusy(true); setCdMsg(null);
+    try {
+      const r = await get<{ success: boolean; data: CierreDetalle }>(`/api/comercio/wallet-cierres/${idCierre}`);
+      setCdDetalle(r.data);
+    } catch (err) {
+      setCdMsg({ ok: false, text: (err as Error).message || 'Error cargando el detalle del cierre.' });
+    } finally { setCdDetalleBusy(false); }
+  }
 
   const cargarMisRecargas = async () => {
     try {
@@ -362,11 +528,31 @@ export function MiComercioPage() {
     } finally { setRcBusy(false); setRcPin(''); }
   }
 
-  if (!user || !demoInfo) {
+  if (!user) {
     return (
       <div className="page">
         <h2>Mi Comercio</h2>
-        <div className="error-msg">Comercio no reconocido en el mapa demo QA. Contacta al administrador.</div>
+        <div className="error-msg">Sesión no válida. Vuelve a iniciar sesión.</div>
+      </div>
+    );
+  }
+
+  if (scopeLoading) {
+    return (
+      <div className="page">
+        <h2>Mi Comercio</h2>
+        <div className="loading">Cargando tu comercio...</div>
+      </div>
+    );
+  }
+
+  if (!idComercio) {
+    return (
+      <div className="page">
+        <h2>Mi Comercio</h2>
+        <div className="error-msg">
+          Tu usuario no tiene un comercio operativo asociado. Contacta al administrador de XPAY.
+        </div>
       </div>
     );
   }
@@ -409,12 +595,12 @@ export function MiComercioPage() {
 
   async function handleRegistrarLlaveComercio(e: FormEvent) {
     e.preventDefault();
-    if (!brebKeyValue.trim() || !demoInfo) return;
+    if (!brebKeyValue.trim() || !idComercio) return;
     setBrebRegBusy(true); setBrebRegMsg(null);
     try {
       const r = await post<{ success: boolean; data?: BrebLlave; message?: string }>(
         '/api/breb/mi-llave/comercio',
-        { keyType: brebKeyType, keyValue: brebKeyValue.trim(), idComercio: demoInfo.idComercio },
+        { keyType: brebKeyType, keyValue: brebKeyValue.trim(), idComercio },
       );
       if (r.success && r.data) {
         setBrebLlave(r.data);
@@ -431,12 +617,12 @@ export function MiComercioPage() {
   async function handleSolicitarRetiroComercio(e: FormEvent) {
     e.preventDefault();
     const val = Number(brebRetValor);
-    if (!val || val <= 0 || !demoInfo) { setBrebRetMsg({ ok: false, text: 'Ingresa un valor válido.' }); return; }
+    if (!val || val <= 0 || !idComercio) { setBrebRetMsg({ ok: false, text: 'Ingresa un valor válido.' }); return; }
     setBrebRetBusy(true); setBrebRetMsg(null);
     try {
       const r = await post<{ success: boolean; data?: BrebRetiro; message?: string }>(
         '/api/breb/retiros/simular',
-        { valor: val, idComercio: demoInfo.idComercio },
+        { valor: val, idComercio },
       );
       if (r.success && r.data) {
         setBrebRetiros(prev => [r.data!, ...prev]);
@@ -455,7 +641,7 @@ export function MiComercioPage() {
       <h2>Mi Comercio</h2>
       <p className="dashboard-subtitle">
         {resumen?.nombreComercial ?? 'Cargando...'}
-        {' · '}idComercio #{demoInfo.idComercio}
+        {' · '}idComercio #{idComercio}
         {' · '}<span className="badge badge-info">QA / Demo</span>
         {scope && <>{' · '}<span className="badge badge-ok">{scope.rolComercio}</span></>}
       </p>
@@ -754,14 +940,14 @@ export function MiComercioPage() {
                               setDispMsg(null);
                               try {
                                 const r = await post<{ success: boolean; data: any; message?: string }>(
-                                  `/api/comercio/ventas-no-disponibles/${v.idDisponibilidad}/liquidar-ahora?idComercio=${demoInfo.idComercio}`, {}
+                                  `/api/comercio/ventas-no-disponibles/${v.idDisponibilidad}/liquidar-ahora?idComercio=${idComercio}`, {}
                                 );
                                 if (r.success) {
                                   setDispMsg({ ok: true, text: `Venta #${v.idVentaQr} liquidada. Neto recibido: ${fmtMoney(r.data.valorNetoLiberado)}` });
                                   // Refresh
                                   const [rR, lR] = await Promise.all([
-                                    get<{ success: boolean; data: ResumenDisponibilidad }>(`/api/comercio/ventas-disponibilidad/resumen?idComercio=${demoInfo.idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
-                                    get<{ success: boolean; data: VentaNoDisponible[] }>(`/api/comercio/ventas-no-disponibles?idComercio=${demoInfo.idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
+                                    get<{ success: boolean; data: ResumenDisponibilidad }>(`/api/comercio/ventas-disponibilidad/resumen?idComercio=${idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
+                                    get<{ success: boolean; data: VentaNoDisponible[] }>(`/api/comercio/ventas-no-disponibles?idComercio=${idComercio}&desde=${fechaDesde}&hasta=${fechaHasta}`),
                                   ]);
                                   setDispResumen(rR.data);
                                   setVentasNoDisp(lR.data ?? []);
@@ -944,8 +1130,8 @@ export function MiComercioPage() {
                       <tr>
                         <th>Usuario</th>
                         <th>Documento</th>
-                        <th>Celular</th>
-                        <th>Saldo Wallet</th>
+                        {!esCajero && <th>Celular</th>}
+                        {!esCajero && <th>Saldo Wallet</th>}
                         <th></th>
                       </tr>
                     </thead>
@@ -954,8 +1140,8 @@ export function MiComercioPage() {
                         <tr key={u.idUsuario}>
                           <td>{u.nombreUsuario} — {u.nombreCompleto}</td>
                           <td className="mono">{u.documento}</td>
-                          <td className="mono">{u.celular}</td>
-                          <td>{fmtMoney(u.saldoActual)}</td>
+                          {!esCajero && <td className="mono">{u.celular}</td>}
+                          {!esCajero && <td>{fmtMoney(u.saldoActual)}</td>}
                           <td>
                             <button
                               className="btn-confirm"
@@ -977,11 +1163,16 @@ export function MiComercioPage() {
               <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.9rem' }}>Recarga confirmada #{rcResultado.idRecarga}</h4>
               <table style={{ width: '100%', fontSize: '0.85rem' }}>
                 <tbody>
-                  <tr><td>Usuario</td><td style={{ textAlign: 'right' }}>{rcSeleccionado.nombreUsuario}</td></tr>
+                  <tr><td>Cliente</td><td style={{ textAlign: 'right' }}>{rcSeleccionado.nombreUsuario} ({rcSeleccionado.documento})</td></tr>
                   <tr><td>Valor recargado</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(rcResultado.valor)}</td></tr>
-                  <tr><td>Saldo antes</td><td style={{ textAlign: 'right' }}>{fmtMoney(rcResultado.saldoWalletAntes)}</td></tr>
-                  <tr><td>Saldo después</td><td style={{ textAlign: 'right', color: '#276749', fontWeight: 700 }}>{fmtMoney(rcResultado.saldoWalletDespues)}</td></tr>
-                  <tr><td>idTransaccionLedger</td><td style={{ textAlign: 'right' }}>{rcResultado.idTransaccionLedger ?? '—'}</td></tr>
+                  {rcResultado.saldoWalletAntes != null && (
+                    <tr><td>Saldo antes</td><td style={{ textAlign: 'right' }}>{fmtMoney(rcResultado.saldoWalletAntes)}</td></tr>
+                  )}
+                  {rcResultado.saldoWalletDespues != null && (
+                    <tr><td>Saldo después</td><td style={{ textAlign: 'right', color: '#276749', fontWeight: 700 }}>{fmtMoney(rcResultado.saldoWalletDespues)}</td></tr>
+                  )}
+                  <tr><td>Referencia (recarga / ledger)</td><td style={{ textAlign: 'right' }}>#{rcResultado.idRecarga} / #{rcResultado.idTransaccionLedger ?? '—'}</td></tr>
+                  <tr><td>Fecha</td><td style={{ textAlign: 'right' }}>{fmtDate(rcResultado.fechaRecarga)}</td></tr>
                   <tr><td>Comercio / sede / cajero</td><td style={{ textAlign: 'right' }}>#{rcResultado.idComercio} / {rcResultado.idTienda ?? '—'} / #{rcResultado.idUsuarioCajero}</td></tr>
                 </tbody>
               </table>
@@ -994,7 +1185,7 @@ export function MiComercioPage() {
             <div className="breb-status-card" style={{ maxWidth: 420 }}>
               <p style={{ fontSize: '0.85rem', margin: '0 0 0.5rem' }}>
                 <strong>{rcSeleccionado.nombreUsuario}</strong> — {rcSeleccionado.nombreCompleto}
-                <br />Saldo actual: {fmtMoney(rcSeleccionado.saldoActual)}
+                {rcSeleccionado.saldoActual != null && <><br />Saldo actual: {fmtMoney(rcSeleccionado.saldoActual)}</>}
               </p>
               <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.82rem', marginBottom: '0.5rem' }}>
                 Valor recibido en efectivo (COP)
@@ -1062,6 +1253,221 @@ export function MiComercioPage() {
               </table>
             )}
           </div>
+        </>
+      )}
+
+      {/* ── CIERRE DIARIO DE COMERCIO ────────────────────────────────────────
+          Capacidad administrativa (ADMIN_COMERCIO/ADMIN_SEDE_COMERCIO) — no es
+          un cierre individual de cajero. CAJERO no ve esta sección: mostrar su
+          MiParticipacion aquí simularía un "cierre propio" que no existe en
+          esta fase — esa capacidad es la Fase 70.4 (caja/turno individual). */}
+      {(scope == null || ['ADMIN_COMERCIO', 'ADMIN_SEDE_COMERCIO'].includes(scope.rolComercio)) && (
+        <>
+          <hr style={{ margin: '1.5rem 0', borderColor: '#e2e8f0' }} />
+          <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem', color: '#2d3748' }}>Cierre Diario de Comercio</h3>
+          <p className="tab-hint">
+            Consolida las recargas en efectivo de una jornada del comercio completo. Una vez
+            generado, el cierre queda congelado — no se edita, no se elimina y no se puede
+            regenerar para la misma fecha.
+          </p>
+
+          {(scope == null || scope.rolComercio === 'ADMIN_COMERCIO') ? (
+            <div className="breb-status-card" style={{ maxWidth: 480, marginBottom: '1rem' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.82rem', marginBottom: '0.5rem', maxWidth: 200 }}>
+                Fecha a consolidar
+                <input
+                  type="date"
+                  value={cdFecha}
+                  max={hoyIso}
+                  onChange={e => { setCdFecha(e.target.value); setCdPreview(null); setCdConfirmHoy(false); setCdMsg(null); }}
+                />
+              </label>
+
+              <button className="btn-secondary" onClick={() => void cargarPreviewCierre()} disabled={cdPreviewBusy}>
+                {cdPreviewBusy ? 'Consultando...' : 'Ver preview'}
+              </button>
+
+              {cdPreview && (
+                <div style={{ marginTop: '0.75rem', fontSize: '0.85rem' }}>
+                  <p style={{ color: '#718096', fontSize: '0.78rem' }}>{cdPreview.mensaje}</p>
+                  <table style={{ width: '100%' }}>
+                    <tbody>
+                      <tr><td>Recargas</td><td style={{ textAlign: 'right' }}>{cdPreview.cantidadRecargas}</td></tr>
+                      <tr><td>Valor total</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(cdPreview.valorTotalRecaudado)}</td></tr>
+                      <tr><td>Valor liquidado</td><td style={{ textAlign: 'right' }}>{fmtMoney(cdPreview.valorLiquidado)}</td></tr>
+                      <tr><td>Valor pendiente</td><td style={{ textAlign: 'right' }}>{fmtMoney(cdPreview.valorPendiente)}</td></tr>
+                    </tbody>
+                  </table>
+
+                  {!cdPreview.yaGenerado && cdPreview.cantidadRecargas > 0 && (
+                    <>
+                      {cdFecha === hoyIso && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', margin: '0.75rem 0' }}>
+                          <input type="checkbox" checked={cdConfirmHoy} onChange={e => setCdConfirmHoy(e.target.checked)} />
+                          Confirmo generar el cierre de HOY — las recargas posteriores a este momento no quedarán incluidas.
+                        </label>
+                      )}
+                      <button
+                        className="btn-confirm"
+                        disabled={cdGenerando || (cdFecha === hoyIso && !cdConfirmHoy)}
+                        onClick={() => void handleGenerarCierre()}
+                      >
+                        {cdGenerando ? 'Generando...' : 'Generar y cerrar'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {cdMsg && <div className={cdMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginTop: '0.5rem' }}>{cdMsg.text}</div>}
+
+              {cdResultado && (
+                <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#f0fff4', borderRadius: 6, borderLeft: '3px solid #48bb78' }}>
+                  <strong>Cierre #{cdResultado.idCierre} generado y cerrado.</strong>
+                  <p style={{ fontSize: '0.8rem', margin: '0.4rem 0' }}>{cdResultado.notaCorte}</p>
+                  <button
+                    className="btn-secondary"
+                    style={{ fontSize: '0.78rem' }}
+                    onClick={() => generarComprobantePdfCierre({
+                      idCierre: cdResultado.idCierre,
+                      idComercio: cdResultado.idComercio,
+                      nombreComercio: resumen?.nombreComercial,
+                      fechaCierre: cdResultado.fechaCierre,
+                      fechaHoraCorteUtc: cdResultado.fechaHoraCorteUtc,
+                      codigoUnico: cdResultado.codigoUnico,
+                      estado: cdResultado.estado,
+                      cantidadRecargas: cdResultado.cantidadRecargas,
+                      valorTotalRecaudado: cdResultado.valorTotalRecaudado,
+                      valorLiquidadoAlGenerar: cdResultado.valorLiquidadoAlGenerar,
+                      valorPendienteAlGenerar: cdResultado.valorPendienteAlGenerar,
+                    })}
+                  >
+                    Descargar comprobante PDF
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            cdMsg && <div className={cdMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginBottom: '0.75rem' }}>{cdMsg.text}</div>
+          )}
+
+          <div className="table-wrapper" style={{ marginTop: '1rem' }}>
+            <div className="table-title">Cierres diarios ({cdCierres.length})</div>
+            {cdCierres.length === 0 ? (
+              <div className="empty">Sin cierres generados todavía.</div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>#Cierre</th><th>Fecha</th><th>Estado</th><th>Alcance</th>
+                    <th>Recargas</th><th>Valor</th><th>Liquidado</th><th>Pendiente</th><th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cdCierres.map(c => (
+                    <tr key={c.idCierre}>
+                      <td className="mono">{c.idCierre}</td>
+                      <td className="mono">{c.fechaCierre}</td>
+                      <td><span className="badge badge-ok">{c.estado}</span></td>
+                      <td>{c.alcanceParticipacion}</td>
+                      <td className="mono">{c.miParticipacion.cantidadRecargas}</td>
+                      <td>{fmtMoney(c.miParticipacion.valorTotal)}</td>
+                      <td>{fmtMoney(c.miParticipacion.valorLiquidado)}</td>
+                      <td>{fmtMoney(c.miParticipacion.valorPendiente)}</td>
+                      <td>
+                        <button
+                          className="btn-secondary"
+                          style={{ fontSize: '0.78rem', padding: '0.25rem 0.7rem' }}
+                          onClick={() => void verDetalleCierre(c.idCierre)}
+                        >
+                          Ver detalle
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {cdDetalleBusy && <div className="loading">Cargando detalle...</div>}
+          {cdDetalle && (
+            <div className="breb-status-card" style={{ marginTop: '1rem' }}>
+              <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.9rem' }}>
+                Cierre #{cdDetalle.idCierre} — {cdDetalle.fechaCierre} — {cdDetalle.estado}
+              </h4>
+              <p style={{ fontSize: '0.78rem', color: '#718096' }}>Código único: {cdDetalle.codigoUnico}</p>
+
+              {cdDetalle.totalesComercio && (
+                <>
+                  <p style={{ fontSize: '0.82rem', fontWeight: 600, margin: '0.5rem 0 0.25rem' }}>Total comercio (todas las sedes)</p>
+                  <table style={{ width: '100%', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+                    <tbody>
+                      <tr><td>Recargas</td><td style={{ textAlign: 'right' }}>{cdDetalle.totalesComercio.cantidadRecargas}</td></tr>
+                      <tr><td>Valor total</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(cdDetalle.totalesComercio.valorTotal)}</td></tr>
+                      <tr><td>Liquidado</td><td style={{ textAlign: 'right' }}>{fmtMoney(cdDetalle.totalesComercio.valorLiquidado)}</td></tr>
+                      <tr><td>Pendiente</td><td style={{ textAlign: 'right' }}>{fmtMoney(cdDetalle.totalesComercio.valorPendiente)}</td></tr>
+                    </tbody>
+                  </table>
+                </>
+              )}
+
+              <p style={{ fontSize: '0.82rem', fontWeight: 600, margin: '0.5rem 0 0.25rem' }}>
+                {cdDetalle.alcanceParticipacion === 'COMERCIO_COMPLETO' ? 'Tu participación (todo el comercio)'
+                  : cdDetalle.alcanceParticipacion === 'SEDE' ? 'Participación de tu sede en el cierre'
+                  : 'Tus recargas incluidas en el cierre'}
+              </p>
+              <table style={{ width: '100%', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+                <tbody>
+                  <tr><td>Recargas</td><td style={{ textAlign: 'right' }}>{cdDetalle.miParticipacion.cantidadRecargas}</td></tr>
+                  <tr><td>Valor total</td><td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(cdDetalle.miParticipacion.valorTotal)}</td></tr>
+                  <tr><td>Liquidado</td><td style={{ textAlign: 'right' }}>{fmtMoney(cdDetalle.miParticipacion.valorLiquidado)}</td></tr>
+                  <tr><td>Pendiente</td><td style={{ textAlign: 'right' }}>{fmtMoney(cdDetalle.miParticipacion.valorPendiente)}</td></tr>
+                </tbody>
+              </table>
+
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr><th>#Recarga</th><th>Sede</th><th>Cajero</th><th>Usuario wallet</th><th>Valor</th><th>Liquidada</th><th>Fecha</th></tr>
+                  </thead>
+                  <tbody>
+                    {cdDetalle.recargas.map(r => (
+                      <tr key={r.idRecarga}>
+                        <td className="mono">{r.idRecarga}</td>
+                        <td>{r.nombreTienda ?? (r.idTienda ? `#${r.idTienda}` : '—')}</td>
+                        <td>{r.nombreUsuarioCajero ?? `#${r.idUsuarioCajero}`}</td>
+                        <td>{r.nombreUsuarioWallet ?? `#${r.idUsuarioWallet}`}</td>
+                        <td>{fmtMoney(r.valor)}</td>
+                        <td>{r.estabaLiquidadaAlGenerar ? 'Sí' : 'No'}</td>
+                        <td className="mono">{fmtDate(r.fechaRecarga)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <button
+                className="btn-secondary"
+                style={{ marginTop: '0.75rem', fontSize: '0.78rem' }}
+                onClick={() => generarComprobantePdfCierre({
+                  idCierre: cdDetalle.idCierre,
+                  idComercio: cdDetalle.idComercio,
+                  nombreComercio: cdDetalle.nombreComercio,
+                  fechaCierre: cdDetalle.fechaCierre,
+                  fechaHoraCorteUtc: cdDetalle.fechaHoraCorteUtc,
+                  codigoUnico: cdDetalle.codigoUnico,
+                  estado: cdDetalle.estado,
+                  cantidadRecargas: cdDetalle.totalesComercio?.cantidadRecargas ?? cdDetalle.miParticipacion.cantidadRecargas,
+                  valorTotalRecaudado: cdDetalle.totalesComercio?.valorTotal ?? cdDetalle.miParticipacion.valorTotal,
+                  valorLiquidadoAlGenerar: cdDetalle.totalesComercio?.valorLiquidado ?? cdDetalle.miParticipacion.valorLiquidado,
+                  valorPendienteAlGenerar: cdDetalle.totalesComercio?.valorPendiente ?? cdDetalle.miParticipacion.valorPendiente,
+                })}
+              >
+                Descargar comprobante PDF
+              </button>
+            </div>
+          )}
         </>
       )}
 

@@ -166,7 +166,7 @@ export function AdminWalletRecaudosComercioPage() {
           </div>
           <div style={{ marginTop: '0.4rem', fontSize: '0.82rem', color: '#2f855a' }}>
             Transacción ledger #{resultado.idTransaccionLedger ?? '—'} · {resultado.cantidadRecargas} recarga(s) ·
-            {' '}{fmtMoney(resultado.valorTotal)}
+            {' '}{fmtMoney(resultado.valorTotal)} · {fmtDate(resultado.fechaLiquidacion)}
           </div>
         </div>
       )}

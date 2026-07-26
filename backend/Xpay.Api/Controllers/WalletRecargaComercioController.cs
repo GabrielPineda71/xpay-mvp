@@ -17,7 +17,7 @@ public class WalletRecargaComercioController(WalletRecargaComercioService svc) :
     public async Task<IActionResult> BuscarUsuario([FromQuery] string? query)
     {
         if (!TryGetUsuarioId(out var uid)) return Unauthorized(new { success = false, message = "Token inválido." });
-        var data = await svc.BuscarUsuariosAsync(query);
+        var data = await svc.BuscarUsuariosAsync(query, uid);
         return Ok(new { success = true, data });
     }
 

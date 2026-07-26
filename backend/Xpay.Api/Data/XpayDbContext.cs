@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Xpay.Api.Models;
 
 namespace Xpay.Api.Data;
@@ -6,6 +7,31 @@ namespace Xpay.Api.Data;
 public class XpayDbContext : DbContext
 {
     public XpayDbContext(DbContextOptions<XpayDbContext> options) : base(options) { }
+
+    // Todo el código de la app escribe fechas con DateTime.UtcNow (sin excepción —
+    // verificado en los 18 servicios que persisten fechas). SQL Server no conserva
+    // el Kind al guardar un DATETIME2, así que EF Core lee esas columnas de vuelta
+    // como Kind=Unspecified, y System.Text.Json las serializa SIN "Z". El frontend
+    // entonces interpreta el valor como si ya fuera hora local del navegador, sin
+    // aplicar ningún corrimiento — por eso se veía la hora UTC cruda en pantalla.
+    // Este converter global re-marca el valor leído como Utc (no cambia el valor,
+    // solo la etiqueta), para que la serialización JSON vuelva a incluir "Z" y el
+    // frontend pueda convertir correctamente a America/Bogota.
+    private class UtcDateTimeConverter : ValueConverter<DateTime, DateTime>
+    {
+        public UtcDateTimeConverter() : base(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc)) { }
+    }
+
+    private class UtcNullableDateTimeConverter : ValueConverter<DateTime?, DateTime?>
+    {
+        public UtcNullableDateTimeConverter() : base(v => v, v => v.HasValue ? DateTime.SpecifyKind(v.Value, DateTimeKind.Utc) : v) { }
+    }
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+        configurationBuilder.Properties<DateTime?>().HaveConversion<UtcNullableDateTimeConverter>();
+    }
 
     public DbSet<Persona> Personas => Set<Persona>();
     public DbSet<Usuario> Usuarios => Set<Usuario>();
@@ -59,6 +85,8 @@ public class XpayDbContext : DbContext
     public DbSet<WalletRecargaComercio>                WalletRecargasComercio                  => Set<WalletRecargaComercio>();
     public DbSet<WalletLiquidacionRecaudoComercio>        WalletLiquidacionesRecaudoComercio        => Set<WalletLiquidacionRecaudoComercio>();
     public DbSet<WalletLiquidacionRecaudoComercioDetalle> WalletLiquidacionesRecaudoComercioDetalle => Set<WalletLiquidacionRecaudoComercioDetalle>();
+    public DbSet<WalletCierreDiarioComercio>              WalletCierresDiariosComercio              => Set<WalletCierreDiarioComercio>();
+    public DbSet<WalletCierreDiarioComercioDetalle>       WalletCierresDiariosComercioDetalle       => Set<WalletCierreDiarioComercioDetalle>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -114,11 +142,17 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<WalletRecargaComercio>(e => { e.ToTable("wallet_recargas_comercio"); e.HasKey(x => x.IdRecarga); MapWalletRecargaComercio(e); });
         modelBuilder.Entity<WalletLiquidacionRecaudoComercio>(e => { e.ToTable("wallet_liquidaciones_recaudo_comercio"); e.HasKey(x => x.IdLiquidacion); MapWalletLiquidacionRecaudoComercio(e); });
         modelBuilder.Entity<WalletLiquidacionRecaudoComercioDetalle>(e => { e.ToTable("wallet_liquidaciones_recaudo_comercio_detalle"); e.HasKey(x => x.IdDetalle); MapWalletLiquidacionRecaudoComercioDetalle(e); });
+        modelBuilder.Entity<WalletCierreDiarioComercio>(e => { e.ToTable("wallet_cierres_diarios_comercio"); e.HasKey(x => x.IdCierre); MapWalletCierreDiarioComercio(e); });
+        modelBuilder.Entity<WalletCierreDiarioComercioDetalle>(e => { e.ToTable("wallet_cierres_diarios_comercio_detalle"); e.HasKey(x => x.IdDetalle); MapWalletCierreDiarioComercioDetalle(e); });
     }
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)
     {
-        e.Property(x => x.IdPersona).HasColumnName("id_persona"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.TipoDocumento).HasColumnName("tipo_documento"); e.Property(x => x.NumeroDocumento).HasColumnName("numero_documento"); e.Property(x => x.PrimerNombre).HasColumnName("primer_nombre"); e.Property(x => x.SegundoNombre).HasColumnName("segundo_nombre"); e.Property(x => x.PrimerApellido).HasColumnName("primer_apellido"); e.Property(x => x.SegundoApellido).HasColumnName("segundo_apellido"); e.Property(x => x.FechaNacimiento).HasColumnName("fecha_nacimiento"); e.Property(x => x.Celular).HasColumnName("celular"); e.Property(x => x.Email).HasColumnName("email"); e.Property(x => x.Direccion).HasColumnName("direccion"); e.Property(x => x.Ciudad).HasColumnName("ciudad"); e.Property(x => x.Departamento).HasColumnName("departamento"); e.Property(x => x.Pais).HasColumnName("pais"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion");
+        e.Property(x => x.IdPersona).HasColumnName("id_persona"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.TipoDocumento).HasColumnName("tipo_documento"); e.Property(x => x.NumeroDocumento).HasColumnName("numero_documento"); e.Property(x => x.PrimerNombre).HasColumnName("primer_nombre"); e.Property(x => x.SegundoNombre).HasColumnName("segundo_nombre"); e.Property(x => x.PrimerApellido).HasColumnName("primer_apellido"); e.Property(x => x.SegundoApellido).HasColumnName("segundo_apellido"); e.Property(x => x.Celular).HasColumnName("celular"); e.Property(x => x.Email).HasColumnName("email"); e.Property(x => x.Direccion).HasColumnName("direccion"); e.Property(x => x.Ciudad).HasColumnName("ciudad"); e.Property(x => x.Departamento).HasColumnName("departamento"); e.Property(x => x.Pais).HasColumnName("pais"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion");
+        // FechaNacimiento es una fecha de calendario (columna SQL DATE, sin componente
+        // horario) — se excluye explícitamente del converter global de UTC de
+        // ConfigureConventions, que solo tiene sentido para instantes (DATETIME2).
+        e.Property(x => x.FechaNacimiento).HasColumnName("fecha_nacimiento").HasConversion((Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime?, DateTime?>?)null);
     }
     private static void MapUsuario(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Usuario> e)
     {
@@ -245,4 +279,10 @@ public class XpayDbContext : DbContext
 
     private static void MapWalletLiquidacionRecaudoComercioDetalle(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WalletLiquidacionRecaudoComercioDetalle> e)
     { e.Property(x => x.IdDetalle).HasColumnName("id_detalle"); e.Property(x => x.IdLiquidacion).HasColumnName("id_liquidacion"); e.Property(x => x.IdRecarga).HasColumnName("id_recarga"); e.Property(x => x.Valor).HasColumnName("valor").HasColumnType("decimal(18,2)"); e.Property(x => x.CreatedAt).HasColumnName("created_at"); }
+
+    private static void MapWalletCierreDiarioComercio(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WalletCierreDiarioComercio> e)
+    { e.Property(x => x.IdCierre).HasColumnName("id_cierre"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.IdComercio).HasColumnName("id_comercio"); e.Property(x => x.IdComercioAliado).HasColumnName("id_comercio_aliado"); e.Property(x => x.FechaCierre).HasColumnName("fecha_cierre").HasColumnType("date"); e.Property(x => x.FechaHoraCorteUtc).HasColumnName("fecha_hora_corte_utc"); e.Property(x => x.CodigoUnico).HasColumnName("codigo_unico"); e.Property(x => x.CantidadRecargas).HasColumnName("cantidad_recargas"); e.Property(x => x.ValorTotalRecaudado).HasColumnName("valor_total_recaudado").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorLiquidadoAlGenerar).HasColumnName("valor_liquidado_al_generar").HasColumnType("decimal(18,2)"); e.Property(x => x.ValorPendienteAlGenerar).HasColumnName("valor_pendiente_al_generar").HasColumnType("decimal(18,2)"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.GeneradoPorUsuario).HasColumnName("generado_por_usuario"); e.Property(x => x.FechaGeneracion).HasColumnName("fecha_generacion"); e.Property(x => x.RevisadoPorUsuario).HasColumnName("revisado_por_usuario"); e.Property(x => x.FechaRevision).HasColumnName("fecha_revision"); e.Property(x => x.CerradoPorUsuario).HasColumnName("cerrado_por_usuario"); e.Property(x => x.FechaCerrado).HasColumnName("fecha_cerrado"); e.Property(x => x.ObservacionesAdmin).HasColumnName("observaciones_admin"); e.Property(x => x.CreatedAt).HasColumnName("created_at"); }
+
+    private static void MapWalletCierreDiarioComercioDetalle(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WalletCierreDiarioComercioDetalle> e)
+    { e.Property(x => x.IdDetalle).HasColumnName("id_detalle"); e.Property(x => x.IdCierre).HasColumnName("id_cierre"); e.Property(x => x.IdRecarga).HasColumnName("id_recarga"); e.Property(x => x.Valor).HasColumnName("valor").HasColumnType("decimal(18,2)"); e.Property(x => x.EstabaLiquidadaAlGenerar).HasColumnName("estaba_liquidada_al_generar"); e.Property(x => x.CreatedAt).HasColumnName("created_at"); }
 }

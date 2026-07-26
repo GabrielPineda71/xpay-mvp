@@ -208,9 +208,11 @@ public class WalletLiquidacionRecaudoComercioService(XpayDbContext db, ILogger<W
 
             await tx.CommitAsync();
 
+            // Fecha/hora no se embebe como texto formateado — el frontend la muestra en
+            // hora Colombia a partir del campo estructurado FechaLiquidacion.
             var comprobante =
                 $"Liquidación de {recargas.Count} recarga(s) por {valorTotal:N0} del comercio #{idComercio} " +
-                $"— método {metodo}. {now:yyyy-MM-dd HH:mm}. Liquidación #{liquidacion.IdLiquidacion}.";
+                $"— método {metodo}. Liquidación #{liquidacion.IdLiquidacion}.";
 
             logger.LogInformation(
                 "WALLET_LIQUIDACION_RECAUDO_COMERCIO: idLiquidacion={IdLiquidacion} idComercio={IdComercio} metodo={Metodo} valorTotal={ValorTotal} cantidadRecargas={Cantidad}",

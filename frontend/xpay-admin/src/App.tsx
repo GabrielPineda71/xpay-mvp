@@ -26,6 +26,7 @@ import { ParametrosLiquidacionPage } from './pages/ParametrosLiquidacionPage.tsx
 import { CarteraOrdinariaAdminPage } from './pages/CarteraOrdinariaAdminPage.tsx';
 import { MiCarteraOrdinariaPage } from './pages/MiCarteraOrdinariaPage.tsx';
 import { AdminWalletRecaudosComercioPage } from './pages/AdminWalletRecaudosComercioPage.tsx';
+import { AdminWalletCierresDiariosComercioPage } from './pages/AdminWalletCierresDiariosComercioPage.tsx';
 
 // Smart redirect based on user role/view
 function UserRedirect() {
@@ -69,6 +70,7 @@ export default function App() {
               <Route path="admin/parametros-liquidacion-comercio" element={<ParametrosLiquidacionPage />} />
               <Route path="admin/cartera-ordinaria" element={<CarteraOrdinariaAdminPage />} />
               <Route path="admin/wallet-recaudos-comercio" element={<AdminWalletRecaudosComercioPage />} />
+              <Route path="admin/wallet-cierres-comercio" element={<AdminWalletCierresDiariosComercioPage />} />
               {/* Demo user routes */}
               <Route path="mi-wallet"   element={<UserWalletPage />} />
               <Route path="mi-comercio" element={<MiComercioPage />} />
