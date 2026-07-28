@@ -4,8 +4,11 @@ using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
 
+// Fase 71.2-E-B: restringido — [Authorize] genérico permitía a cualquier
+// autenticado listar wallets/comercios/ventas QR/ledger completos del
+// sistema (ver docs/security/FASE_71.2_E_B_AUTORIZACION_IDOR.md).
 [ApiController]
-[Authorize]
+[Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
 [Route("api/admin")]
 public class AdminController : ControllerBase
 {

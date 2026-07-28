@@ -1,6 +1,9 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
+using Xpay.Api.Exceptions;
 using Xpay.Api.Models;
 
 namespace Xpay.Api.Services;
@@ -16,16 +19,54 @@ public class PagoQrService
         _logger = logger;
     }
 
-    public async Task<VentaQr> PagarQrAsync(PagoQrRequest request)
+    // Fase 71.2-E-D: idWalletUsuario y creadoPor llegan como parámetros propios,
+    // resueltos por el controller desde los claims del solicitante — el DTO ya
+    // no los transporta, mismo principio aplicado a TransferirWalletAsync en
+    // 71.2-E-C. Nunca se confía en un idWalletUsuario recibido del cliente.
+    // Fase 71.2-E-G: idempotencia de una sola transacción, mismo diseño que
+    // WalletOperacionService.TransferirWalletAsync (ver
+    // docs/security/FASE_71.2_E_B_AUTORIZACION_IDOR.md §16).
+    public async Task<IdempotentOperationResult<PagoQrResultadoDto>> PagarQrAsync(
+        long idWalletUsuario, long creadoPor, Guid idempotencyKey, PagoQrRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.CodigoQr))
             throw new InvalidOperationException("El código QR es requerido.");
         if (request.Valor <= 0)
             throw new InvalidOperationException("El valor del pago debe ser mayor a cero.");
 
+        const string endpoint = IdempotencyEndpoints.QrPagar;
+        var requestHash = IdempotencyHashHelper.ComputePagoQrHash(
+            creadoPor, idWalletUsuario, request.CodigoQr, request.Valor, request.Descripcion);
+
         await using var transaction = await _db.Database.BeginTransactionAsync();
+        // Fase 71.2-E-G.1: ver comentario equivalente en
+        // WalletOperacionService.TransferirWalletAsync — evita un doble
+        // RollbackAsync() cuando ResolverReplayAsync lanza dentro del catch
+        // interno (p.ej. IdempotencyConflictException, caso normal).
+        var rolledBack = false;
+
+        // Fase 71.2-E-G.1: el catch de violación UNIQUE se limita
+        // EXCLUSIVAMENTE al primer SaveChangesAsync (INSERT de la reserva) —
+        // nunca a la creación de VentaQr, ledger, movimientos, auditoría ni al
+        // SaveChangesAsync final. Ver justificación completa en
+        // WalletOperacionService.TransferirWalletAsync.
         try
         {
+            var idem = IdempotencyStore.NuevaReserva(creadoPor, endpoint, idempotencyKey, requestHash);
+            _db.WalletIdempotencias.Add(idem);
+
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex) when (SqlExceptionHelper.IsUniqueViolation(ex))
+            {
+                await transaction.RollbackAsync();
+                rolledBack = true;
+                _db.ChangeTracker.Clear();
+                return await IdempotencyStore.ResolverReplayAsync<PagoQrResultadoDto>(_db, creadoPor, endpoint, idempotencyKey, requestHash);
+            }
+
             var qr = await _db.QrComercios.FirstOrDefaultAsync(q => q.CodigoQr == request.CodigoQr && q.Estado == "ACTIVO")
                 ?? throw new InvalidOperationException("El QR no existe o no está activo.");
 
@@ -35,10 +76,16 @@ public class PagoQrService
             var tienda = await _db.ComercioTiendas.FirstOrDefaultAsync(t => t.IdTienda == qr.IdTienda && t.Estado == "ACTIVO")
                 ?? throw new InvalidOperationException("La tienda no existe o no está activa.");
 
-            var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == request.IdWalletUsuario && w.Estado == "ACTIVA")
+            var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == idWalletUsuario && w.Estado == "ACTIVA")
                 ?? throw new InvalidOperationException("La wallet del usuario no existe o no está activa.");
 
-            var saldo = await _db.WalletSaldos.FirstOrDefaultAsync(s => s.IdWallet == request.IdWalletUsuario)
+            // Fase 71.2-E-D: lock pesimista WITH (UPDLOCK, ROWLOCK) — mismo patrón
+            // aplicado en TransferirWalletAsync y ya usado en el resto del proyecto
+            // para wallet_saldos (evita la misma clase de actualización perdida
+            // entre dos pagos QR concurrentes desde la misma wallet).
+            var saldo = await _db.WalletSaldos
+                .FromSqlInterpolated($"SELECT * FROM wallet_saldos WITH (UPDLOCK, ROWLOCK) WHERE id_wallet = {idWalletUsuario}")
+                .FirstOrDefaultAsync()
                 ?? throw new InvalidOperationException("La wallet del usuario no tiene registro de saldo.");
 
             if (saldo.SaldoDisponible < request.Valor)
@@ -68,7 +115,7 @@ public class PagoQrService
                 Descripcion      = descripcion,
                 ValorTotal       = request.Valor,
                 Estado           = "REGISTRADA",
-                CreadoPor        = request.CreadoPor,
+                CreadoPor        = creadoPor,
                 FechaTransaccion = now
             };
             _db.LedgerTransacciones.Add(tx);
@@ -114,7 +161,7 @@ public class PagoQrService
                 ReferenciaTipo      = "qr_comercios",
                 ReferenciaId        = qr.IdQr,
                 Estado              = "APLICADO",
-                CreadoPor           = request.CreadoPor,
+                CreadoPor           = creadoPor,
                 FechaMovimiento     = now
             });
 
@@ -155,7 +202,7 @@ public class PagoQrService
 
             _db.Auditorias.Add(new Auditoria
             {
-                IdUsuario     = request.CreadoPor,
+                IdUsuario     = creadoPor,
                 IdPersona     = wallet.IdPersona,
                 Modulo        = "WALLET",
                 Accion        = "PAGO_QR",
@@ -167,6 +214,12 @@ public class PagoQrService
                 Observacion   = $"Pago QR de {request.Valor:0.00} a comercio #{comercio.IdComercio} ({request.CodigoQr}).",
                 FechaEvento   = now
             });
+
+            var resultado = new PagoQrResultadoDto(venta.IdVentaQr, tx.IdTransaccionLedger, comercio.IdComercio, tienda.IdTienda, wallet.IdWallet, venta.ValorBruto, venta.Estado);
+            var respuestaDataJson = JsonSerializer.Serialize(resultado);
+            if (respuestaDataJson.Length > 1000)
+                throw new InvalidOperationException("La respuesta del pago QR excede el límite de almacenamiento de idempotencia.");
+            IdempotencyStore.MarcarCompletada(idem, httpStatus: 200, idRecurso: venta.IdVentaQr, idTransaccionLedger: tx.IdTransaccionLedger, respuestaDataJson);
 
             await _db.SaveChangesAsync();
 
@@ -180,11 +233,20 @@ public class PagoQrService
                 throw new InvalidOperationException("La transacción ledger del pago QR no está balanceada.");
 
             await transaction.CommitAsync();
-            return venta;
+            return new IdempotentOperationResult<PagoQrResultadoDto>(resultado, Replayed: false);
+        }
+        // Fase 71.2-E-G.1: catch externos — cubren toda la operación (incluida
+        // la inserción de la reserva, por eso IsTransient sigue detectando un
+        // deadlock/timeout ocurrido ahí), pero deliberadamente sin
+        // IsUniqueViolation, que vive únicamente en el catch interno de arriba.
+        catch (Exception ex) when (SqlExceptionHelper.IsTransient(ex))
+        {
+            if (!rolledBack) await transaction.RollbackAsync();
+            throw new TransientDatabaseException("Conflicto transitorio de base de datos al procesar el pago QR.", ex);
         }
         catch
         {
-            await transaction.RollbackAsync();
+            if (!rolledBack) await transaction.RollbackAsync();
             throw;
         }
     }

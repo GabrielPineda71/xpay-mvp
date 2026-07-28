@@ -87,6 +87,7 @@ public class XpayDbContext : DbContext
     public DbSet<WalletLiquidacionRecaudoComercioDetalle> WalletLiquidacionesRecaudoComercioDetalle => Set<WalletLiquidacionRecaudoComercioDetalle>();
     public DbSet<WalletCierreDiarioComercio>              WalletCierresDiariosComercio              => Set<WalletCierreDiarioComercio>();
     public DbSet<WalletCierreDiarioComercioDetalle>       WalletCierresDiariosComercioDetalle       => Set<WalletCierreDiarioComercioDetalle>();
+    public DbSet<WalletIdempotencia>                      WalletIdempotencias                       => Set<WalletIdempotencia>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -144,6 +145,7 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<WalletLiquidacionRecaudoComercioDetalle>(e => { e.ToTable("wallet_liquidaciones_recaudo_comercio_detalle"); e.HasKey(x => x.IdDetalle); MapWalletLiquidacionRecaudoComercioDetalle(e); });
         modelBuilder.Entity<WalletCierreDiarioComercio>(e => { e.ToTable("wallet_cierres_diarios_comercio"); e.HasKey(x => x.IdCierre); MapWalletCierreDiarioComercio(e); });
         modelBuilder.Entity<WalletCierreDiarioComercioDetalle>(e => { e.ToTable("wallet_cierres_diarios_comercio_detalle"); e.HasKey(x => x.IdDetalle); MapWalletCierreDiarioComercioDetalle(e); });
+        modelBuilder.Entity<WalletIdempotencia>(e => { e.ToTable("wallet_idempotencia"); e.HasKey(x => x.IdIdempotencia); MapWalletIdempotencia(e); });
     }
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)
@@ -285,4 +287,8 @@ public class XpayDbContext : DbContext
 
     private static void MapWalletCierreDiarioComercioDetalle(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WalletCierreDiarioComercioDetalle> e)
     { e.Property(x => x.IdDetalle).HasColumnName("id_detalle"); e.Property(x => x.IdCierre).HasColumnName("id_cierre"); e.Property(x => x.IdRecarga).HasColumnName("id_recarga"); e.Property(x => x.Valor).HasColumnName("valor").HasColumnType("decimal(18,2)"); e.Property(x => x.EstabaLiquidadaAlGenerar).HasColumnName("estaba_liquidada_al_generar"); e.Property(x => x.CreatedAt).HasColumnName("created_at"); }
+
+    // Fase 71.2-E-G — ver database/029_wallet_idempotencia.sql (no ejecutado).
+    private static void MapWalletIdempotencia(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WalletIdempotencia> e)
+    { e.Property(x => x.IdIdempotencia).HasColumnName("id_idempotencia"); e.Property(x => x.IdUsuario).HasColumnName("id_usuario"); e.Property(x => x.Endpoint).HasColumnName("endpoint"); e.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key"); e.Property(x => x.RequestHash).HasColumnName("request_hash"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.HttpStatus).HasColumnName("http_status"); e.Property(x => x.IdRecurso).HasColumnName("id_recurso"); e.Property(x => x.IdTransaccionLedger).HasColumnName("id_transaccion_ledger"); e.Property(x => x.RespuestaDataJson).HasColumnName("respuesta_data_json"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaCompletado).HasColumnName("fecha_completado"); e.Property(x => x.FechaExpiracion).HasColumnName("fecha_expiracion"); }
 }

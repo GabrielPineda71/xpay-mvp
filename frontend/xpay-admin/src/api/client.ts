@@ -47,12 +47,12 @@ export async function get<T>(path: string): Promise<T> {
   return handleResponse<T>(res);
 }
 
-export async function post<T>(path: string, body: unknown): Promise<T> {
+export async function post<T>(path: string, body: unknown, extraHeaders?: Record<string, string>): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(), ...extraHeaders },
       body: JSON.stringify(body),
     });
   } catch {

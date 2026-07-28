@@ -6,12 +6,8 @@ import { useAuth } from '../auth/AuthContext.tsx';
 import { get, post } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
 
-// QA/Demo mapping — temporary rule: username → wallet/user IDs
-// Documented in docs/QA_DEMO_TRANSACTIONAL_USERS.md
-const DEMO_MAP: Record<string, { idWallet: number; idUsuario: number; defaultDestWallet: number }> = {
-  'qa.usuario1': { idWallet: 2, idUsuario: 3, defaultDestWallet: 3 },
-  'qa.usuario2': { idWallet: 3, idUsuario: 4, defaultDestWallet: 2 },
-};
+// Fase 71.2-E-C: DEMO_MAP eliminado — la wallet propia se resuelve vía
+// GET /api/wallets/mi-wallet (claim idPersona del JWT), no por username.
 
 // QA wallet-to-username reverse map — used to show counterpart in movement descriptions
 const WALLET_USER_MAP: Record<number, string> = {
@@ -63,6 +59,13 @@ interface EstadoCuenta {
   estado:          string;
   saldoDisponible: number;
   movimientos:     Movimiento[];
+}
+
+interface MiWallet {
+  idWallet:     number;
+  idPersona:    number;
+  nombreWallet: string;
+  estado:       string;
 }
 
 type Msg = { ok: boolean; text: string };
@@ -150,8 +153,11 @@ function descripcionVisible(m: Movimiento): string {
 export function UserWalletPage() {
   const { user } = useAuth();
   const navigate  = useNavigate();
-  const demoInfo  = user ? DEMO_MAP[user.usuario] : undefined;
   const [tab, setTab] = useState<Tab>('saldo');
+
+  // ── Mi wallet (Fase 71.2-E-C: resuelta vía GET /api/wallets/mi-wallet) ────
+  const [miWallet,        setMiWallet]        = useState<MiWallet | null>(null);
+  const [miWalletLoading, setMiWalletLoading]  = useState(true);
 
   // ── Account data ──────────────────────────────────────────────────────────
   const [cuenta,     setCuenta]     = useState<EstadoCuenta | null>(null);
@@ -188,6 +194,11 @@ export function UserWalletPage() {
   const [envManual,     setEnvManual]     = useState(false);
   const [envManualDest, setEnvManualDest] = useState('');
   const envScannerRef = useRef<Html5Qrcode | null>(null);
+  // Fase 71.2-E-G: una Idempotency-Key por intento lógico de transferencia —
+  // se reutiliza mientras destino/valor/descripción no cambien (reintento del
+  // mismo intento); se descarta al tener éxito o al cambiar cualquiera de
+  // esos campos (ver getEnvIdempotencyKey).
+  const envIdemRef = useRef<{ key: string; destId: number; valor: string; descripcion: string } | null>(null);
 
   // ── KYC state ─────────────────────────────────────────────────────────────
   const [kycEstado,     setKycEstado]     = useState<string>('NO_INICIADO');
@@ -221,6 +232,8 @@ export function UserWalletPage() {
   const [pagScanErr,      setPagScanErr]      = useState<string | null>(null);
   const [pagMetodoPago,   setPagMetodoPago]   = useState<'wallet' | 'cupo' | null>(null);
   const pagScannerRef = useRef<Html5Qrcode | null>(null);
+  // Fase 71.2-E-G: misma idea que envIdemRef, para el pago QR.
+  const pagIdemRef = useRef<{ key: string; qrCode: string; valor: string } | null>(null);
 
   // ── KYC load / manual refresh ─────────────────────────────────────────────
   const loadKyc = useCallback(async (silent = false) => {
@@ -255,31 +268,41 @@ export function UserWalletPage() {
     }
   }, []);
 
+  // ── Mi wallet load (Fase 71.2-E-C) ─────────────────────────────────────────
+  const loadMiWallet = useCallback(async () => {
+    if (!user) return;
+    setMiWalletLoading(true);
+    try {
+      const r = await get<{ success: boolean; data: MiWallet }>('/api/wallets/mi-wallet');
+      setMiWallet(r.data);
+    } catch {
+      setMiWallet(null);
+    } finally {
+      setMiWalletLoading(false);
+    }
+  }, [user]);
+
   // ── Initial load ──────────────────────────────────────────────────────────
   const loadCuenta = useCallback(async () => {
-    if (!demoInfo) return;
+    if (!user) return;
     setLoading(true); setDataErr(null);
     try {
-      const r = await get<{ success: boolean; data: EstadoCuenta }>(
-        `/api/reportes/wallet/${demoInfo.idWallet}/estado-cuenta`,
-      );
+      const r = await get<{ success: boolean; data: EstadoCuenta }>('/api/reportes/mi-estado-cuenta');
       setCuenta(r.data);
       setLastUpdated(new Date());
       // Establish baseline for new-movement detection
       lastKnownMovIdRef.current = r.data.movimientos[0]?.idMovimiento ?? -1;
     } catch (e) { setDataErr((e as Error).message); }
     finally { setLoading(false); }
-  }, [demoInfo]);
+  }, [user]);
 
   // ── Silent background refresh (polling) ───────────────────────────────────
   const pollRefresh = useCallback(async () => {
-    if (!demoInfo) return;
+    if (!user) return;
     if (opInProgressRef.current) return; // skip during financial transactions
     setRefreshing(true);
     try {
-      const r = await get<{ success: boolean; data: EstadoCuenta }>(
-        `/api/reportes/wallet/${demoInfo.idWallet}/estado-cuenta`,
-      );
+      const r = await get<{ success: boolean; data: EstadoCuenta }>('/api/reportes/mi-estado-cuenta');
       const fresh = r.data;
       const latestId = fresh.movimientos[0]?.idMovimiento ?? -1;
 
@@ -311,9 +334,11 @@ export function UserWalletPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [demoInfo]);
+  }, [user]);
 
-  useEffect(() => { void loadCuenta(); void loadKyc(); void loadBreb(); }, [loadCuenta, loadKyc, loadBreb]);
+  useEffect(() => {
+    void loadMiWallet(); void loadCuenta(); void loadKyc(); void loadBreb();
+  }, [loadMiWallet, loadCuenta, loadKyc, loadBreb]);
 
   // Part G: detect ?kyc=return — user returned from Veriff, refresh KYC state immediately
   useEffect(() => {
@@ -369,7 +394,7 @@ export function UserWalletPage() {
       if (p.type !== 'XPAY_TRANSFER')       { setEnvScanErr('El QR no es de tipo XPAY_TRANSFER.'); return; }
       if (p.env  !== 'QA')                  { setEnvScanErr('El QR no corresponde al ambiente QA.'); return; }
       if (!p.receiverWalletId)              { setEnvScanErr('QR sin wallet destino.'); return; }
-      if (p.receiverWalletId === demoInfo?.idWallet)
+      if (p.receiverWalletId === miWallet?.idWallet)
                                              { setEnvScanErr('No puedes transferirte a tu propia wallet.'); return; }
       setEnvDest(p.receiverWalletId);
       setEnvDestUser(p.receiverUser ?? '');
@@ -470,7 +495,7 @@ export function UserWalletPage() {
 
   // ── QR generation (Recibir) ───────────────────────────────────────────────
   async function handleGenerarQr() {
-    if (!user || !demoInfo) return;
+    if (!user || !miWallet) return;
     setRecQrBusy(true);
     try {
       const payload: XpayTransferQR = {
@@ -478,7 +503,7 @@ export function UserWalletPage() {
         env:              'QA',
         version:          1,
         receiverUser:     user.usuario,
-        receiverWalletId: demoInfo.idWallet,
+        receiverWalletId: miWallet.idWallet,
         amount:           recValor ? Number(recValor) : null,
         currency:         'COP',
       };
@@ -498,25 +523,34 @@ export function UserWalletPage() {
   // ── Transfer handler ──────────────────────────────────────────────────────
   async function handleEnviar(e: FormEvent) {
     e.preventDefault();
-    if (!demoInfo) return;
+    if (!miWallet) return;
     const destId = envManual ? Number(envManualDest) : envDest;
     if (!destId || destId < 1) { setEnvMsg({ ok: false, text: 'Wallet destino inválido.' }); return; }
-    if (destId === demoInfo.idWallet) { setEnvMsg({ ok: false, text: 'No puedes transferirte a tu propia wallet.' }); return; }
+    if (destId === miWallet.idWallet) { setEnvMsg({ ok: false, text: 'No puedes transferirte a tu propia wallet.' }); return; }
     const pinErr = validatePin(envPin);
     if (pinErr) { setEnvMsg({ ok: false, text: pinErr }); return; }
+    const descripcion = envDestUser
+      ? `Enviado a ${envDestUser} — Wallet #${destId}`
+      : `Enviado a Wallet #${destId}`;
+    // Fase 71.2-E-G: misma clave si es un reintento del mismo intento
+    // (destino/valor/descripción sin cambios); clave nueva si algo cambió.
+    if (!envIdemRef.current
+      || envIdemRef.current.destId !== destId
+      || envIdemRef.current.valor !== envValor
+      || envIdemRef.current.descripcion !== descripcion) {
+      envIdemRef.current = { key: crypto.randomUUID(), destId, valor: envValor, descripcion };
+    }
     setEnvBusy(true); setEnvMsg(null); opInProgressRef.current = true;
     try {
+      // Fase 71.2-E-C: idWalletOrigen/creadoPor ya no se envían — el backend
+      // los resuelve desde el JWT (ver TransferenciaWalletRequest).
       const r = await post<{ success: boolean; message?: string }>('/api/wallets/transferencia', {
-        idWalletOrigen:  demoInfo.idWallet,
         idWalletDestino: destId,
         valor:           Number(envValor),
-        descripcion:     envDestUser
-          ? `Enviado a ${envDestUser} — Wallet #${destId}`
-          : `Enviado a Wallet #${destId}`,
-        creadoPor:       demoInfo.idUsuario,
-      });
+        descripcion,
+      }, { 'Idempotency-Key': envIdemRef.current.key });
       setEnvMsg({ ok: r.success, text: r.message ?? (r.success ? 'Transferencia realizada.' : 'Error al transferir.') });
-      if (r.success) { await loadCuenta(); }
+      if (r.success) { envIdemRef.current = null; await loadCuenta(); }
     } catch (e) { setEnvMsg({ ok: false, text: (e as Error).message }); }
     finally { setEnvBusy(false); setEnvPin(''); opInProgressRef.current = false; }
   }
@@ -524,20 +558,25 @@ export function UserWalletPage() {
   // ── QR Payment handler ────────────────────────────────────────────────────
   async function handlePagarQr(e: FormEvent) {
     e.preventDefault();
-    if (!demoInfo || !pagQrCode) return;
+    if (!miWallet || !pagQrCode) return;
     const pinErr = validatePin(pagPin);
     if (pinErr) { setPagMsg({ ok: false, text: pinErr }); return; }
+    // Fase 71.2-E-G: misma clave si es un reintento del mismo intento
+    // (código QR/valor sin cambios); clave nueva si algo cambió.
+    if (!pagIdemRef.current || pagIdemRef.current.qrCode !== pagQrCode || pagIdemRef.current.valor !== pagValor) {
+      pagIdemRef.current = { key: crypto.randomUUID(), qrCode: pagQrCode, valor: pagValor };
+    }
     setPagBusy(true); setPagMsg(null); opInProgressRef.current = true;
     try {
+      // Fase 71.2-E-D: idWalletUsuario/creadoPor ya no se envían — el backend
+      // los resuelve desde el JWT (ver PagoQrRequest).
       const r = await post<{ success: boolean; message?: string }>('/api/qr/pagar', {
-        codigoQr:        pagQrCode,
-        idWalletUsuario: demoInfo.idWallet,
-        valor:           Number(pagValor),
-        descripcion:     'Pago a Comercio Demo XPAY QA',
-        creadoPor:       demoInfo.idUsuario,
-      });
+        codigoQr:    pagQrCode,
+        valor:       Number(pagValor),
+        descripcion: 'Pago a Comercio Demo XPAY QA',
+      }, { 'Idempotency-Key': pagIdemRef.current.key });
       setPagMsg({ ok: r.success, text: r.message ?? (r.success ? 'Pago QR realizado.' : 'Error al pagar QR.') });
-      if (r.success) { await loadCuenta(); }
+      if (r.success) { pagIdemRef.current = null; await loadCuenta(); }
     } catch (e) { setPagMsg({ ok: false, text: (e as Error).message }); }
     finally { setPagBusy(false); setPagPin(''); opInProgressRef.current = false; }
   }
@@ -622,19 +661,29 @@ export function UserWalletPage() {
     setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
     setEnvMsg(null); setEnvScanErr(null); setEnvPasted(''); setEnvManual(false); setEnvManualDest('');
     setEnvScanning(false);
+    envIdemRef.current = null; // Fase 71.2-E-G: cambio material del formulario → clave nueva en el próximo intento
   }
   function resetPagar() {
     setPagQrCode(''); setPagValor(''); setPagNeedValor(false);
     setPagMsg(null); setPagScanErr(null); setPagPasted('');
     setPagScanning(false); setPagMetodoPago(null);
+    pagIdemRef.current = null; // Fase 71.2-E-G: cambio material del formulario → clave nueva en el próximo intento
   }
 
   // ── Early return ──────────────────────────────────────────────────────────
-  if (!user || !demoInfo) {
+  if (!user || miWalletLoading) {
     return (
       <div className="page">
         <h2>Mi Wallet</h2>
-        <div className="error-msg">Usuario no reconocido en el mapa demo QA. Contacta al administrador.</div>
+        <div className="loading">Cargando wallet...</div>
+      </div>
+    );
+  }
+  if (!miWallet) {
+    return (
+      <div className="page">
+        <h2>Mi Wallet</h2>
+        <div className="error-msg">No se encontró una wallet activa para tu usuario. Contacta al administrador.</div>
       </div>
     );
   }
@@ -645,7 +694,7 @@ export function UserWalletPage() {
       <h2>Mi Wallet</h2>
       <p className="dashboard-subtitle">
         Usuario: <strong>{user.usuario}</strong>
-        {' · '}Wallet #{demoInfo.idWallet}
+        {' · '}Wallet #{miWallet.idWallet}
         {' · '}<span className="badge badge-info">QA / Demo</span>
         {cuenta && !loading && (
           <span style={{ marginLeft: '1rem', color: '#276749', fontWeight: 700 }}>
@@ -827,7 +876,7 @@ export function UserWalletPage() {
           )}
 
           <p className="tab-warn">
-            QA/Demo · el QR contiene type=XPAY_TRANSFER, receiverWalletId={demoInfo.idWallet} ·
+            QA/Demo · el QR contiene type=XPAY_TRANSFER, receiverWalletId={miWallet.idWallet} ·
             sin dinero real · sin producción.
           </p>
         </div>
@@ -900,7 +949,7 @@ export function UserWalletPage() {
                   onClick={() => {
                     const id = Number(envManualDest);
                     if (!id || id < 1) { setEnvScanErr('ID de wallet inválido.'); return; }
-                    if (id === demoInfo.idWallet) { setEnvScanErr('No puedes transferirte a tu propia wallet.'); return; }
+                    if (miWallet && id === miWallet.idWallet) { setEnvScanErr('No puedes transferirte a tu propia wallet.'); return; }
                     setEnvDest(id); setEnvNeedValor(true); setEnvScanErr(null);
                   }}
                   disabled={!envManualDest}

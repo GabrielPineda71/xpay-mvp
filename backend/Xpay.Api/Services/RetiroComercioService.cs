@@ -1,22 +1,38 @@
 using Microsoft.EntityFrameworkCore;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
+using Xpay.Api.Exceptions;
 using Xpay.Api.Models;
 
 namespace Xpay.Api.Services;
 
 public class RetiroComercioService
 {
-    private readonly XpayDbContext _db;
-    public RetiroComercioService(XpayDbContext db) => _db = db;
+    private readonly XpayDbContext        _db;
+    private readonly ComercioScopeService _scope;
+    public RetiroComercioService(XpayDbContext db, ComercioScopeService scope) { _db = db; _scope = scope; }
 
-    public async Task<object> GetRetiroByIdAsync(long idRetiro)
+    // Fase 71.2-E-B: ownership real para el caller COMERCIO — nunca se confía
+    // en un idComercio recibido del cliente. esAdministrativo=true (ADMIN_XPAY/
+    // SUPERUSUARIO/OPERADOR_XPAY, ya validado por [Authorize] en el
+    // controller) omite la restricción; false fuerza el comercio del propio
+    // scope del solicitante.
+    public async Task<object> GetRetiroByIdAsync(long idRetiro, long idUsuario, bool esAdministrativo)
     {
         if (idRetiro <= 0)
             throw new InvalidOperationException("El identificador del retiro debe ser mayor a cero.");
 
         var retiro = await _db.RetirosComercio.FirstOrDefaultAsync(r => r.IdRetiro == idRetiro)
             ?? throw new InvalidOperationException($"No existe el retiro con id {idRetiro}.");
+
+        if (!esAdministrativo)
+        {
+            var s = await _scope.RequireScopeAsync(idUsuario);
+            // Mismo mensaje que "no existe" — no revela que el retiro existe
+            // pero pertenece a otro comercio.
+            if (s.IdComercioExistente != retiro.IdComercio)
+                throw new InvalidOperationException($"No existe el retiro con id {idRetiro}.");
+        }
 
         return new
         {
@@ -40,17 +56,29 @@ public class RetiroComercioService
         };
     }
 
+    // Fase 71.2-E-B: si el solicitante no es administrativo, el idComercio
+    // recibido del cliente se ignora por completo y se fuerza el de su propio
+    // scope — mismo criterio ya aprobado en AbrirAsync (Fase 70.4) para
+    // ADMIN_SEDE_COMERCIO/CAJERO.
     public async Task<object> ListarRetirosAsync(
         string? estado,
         long?   idComercio,
         DateTime? desde,
         DateTime? hasta,
         int page,
-        int pageSize)
+        int pageSize,
+        long idUsuario,
+        bool esAdministrativo)
     {
         if (page < 1)      page     = 1;
         if (pageSize < 1)  pageSize = 20;
         if (pageSize > 100) pageSize = 100;
+
+        if (!esAdministrativo)
+        {
+            var s = await _scope.RequireScopeAsync(idUsuario);
+            idComercio = s.IdComercioExistente;
+        }
 
         var query = _db.RetirosComercio.AsQueryable();
 
@@ -88,8 +116,20 @@ public class RetiroComercioService
         return new { items, total, page, pageSize };
     }
 
-    public async Task<RetiroComercio> SolicitarRetiroAsync(SolicitarRetiroComercioRequest request)
+    // Fase 71.2-E-B: request.IdComercio del cliente se ignora para
+    // solicitantes COMERCIO (se fuerza el de su propio scope, igual que
+    // ListarRetirosAsync); request.CreadoPor siempre se sobrescribe con el
+    // idUsuario autenticado, nunca se confía en el valor recibido.
+    public async Task<RetiroComercio> SolicitarRetiroAsync(SolicitarRetiroComercioRequest request, long idUsuario, bool esAdministrativo)
     {
+        if (!esAdministrativo)
+        {
+            var s = await _scope.RequireScopeAsync(idUsuario);
+            request.IdComercio = s.IdComercioExistente
+                ?? throw new InvalidOperationException("Tu comercio operativo no tiene un comercio existente asociado.");
+        }
+        request.CreadoPor = idUsuario;
+
         if (request.IdComercio <= 0)
             throw new InvalidOperationException("El identificador del comercio debe ser mayor a cero.");
         if (request.Valor <= 0)
@@ -107,7 +147,21 @@ public class RetiroComercioService
             var walletComercio = await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == comercio.IdWalletComercio.Value && w.Estado == "ACTIVA")
                 ?? throw new InvalidOperationException("La wallet del comercio no existe o no está activa.");
 
-            var saldoComercio = await _db.WalletSaldos.FirstOrDefaultAsync(s => s.IdWallet == comercio.IdWalletComercio.Value)
+            // Fase 71.2-E-E: lock pesimista sobre wallet_saldos del comercio — sin
+            // este lock, dos SolicitarRetiroAsync concurrentes (o uno concurrente
+            // con un RechazarRetiroAsync de otro retiro) sobre la misma wallet de
+            // comercio pueden leer el mismo SaldoDisponible y perder una
+            // actualización, igual que el escenario ya corregido en
+            // TransferirWalletAsync (ver docs/security/FASE_71.2_E_B_AUTORIZACION_IDOR.md
+            // §14.2). Este método no bloquea ninguna fila existente de
+            // retiros_comercio (el retiro se inserta como fila nueva más abajo, sin
+            // contención posible), así que el único orden relevante aquí es este
+            // único lock — no hay riesgo de deadlock por orden cruzado con
+            // RechazarRetiroAsync, que bloquea retiros_comercio antes que
+            // wallet_saldos (mismo orden relativo: nunca al revés).
+            var saldoComercio = await _db.WalletSaldos
+                .FromSqlInterpolated($"SELECT * FROM wallet_saldos WITH (UPDLOCK, ROWLOCK) WHERE id_wallet = {comercio.IdWalletComercio.Value}")
+                .FirstOrDefaultAsync()
                 ?? throw new InvalidOperationException("La wallet del comercio no tiene registro de saldo.");
 
             if (saldoComercio.SaldoDisponible < request.Valor)
@@ -246,19 +300,32 @@ public class RetiroComercioService
         }
     }
 
-    public async Task<RetiroComercio> ConfirmarRetiroPagadoAsync(ConfirmarRetiroComercioRequest request)
+    // Fase 71.2-E-B: solo accesible a roles administrativos (validado por
+    // [Authorize] en el controller) — un comercio nunca puede auto-aprobar su
+    // propio retiro. CreadoPor se sobrescribe con el idUsuario autenticado.
+    public async Task<RetiroComercio> ConfirmarRetiroPagadoAsync(ConfirmarRetiroComercioRequest request, long idUsuario)
     {
+        request.CreadoPor = idUsuario;
+
         if (request.IdRetiro <= 0)
             throw new InvalidOperationException("El identificador del retiro debe ser mayor a cero.");
 
         await using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
-            var retiro = await _db.RetirosComercio.FirstOrDefaultAsync(r => r.IdRetiro == request.IdRetiro)
+            // Fase 71.2-E-D: lock pesimista WITH (UPDLOCK, ROWLOCK) — mismo patrón
+            // usado para wallet_saldos. Sin este lock, dos solicitudes concurrentes
+            // (doble clic en "confirmar pago", o "confirmar" y "rechazar" casi
+            // simultáneos) pueden ambas leer Estado == "PENDIENTE" antes de que
+            // cualquiera confirme su cambio de estado, y ambas pasar el guard de
+            // abajo. El lock serializa la lectura+validación+escritura del estado.
+            var retiro = await _db.RetirosComercio
+                .FromSqlInterpolated($"SELECT * FROM retiros_comercio WITH (UPDLOCK, ROWLOCK) WHERE id_retiro = {request.IdRetiro}")
+                .FirstOrDefaultAsync()
                 ?? throw new InvalidOperationException("El retiro no existe.");
 
             if (retiro.Estado != "PENDIENTE")
-                throw new InvalidOperationException($"El retiro no está en estado PENDIENTE (estado actual: {retiro.Estado}).");
+                throw new TransicionRetiroInvalidaException($"El retiro no está en estado PENDIENTE (estado actual: {retiro.Estado}).");
 
             if (retiro.Valor <= 0)
                 throw new InvalidOperationException("El valor del retiro debe ser mayor a cero.");
@@ -360,24 +427,40 @@ public class RetiroComercioService
         }
     }
 
-    public async Task<RetiroComercio> RechazarRetiroAsync(RechazarRetiroComercioRequest request)
+    // Fase 71.2-E-B: mismo criterio que ConfirmarRetiroPagadoAsync.
+    public async Task<RetiroComercio> RechazarRetiroAsync(RechazarRetiroComercioRequest request, long idUsuario)
     {
+        request.CreadoPor = idUsuario;
+
         if (request.IdRetiro <= 0)
             throw new InvalidOperationException("El identificador del retiro debe ser mayor a cero.");
 
         await using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
-            var retiro = await _db.RetirosComercio.FirstOrDefaultAsync(r => r.IdRetiro == request.IdRetiro)
+            // Fase 71.2-E-D: mismo lock pesimista que ConfirmarRetiroPagadoAsync —
+            // ver comentario ahí para el escenario de carrera que evita.
+            var retiro = await _db.RetirosComercio
+                .FromSqlInterpolated($"SELECT * FROM retiros_comercio WITH (UPDLOCK, ROWLOCK) WHERE id_retiro = {request.IdRetiro}")
+                .FirstOrDefaultAsync()
                 ?? throw new InvalidOperationException("El retiro no existe.");
 
             if (retiro.Estado != "PENDIENTE")
-                throw new InvalidOperationException($"El retiro no está en estado PENDIENTE (estado actual: {retiro.Estado}).");
+                throw new TransicionRetiroInvalidaException($"El retiro no está en estado PENDIENTE (estado actual: {retiro.Estado}).");
 
             var walletComercio = await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == retiro.IdWalletComercio && w.Estado == "ACTIVA")
                 ?? throw new InvalidOperationException("La wallet del comercio no existe o no está activa.");
 
-            var saldoComercio = await _db.WalletSaldos.FirstOrDefaultAsync(s => s.IdWallet == retiro.IdWalletComercio)
+            // Fase 71.2-E-E: lock pesimista sobre wallet_saldos del comercio —
+            // adquirido DESPUÉS del lock ya tomado arriba sobre retiros_comercio
+            // (orden: retiro específico primero, wallet compartida después),
+            // mismo orden relativo que SolicitarRetiroAsync respeta. Sin este lock,
+            // dos rechazos de retiros distintos sobre la misma wallet de comercio
+            // (o un rechazo concurrente con una nueva solicitud) podían perder una
+            // actualización sobre SaldoDisponible.
+            var saldoComercio = await _db.WalletSaldos
+                .FromSqlInterpolated($"SELECT * FROM wallet_saldos WITH (UPDLOCK, ROWLOCK) WHERE id_wallet = {retiro.IdWalletComercio}")
+                .FirstOrDefaultAsync()
                 ?? throw new InvalidOperationException("La wallet del comercio no tiene registro de saldo.");
 
             // DR 210203 Retiros Comercios Pendientes — cancela el retiro pendiente
