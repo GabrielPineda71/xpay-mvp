@@ -116,9 +116,9 @@ TOKEN_A=$(echo "$LOGIN_A" | jq -r '.data.token')
 [[ -n "$TOKEN_A" && "$TOKEN_A" != "null" ]] || fail "Token JWT vacío tras login de carlos"
 ok "Login carlos → idPersona=$ID_PERSONA_A  token=${TOKEN_A:0:30}..."
 
-info "GET /api/wallets/persona/$ID_PERSONA_A"
-WALLET_A=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/persona/$ID_PERSONA_A") \
-  || fail "GET wallet carlos no respondió"
+info "GET /api/wallets/mi-wallet (carlos)"
+WALLET_A=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/mi-wallet") \
+  || fail "GET mi-wallet carlos no respondió"
 echo "$WALLET_A" | jq .
 assert_ok "$WALLET_A" "wallet carlos"
 ID_WALLET_A=$(echo "$WALLET_A" | jq -r '.data.idWallet')
@@ -173,11 +173,18 @@ LOGIN_B=$(post_json "$API_URL/api/auth/login" '{
 echo "$LOGIN_B" | jq .
 assert_ok "$LOGIN_B" "login maria"
 ID_PERSONA_B=$(echo "$LOGIN_B" | jq -r '.data.idPersona')
-ok "Login maria → idPersona=$ID_PERSONA_B"
+TOKEN_B=$(echo "$LOGIN_B" | jq -r '.data.token')
+[[ -n "$TOKEN_B" && "$TOKEN_B" != "null" ]] || fail "Token JWT vacío tras login de maria"
+ok "Login maria → idPersona=$ID_PERSONA_B  token=${TOKEN_B:0:30}..."
 
-info "GET /api/wallets/persona/$ID_PERSONA_B"
-WALLET_B=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/persona/$ID_PERSONA_B") \
-  || fail "GET wallet maria no respondió"
+# Fase 71.2-E-B: GET /api/wallets/persona/{idPersona} quedó restringido a
+# ADMIN_XPAY/SUPERUSUARIO (era el IDOR original — cualquier autenticado podía
+# consultar la wallet de cualquier persona). Este script no autentica ningún
+# usuario admin, así que maria debe consultar su propia wallet con su propio
+# token — nunca con el token de carlos.
+info "GET /api/wallets/mi-wallet (maria)"
+WALLET_B=$(get_auth_json "$TOKEN_B" "$API_URL/api/wallets/mi-wallet") \
+  || fail "GET mi-wallet maria no respondió"
 echo "$WALLET_B" | jq .
 assert_ok "$WALLET_B" "wallet maria"
 ID_WALLET_B=$(echo "$WALLET_B" | jq -r '.data.idWallet')
@@ -596,16 +603,16 @@ phase "FASE 8: Seguridad JWT — autenticación y protección de endpoints"
 ok "Login devuelve token JWT no vacío ✓"
 
 # 8.2 Endpoint protegido sin token → 401
-info "GET /api/wallets/persona/$ID_PERSONA_A sin token → debe retornar 401"
+info "GET /api/wallets/mi-wallet sin token → debe retornar 401"
 STATUS_NO_TOKEN=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
-  "$API_URL/api/wallets/persona/$ID_PERSONA_A")
+  "$API_URL/api/wallets/mi-wallet")
 [[ "$STATUS_NO_TOKEN" == "401" ]] || fail "Sin token esperado 401, obtenido $STATUS_NO_TOKEN"
 ok "Sin token → 401 Unauthorized ✓"
 
 # 8.3 Mismo endpoint con token → 200 success=true
-info "GET /api/wallets/persona/$ID_PERSONA_A con token → debe retornar 200"
-RESP_CON_TOKEN=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/persona/$ID_PERSONA_A") \
-  || fail "GET wallets/persona con token no respondió"
+info "GET /api/wallets/mi-wallet con token → debe retornar 200"
+RESP_CON_TOKEN=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/mi-wallet") \
+  || fail "GET mi-wallet con token no respondió"
 assert_ok "$RESP_CON_TOKEN" "wallet con token valido"
 ok "Con token → 200 success=true ✓"
 
@@ -614,7 +621,7 @@ info "Token con firma inválida → debe retornar 401"
 TOKEN_INVALIDO="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkZha2UiLCJpYXQiOjE1MTYyMzkwMjJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
 STATUS_TOKEN_FAKE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   -H "Authorization: Bearer $TOKEN_INVALIDO" \
-  "$API_URL/api/wallets/persona/$ID_PERSONA_A")
+  "$API_URL/api/wallets/mi-wallet")
 [[ "$STATUS_TOKEN_FAKE" == "401" ]] || fail "Token inválido esperado 401, obtenido $STATUS_TOKEN_FAKE"
 ok "Token con firma inválida → 401 Unauthorized ✓"
 
@@ -740,13 +747,13 @@ ok "GET /health → $STATUS_HEALTH_10 ✓"
 
 # 10.4 Endpoint protegido sin token sigue dando 401
 STATUS_401_10=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
-  "$API_URL/api/wallets/persona/$ID_PERSONA_A")
+  "$API_URL/api/wallets/mi-wallet")
 [[ "$STATUS_401_10" == "401" ]] \
   || fail "Endpoint protegido sin token esperado 401, obtenido $STATUS_401_10"
 ok "Endpoint protegido sin token → 401 ✓"
 
 # 10.5 El mismo endpoint protegido con token sigue funcionando
-RESP_AUTH_10=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/persona/$ID_PERSONA_A") \
+RESP_AUTH_10=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/mi-wallet") \
   || fail "Endpoint protegido con token no respondió"
 assert_ok "$RESP_AUTH_10" "endpoint protegido con token (Fase 10)"
 ok "Endpoint protegido con token → success=true ✓"
@@ -1094,14 +1101,14 @@ echo ""
 phase "FASE 42: Política de sesión JWT — token válido, claim exp presente, 401 sin token"
 
 # 42.1 Token de FASE 1 (TOKEN_A) sigue siendo válido — confirmar en endpoint protegido
-info "Token de sesión → /api/wallets/persona/$ID_PERSONA_A debe retornar 200"
+info "Token de sesión → /api/wallets/mi-wallet debe retornar 200"
 STATUS_42_AUTH=$(curl -s -o /dev/null -w "%{http_code}" \
   -H "Authorization: Bearer $TOKEN_A" \
   --max-time 15 \
-  "$API_URL/api/wallets/persona/$ID_PERSONA_A")
+  "$API_URL/api/wallets/mi-wallet")
 [[ "$STATUS_42_AUTH" == "200" ]] \
   || fail "FASE 42: endpoint protegido con token válido esperado 200, obtenido $STATUS_42_AUTH"
-ok "FASE 42: token válido → /api/wallets/persona/$ID_PERSONA_A = 200 ✓"
+ok "FASE 42: token válido → /api/wallets/mi-wallet = 200 ✓"
 
 # 42.2 Sin token → 401 en endpoint protegido (confirmación mínima; validado en fases anteriores)
 STATUS_42_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
