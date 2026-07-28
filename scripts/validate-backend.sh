@@ -124,9 +124,9 @@ assert_ok "$WALLET_A" "wallet carlos"
 ID_WALLET_A=$(echo "$WALLET_A" | jq -r '.data.idWallet')
 ok "Wallet carlos → idWallet=$ID_WALLET_A"
 
-info "GET /api/wallets/$ID_WALLET_A/saldo (inicial)"
-SALDO_A_INICIAL=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
-  || fail "GET saldo carlos inicial no respondió"
+info "GET /api/reportes/mi-estado-cuenta (carlos, inicial)"
+SALDO_A_INICIAL=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/mi-estado-cuenta") \
+  || fail "GET mi-estado-cuenta carlos inicial no respondió"
 assert_ok "$SALDO_A_INICIAL" "saldo carlos inicial"
 assert_saldo "$SALDO_A_INICIAL" 0 "Saldo inicial carlos"
 
@@ -138,9 +138,9 @@ echo "$RECARGA" | jq .
 assert_ok "$RECARGA" "recarga carlos"
 ok "Recarga carlos 100.000 → OK"
 
-info "GET /api/wallets/$ID_WALLET_A/saldo (tras recarga)"
-SALDO_A_RECARGADO=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
-  || fail "GET saldo carlos post-recarga no respondió"
+info "GET /api/reportes/mi-estado-cuenta (carlos, tras recarga)"
+SALDO_A_RECARGADO=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/mi-estado-cuenta") \
+  || fail "GET mi-estado-cuenta carlos post-recarga no respondió"
 assert_saldo "$SALDO_A_RECARGADO" 100000 "Saldo carlos tras recarga"
 
 # ════════════════════════════════════════════════════
@@ -199,14 +199,14 @@ assert_ok "$TRANSFERENCIA" "transferencia"
 ID_TRANSACCION_T=$(echo "$TRANSFERENCIA" | jq -r '.data.idTransaccion')
 ok "Transferencia → idTransaccion=$ID_TRANSACCION_T"
 
-info "GET /api/wallets/$ID_WALLET_A/saldo (tras transferencia)"
-SALDO_A_POST_T=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
-  || fail "GET saldo carlos tras transferencia no respondió"
+info "GET /api/reportes/mi-estado-cuenta (carlos, tras transferencia)"
+SALDO_A_POST_T=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/mi-estado-cuenta") \
+  || fail "GET mi-estado-cuenta carlos tras transferencia no respondió"
 assert_saldo "$SALDO_A_POST_T" 75000 "Saldo carlos tras transferencia"
 
-info "GET /api/wallets/$ID_WALLET_B/saldo (tras transferencia)"
-SALDO_B_POST_T=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/$ID_WALLET_B/saldo") \
-  || fail "GET saldo maria tras transferencia no respondió"
+info "GET /api/reportes/mi-estado-cuenta (maria, tras transferencia)"
+SALDO_B_POST_T=$(get_auth_json "$TOKEN_B" "$API_URL/api/reportes/mi-estado-cuenta") \
+  || fail "GET mi-estado-cuenta maria tras transferencia no respondió"
 assert_saldo "$SALDO_B_POST_T" 25000 "Saldo maria tras transferencia"
 
 # ════════════════════════════════════════════════════
@@ -227,9 +227,9 @@ ESTADO_QR=$(echo "$PAGO_QR"        | jq -r '.data.estado')
 [[ "$ESTADO_QR" == "CONTINGENCIA" ]] || fail "estado esperado CONTINGENCIA, obtenido $ESTADO_QR"
 ok "Pago QR → idVentaQr=$ID_VENTA_QR  estado=$ESTADO_QR"
 
-info "GET /api/wallets/$ID_WALLET_A/saldo (tras pago QR)"
-SALDO_A_POST_QR=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/$ID_WALLET_A/saldo") \
-  || fail "GET saldo carlos tras pago QR no respondió"
+info "GET /api/reportes/mi-estado-cuenta (carlos, tras pago QR)"
+SALDO_A_POST_QR=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/mi-estado-cuenta") \
+  || fail "GET mi-estado-cuenta carlos tras pago QR no respondió"
 assert_saldo "$SALDO_A_POST_QR" 45000 "Saldo carlos tras pago QR"
 
 check_sql_value \
@@ -513,9 +513,9 @@ check_sql_value \
 # ════════════════════════════════════════════════════
 phase "FASE 7: Consultas y reportes transaccionales"
 
-info "GET /api/reportes/wallet/$ID_WALLET_A/estado-cuenta"
-EC_USUARIO=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/wallet/$ID_WALLET_A/estado-cuenta") \
-  || fail "GET estado-cuenta wallet usuario no respondió"
+info "GET /api/reportes/mi-estado-cuenta (carlos)"
+EC_USUARIO=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/mi-estado-cuenta") \
+  || fail "GET mi-estado-cuenta usuario no respondió"
 echo "$EC_USUARIO" | jq .
 assert_ok "$EC_USUARIO" "estado-cuenta wallet usuario"
 assert_saldo "$EC_USUARIO" 45000 "Estado cuenta carlos"
@@ -524,74 +524,47 @@ echo "$EC_USUARIO" | jq -e '.data.movimientos | length >= 3' > /dev/null \
   || fail "movimientos wallet usuario esperado >=3, obtenido $(echo "$EC_USUARIO" | jq '.data.movimientos | length')"
 ok "Estado cuenta carlos → movimientos=$(echo "$EC_USUARIO" | jq '.data.movimientos | length') (>=3) ✓"
 
-info "GET /api/reportes/wallet/$ID_WALLET_COMERCIO/estado-cuenta"
-EC_COMERCIO=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/wallet/$ID_WALLET_COMERCIO/estado-cuenta") \
-  || fail "GET estado-cuenta wallet comercio no respondió"
-echo "$EC_COMERCIO" | jq .
-assert_ok "$EC_COMERCIO" "estado-cuenta wallet comercio"
-assert_saldo "$EC_COMERCIO" 10000 "Estado cuenta comercio"
+# Fase 71.2-E-B: los siguientes 4 endpoints son administrativos
+# ([Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO"[,"OPERADOR_XPAY"])]) y no
+# tienen equivalente self-service para USUARIO_FINAL (no consultan un
+# wallet/comercio/transacción propios, sino datos de terceros o agregados
+# cross-usuario). Este script no autentica ningún usuario con rol
+# ADMIN_XPAY/SUPERUSUARIO/OPERADOR_XPAY, así que aquí solo se valida el
+# bloqueo por rol (403 con token válido de USUARIO_FINAL). La prueba
+# funcional positiva de estos reportes administrativos queda pendiente de
+# contar con un fixture o usuario CI con rol ADMIN_XPAY/SUPERUSUARIO.
 
-echo "$EC_COMERCIO" | jq -e '.data.movimientos | length >= 3' > /dev/null \
-  || fail "movimientos wallet comercio esperado >=3, obtenido $(echo "$EC_COMERCIO" | jq '.data.movimientos | length')"
-ok "Estado cuenta comercio → movimientos=$(echo "$EC_COMERCIO" | jq '.data.movimientos | length') (>=3) ✓"
+info "GET /api/reportes/wallet/$ID_WALLET_COMERCIO/estado-cuenta (USUARIO_FINAL) → 403"
+STATUS_EC_COMERCIO=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_A" \
+  "$API_URL/api/reportes/wallet/$ID_WALLET_COMERCIO/estado-cuenta")
+[[ "$STATUS_EC_COMERCIO" == "403" ]] \
+  || fail "estado-cuenta wallet comercio con USUARIO_FINAL esperado 403, obtenido $STATUS_EC_COMERCIO"
+ok "GET estado-cuenta wallet comercio con USUARIO_FINAL → 403 ✓"
 
-info "GET /api/reportes/comercios/$ID_COMERCIO/resumen"
-RESUMEN_COMERCIO=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/comercios/$ID_COMERCIO/resumen") \
-  || fail "GET resumen comercio no respondió"
-echo "$RESUMEN_COMERCIO" | jq .
-assert_ok "$RESUMEN_COMERCIO" "resumen comercio"
+info "GET /api/reportes/comercios/$ID_COMERCIO/resumen (USUARIO_FINAL) → 403"
+STATUS_RESUMEN_COMERCIO=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_A" \
+  "$API_URL/api/reportes/comercios/$ID_COMERCIO/resumen")
+[[ "$STATUS_RESUMEN_COMERCIO" == "403" ]] \
+  || fail "resumen comercio con USUARIO_FINAL esperado 403, obtenido $STATUS_RESUMEN_COMERCIO"
+ok "GET resumen comercio con USUARIO_FINAL → 403 ✓"
 
-echo "$RESUMEN_COMERCIO" | jq -e '.data.saldoDisponible == 10000' > /dev/null \
-  || fail "saldoDisponible comercio esperado 10000, obtenido $(echo "$RESUMEN_COMERCIO" | jq '.data.saldoDisponible')"
-ok "Resumen comercio → saldoDisponible=10000 ✓"
+info "GET /api/reportes/ledger/transaccion/$ID_TRANSACCION_Q (USUARIO_FINAL) → 403"
+STATUS_LEDGER_TX=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_A" \
+  "$API_URL/api/reportes/ledger/transaccion/$ID_TRANSACCION_Q")
+[[ "$STATUS_LEDGER_TX" == "403" ]] \
+  || fail "ledger transaccion QR con USUARIO_FINAL esperado 403, obtenido $STATUS_LEDGER_TX"
+ok "GET ledger transaccion QR con USUARIO_FINAL → 403 ✓"
 
-echo "$RESUMEN_COMERCIO" | jq -e '.data.ventasQr.total >= 1' > /dev/null \
-  || fail "ventasQr.total esperado >=1"
-ok "Resumen comercio → ventasQr.total=$(echo "$RESUMEN_COMERCIO" | jq '.data.ventasQr.total') ✓"
-
-echo "$RESUMEN_COMERCIO" | jq -e '.data.ventasQr.liquidadas >= 1' > /dev/null \
-  || fail "ventasQr.liquidadas esperado >=1"
-ok "Resumen comercio → ventasQr.liquidadas=$(echo "$RESUMEN_COMERCIO" | jq '.data.ventasQr.liquidadas') ✓"
-
-echo "$RESUMEN_COMERCIO" | jq -e '.data.retiros.pagados >= 1' > /dev/null \
-  || fail "retiros.pagados esperado >=1"
-ok "Resumen comercio → retiros.pagados=$(echo "$RESUMEN_COMERCIO" | jq '.data.retiros.pagados') ✓"
-
-echo "$RESUMEN_COMERCIO" | jq -e '.data.retiros.rechazados >= 1' > /dev/null \
-  || fail "retiros.rechazados esperado >=1"
-ok "Resumen comercio → retiros.rechazados=$(echo "$RESUMEN_COMERCIO" | jq '.data.retiros.rechazados') ✓"
-
-info "GET /api/reportes/ledger/transaccion/$ID_TRANSACCION_Q"
-LEDGER_TX=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/ledger/transaccion/$ID_TRANSACCION_Q") \
-  || fail "GET ledger transaccion QR no respondió"
-echo "$LEDGER_TX" | jq .
-assert_ok "$LEDGER_TX" "ledger transaccion QR"
-
-echo "$LEDGER_TX" | jq -e '.data.balanceado == true' > /dev/null \
-  || fail "balanceado esperado true"
-ok "Ledger transaccion QR → balanceado=true ✓"
-
-echo "$LEDGER_TX" | jq -e '.data.totalDebitos == .data.totalCreditos' > /dev/null \
-  || fail "totalDebitos ($(echo "$LEDGER_TX" | jq '.data.totalDebitos')) != totalCreditos ($(echo "$LEDGER_TX" | jq '.data.totalCreditos'))"
-ok "Ledger transaccion QR → totalDebitos=$(echo "$LEDGER_TX" | jq '.data.totalDebitos') == totalCreditos ✓"
-
-info "GET /api/reportes/operaciones/resumen-general"
-RESUMEN_GEN=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/operaciones/resumen-general") \
-  || fail "GET resumen-general no respondió"
-echo "$RESUMEN_GEN" | jq .
-assert_ok "$RESUMEN_GEN" "resumen general"
-
-echo "$RESUMEN_GEN" | jq -e '.data.wallets.total >= 3' > /dev/null \
-  || fail "wallets.total esperado >=3, obtenido $(echo "$RESUMEN_GEN" | jq '.data.wallets.total')"
-ok "Resumen general → wallets.total=$(echo "$RESUMEN_GEN" | jq '.data.wallets.total') (>=3) ✓"
-
-echo "$RESUMEN_GEN" | jq -e '.data.ledger.transacciones >= 8' > /dev/null \
-  || fail "ledger.transacciones esperado >=8, obtenido $(echo "$RESUMEN_GEN" | jq '.data.ledger.transacciones')"
-ok "Resumen general → ledger.transacciones=$(echo "$RESUMEN_GEN" | jq '.data.ledger.transacciones') (>=8) ✓"
-
-echo "$RESUMEN_GEN" | jq -e '.data.auditoria.eventos >= 10' > /dev/null \
-  || fail "auditoria.eventos esperado >=10, obtenido $(echo "$RESUMEN_GEN" | jq '.data.auditoria.eventos')"
-ok "Resumen general → auditoria.eventos=$(echo "$RESUMEN_GEN" | jq '.data.auditoria.eventos') (>=10) ✓"
+info "GET /api/reportes/operaciones/resumen-general (USUARIO_FINAL) → 403"
+STATUS_RESUMEN_GEN=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_A" \
+  "$API_URL/api/reportes/operaciones/resumen-general")
+[[ "$STATUS_RESUMEN_GEN" == "403" ]] \
+  || fail "resumen-general con USUARIO_FINAL esperado 403, obtenido $STATUS_RESUMEN_GEN"
+ok "GET resumen-general con USUARIO_FINAL → 403 ✓"
 
 # ════════════════════════════════════════════════════
 # FASE 8 — Seguridad JWT: validaciones de autenticación
