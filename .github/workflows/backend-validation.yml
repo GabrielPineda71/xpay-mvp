@@ -94,6 +94,18 @@ jobs:
           echo "--- Ejecutando 010_passport_breb_base.sql ---"
           sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
             -i database/010_passport_breb_base.sql
+          echo "--- Ejecutando 015_comercios_aliados.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/015_comercios_aliados.sql
+          echo "--- Ejecutando 016_comercio_disponibilidad.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/016_comercio_disponibilidad.sql
+          echo "--- Ejecutando 017_comercio_usuarios_contexto.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/017_comercio_usuarios_contexto.sql
+          echo "--- Ejecutando 029_wallet_idempotencia.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/029_wallet_idempotencia.sql
           echo "Migraciones aplicadas."
 
       - name: dotnet restore
