@@ -1,0 +1,371 @@
+/* ════════════════════════════════════════════════════════════════════
+   XPAY — Shell visual del usuario final (Fase UI-2B).
+   Origen: docs/brand/Manual-de-Marca-XPAY.pdf + docs/brand/
+   XPAY_BRAND_DIGITAL_SPEC.md — mismos valores ya validados en
+   src/prototype/prototype.css.
+
+   Alcance: tokens (UI-1) + estilos para WalletShell, WalletHero,
+   UserPrimaryActions, ProfileSheet y BottomNav (todos en
+   src/components/wallet). Sin HeroBalanceCard real, movimientos,
+   estado de cuenta, productos financieros, formularios de enviar/
+   recibir, escáner QR, Bre-B real, Dónde comprar real, KYC, login ni
+   splash — eso llega en fases posteriores.
+
+   Todos los selectores quedan bajo .wallet-shell-v2, o con nombres
+   específicos con prefijo wallet- o wh- no colisionables, para no
+   afectar el panel admin/comercio/empresa (src/index.css intacto).
+   Ningún token en :root.
+
+   Importado únicamente desde src/components/wallet/WalletShell.tsx
+   (import de efecto, sin exportar nada) — Layout.tsx monta WalletShell
+   solo cuando getViewForUser(user) === 'wallet'; admin/comercio/empresa
+   nunca cargan este componente ni, por lo tanto, disparan este import.
+   ════════════════════════════════════════════════════════════════════ */
+
+.wallet-shell-v2 {
+  /* Paleta oficial (Manual de Marca, sección "Paleta de color") */
+  --xpay-teal: #0d828e;
+  --xpay-black: #000000;
+  --xpay-gray-light: #D8D8D8;
+
+  /* Superficie blanca — no es un 4º color de marca, uso práctico de UI
+     para dar profundidad sobre el fondo gris oficial. */
+  --xpay-surface: #ffffff;
+  --xpay-page-bg: var(--xpay-gray-light);
+
+  /* Texto — derivado del negro oficial vía opacidad, no colores nuevos */
+  --xpay-text-primary: var(--xpay-black);
+  --xpay-text-secondary: rgba(0, 0, 0, 0.58);
+  --xpay-border: rgba(0, 0, 0, 0.12);
+  --xpay-border-soft: rgba(0, 0, 0, 0.07);
+
+  /* Colores funcionales de interfaz — no pertenecen a la paleta oficial
+     de marca, solo para estados básicos (badges/alertas). */
+  --fn-success: #16794f;
+  --fn-success-bg: #e6f6ef;
+  --fn-error: #b3261e;
+  --fn-error-bg: #fce9e8;
+  --fn-warning: #a15c00;
+  --fn-warning-bg: #fdf1df;
+  --fn-info: #35618a;
+  --fn-info-bg: #e9f1f8;
+
+  /* Escala de espaciado (4px) */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+}
+
+/* Regla base de la imagen de marca — nombre específico no colisionable
+   con clases existentes de index.css. El tamaño lo define cada contexto
+   de uso vía className adicional (width), esta regla solo fija
+   height:auto y el comportamiento de la imagen. */
+.wallet-brand-mark {
+  display: block;
+  height: auto;
+  object-fit: contain;
+}
+
+/* ── Shell raíz ──────────────────────────────────────────────────────
+   Contenedor de página completo: hero verde arriba, contenido blanco
+   en medio, bottom nav fija abajo (móvil). WalletShell no fija su
+   propio alto de viewport — eso lo decide quien lo monte en UI-2B. ── */
+.wallet-shell-v2 {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--xpay-page-bg);
+  color: var(--xpay-text-primary);
+}
+
+/* ── Hero (WalletHero.tsx): marca + notificaciones + perfil + acciones
+   principales, una sola franja verde continua. ── */
+.wallet-shell-v2 .wallet-hero {
+  background: var(--xpay-teal);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: var(--sp-5);
+  position: relative;
+}
+
+.wallet-shell-v2 .wh-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem var(--sp-5) 0.2rem;
+}
+
+.wallet-shell-v2 .wallet-hero-logo {
+  width: 120px;
+}
+
+.wallet-shell-v2 .wh-actions-icons {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.wallet-shell-v2 .wh-icon-btn {
+  position: relative;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #fff;
+  padding: var(--sp-2);
+  display: flex;
+}
+.wallet-shell-v2 .wh-icon-btn:hover { background: rgba(255, 255, 255, 0.14); }
+.wallet-shell-v2 .wh-icon-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+.wallet-shell-v2 .wh-notif-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fn-error);
+  border: 1.5px solid var(--xpay-teal);
+}
+
+.wallet-shell-v2 .wh-profile-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.wallet-shell-v2 .wh-profile-btn:hover { background: rgba(255, 255, 255, 0.32); }
+.wallet-shell-v2 .wh-profile-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* ── Acciones rápidas (UserPrimaryActions.tsx) — carrusel horizontal
+   en móvil, fila centrada en escritorio (ver media query). ── */
+.wallet-shell-v2 .wallet-actions-row {
+  display: flex;
+  gap: var(--sp-4);
+  overflow-x: auto;
+  padding: var(--sp-4) var(--sp-5) 0;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  touch-action: auto;
+  scrollbar-width: none;
+}
+.wallet-shell-v2 .wallet-actions-row::-webkit-scrollbar { display: none; }
+
+.wallet-shell-v2 .wallet-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+  width: 72px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--sp-1);
+  scroll-snap-align: start;
+}
+.wallet-shell-v2 .wallet-action-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+
+.wallet-shell-v2 .wallet-action-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.wallet-shell-v2 .wallet-action-btn:hover .wallet-action-circle { background: rgba(255, 255, 255, 0.34); }
+
+.wallet-shell-v2 .wallet-action-label {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  text-align: center;
+  color: #fff;
+}
+
+/* ── Contenedor de contenido (children) — fondo blanco, nace del hero
+   con esquinas superiores redondeadas en móvil. Sin estilos de
+   paneles/tarjetas internas todavía — eso lo trae cada pantalla real. ── */
+.wallet-shell-v2 .wallet-shell-content {
+  flex: 1;
+  background: var(--xpay-surface);
+  border-radius: 24px 24px 0 0;
+  margin-top: calc(-1 * var(--sp-3));
+  padding: var(--sp-4) var(--sp-4) calc(90px + env(safe-area-inset-bottom, 0px));
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Overlay + panel de perfil (ProfileSheet.tsx) ── */
+.wallet-shell-v2 .wallet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 40;
+}
+
+.wallet-shell-v2 .wallet-profile-sheet {
+  position: fixed;
+  top: 56px;
+  right: var(--sp-4);
+  left: var(--sp-4);
+  z-index: 41;
+  max-width: 280px;
+  margin-left: auto;
+  background: var(--xpay-surface);
+  border-radius: 16px;
+  padding: var(--sp-6) var(--sp-5) var(--sp-5);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.wallet-shell-v2 .wallet-profile-close {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--xpay-text-secondary);
+  padding: var(--sp-1);
+  display: flex;
+}
+.wallet-shell-v2 .wallet-profile-close:focus-visible { outline: 2px solid var(--xpay-teal); outline-offset: 2px; }
+
+.wallet-shell-v2 .wallet-profile-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--xpay-page-bg);
+  color: var(--xpay-teal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--sp-3);
+}
+
+.wallet-shell-v2 .wallet-profile-name {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--xpay-text-primary);
+}
+
+.wallet-shell-v2 .wallet-profile-action {
+  width: 100%;
+  margin-top: var(--sp-3);
+  padding: 0.65rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--xpay-border);
+  background: var(--xpay-surface);
+  color: var(--xpay-text-primary);
+}
+.wallet-shell-v2 .wallet-profile-action:disabled { opacity: 0.5; cursor: default; }
+.wallet-shell-v2 .wallet-profile-action:focus-visible { outline: 2px solid var(--xpay-teal); outline-offset: 2px; }
+
+.wallet-shell-v2 .wallet-profile-logout {
+  border: none;
+  background: var(--xpay-teal);
+  color: #fff;
+}
+.wallet-shell-v2 .wallet-profile-logout:hover { background: #0a6b75; }
+
+/* ── Bottom navigation (BottomNav.tsx) — solo móvil, fija con
+   safe-area-inset-bottom; se oculta en escritorio (ver media query). ── */
+.wallet-shell-v2 .wallet-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: space-around;
+  align-items: flex-end;
+  background: var(--xpay-surface);
+  border-top: 1px solid var(--xpay-border-soft);
+  padding: var(--sp-2) var(--sp-2) calc(var(--sp-2) + env(safe-area-inset-bottom, 0px));
+}
+
+.wallet-shell-v2 .wallet-bn-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--xpay-text-secondary);
+  font-size: 0.68rem;
+  padding: var(--sp-1) var(--sp-2);
+}
+.wallet-shell-v2 .wallet-bn-item:focus-visible { outline: 2px solid var(--xpay-teal); outline-offset: 2px; border-radius: 8px; }
+.wallet-shell-v2 .wallet-bn-item--active { color: var(--xpay-teal); font-weight: 700; }
+
+.wallet-shell-v2 .wallet-bn-item--elevated {
+  width: 52px;
+  height: 52px;
+  margin-top: -22px;
+  border-radius: 50%;
+  justify-content: center;
+  background: var(--xpay-teal);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+}
+.wallet-shell-v2 .wallet-bn-item--elevated .wallet-bn-label { display: none; }
+.wallet-shell-v2 .wallet-bn-item--elevated:hover,
+.wallet-shell-v2 .wallet-bn-item--elevated:focus-visible { background: #0a6b75; }
+
+/* ── Escritorio: hero y contenido se contienen en una columna central;
+   bottom nav desaparece; acciones se centran sin scroll horizontal. ── */
+@media (min-width: 641px) {
+  .wallet-shell-v2 .wallet-bottom-nav { display: none; }
+
+  .wallet-shell-v2 .wallet-hero {
+    max-width: 640px;
+    margin: var(--sp-6) auto 0;
+    border-radius: 20px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  }
+
+  .wallet-shell-v2 .wallet-actions-row {
+    overflow: visible;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .wallet-shell-v2 .wallet-shell-content {
+    max-width: 640px;
+    margin: var(--sp-6) auto 0;
+    border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    padding-bottom: var(--sp-6);
+  }
+
+  /* .wallet-profile-sheet (regla base) ancla al borde derecho del
+     viewport con right:var(--sp-4) — correcto en móvil, donde el hero
+     ocupa todo el ancho. En escritorio el hero/contenido se centran en
+     una columna de 640px, así que aquí recalculamos right para alinear
+     el panel con el borde derecho real de esa columna en vez del borde
+     del viewport. */
+  .wallet-shell-v2 .wallet-profile-sheet {
+    right: calc((100% - 640px) / 2 + var(--sp-4));
+    left: auto;
+  }
+}

@@ -1,5 +1,6 @@
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, getViewForUser } from '../auth/AuthContext.tsx';
+import { WalletShell, type WalletNavItem, type WalletPrimaryAction } from './wallet/WalletShell.tsx';
 
 function getApiLabel(): string {
   const url = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
@@ -14,11 +15,72 @@ function getApiLabel(): string {
 export function Layout() {
   const { user, logout } = useAuth();
   const navigate          = useNavigate();
+  const { pathname }      = useLocation();
   const view              = user ? getViewForUser(user) : 'wallet';
 
   function handleLogout() {
     logout();
     navigate('/login');
+  }
+
+  // ── Vista wallet: shell nuevo (hero verde + bottom nav), aislado de
+  // admin/comercio/empresa, que siguen usando el <div className="layout">
+  // de abajo sin ningún cambio. ────────────────────────────────────────
+  if (view === 'wallet') {
+    const handleAction = (action: WalletPrimaryAction) => {
+      switch (action) {
+        case 'receive':
+        case 'send':
+        case 'pay-qr':
+          // UserWalletPage.tsx controla sus tabs con useState local, sin
+          // leer parámetros de URL — no hay forma real de abrir un tab
+          // específico desde aquí sin modificarla (fuera de alcance de
+          // UI-2B). La activación exacta del tab queda pendiente para UI-3.
+          navigate('/mi-wallet');
+          break;
+        case 'breb-key':
+        case 'where-to-buy':
+          // Sin ruta/backend real todavía. breb-key en particular NO debe
+          // reutilizar el retiro Bre-B real (son funciones distintas).
+          break;
+      }
+    };
+
+    const handleNavigate = (item: WalletNavItem) => {
+      switch (item) {
+        case 'home':
+        case 'movements':
+        case 'qr':
+          // Igual que en handleAction: sin mecanismo real para activar un
+          // tab interno específico de UserWalletPage desde el router.
+          navigate('/mi-wallet');
+          break;
+        case 'products':
+          navigate('/mi-wallet/cartera');
+          break;
+        case 'profile':
+          // WalletShell ya abre ProfileSheet internamente; nada que navegar.
+          break;
+      }
+    };
+
+    const activeNav: WalletNavItem | undefined =
+      pathname === '/mi-wallet/cartera' ? 'products' :
+      pathname === '/mi-wallet' ? 'home' :
+      undefined;
+
+    return (
+      <WalletShell
+        userName={user?.usuario}
+        activeNav={activeNav}
+        hasNotifications={false}
+        onLogout={handleLogout}
+        onAction={handleAction}
+        onNavigate={handleNavigate}
+      >
+        <Outlet />
+      </WalletShell>
+    );
   }
 
   return (
@@ -49,9 +111,6 @@ export function Layout() {
               <Link to="/admin/wallet-cierres-comercio">Cierres Diarios Comercio</Link>
             </>
           )}
-          {view === 'wallet'   && <Link to="/mi-wallet">Mi Wallet</Link>}
-          {view === 'wallet'   && <Link to="/mi-wallet/libranza">Anticipo Nómina</Link>}
-          {view === 'wallet'   && <Link to="/mi-wallet/cartera">Cartera Ordinaria</Link>}
           {view === 'comercio' && <Link to="/mi-comercio">Mi Comercio</Link>}
           {view === 'empresa'  && (
             <>
