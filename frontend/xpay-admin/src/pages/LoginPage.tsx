@@ -26,7 +26,10 @@ export function LoginPage() {
     setLoading(true);
     try {
       await login(usuario.trim(), password);
-      navigate('/dashboard');
+      // Deja que UserRedirect (App.tsx) resuelva el destino real vía
+      // getViewForUser — sin duplicar aquí la regla de qué ruta
+      // corresponde a cada vista.
+      navigate('/', { replace: true });
     } catch (err) {
       setError((err as Error).message ?? 'Error al iniciar sesión');
     } finally {

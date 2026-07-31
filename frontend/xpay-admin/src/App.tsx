@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth, getViewForUser } from './auth/AuthContext.tsx';
 import { PrivateRoute } from './router/PrivateRoute.tsx';
+import { RequireView } from './router/RequireView.tsx';
 import { Layout } from './components/Layout.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
@@ -48,36 +49,51 @@ export default function App() {
           <Route element={<PrivateRoute />}>
             <Route element={<Layout />}>
               <Route index element={<UserRedirect />} />
+
               {/* Admin routes */}
-              <Route path="dashboard" element={<DashboardPage />} />
-              <Route path="wallets/listado" element={<WalletsListPage />} />
-              <Route path="wallets" element={<WalletPage />} />
-              <Route path="wallets/:idWallet" element={<WalletPage />} />
-              <Route path="comercios/listado" element={<ComerciosListPage />} />
-              <Route path="comercios" element={<ComercioPage />} />
-              <Route path="comercios/:idComercio" element={<ComercioPage />} />
-              <Route path="ventas-qr/listado" element={<VentasQrListPage />} />
-              <Route path="ledger/listado" element={<LedgerTransaccionesListPage />} />
-              <Route path="ledger" element={<LedgerPage />} />
-              <Route path="ledger/:idTransaccion" element={<LedgerPage />} />
-              <Route path="retiros/listado" element={<RetirosListPage />} />
-              <Route path="retiros" element={<RetiroPage />} />
-              <Route path="retiros/:idRetiro" element={<RetiroPage />} />
-              <Route path="admin/breb-llaves"   element={<BrebLlavesAdminPage />} />
-              <Route path="admin/breb-retiros"        element={<BrebRetirosAdminPage />} />
-              <Route path="admin/libranza-convenios" element={<LibranzaConveniosAdminPage />} />
-              <Route path="admin/comercios-aliados" element={<ComerciosAliadosPage />} />
-              <Route path="admin/parametros-liquidacion-comercio" element={<ParametrosLiquidacionPage />} />
-              <Route path="admin/cartera-ordinaria" element={<CarteraOrdinariaAdminPage />} />
-              <Route path="admin/wallet-recaudos-comercio" element={<AdminWalletRecaudosComercioPage />} />
-              <Route path="admin/wallet-cierres-comercio" element={<AdminWalletCierresDiariosComercioPage />} />
-              {/* Demo user routes */}
-              <Route path="mi-wallet"   element={<UserWalletPage />} />
-              <Route path="mi-comercio" element={<MiComercioPage />} />
-              <Route path="mi-empresa"  element={<MiEmpresaPage />} />
-              <Route path="mi-empresa/libranza" element={<MiEmpresaLibranzaPage />} />
-              <Route path="mi-wallet/libranza" element={<MiWalletLibranzaPage />} />
-              <Route path="mi-wallet/cartera" element={<MiCarteraOrdinariaPage />} />
+              <Route element={<RequireView allowedViews={['admin']} />}>
+                <Route path="dashboard" element={<DashboardPage />} />
+                <Route path="wallets/listado" element={<WalletsListPage />} />
+                <Route path="wallets" element={<WalletPage />} />
+                <Route path="wallets/:idWallet" element={<WalletPage />} />
+                <Route path="comercios/listado" element={<ComerciosListPage />} />
+                <Route path="comercios" element={<ComercioPage />} />
+                <Route path="comercios/:idComercio" element={<ComercioPage />} />
+                <Route path="ventas-qr/listado" element={<VentasQrListPage />} />
+                <Route path="ledger/listado" element={<LedgerTransaccionesListPage />} />
+                <Route path="ledger" element={<LedgerPage />} />
+                <Route path="ledger/:idTransaccion" element={<LedgerPage />} />
+                <Route path="retiros/listado" element={<RetirosListPage />} />
+                <Route path="retiros" element={<RetiroPage />} />
+                <Route path="retiros/:idRetiro" element={<RetiroPage />} />
+                <Route path="admin/breb-llaves"   element={<BrebLlavesAdminPage />} />
+                <Route path="admin/breb-retiros"        element={<BrebRetirosAdminPage />} />
+                <Route path="admin/libranza-convenios" element={<LibranzaConveniosAdminPage />} />
+                <Route path="admin/comercios-aliados" element={<ComerciosAliadosPage />} />
+                <Route path="admin/parametros-liquidacion-comercio" element={<ParametrosLiquidacionPage />} />
+                <Route path="admin/cartera-ordinaria" element={<CarteraOrdinariaAdminPage />} />
+                <Route path="admin/wallet-recaudos-comercio" element={<AdminWalletRecaudosComercioPage />} />
+                <Route path="admin/wallet-cierres-comercio" element={<AdminWalletCierresDiariosComercioPage />} />
+              </Route>
+
+              {/* Wallet (usuario final) routes */}
+              <Route element={<RequireView allowedViews={['wallet']} />}>
+                <Route path="mi-wallet"   element={<UserWalletPage />} />
+                <Route path="mi-wallet/libranza" element={<MiWalletLibranzaPage />} />
+                <Route path="mi-wallet/cartera" element={<MiCarteraOrdinariaPage />} />
+              </Route>
+
+              {/* Comercio routes */}
+              <Route element={<RequireView allowedViews={['comercio']} />}>
+                <Route path="mi-comercio" element={<MiComercioPage />} />
+              </Route>
+
+              {/* Empresa routes */}
+              <Route element={<RequireView allowedViews={['empresa']} />}>
+                <Route path="mi-empresa"  element={<MiEmpresaPage />} />
+                <Route path="mi-empresa/libranza" element={<MiEmpresaLibranzaPage />} />
+              </Route>
+
               {/* Catch-all: smart redirect per role */}
               <Route path="*" element={<UserRedirect />} />
             </Route>
