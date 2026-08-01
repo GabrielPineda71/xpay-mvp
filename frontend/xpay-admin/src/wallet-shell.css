@@ -776,3 +776,220 @@
   color: var(--xpay-text-secondary);
   margin: 0;
 }
+
+/* ── Pagar QR (UserWalletPage.tsx, tab "pagar") — misma lógica real
+   (handlePagarQr, parseMerchantQr, validatePin, resetPagar, idempotencia,
+   selector Wallet/Cupo Ordinario, navegación a /mi-wallet/cartera) que ya
+   existía, solo cambia la presentación. El lector de cámara conserva
+   id="pag-qr-reader" y className="qr-reader-container" sin cambios
+   (dimensiones fijas requeridas por html5-qrcode, definidas en
+   index.css). Nombres .wallet-pay-* para no colisionar con
+   .action-section/.scan-section/.btn-scan/.qr-paste-area/.btn-secondary/
+   .link-btn/.qr-parsed/.action-form/.pin-hint/.btn-confirm/.success-msg/
+   .error-msg/.tab-warn (clases globales de index.css, compartidas con
+   otras páginas del panel admin). ── */
+.wallet-pay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
+  max-width: 500px;
+}
+.wallet-pay-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+  margin: 0;
+}
+.wallet-pay-hint {
+  font-size: 0.82rem;
+  color: var(--xpay-text-secondary);
+  margin: calc(-1 * var(--sp-3)) 0 0;
+}
+.wallet-pay-scan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.wallet-pay-scan-btn {
+  align-self: flex-start;
+  background: var(--xpay-teal);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.65rem 1.1rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.wallet-pay-scan-btn:hover { background: #0a6b75; }
+.wallet-pay-paste-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.wallet-pay-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.wallet-pay-field-label {
+  font-size: 0.8rem;
+  color: var(--xpay-text-secondary);
+}
+.wallet-pay-input,
+.wallet-pay-textarea {
+  border: 1px solid var(--xpay-border);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  color: var(--xpay-text-primary);
+  background: var(--xpay-surface);
+  font-family: inherit;
+}
+.wallet-pay-textarea { resize: vertical; }
+.wallet-pay-input:focus,
+.wallet-pay-textarea:focus {
+  outline: none;
+  border-color: var(--xpay-teal);
+  box-shadow: 0 0 0 3px rgba(13, 130, 142, 0.15);
+}
+.wallet-pay-secondary-btn {
+  align-self: flex-start;
+  background: var(--xpay-surface);
+  color: var(--xpay-teal);
+  border: 1px solid rgba(13, 130, 142, 0.3);
+  border-radius: 10px;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wallet-pay-secondary-btn:hover:not(:disabled) { background: rgba(13, 130, 142, 0.08); }
+.wallet-pay-secondary-btn:disabled { opacity: 0.5; cursor: default; }
+.wallet-pay-cancel-btn { margin-top: var(--sp-1); }
+.wallet-pay-change-method-btn { margin-top: var(--sp-1); }
+.wallet-pay-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.82rem;
+  color: var(--xpay-text-secondary);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.wallet-pay-link-btn:hover { color: var(--xpay-teal); }
+.wallet-pay-retry-link {
+  display: block;
+  margin-top: var(--sp-2);
+  color: var(--fn-success);
+}
+.wallet-pay-error {
+  font-size: 0.82rem;
+  color: var(--fn-error);
+  background: var(--fn-error-bg);
+  border-radius: 8px;
+  padding: var(--sp-2) var(--sp-3);
+}
+.wallet-pay-confirmed {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  font-size: 0.85rem;
+  color: var(--xpay-text-primary);
+}
+.wallet-pay-confirmed-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: rgba(13, 130, 142, 0.08);
+  color: var(--xpay-teal);
+  border: 1px solid rgba(13, 130, 142, 0.3);
+  padding: 0.15rem 0.6rem;
+  border-radius: 20px;
+}
+.wallet-pay-confirmed-code {
+  font-size: 0.85rem;
+  color: var(--xpay-text-secondary);
+}
+.wallet-pay-method {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  background: var(--xpay-surface);
+  border: 1px solid var(--xpay-border-soft);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  padding: var(--sp-5);
+}
+.wallet-pay-method-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+}
+.wallet-pay-method-options {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.wallet-pay-method-btn {
+  flex: 1;
+  min-width: 140px;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--xpay-surface);
+}
+.wallet-pay-method-btn--wallet {
+  border: 2px solid var(--xpay-teal);
+  color: var(--xpay-teal);
+}
+.wallet-pay-method-btn--wallet:hover { background: rgba(13, 130, 142, 0.08); }
+.wallet-pay-method-btn--cupo {
+  border: 2px solid var(--fn-success);
+  color: var(--fn-success);
+}
+.wallet-pay-method-btn--cupo:hover { background: var(--fn-success-bg); }
+.wallet-pay-method-note {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--xpay-text-secondary);
+}
+.wallet-pay-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.wallet-pay-pin-hint {
+  font-weight: 400;
+  color: var(--xpay-text-secondary);
+}
+.wallet-pay-submit-btn {
+  background: var(--xpay-teal);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.wallet-pay-submit-btn:hover:not(:disabled) { background: #0a6b75; }
+.wallet-pay-submit-btn:disabled { opacity: 0.6; cursor: default; }
+.wallet-pay-msg {
+  font-size: 0.85rem;
+  border-radius: 10px;
+  padding: var(--sp-3) var(--sp-4);
+}
+.wallet-pay-msg--ok { background: var(--fn-success-bg); color: var(--fn-success); }
+.wallet-pay-msg--err { background: var(--fn-error-bg); color: var(--fn-error); }
+.wallet-pay-footnote {
+  font-size: 0.72rem;
+  color: var(--xpay-text-secondary);
+  margin: 0;
+}

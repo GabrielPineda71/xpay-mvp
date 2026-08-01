@@ -1036,72 +1036,67 @@ export function UserWalletPage() {
 
       {/* ── PAGAR COMERCIO QR ─────────────────────────────────────────────── */}
       {tab === 'pagar' && (
-        <div className="action-section" style={{ marginTop: '1.25rem', maxWidth: '500px' }}>
-          <h3>Pagar comercio QR</h3>
-          <p className="tab-hint">Escanea el QR del comercio o pega el código / contenido JSON.</p>
+        <div className="wallet-pay">
+          <h3 className="wallet-pay-title">Pagar con QR</h3>
+          <p className="wallet-pay-hint">Escanea el QR del comercio o pega el código / contenido JSON.</p>
 
           {!pagQrCode && (
-            <div className="scan-section">
+            <div className="wallet-pay-scan">
               {pagScanning && <div id="pag-qr-reader" className="qr-reader-container" />}
 
               {!pagScanning && (
                 <>
                   <button
-                    className="btn-scan"
+                    className="wallet-pay-scan-btn"
                     onClick={() => { setPagScanErr(null); setPagScanning(true); }}
                   >
                     📷 Escanear QR del comercio
                   </button>
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <label>
-                      Pegar código QR o contenido JSON
+                  <div className="wallet-pay-paste-block">
+                    <label className="wallet-pay-field">
+                      <span className="wallet-pay-field-label">Pegar código QR o contenido JSON</span>
                       <textarea
-                        className="qr-paste-area"
+                        className="wallet-pay-textarea"
                         value={pagPasted}
                         onChange={e => setPagPasted(e.target.value)}
                         placeholder={`QR-DEMO-XPAY-QA-001\no\n{"type":"XPAY_MERCHANT_PAYMENT","env":"QA",...}`}
                         rows={3}
                       />
                     </label>
-                    <button className="btn-secondary" disabled={!pagPasted.trim()} onClick={() => parseMerchantQr(pagPasted.trim())}>
+                    <button className="wallet-pay-secondary-btn" disabled={!pagPasted.trim()} onClick={() => parseMerchantQr(pagPasted.trim())}>
                       Usar código pegado
                     </button>
                   </div>
                 </>
               )}
               {pagScanning && (
-                <button className="btn-secondary" style={{ marginTop: '0.5rem' }} onClick={() => setPagScanning(false)}>
+                <button className="wallet-pay-secondary-btn wallet-pay-cancel-btn" onClick={() => setPagScanning(false)}>
                   Cancelar escaneo
                 </button>
               )}
-              {pagScanErr && <div className="error-msg" style={{ marginTop: '0.5rem' }}>{pagScanErr}</div>}
+              {pagScanErr && <div className="wallet-pay-error">{pagScanErr}</div>}
             </div>
           )}
 
           {pagQrCode && (
             <>
-              <div className="qr-parsed">
-                <span className="badge badge-ok">QR comercio leído</span>
-                {' → '}<code style={{ fontSize: '0.85rem' }}>{pagQrCode}</code>
+              <div className="wallet-pay-confirmed">
+                <span className="wallet-pay-confirmed-badge">QR comercio leído</span>
+                {' → '}<code className="wallet-pay-confirmed-code">{pagQrCode}</code>
                 {' '}
-                <button className="link-btn" onClick={resetPagar}>✕ Cambiar</button>
+                <button className="wallet-pay-link-btn" onClick={resetPagar}>✕ Cambiar</button>
               </div>
 
               {/* ── Selector de método de pago ─────────────────────── */}
               {!pagMetodoPago && (
-                <div style={{ margin: '1rem 0', padding: '1rem', background: '#f5f9ff', border: '1px solid #bbdefb', borderRadius: 8 }}>
-                  <p style={{ margin: '0 0 0.75rem', fontWeight: 600, fontSize: 15 }}>¿Cómo quieres pagar?</p>
-                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                    <button
-                      onClick={() => setPagMetodoPago('wallet')}
-                      style={{
-                        flex: 1, minWidth: 140, padding: '0.75rem 1rem',
-                        background: '#fff', border: '2px solid #1976d2', borderRadius: 8,
-                        cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#1976d2',
-                      }}>
+                <div className="wallet-pay-method">
+                  <p className="wallet-pay-method-title">¿Cómo quieres pagar?</p>
+                  <div className="wallet-pay-method-options">
+                    <button className="wallet-pay-method-btn wallet-pay-method-btn--wallet" onClick={() => setPagMetodoPago('wallet')}>
                       💳 Pagar con Wallet
                     </button>
                     <button
+                      className="wallet-pay-method-btn wallet-pay-method-btn--cupo"
                       onClick={() => {
                         const params = new URLSearchParams({
                           tipo:    'COMPRA_COMERCIO',
@@ -1111,15 +1106,11 @@ export function UserWalletPage() {
                         });
                         navigate(`/mi-wallet/cartera?${params.toString()}`);
                       }}
-                      style={{
-                        flex: 1, minWidth: 140, padding: '0.75rem 1rem',
-                        background: '#fff', border: '2px solid #388e3c', borderRadius: 8,
-                        cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#388e3c',
-                      }}>
+                    >
                       📊 Pagar con Cupo Ordinario
                     </button>
                   </div>
-                  <p style={{ margin: '0.5rem 0 0', fontSize: 12, color: '#888' }}>
+                  <p className="wallet-pay-method-note">
                     Cupo Ordinario: financiación en cuotas · sin débito inmediato a Wallet
                   </p>
                 </div>
@@ -1128,11 +1119,12 @@ export function UserWalletPage() {
               {/* ── Flujo pago con Wallet ──────────────────────────── */}
               {pagMetodoPago === 'wallet' && (
                 <>
-                  <form className="action-form" onSubmit={e => void handlePagarQr(e)}>
-                    <label>
-                      Valor a pagar (COP ficticio)
+                  <form className="wallet-pay-form" onSubmit={e => void handlePagarQr(e)}>
+                    <label className="wallet-pay-field">
+                      <span className="wallet-pay-field-label">Valor a pagar (COP ficticio)</span>
                       <input
                         type="number"
+                        className="wallet-pay-input"
                         value={pagValor}
                         onChange={e => setPagValor(e.target.value)}
                         required
@@ -1140,13 +1132,16 @@ export function UserWalletPage() {
                         placeholder={pagNeedValor ? 'El QR no trae valor — ingresa el monto' : ''}
                       />
                     </label>
-                    <label>
-                      Clave de 7 dígitos
-                      <span className="pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
+                    <label className="wallet-pay-field">
+                      <span className="wallet-pay-field-label">
+                        Clave de 7 dígitos
+                        <span className="wallet-pay-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
+                      </span>
                       <input
                         type="password"
                         inputMode="numeric"
                         maxLength={7}
+                        className="wallet-pay-input"
                         value={pagPin}
                         onChange={e => setPagPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
                         required
@@ -1155,22 +1150,22 @@ export function UserWalletPage() {
                       />
                     </label>
                     <button
-                      className="btn-confirm"
+                      className="wallet-pay-submit-btn"
                       type="submit"
                       disabled={pagBusy || !pagValor || Number(pagValor) < 1 || pagPin.length !== 7}
                     >
                       {pagBusy ? 'Procesando...' : 'Pagar QR con Wallet'}
                     </button>
-                    <button type="button" className="btn-secondary" style={{ marginTop: '0.5rem' }}
+                    <button type="button" className="wallet-pay-secondary-btn wallet-pay-change-method-btn"
                       onClick={() => setPagMetodoPago(null)}>
                       ← Cambiar método
                     </button>
                   </form>
                   {pagMsg && (
-                    <div className={pagMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginTop: '0.75rem' }}>
+                    <div className={`wallet-pay-msg${pagMsg.ok ? ' wallet-pay-msg--ok' : ' wallet-pay-msg--err'}`}>
                       {pagMsg.text}
                       {pagMsg.ok && (
-                        <button className="link-btn" style={{ display: 'block', marginTop: '0.5rem', color: '#276749' }} onClick={resetPagar}>
+                        <button className="wallet-pay-link-btn wallet-pay-retry-link" onClick={resetPagar}>
                           Realizar otro pago
                         </button>
                       )}
@@ -1181,7 +1176,7 @@ export function UserWalletPage() {
             </>
           )}
 
-          <p className="tab-warn">
+          <p className="wallet-pay-footnote">
             QA/Demo · pago ficticio · sin dinero real ·
             Escanear QR solo rellena datos — el pago NO ocurre hasta confirmar.
           </p>
