@@ -5,27 +5,18 @@ import { get, post } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
 import { generarComprobantePdfCierre } from '../utils/comprobanteCierrePdf.ts';
 
+// Fuente: GET /api/comercio/dashboard (ComercioViewController, rol COMERCIO).
+// /api/reportes/comercios/{id}/resumen quedó restringido a ADMIN_XPAY/SUPERUSUARIO
+// en la Fase 71.2-E-B y ya no es accesible desde esta pantalla (403 para
+// usuarios COMERCIO). dashboard no incluye nombreComercial, idWalletComercio
+// ni desglose de retiros — "retiros pendientes" se calcula localmente sobre
+// el array ya cargado por /api/comercios/retiros (endpoint sin cambios).
 interface ResumenComercio {
-  idComercio:        number;
-  nombreComercial:   string;
-  idWalletComercio:  number;
-  saldoDisponible:   number;
-  ventasQr: {
-    total:        number;
-    contingencia: number;
-    liquidadas:   number;
-    valorTotal:   number;
-  };
-  liquidaciones: { total: number; valorTotal: number };
-  retiros: {
-    total:           number;
-    pendientes:      number;
-    pagados:         number;
-    rechazados:      number;
-    valorPendiente:  number;
-    valorPagado:     number;
-    valorRechazado:  number;
-  };
+  saldoDisponible:    number;
+  totalVentas:        number;
+  valorTotalVentas:   number;
+  ventasContingencia: number;
+  ventasLiquidadas:   number;
 }
 
 interface VentaQr {
@@ -33,7 +24,6 @@ interface VentaQr {
   valorBruto:   number;
   estado:       string;
   fechaVenta:   string;
-  codigoQr?:    string;
 }
 
 interface RetiroComercio {
@@ -331,14 +321,14 @@ export function MiComercioPage() {
     setLoading(true);
     setDataErr(null);
     try {
-      const [resumenResp, ventasResp, retirosResp] = await Promise.all([
-        get<{ success: boolean; data: ResumenComercio }>(`/api/reportes/comercios/${idComercio}/resumen`),
+      const [dashboardResp, ventasResp, retirosResp] = await Promise.all([
+        get<{ success: boolean; data: ResumenComercio }>('/api/comercio/dashboard'),
         get<{ success: boolean; data: { items?: VentaQr[] } | VentaQr[] }>(
-          `/api/admin/ventas-qr?idComercio=${idComercio}&pageSize=50&desde=${fechaDesde}&hasta=${fechaHasta}`),
+          `/api/comercio/ventas?fechaDesde=${fechaDesde}&fechaHasta=${fechaHasta}`),
         get<{ success: boolean; data: { items?: RetiroComercio[] } | RetiroComercio[] }>(
           `/api/comercios/retiros?idComercio=${idComercio}&pageSize=50&desde=${fechaDesde}&hasta=${fechaHasta}`),
       ]);
-      setResumen(resumenResp.data);
+      setResumen(dashboardResp.data);
 
       const ventasData = ventasResp.data;
       setVentas(Array.isArray(ventasData) ? ventasData : (ventasData.items ?? []));
@@ -562,13 +552,12 @@ export function MiComercioPage() {
     setQrComBusy(true);
     try {
       const payload = JSON.stringify({
-        type:         'XPAY_MERCHANT_PAYMENT',
-        env:          'QA',
-        version:      1,
-        merchantName: resumen.nombreComercial,
-        qrCode:       'QR-DEMO-XPAY-QA-001',
-        amount:       qrComValor ? Number(qrComValor) : null,
-        currency:     'COP',
+        type:     'XPAY_MERCHANT_PAYMENT',
+        env:      'QA',
+        version:  1,
+        qrCode:   'QR-DEMO-XPAY-QA-001',
+        amount:   qrComValor ? Number(qrComValor) : null,
+        currency: 'COP',
       });
       const dataUrl = await QRCode.toDataURL(payload, { width: 280, margin: 2, color: { dark: '#1a202c' } });
       setQrComSrc(dataUrl);
@@ -640,8 +629,7 @@ export function MiComercioPage() {
     <div className="page">
       <h2>Mi Comercio</h2>
       <p className="dashboard-subtitle">
-        {resumen?.nombreComercial ?? 'Cargando...'}
-        {' · '}idComercio #{idComercio}
+        idComercio #{idComercio}
         {' · '}<span className="badge badge-info">QA / Demo</span>
         {scope && <>{' · '}<span className="badge badge-ok">{scope.rolComercio}</span></>}
       </p>
@@ -663,23 +651,23 @@ export function MiComercioPage() {
             </div>
             <div className="card">
               <div className="card-label">Ventas QR totales</div>
-              <div className="card-value">{resumen.ventasQr.total}</div>
+              <div className="card-value">{resumen.totalVentas}</div>
             </div>
             <div className="card">
               <div className="card-label">Valor ventas QR</div>
-              <div className="card-value" style={{ fontSize: '1.1rem' }}>{fmtMoney(resumen.ventasQr.valorTotal)}</div>
+              <div className="card-value" style={{ fontSize: '1.1rem' }}>{fmtMoney(resumen.valorTotalVentas)}</div>
             </div>
             <div className="card" style={{ borderLeftColor: '#f6ad55' }}>
               <div className="card-label">En contingencia</div>
-              <div className="card-value">{resumen.ventasQr.contingencia}</div>
+              <div className="card-value">{resumen.ventasContingencia}</div>
             </div>
             <div className="card" style={{ borderLeftColor: '#68d391' }}>
               <div className="card-label">Liquidadas</div>
-              <div className="card-value">{resumen.ventasQr.liquidadas}</div>
+              <div className="card-value">{resumen.ventasLiquidadas}</div>
             </div>
             <div className="card" style={{ borderLeftColor: '#a0aec0' }}>
               <div className="card-label">Retiros pendientes</div>
-              <div className="card-value">{resumen.retiros.pendientes}</div>
+              <div className="card-value">{retiros.filter(r => r.estado === 'PENDIENTE').length}</div>
             </div>
           </div>
 
@@ -1331,7 +1319,6 @@ export function MiComercioPage() {
                     onClick={() => generarComprobantePdfCierre({
                       idCierre: cdResultado.idCierre,
                       idComercio: cdResultado.idComercio,
-                      nombreComercio: resumen?.nombreComercial,
                       fechaCierre: cdResultado.fechaCierre,
                       fechaHoraCorteUtc: cdResultado.fechaHoraCorteUtc,
                       codigoUnico: cdResultado.codigoUnico,
