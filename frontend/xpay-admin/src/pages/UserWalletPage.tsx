@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
@@ -70,6 +70,7 @@ interface MiWallet {
 
 type Msg = { ok: boolean; text: string };
 type Tab = 'saldo' | 'recibir' | 'enviar' | 'pagar' | 'movimientos' | 'banco';
+const VALID_TABS: Tab[] = ['saldo', 'recibir', 'enviar', 'pagar', 'movimientos', 'banco'];
 
 interface BrebLlave {
   idBrebLlave:     number;
@@ -153,7 +154,17 @@ function descripcionVisible(m: Movimiento): string {
 export function UserWalletPage() {
   const { user } = useAuth();
   const navigate  = useNavigate();
-  const [tab, setTab] = useState<Tab>('saldo');
+  // Tab en la URL (?tab=...) en vez de estado local puro — permite que
+  // WalletHero/BottomNav (Layout.tsx) y la recarga de página abran un tab
+  // específico. Sin valor o valor inválido → 'saldo' (mismo comportamiento
+  // que el default anterior).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const tab: Tab = VALID_TABS.includes(rawTab as Tab) ? (rawTab as Tab) : 'saldo';
+  function setTab(t: Tab) {
+    if (t === 'saldo') setSearchParams({});
+    else setSearchParams({ tab: t });
+  }
 
   // ── Mi wallet (Fase 71.2-E-C: resuelta vía GET /api/wallets/mi-wallet) ────
   const [miWallet,        setMiWallet]        = useState<MiWallet | null>(null);

@@ -29,14 +29,16 @@ export function Layout() {
   if (view === 'wallet') {
     const handleAction = (action: WalletPrimaryAction) => {
       switch (action) {
+        // UserWalletPage.tsx ahora lee el tab desde ?tab= (UI-3B) — cada
+        // acción navega directo al tab real correspondiente.
         case 'receive':
+          navigate('/mi-wallet?tab=recibir');
+          break;
         case 'send':
+          navigate('/mi-wallet?tab=enviar');
+          break;
         case 'pay-qr':
-          // UserWalletPage.tsx controla sus tabs con useState local, sin
-          // leer parámetros de URL — no hay forma real de abrir un tab
-          // específico desde aquí sin modificarla (fuera de alcance de
-          // UI-2B). La activación exacta del tab queda pendiente para UI-3.
-          navigate('/mi-wallet');
+          navigate('/mi-wallet?tab=pagar');
           break;
         case 'breb-key':
         case 'where-to-buy':
@@ -49,11 +51,13 @@ export function Layout() {
     const handleNavigate = (item: WalletNavItem) => {
       switch (item) {
         case 'home':
-        case 'movements':
-        case 'qr':
-          // Igual que en handleAction: sin mecanismo real para activar un
-          // tab interno específico de UserWalletPage desde el router.
           navigate('/mi-wallet');
+          break;
+        case 'movements':
+          navigate('/mi-wallet?tab=movimientos');
+          break;
+        case 'qr':
+          navigate('/mi-wallet?tab=pagar');
           break;
         case 'products':
           navigate('/mi-wallet/cartera');
