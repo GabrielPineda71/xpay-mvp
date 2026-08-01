@@ -1185,7 +1185,7 @@ export function UserWalletPage() {
 
       {/* ── MOVIMIENTOS ───────────────────────────────────────────────────── */}
       {tab === 'movimientos' && (
-        <div className="table-wrapper" style={{ marginTop: '1.25rem' }}>
+        <div className="wallet-movements" style={{ marginTop: '1.25rem' }}>
           {loading ? (
             <div className="loading">Cargando movimientos...</div>
           ) : dataErr ? (
@@ -1195,31 +1195,26 @@ export function UserWalletPage() {
             </div>
           ) : cuenta && cuenta.movimientos.length > 0 ? (
             <>
-              <div className="table-title">Movimientos ({cuenta.movimientos.length})</div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Tipo</th><th>Valor</th><th>Saldo después</th><th>Descripción</th><th>Fecha</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cuenta.movimientos.map(m => (
-                    <tr key={m.idMovimiento}>
-                      <td>
-                        <span className={`badge ${m.naturaleza === 'C' ? 'badge-ok' : 'badge-warn'}`}>
-                          {m.tipoMovimiento}
-                        </span>
-                      </td>
-                      <td className={m.naturaleza === 'C' ? 'credit' : 'debit'}>
+              <div className="wallet-movements-title">Movimientos ({cuenta.movimientos.length})</div>
+              <ul className="wallet-movements-list">
+                {cuenta.movimientos.map(m => (
+                  <li key={m.idMovimiento} className="wallet-movement-item">
+                    <div className="wallet-movement-main">
+                      <span className="wallet-movement-desc">{descripcionVisible(m)}</span>
+                      <span className={`wallet-movement-value${m.naturaleza === 'C' ? ' wallet-movement-value--credit' : ' wallet-movement-value--debit'}`}>
                         {m.naturaleza === 'C' ? '+' : '−'}{fmtMoney(m.valor)}
-                      </td>
-                      <td>{fmtMoney(m.saldoDespues)}</td>
-                      <td>{descripcionVisible(m)}</td>
-                      <td className="mono">{fmtDate(m.fecha)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </span>
+                    </div>
+                    <div className="wallet-movement-meta">
+                      <span className={`wallet-movement-badge${m.naturaleza === 'C' ? ' wallet-movement-badge--credit' : ' wallet-movement-badge--debit'}`}>
+                        {m.tipoMovimiento}
+                      </span>
+                      <span className="wallet-movement-date">{fmtDate(m.fecha)}</span>
+                    </div>
+                    <div className="wallet-movement-balance">Saldo después: {fmtMoney(m.saldoDespues)}</div>
+                  </li>
+                ))}
+              </ul>
             </>
           ) : (
             <div className="empty">Sin movimientos registrados.</div>

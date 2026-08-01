@@ -423,3 +423,81 @@
   color: var(--xpay-text-secondary);
   margin-top: 2px;
 }
+
+/* ── Movimientos (UserWalletPage.tsx, tab "movimientos") — lista de
+   tarjetas en vez de <table> genérica, coherente con HeroBalanceCard.
+   Mismos datos y misma lógica (descripcionVisible, naturaleza C/D) que
+   ya existían — solo cambia la presentación. Nombres .wallet-movement-*
+   para no colisionar con .table-wrapper/.badge/.credit/.debit/.mono
+   (clases globales de index.css, compartidas con tablas del panel
+   admin como Ledger/Retiros — no se tocan). ── */
+.wallet-movements-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+  margin: 0 0 var(--sp-3);
+}
+.wallet-movements-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.wallet-movement-item {
+  background: var(--xpay-surface);
+  border: 1px solid var(--xpay-border-soft);
+  border-radius: 12px;
+  padding: var(--sp-4);
+}
+.wallet-movement-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.wallet-movement-desc {
+  font-size: 0.88rem;
+  color: var(--xpay-text-primary);
+  font-weight: 600;
+}
+.wallet-movement-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.wallet-movement-value--credit { color: var(--fn-success); }
+.wallet-movement-value--debit  { color: var(--xpay-text-primary); }
+.wallet-movement-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.wallet-movement-badge {
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.wallet-movement-badge--credit {
+  background: var(--fn-success-bg);
+  color: var(--fn-success);
+}
+.wallet-movement-badge--debit {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--xpay-text-secondary);
+}
+.wallet-movement-date {
+  font-size: 0.72rem;
+  color: var(--xpay-text-secondary);
+}
+.wallet-movement-balance {
+  font-size: 0.72rem;
+  color: var(--xpay-text-secondary);
+  margin-top: var(--sp-1);
+}
