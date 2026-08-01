@@ -600,3 +600,179 @@
   color: var(--xpay-text-secondary);
   margin: 0;
 }
+
+/* ── Enviar (UserWalletPage.tsx, tab "enviar") — misma lógica real
+   (handleEnviar, parseTransferQr, validatePin, resetEnviar, idempotencia)
+   que ya existía, solo cambia la presentación. El lector de cámara
+   conserva id="env-qr-reader" y className="qr-reader-container" sin
+   cambios (dimensiones fijas requeridas por html5-qrcode, definidas en
+   index.css). Nombres .wallet-send-* para no colisionar con
+   .action-section/.scan-section/.btn-scan/.qr-paste-area/.btn-secondary/
+   .link-btn/.qr-manual-entry/.qr-parsed/.action-form/.pin-hint/
+   .btn-confirm/.success-msg/.error-msg/.tab-warn (clases globales de
+   index.css, compartidas con otras páginas del panel admin). ── */
+.wallet-send {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
+  max-width: 500px;
+}
+.wallet-send-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+  margin: 0;
+}
+.wallet-send-hint {
+  font-size: 0.82rem;
+  color: var(--xpay-text-secondary);
+  margin: calc(-1 * var(--sp-3)) 0 0;
+}
+.wallet-send-scan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.wallet-send-scan-btn {
+  align-self: flex-start;
+  background: var(--xpay-teal);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.65rem 1.1rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.wallet-send-scan-btn:hover { background: #0a6b75; }
+.wallet-send-paste-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.wallet-send-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.wallet-send-field-label {
+  font-size: 0.8rem;
+  color: var(--xpay-text-secondary);
+}
+.wallet-send-input,
+.wallet-send-textarea {
+  border: 1px solid var(--xpay-border);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  color: var(--xpay-text-primary);
+  background: var(--xpay-surface);
+  font-family: inherit;
+}
+.wallet-send-textarea { resize: vertical; }
+.wallet-send-input:focus,
+.wallet-send-textarea:focus {
+  outline: none;
+  border-color: var(--xpay-teal);
+  box-shadow: 0 0 0 3px rgba(13, 130, 142, 0.15);
+}
+.wallet-send-actions-row {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.wallet-send-secondary-btn {
+  background: var(--xpay-surface);
+  color: var(--xpay-teal);
+  border: 1px solid rgba(13, 130, 142, 0.3);
+  border-radius: 10px;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wallet-send-secondary-btn:hover:not(:disabled) { background: rgba(13, 130, 142, 0.08); }
+.wallet-send-secondary-btn:disabled { opacity: 0.5; cursor: default; }
+.wallet-send-cancel-btn { margin-top: var(--sp-1); }
+.wallet-send-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.82rem;
+  color: var(--xpay-text-secondary);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.wallet-send-link-btn:hover { color: var(--xpay-teal); }
+.wallet-send-retry-link {
+  display: block;
+  margin-top: var(--sp-2);
+  color: var(--fn-success);
+}
+.wallet-send-error {
+  font-size: 0.82rem;
+  color: var(--fn-error);
+  background: var(--fn-error-bg);
+  border-radius: 8px;
+  padding: var(--sp-2) var(--sp-3);
+}
+.wallet-send-manual {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.wallet-send-confirmed {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  font-size: 0.85rem;
+  color: var(--xpay-text-primary);
+}
+.wallet-send-confirmed-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: rgba(13, 130, 142, 0.08);
+  color: var(--xpay-teal);
+  border: 1px solid rgba(13, 130, 142, 0.3);
+  padding: 0.15rem 0.6rem;
+  border-radius: 20px;
+}
+.wallet-send-confirmed-user { color: var(--xpay-text-secondary); }
+.wallet-send-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.wallet-send-pin-hint {
+  font-weight: 400;
+  color: var(--xpay-text-secondary);
+}
+.wallet-send-submit-btn {
+  background: var(--xpay-teal);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.wallet-send-submit-btn:hover:not(:disabled) { background: #0a6b75; }
+.wallet-send-submit-btn:disabled { opacity: 0.6; cursor: default; }
+.wallet-send-msg {
+  font-size: 0.85rem;
+  border-radius: 10px;
+  padding: var(--sp-3) var(--sp-4);
+}
+.wallet-send-msg--ok { background: var(--fn-success-bg); color: var(--fn-success); }
+.wallet-send-msg--err { background: var(--fn-error-bg); color: var(--fn-error); }
+.wallet-send-footnote {
+  font-size: 0.72rem;
+  color: var(--xpay-text-secondary);
+  margin: 0;
+}

@@ -885,38 +885,38 @@ export function UserWalletPage() {
 
       {/* ── ENVIAR DINERO ─────────────────────────────────────────────────── */}
       {tab === 'enviar' && (
-        <div className="action-section" style={{ marginTop: '1.25rem', maxWidth: '500px' }}>
-          <h3>Enviar dinero</h3>
-          <p className="tab-hint">Escanea el QR del receptor, pega su contenido, o ingresa el ID de wallet.</p>
+        <div className="wallet-send">
+          <h3 className="wallet-send-title">Enviar dinero</h3>
+          <p className="wallet-send-hint">Escanea el QR del receptor, pega su contenido, o ingresa el ID de wallet.</p>
 
           {!envDest && !envManual && (
-            <div className="scan-section">
+            <div className="wallet-send-scan">
               {envScanning && <div id="env-qr-reader" className="qr-reader-container" />}
 
               {!envScanning && (
                 <>
                   <button
-                    className="btn-scan"
+                    className="wallet-send-scan-btn"
                     onClick={() => { setEnvScanErr(null); setEnvScanning(true); }}
                   >
                     📷 Escanear QR
                   </button>
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <label>
-                      Pegar contenido del QR
+                  <div className="wallet-send-paste-block">
+                    <label className="wallet-send-field">
+                      <span className="wallet-send-field-label">Pegar contenido del QR</span>
                       <textarea
-                        className="qr-paste-area"
+                        className="wallet-send-textarea"
                         value={envPasted}
                         onChange={e => setEnvPasted(e.target.value)}
                         placeholder={'{"type":"XPAY_TRANSFER","env":"QA","receiverWalletId":3,...}'}
                         rows={3}
                       />
                     </label>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <button className="btn-secondary" disabled={!envPasted.trim()} onClick={() => parseTransferQr(envPasted.trim())}>
+                    <div className="wallet-send-actions-row">
+                      <button className="wallet-send-secondary-btn" disabled={!envPasted.trim()} onClick={() => parseTransferQr(envPasted.trim())}>
                         Usar QR pegado
                       </button>
-                      <button className="link-btn" style={{ color: '#4a5568' }} onClick={() => setEnvManual(true)}>
+                      <button className="wallet-send-link-btn" onClick={() => setEnvManual(true)}>
                         Ingresar destino manualmente →
                       </button>
                     </div>
@@ -924,29 +924,30 @@ export function UserWalletPage() {
                 </>
               )}
               {envScanning && (
-                <button className="btn-secondary" style={{ marginTop: '0.5rem' }} onClick={() => setEnvScanning(false)}>
+                <button className="wallet-send-secondary-btn wallet-send-cancel-btn" onClick={() => setEnvScanning(false)}>
                   Cancelar escaneo
                 </button>
               )}
-              {envScanErr && <div className="error-msg" style={{ marginTop: '0.5rem' }}>{envScanErr}</div>}
+              {envScanErr && <div className="wallet-send-error">{envScanErr}</div>}
             </div>
           )}
 
           {!envDest && envManual && (
-            <div className="qr-manual-entry">
-              <label>
-                ID de wallet destino
+            <div className="wallet-send-manual">
+              <label className="wallet-send-field">
+                <span className="wallet-send-field-label">ID de wallet destino</span>
                 <input
                   type="number"
+                  className="wallet-send-input"
                   value={envManualDest}
                   onChange={e => setEnvManualDest(e.target.value)}
                   min={1}
                   placeholder="Ej. 3"
                 />
               </label>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div className="wallet-send-actions-row">
                 <button
-                  className="btn-secondary"
+                  className="wallet-send-secondary-btn"
                   onClick={() => {
                     const id = Number(envManualDest);
                     if (!id || id < 1) { setEnvScanErr('ID de wallet inválido.'); return; }
@@ -957,29 +958,30 @@ export function UserWalletPage() {
                 >
                   Confirmar destino
                 </button>
-                <button className="link-btn" style={{ color: '#4a5568' }} onClick={() => { setEnvManual(false); setEnvScanErr(null); }}>
+                <button className="wallet-send-link-btn" onClick={() => { setEnvManual(false); setEnvScanErr(null); }}>
                   ← Volver a QR
                 </button>
               </div>
-              {envScanErr && <div className="error-msg" style={{ marginTop: '0.5rem' }}>{envScanErr}</div>}
+              {envScanErr && <div className="wallet-send-error">{envScanErr}</div>}
             </div>
           )}
 
           {envDest && (
             <>
-              <div className="qr-parsed">
-                <span className="badge badge-ok">Destino confirmado</span>
+              <div className="wallet-send-confirmed">
+                <span className="wallet-send-confirmed-badge">Destino confirmado</span>
                 {' → '}Wallet #{envDest}
-                {envDestUser && <span style={{ marginLeft: '0.5rem', color: '#4a5568' }}>({envDestUser})</span>}
+                {envDestUser && <span className="wallet-send-confirmed-user">({envDestUser})</span>}
                 {' '}
-                <button className="link-btn" onClick={resetEnviar}>✕ Cambiar</button>
+                <button className="wallet-send-link-btn" onClick={resetEnviar}>✕ Cambiar</button>
               </div>
 
-              <form className="action-form" onSubmit={e => void handleEnviar(e)}>
-                <label>
-                  Valor a transferir (COP ficticio)
+              <form className="wallet-send-form" onSubmit={e => void handleEnviar(e)}>
+                <label className="wallet-send-field">
+                  <span className="wallet-send-field-label">Valor a transferir (COP ficticio)</span>
                   <input
                     type="number"
+                    className="wallet-send-input"
                     value={envValor}
                     onChange={e => setEnvValor(e.target.value)}
                     required
@@ -987,13 +989,16 @@ export function UserWalletPage() {
                     placeholder={envNeedValor ? 'El QR no trae valor — ingresa el monto' : ''}
                   />
                 </label>
-                <label>
-                  Clave de 7 dígitos
-                  <span className="pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
+                <label className="wallet-send-field">
+                  <span className="wallet-send-field-label">
+                    Clave de 7 dígitos
+                    <span className="wallet-send-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
+                  </span>
                   <input
                     type="password"
                     inputMode="numeric"
                     maxLength={7}
+                    className="wallet-send-input"
                     value={envPin}
                     onChange={e => setEnvPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
                     required
@@ -1002,7 +1007,7 @@ export function UserWalletPage() {
                   />
                 </label>
                 <button
-                  className="btn-confirm"
+                  className="wallet-send-submit-btn"
                   type="submit"
                   disabled={envBusy || !envValor || Number(envValor) < 1 || envPin.length !== 7}
                 >
@@ -1010,10 +1015,10 @@ export function UserWalletPage() {
                 </button>
               </form>
               {envMsg && (
-                <div className={envMsg.ok ? 'success-msg' : 'error-msg'} style={{ marginTop: '0.75rem' }}>
+                <div className={`wallet-send-msg${envMsg.ok ? ' wallet-send-msg--ok' : ' wallet-send-msg--err'}`}>
                   {envMsg.text}
                   {envMsg.ok && (
-                    <button className="link-btn" style={{ display: 'block', marginTop: '0.5rem', color: '#276749' }} onClick={resetEnviar}>
+                    <button className="wallet-send-link-btn wallet-send-retry-link" onClick={resetEnviar}>
                       Realizar otra transferencia
                     </button>
                   )}
@@ -1022,7 +1027,7 @@ export function UserWalletPage() {
             </>
           )}
 
-          <p className="tab-warn">
+          <p className="wallet-send-footnote">
             QA/Demo · transferencia ficticia · sin dinero real ·
             Escanear QR solo rellena datos — la transferencia NO ocurre hasta confirmar.
           </p>
