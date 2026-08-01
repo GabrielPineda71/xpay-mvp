@@ -5,6 +5,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { get, post } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
+import { HeroBalanceCard } from '../components/wallet/HeroBalanceCard.tsx';
 
 // Fase 71.2-E-C: DEMO_MAP eliminado — la wallet propia se resuelve vía
 // GET /api/wallets/mi-wallet (claim idPersona del JWT), no por username.
@@ -821,22 +822,11 @@ export function UserWalletPage() {
           </div>
         ) : cuenta ? (
           <>
-            <div className="cards" style={{ marginTop: '1.25rem' }}>
-              <div className="card">
-                <div className="card-label">Saldo disponible</div>
-                <div className="card-value" style={{ color: '#276749' }}>{fmtMoney(cuenta.saldoDisponible)}</div>
-              </div>
-              <div className="card" style={{ borderLeftColor: '#a0aec0' }}>
-                <div className="card-label">Wallet</div>
-                <div className="card-value" style={{ fontSize: '0.9rem', color: '#4a5568' }}>{cuenta.nombreWallet}</div>
-              </div>
-              <div className="card" style={{ borderLeftColor: cuenta.estado === 'ACTIVA' ? '#68d391' : '#fc8181' }}>
-                <div className="card-label">Estado</div>
-                <div className="card-value">
-                  <span className={`badge ${cuenta.estado === 'ACTIVA' ? 'badge-ok' : 'badge-warn'}`}>{cuenta.estado}</span>
-                </div>
-              </div>
-            </div>
+            <HeroBalanceCard
+              nombreWallet={cuenta.nombreWallet}
+              saldoFormateado={fmtMoney(cuenta.saldoDisponible)}
+              estado={cuenta.estado}
+            />
             {cuenta.movimientos.length > 0 && (
               <div style={{ marginTop: '1rem', fontSize: '0.82rem', color: '#718096' }}>
                 Último movimiento: {fmtDate(cuenta.movimientos[0].fecha)} — {cuenta.movimientos[0].tipoMovimiento}

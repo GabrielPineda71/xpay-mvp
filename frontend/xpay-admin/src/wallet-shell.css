@@ -369,3 +369,57 @@
     left: auto;
   }
 }
+
+/* ── HeroBalanceCard (UserWalletPage.tsx, tab "saldo") — tarjeta blanca
+   con acento verde XPAY, sin degradado ni fondo verde. Reemplaza las 3
+   tarjetas inline (saldo/wallet/estado) que vivían en .cards/.card
+   (clases globales de index.css, compartidas con el panel admin — no se
+   tocan). Sin tendencia: no existe dato real de tendencia en
+   EstadoCuenta, este componente nunca debe mostrar una. Depende de los
+   tokens declarados en .wallet-shell-v2 (arriba) — solo se usa dentro de
+   ese contenedor, ya que UserWalletPage siempre se renderiza dentro de
+   WalletShell para la vista wallet. ── */
+.wallet-balance-card {
+  background: var(--xpay-surface);
+  border: 1px solid var(--xpay-border-soft);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  padding: var(--sp-6);
+  margin-top: var(--sp-5);
+}
+.wallet-balance-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+.wallet-balance-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--xpay-text-secondary);
+}
+.wallet-balance-badge {
+  font-size: 0.68rem;
+  background: rgba(13, 130, 142, 0.08);
+  color: var(--xpay-teal);
+  border: 1px solid rgba(13, 130, 142, 0.3);
+  padding: 0.15rem 0.6rem;
+  border-radius: 20px;
+  font-weight: 600;
+}
+.wallet-balance-badge--alert {
+  background: var(--fn-warning-bg);
+  color: var(--fn-warning);
+  border-color: rgba(161, 92, 0, 0.3);
+}
+.wallet-balance-value {
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+}
+.wallet-balance-sublabel {
+  font-size: 0.8rem;
+  color: var(--xpay-text-secondary);
+  margin-top: 2px;
+}
