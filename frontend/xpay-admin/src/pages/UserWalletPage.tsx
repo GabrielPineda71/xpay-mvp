@@ -838,15 +838,16 @@ export function UserWalletPage() {
 
       {/* ── RECIBIR DINERO ────────────────────────────────────────────────── */}
       {tab === 'recibir' && (
-        <div className="action-section" style={{ marginTop: '1.25rem', maxWidth: '420px' }}>
-          <h3>Recibir dinero</h3>
-          <p className="tab-hint">
+        <div className="wallet-receive">
+          <h3 className="wallet-receive-title">Recibir dinero</h3>
+          <p className="wallet-receive-hint">
             Genera un QR para que otra persona te transfiera. El receptor muestra este QR al emisor.
           </p>
-          <label>
-            Valor a recibir (opcional — COP ficticio)
+          <label className="wallet-receive-field">
+            <span className="wallet-receive-field-label">Valor a recibir (opcional — COP ficticio)</span>
             <input
               type="number"
+              className="wallet-receive-input"
               value={recValor}
               onChange={e => { setRecValor(e.target.value); setRecQrSrc(null); }}
               placeholder="Dejar vacío si el emisor elige el monto"
@@ -854,29 +855,28 @@ export function UserWalletPage() {
             />
           </label>
           <button
-            className="btn-confirm"
+            className="wallet-receive-generate-btn"
             onClick={() => void handleGenerarQr()}
             disabled={recQrBusy}
-            style={{ marginTop: '0.5rem' }}
           >
             {recQrBusy ? 'Generando...' : 'Generar QR'}
           </button>
 
           {recQrSrc && (
-            <div className="qr-display">
-              <img src={recQrSrc} alt="QR para recibir dinero" className="qr-image" />
-              <p className="qr-caption">
+            <div className="wallet-receive-qr-display">
+              <img src={recQrSrc} alt="QR para recibir dinero" className="wallet-receive-qr-image" />
+              <p className="wallet-receive-qr-caption">
                 {recValor
                   ? `QR con valor ${fmtMoney(Number(recValor))} (COP ficticio)`
                   : 'QR sin valor fijo — el emisor ingresa el monto'}
               </p>
-              <button className="btn-secondary" onClick={handleDescargarQr}>
+              <button className="wallet-receive-download-btn" onClick={handleDescargarQr}>
                 ↓ Descargar QR PNG
               </button>
             </div>
           )}
 
-          <p className="tab-warn">
+          <p className="wallet-receive-footnote">
             QA/Demo · el QR contiene type=XPAY_TRANSFER, receiverWalletId={miWallet.idWallet} ·
             sin dinero real · sin producción.
           </p>

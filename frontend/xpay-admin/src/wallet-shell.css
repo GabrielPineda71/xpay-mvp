@@ -501,3 +501,102 @@
   color: var(--xpay-text-secondary);
   margin-top: var(--sp-1);
 }
+
+/* ── Recibir (UserWalletPage.tsx, tab "recibir") — misma lógica real
+   (handleGenerarQr/handleDescargarQr, payload XPAY_TRANSFER) que ya
+   existía, solo cambia la presentación. Nombres .wallet-receive-* para
+   no colisionar con .action-section/.qr-display/.qr-image/.qr-caption/
+   .btn-confirm/.btn-secondary (clases globales de index.css,
+   compartidas con RetiroPage.tsx y otras páginas del panel admin — no
+   se tocan). ── */
+.wallet-receive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
+  max-width: 420px;
+}
+.wallet-receive-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+  margin: 0;
+}
+.wallet-receive-hint {
+  font-size: 0.82rem;
+  color: var(--xpay-text-secondary);
+  margin: calc(-1 * var(--sp-2)) 0 0;
+}
+.wallet-receive-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.wallet-receive-field-label {
+  font-size: 0.8rem;
+  color: var(--xpay-text-secondary);
+}
+.wallet-receive-input {
+  border: 1px solid var(--xpay-border);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  color: var(--xpay-text-primary);
+  background: var(--xpay-surface);
+}
+.wallet-receive-input:focus {
+  outline: none;
+  border-color: var(--xpay-teal);
+  box-shadow: 0 0 0 3px rgba(13, 130, 142, 0.15);
+}
+.wallet-receive-generate-btn {
+  background: var(--xpay-teal);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.wallet-receive-generate-btn:hover:not(:disabled) { background: #0a6b75; }
+.wallet-receive-generate-btn:disabled { opacity: 0.6; cursor: default; }
+.wallet-receive-qr-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--xpay-surface);
+  border: 1px solid var(--xpay-border-soft);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  padding: var(--sp-5);
+}
+.wallet-receive-qr-image {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  border-radius: 8px;
+}
+.wallet-receive-qr-caption {
+  font-size: 0.8rem;
+  color: var(--xpay-text-secondary);
+  text-align: center;
+  margin: 0;
+}
+.wallet-receive-download-btn {
+  background: var(--xpay-surface);
+  color: var(--xpay-teal);
+  border: 1px solid rgba(13, 130, 142, 0.3);
+  border-radius: 10px;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.wallet-receive-download-btn:hover { background: rgba(13, 130, 142, 0.08); }
+.wallet-receive-footnote {
+  font-size: 0.72rem;
+  color: var(--xpay-text-secondary);
+  margin: 0;
+}
