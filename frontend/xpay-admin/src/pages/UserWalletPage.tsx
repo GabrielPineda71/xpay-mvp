@@ -205,6 +205,10 @@ export function UserWalletPage() {
   const [envScanErr,    setEnvScanErr]    = useState<string | null>(null);
   const [envManual,     setEnvManual]     = useState(false);
   const [envManualDest, setEnvManualDest] = useState('');
+  // QA-WALLET-7A: mensaje de confirmación mostrado tras éxito, independiente
+  // de envMsg (que sigue reservado para errores del formulario reutilizable).
+  const [envSuccessMsg, setEnvSuccessMsg] = useState<string | null>(null);
+  const envSuccessTimerRef = useRef<number | null>(null);
   const envScannerRef = useRef<Html5Qrcode | null>(null);
   // Fase 71.2-E-G: una Idempotency-Key por intento lógico de transferencia —
   // se reutiliza mientras destino/valor/descripción no cambien (reintento del
@@ -389,6 +393,7 @@ export function UserWalletPage() {
   useEffect(() => {
     return () => {
       if (newMovToastTimerRef.current) clearTimeout(newMovToastTimerRef.current);
+      if (envSuccessTimerRef.current) clearTimeout(envSuccessTimerRef.current);
       const stopScanner = async (s: Html5Qrcode | null) => {
         if (!s) return;
         try { await s.stop(); } catch { /* ignore */ }
@@ -561,8 +566,24 @@ export function UserWalletPage() {
         valor:           Number(envValor),
         descripcion,
       }, { 'Idempotency-Key': envIdemRef.current.key });
-      setEnvMsg({ ok: r.success, text: r.message ?? (r.success ? 'Transferencia realizada.' : 'Error al transferir.') });
-      if (r.success) { envIdemRef.current = null; await loadCuenta(); }
+      if (r.success) {
+        envIdemRef.current = null;
+        await loadCuenta();
+        // QA-WALLET-7A: limpiar el formulario para que no quede listo para
+        // repetir el envío, mostrar confirmación aparte y navegar a
+        // Movimientos tras una breve pausa.
+        setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
+        setEnvPasted(''); setEnvManual(false); setEnvManualDest(''); setEnvScanErr(null);
+        setEnvMsg(null);
+        setEnvSuccessMsg(r.message ?? 'Transferencia realizada exitosamente.');
+        if (envSuccessTimerRef.current) clearTimeout(envSuccessTimerRef.current);
+        envSuccessTimerRef.current = window.setTimeout(() => {
+          setEnvSuccessMsg(null);
+          setTab('movimientos');
+        }, 1800);
+      } else {
+        setEnvMsg({ ok: false, text: r.message ?? 'Error al transferir.' });
+      }
     } catch (e) { setEnvMsg({ ok: false, text: (e as Error).message }); }
     finally { setEnvBusy(false); setEnvPin(''); opInProgressRef.current = false; }
   }
@@ -887,6 +908,11 @@ export function UserWalletPage() {
       {tab === 'enviar' && (
         <div className="wallet-send">
           <h3 className="wallet-send-title">Enviar dinero</h3>
+
+          {envSuccessMsg ? (
+            <div className="wallet-send-msg wallet-send-msg--ok">{envSuccessMsg}</div>
+          ) : (
+          <>
           <p className="wallet-send-hint">Escanea el QR del receptor, pega su contenido, o ingresa el ID de wallet.</p>
 
           {!envDest && !envManual && (
@@ -1025,6 +1051,8 @@ export function UserWalletPage() {
                 </div>
               )}
             </>
+          )}
+          </>
           )}
 
           <p className="wallet-send-footnote">
