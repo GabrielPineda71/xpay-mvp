@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.DTOs;
 using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
 
@@ -9,8 +10,9 @@ namespace Xpay.Api.Controllers;
 // patrón de autorización que AdminController (ADMIN_XPAY conservado como
 // alias técnico heredado, sin renombrar ni eliminar — decisión de producto
 // registrada en el diseño de la fase).
-// Fase USUARIOS-ADMIN-3: activar/inactivar/desbloquear. Sigue sin crear,
-// editar, restablecer clave ni asignar roles.
+// Fase USUARIOS-ADMIN-3: activar/inactivar/desbloquear.
+// Fase USUARIOS-ADMIN-4: asignar/revocar roles (lista blanca). Sigue sin
+// crear usuarios ni editar datos.
 [ApiController]
 [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
 [Route("api/admin/usuarios")]
@@ -111,5 +113,53 @@ public class UsuariosAdminController : ControllerBase
         catch (TransicionUsuarioInvalidaException ex) { return Conflict(new { success = false, message = ex.Message }); }
         catch (InvalidOperationException ex)          { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno desbloqueando el usuario." }); }
+    }
+
+    [HttpGet("/api/admin/roles/asignables")]
+    public async Task<IActionResult> RolesAsignables()
+    {
+        if (!TryGetUsuarioId(out var idAdmin)) return Unauthorized(new { success = false, message = "Token inválido." });
+        try
+        {
+            var data = await _usuarioAdminService.ListarRolesAsignablesAsync(idAdmin);
+            return Ok(new { success = true, data });
+        }
+        catch { return StatusCode(500, new { success = false, message = "Error interno listando los roles asignables." }); }
+    }
+
+    [HttpPost("{id:long}/roles")]
+    public async Task<IActionResult> AsignarRol(long id, [FromBody] AsignarRolRequest request)
+    {
+        if (!TryGetUsuarioId(out var idAdmin)) return Unauthorized(new { success = false, message = "Token inválido." });
+        _audit.LogSensitiveAction(HttpContext, "USUARIO_ROL_ASIGNAR_ATTEMPT", new { idUsuario = id, rolCodigo = request.RolCodigo });
+        try
+        {
+            var data = await _usuarioAdminService.AsignarRolAsync(id, idAdmin, request.RolCodigo, request.Observacion);
+            _audit.LogSensitiveAction(HttpContext, "USUARIO_ROL_ASIGNAR_SUCCESS", new { idUsuario = id, rolCodigo = request.RolCodigo });
+            return Ok(new { success = true, message = "Rol asignado correctamente.", data });
+        }
+        catch (KeyNotFoundException ex)              { return NotFound(new { success = false, message = ex.Message }); }
+        catch (TransicionUsuarioInvalidaException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (UnauthorizedAccessException)           { return Forbid(); }
+        catch (InvalidOperationException ex)          { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno asignando el rol." }); }
+    }
+
+    [HttpPost("{id:long}/roles/{idRol:long}/revocar")]
+    public async Task<IActionResult> RevocarRol(long id, long idRol, [FromBody] RevocarRolRequest request)
+    {
+        if (!TryGetUsuarioId(out var idAdmin)) return Unauthorized(new { success = false, message = "Token inválido." });
+        _audit.LogSensitiveAction(HttpContext, "USUARIO_ROL_REVOCAR_ATTEMPT", new { idUsuario = id, idRol });
+        try
+        {
+            var data = await _usuarioAdminService.RevocarRolAsync(id, idRol, idAdmin, request.Observacion);
+            _audit.LogSensitiveAction(HttpContext, "USUARIO_ROL_REVOCAR_SUCCESS", new { idUsuario = id, idRol });
+            return Ok(new { success = true, message = "Rol revocado correctamente.", data });
+        }
+        catch (KeyNotFoundException ex)              { return NotFound(new { success = false, message = ex.Message }); }
+        catch (TransicionUsuarioInvalidaException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (UnauthorizedAccessException)           { return Forbid(); }
+        catch (InvalidOperationException ex)          { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno revocando el rol." }); }
     }
 }

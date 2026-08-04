@@ -228,3 +228,93 @@ GO
 
 PRINT '--- Fixture CI: ci_admin_guard listo (SUPERUSUARIO) ---';
 GO
+
+/* ================================================================
+   Fixture CI: ci_admin_solo (Fase USUARIOS-ADMIN-4)
+
+   Tercer administrador exclusivo de CI, con UNICAMENTE el rol
+   ADMIN_XPAY (sin SUPERUSUARIO) — necesario para probar que un actor
+   con ADMIN_XPAY pero sin SUPERUSUARIO recibe 403 al intentar
+   asignar/revocar el rol SUPERUSUARIO. Ni ci_admin_xpay (tiene ambos
+   roles) ni ci_admin_guard (solo SUPERUSUARIO) sirven para este caso.
+
+   Mismo criterio de aislamiento que los fixtures anteriores: persona,
+   usuario y contraseña exclusivos de CI, hash BCrypt real y
+   verificado, nunca reutilizados de QA/produccion.
+   ================================================================ */
+PRINT '--- Fixture CI: ci_admin_solo (rol ADMIN_XPAY unicamente) ---';
+GO
+
+IF NOT EXISTS (SELECT 1 FROM unidades_negocio WHERE codigo = 'XPAY_COL')
+BEGIN
+    RAISERROR ('ERROR: No se encontro XPAY_COL en unidades_negocio. Ejecutar 001 primero.', 16, 1);
+    RETURN;
+END
+
+IF NOT EXISTS (SELECT 1 FROM roles WHERE codigo = 'ADMIN_XPAY')
+BEGIN
+    RAISERROR ('ERROR: Rol ADMIN_XPAY no encontrado. Ejecutar 007 primero.', 16, 1);
+    RETURN;
+END
+GO
+
+DECLARE @idUnidadSolo BIGINT;
+SELECT @idUnidadSolo = id_unidad_negocio FROM unidades_negocio WHERE codigo = 'XPAY_COL';
+
+-- Persona fixture — documento distinto de ci_admin_xpay (999000001) y
+-- ci_admin_guard (999000002).
+IF NOT EXISTS (
+    SELECT 1 FROM personas
+    WHERE id_unidad_negocio = @idUnidadSolo
+      AND tipo_documento = 'CC'
+      AND numero_documento = '999000003'
+)
+BEGIN
+    INSERT INTO personas
+        (id_unidad_negocio, tipo_documento, numero_documento,
+         primer_nombre, primer_apellido, celular, email, estado)
+    VALUES
+        (@idUnidadSolo, 'CC', '999000003',
+         'CI Fixture', 'AdminSolo',
+         '3000000097', 'ci.admin.solo@ci-test.local', 'ACTIVA');
+    PRINT '  Persona fixture CI Admin Solo creada.';
+END
+ELSE PRINT '  Persona fixture CI Admin Solo ya existe — omitida.';
+GO
+
+-- Usuario ci_admin_solo — hash BCrypt real ($2a$11$, cost 11) de la
+-- contraseña exclusiva de CI: CI-Fixture-AdminSolo#2026
+-- (distinta de las de ci_admin_xpay/ci_admin_guard; no reutilizada en
+-- QA/produccion).
+IF NOT EXISTS (SELECT 1 FROM usuarios WHERE usuario = 'ci_admin_solo')
+BEGIN
+    INSERT INTO usuarios (id_persona, usuario, password_hash, estado)
+    SELECT p.id_persona, 'ci_admin_solo',
+           '$2a$11$03FXeRDUaUt1q/ogCqGKVuLCurS9e3dyeM4/enW6yXHZGrDQw/Zs.',
+           'ACTIVO'
+    FROM   personas p
+    WHERE  p.numero_documento = '999000003'
+      AND  p.tipo_documento = 'CC';
+    PRINT '  Usuario ci_admin_solo creado.';
+END
+ELSE PRINT '  Usuario ci_admin_solo ya existe — omitido.';
+GO
+
+-- Asignacion del rol ADMIN_XPAY UNICAMENTE — deliberadamente sin
+-- SUPERUSUARIO, es el objetivo de este fixture.
+INSERT INTO usuario_roles (id_usuario, id_rol)
+SELECT u.id_usuario, r.id_rol
+FROM   usuarios u
+JOIN   roles r ON r.codigo = 'ADMIN_XPAY'
+WHERE  u.usuario = 'ci_admin_solo'
+  AND  NOT EXISTS (
+           SELECT 1 FROM usuario_roles ur
+           WHERE  ur.id_usuario = u.id_usuario
+             AND  ur.id_rol = r.id_rol
+       );
+
+PRINT '  Rol verificado: ci_admin_solo -> ADMIN_XPAY (sin SUPERUSUARIO).';
+GO
+
+PRINT '--- Fixture CI: ci_admin_solo listo (ADMIN_XPAY unicamente) ---';
+GO

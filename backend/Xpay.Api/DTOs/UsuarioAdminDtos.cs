@@ -21,9 +21,32 @@ public class UsuarioAdminListItemDto
 
 public class UsuarioAdminRolDto
 {
+    // Fase USUARIOS-ADMIN-4: IdRol necesario para revocar
+    // (POST .../roles/{idRol}/revocar usa el id numérico, no el código).
+    public long IdRol { get; set; }
     public string Codigo { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public DateTime FechaAsignacion { get; set; }
+}
+
+// Fase USUARIOS-ADMIN-4: rol ofrecido por GET /api/admin/roles/asignables —
+// ya filtrado por el backend según el privilegio del actor (nunca incluye
+// SUPERUSUARIO si el actor no lo tiene, ni roles técnicos heredados).
+public class RolAsignableDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+}
+
+public class AsignarRolRequest
+{
+    public string RolCodigo { get; set; } = string.Empty;
+    public string? Observacion { get; set; }
+}
+
+public class RevocarRolRequest
+{
+    public string? Observacion { get; set; }
 }
 
 public class UsuarioAdminDetalleDto

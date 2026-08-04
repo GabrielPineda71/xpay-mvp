@@ -717,3 +717,7 @@ tr:hover td { background: #f7fafc; }
 /* ── USUARIOS-ADMIN-3: acciones activar/inactivar/desbloquear ──────────── */
 .detail-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap; }
 .detail-actions .btn-search:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── USUARIOS-ADMIN-4: selector de roles asignables ─────────────────────── */
+.detail-actions select { padding: 0.4rem 0.6rem; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 0.85rem; font-family: inherit; min-width: 220px; }
+.detail-actions select:disabled { opacity: 0.5; cursor: not-allowed; }

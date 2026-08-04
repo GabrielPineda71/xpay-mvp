@@ -7,13 +7,20 @@ using Xpay.Api.Models;
 namespace Xpay.Api.Services;
 
 // Fase USUARIOS-ADMIN-2: solo lectura (listado + detalle).
-// Fase USUARIOS-ADMIN-3: activar/inactivar/desbloquear. Sigue sin crear,
-// editar, restablecer clave ni asignar roles — eso queda para subfases
-// posteriores, ya planeadas pero no autorizadas todavía.
+// Fase USUARIOS-ADMIN-3: activar/inactivar/desbloquear.
+// Fase USUARIOS-ADMIN-4: asignar/revocar roles (lista blanca). Sigue sin
+// crear usuarios ni editar datos — eso queda para subfases posteriores.
 public class UsuarioAdminService
 {
     private const string RolAdminXpay    = "ADMIN_XPAY";
     private const string RolSuperusuario = "SUPERUSUARIO";
+
+    // Fase USUARIOS-ADMIN-4: lista blanca exacta de roles asignables desde
+    // este módulo — nunca una lista negra. ADMIN_XPAY, OPERADOR_XPAY,
+    // TESORERIA_XPAY y COMERCIO son roles técnicos heredados, deliberadamente
+    // fuera de esta lista (decisión de producto, USUARIOS-ADMIN-4).
+    private static readonly string[] RolesAsignables =
+        { RolSuperusuario, "CARTERA_XPAY", "COMERCIAL_XPAY", "GERENTE_XPAY" };
 
     private readonly XpayDbContext _db;
     public UsuarioAdminService(XpayDbContext db) => _db = db;
@@ -124,6 +131,7 @@ public class UsuarioAdminService
             where ur.IdUsuario == idUsuario && ur.Estado == "ACTIVO" && r.Estado == "ACTIVO"
             select new UsuarioAdminRolDto
             {
+                IdRol           = r.IdRol,
                 Codigo          = r.Codigo,
                 Nombre          = r.Nombre,
                 FechaAsignacion = ur.FechaAsignacion
@@ -270,21 +278,188 @@ public class UsuarioAdminService
     // Agrega la fila de auditoría al mismo ChangeTracker que la modificación
     // del usuario — un único SaveChangesAsync() posterior persiste ambas en
     // la misma transacción implícita de EF Core (misma unidad transaccional).
-    private void RegistrarAuditoria(long idAdmin, string accion, long idUsuarioObjetivo, string valorAnterior, string valorNuevo, string observacion)
+    private void RegistrarAuditoria(long idAdmin, string accion, long idUsuarioObjetivo, string valorAnterior, string valorNuevo, string observacion, string entidad = "usuarios", string? idEntidad = null)
     {
         _db.Auditorias.Add(new Auditoria
         {
             IdUsuario     = idAdmin,
             Modulo        = "USUARIOS_ADMIN",
             Accion        = accion,
-            Entidad       = "usuarios",
-            IdEntidad     = idUsuarioObjetivo.ToString(),
+            Entidad       = entidad,
+            IdEntidad     = idEntidad ?? idUsuarioObjetivo.ToString(),
             ValorAnterior = valorAnterior,
             ValorNuevo    = valorNuevo,
             Resultado     = "EXITOSO",
             Observacion   = observacion,
             FechaEvento   = DateTime.UtcNow
         });
+    }
+
+    // Fase USUARIOS-ADMIN-4: normaliza observacion antes de guardarla o
+    // auditarla — trim, máximo 500 caracteres (mismo límite que la columna
+    // usuario_roles.observacion VARCHAR(500)), null si queda vacía.
+    private static string? NormalizarObservacion(string? observacion)
+    {
+        if (string.IsNullOrWhiteSpace(observacion)) return null;
+        var t = observacion.Trim();
+        return t.Length > 500 ? t[..500] : t;
+    }
+
+    // Fase USUARIOS-ADMIN-4: ¿el usuario tiene el rol indicado ACTIVO ahora
+    // mismo? Usado para decidir si el actor puede tocar el rol SUPERUSUARIO
+    // — independiente de lo que diga su JWT (que puede estar desactualizado,
+    // ver punto 8 del precheck), siempre se valida contra el estado real.
+    private async Task<bool> ActorTieneRolAsync(long idUsuario, string codigoRol)
+    {
+        return await (
+            from ur in _db.UsuarioRoles
+            join r in _db.Roles on ur.IdRol equals r.IdRol
+            where ur.IdUsuario == idUsuario && ur.Estado == "ACTIVO"
+               && r.Codigo == codigoRol && r.Estado == "ACTIVO"
+            select ur.IdUsuario
+        ).AnyAsync();
+    }
+
+    // Fase USUARIOS-ADMIN-4: GET /api/admin/roles/asignables — lista blanca
+    // filtrada según el privilegio real del actor (nunca SUPERUSUARIO si el
+    // actor no lo tiene activo).
+    public async Task<List<RolAsignableDto>> ListarRolesAsignablesAsync(long idAdmin)
+    {
+        var actorEsSuperusuario = await ActorTieneRolAsync(idAdmin, RolSuperusuario);
+        var codigosPermitidos = actorEsSuperusuario
+            ? RolesAsignables
+            : RolesAsignables.Where(c => c != RolSuperusuario).ToArray();
+
+        return await _db.Roles
+            .Where(r => codigosPermitidos.Contains(r.Codigo) && r.Estado == "ACTIVO")
+            .OrderBy(r => r.Nombre)
+            .Select(r => new RolAsignableDto { Codigo = r.Codigo, Nombre = r.Nombre })
+            .ToListAsync();
+    }
+
+    // Fase USUARIOS-ADMIN-4: asignar un rol de la lista blanca. Si la fila en
+    // usuario_roles no existe, se inserta; si existe INACTIVO (revocada
+    // antes), se reactiva sin crear una segunda fila (la PK compuesta
+    // (id_usuario, id_rol) ya lo impediría a nivel de esquema de todas
+    // formas, pero esta lógica evita depender de esa excepción).
+    public async Task<UsuarioAdminDetalleDto> AsignarRolAsync(long idUsuario, long idAdmin, string rolCodigo, string? observacionCruda)
+    {
+        var observacion = NormalizarObservacion(observacionCruda);
+
+        if (idUsuario == idAdmin)
+            throw new InvalidOperationException("No puedes asignarte roles a ti mismo.");
+
+        _ = await _db.Usuarios.FindAsync(idUsuario)
+            ?? throw new KeyNotFoundException($"Usuario {idUsuario} no encontrado.");
+
+        if (!RolesAsignables.Contains(rolCodigo))
+            throw new InvalidOperationException($"El rol '{rolCodigo}' no puede asignarse desde este módulo.");
+
+        if (rolCodigo == RolSuperusuario && !await ActorTieneRolAsync(idAdmin, RolSuperusuario))
+            throw new UnauthorizedAccessException("Solo un usuario con rol SUPERUSUARIO puede asignar el rol SUPERUSUARIO.");
+
+        var rol = await _db.Roles.FirstOrDefaultAsync(r => r.Codigo == rolCodigo && r.Estado == "ACTIVO")
+            ?? throw new InvalidOperationException($"El rol '{rolCodigo}' no está disponible.");
+
+        var asignacion = await _db.UsuarioRoles
+            .FirstOrDefaultAsync(ur => ur.IdUsuario == idUsuario && ur.IdRol == rol.IdRol);
+
+        string valorAnterior;
+        if (asignacion == null)
+        {
+            valorAnterior = "NO_ASIGNADO";
+            _db.UsuarioRoles.Add(new UsuarioRol
+            {
+                IdUsuario       = idUsuario,
+                IdRol           = rol.IdRol,
+                Estado          = "ACTIVO",
+                FechaAsignacion = DateTime.UtcNow,
+                AsignadoPor     = idAdmin,
+                Observacion     = observacion
+            });
+        }
+        else
+        {
+            if (asignacion.Estado == "ACTIVO")
+                throw new TransicionUsuarioInvalidaException($"El usuario ya tiene el rol '{rolCodigo}' activo.");
+
+            valorAnterior              = "INACTIVO";
+            asignacion.Estado          = "ACTIVO";
+            asignacion.FechaAsignacion = DateTime.UtcNow;
+            asignacion.AsignadoPor     = idAdmin;
+            asignacion.FechaRevocacion = null;
+            asignacion.RevocadoPor     = null;
+            asignacion.Observacion     = observacion;
+        }
+
+        RegistrarAuditoria(idAdmin, "USUARIO_ROL_ASIGNAR", idUsuario, valorAnterior, "ACTIVO",
+            observacion ?? $"Asignación de rol {rolCodigo}.", entidad: "usuario_roles", idEntidad: $"{idUsuario}:{rol.IdRol}");
+
+        await _db.SaveChangesAsync();
+        return (await ObtenerDetalleAsync(idUsuario))!;
+    }
+
+    // Fase USUARIOS-ADMIN-4: revocar un rol activo — nunca DELETE, siempre
+    // UPDATE de estado (conserva el historial de la asignación original).
+    public async Task<UsuarioAdminDetalleDto> RevocarRolAsync(long idUsuario, long idRol, long idAdmin, string? observacionCruda)
+    {
+        var observacion = NormalizarObservacion(observacionCruda);
+
+        if (idUsuario == idAdmin)
+            throw new InvalidOperationException("No puedes revocarte roles a ti mismo.");
+
+        _ = await _db.Usuarios.FindAsync(idUsuario)
+            ?? throw new KeyNotFoundException($"Usuario {idUsuario} no encontrado.");
+
+        var rol = await _db.Roles.FindAsync(idRol)
+            ?? throw new KeyNotFoundException($"Rol {idRol} no encontrado.");
+
+        var asignacion = await _db.UsuarioRoles
+            .FirstOrDefaultAsync(ur => ur.IdUsuario == idUsuario && ur.IdRol == idRol);
+        if (asignacion == null || asignacion.Estado != "ACTIVO")
+            throw new TransicionUsuarioInvalidaException($"El usuario no tiene el rol '{rol.Codigo}' activo.");
+
+        if (rol.Codigo == RolSuperusuario && !await ActorTieneRolAsync(idAdmin, RolSuperusuario))
+            throw new UnauthorizedAccessException("Solo un usuario con rol SUPERUSUARIO puede revocar el rol SUPERUSUARIO.");
+
+        // Protección del último administrador — aplica a ADMIN_XPAY y
+        // SUPERUSUARIO aunque ADMIN_XPAY ya no sea asignable desde este
+        // módulo (puede existir en usuarios previos, ej. ci_admin_xpay).
+        if (rol.Codigo == RolAdminXpay || rol.Codigo == RolSuperusuario)
+        {
+            var otrosAdminsActivos = await (
+                from u in _db.Usuarios
+                join ur2 in _db.UsuarioRoles on u.IdUsuario equals ur2.IdUsuario
+                join r2 in _db.Roles on ur2.IdRol equals r2.IdRol
+                where u.IdUsuario != idUsuario
+                   && u.Estado == "ACTIVO"
+                   && ur2.Estado == "ACTIVO"
+                   && r2.Estado == "ACTIVO"
+                   && (r2.Codigo == RolAdminXpay || r2.Codigo == RolSuperusuario)
+                select u.IdUsuario
+            ).Distinct().CountAsync();
+
+            if (otrosAdminsActivos == 0)
+                throw new InvalidOperationException("No se puede revocar: es el último administrador activo del sistema.");
+        }
+
+        // No dejar al usuario objetivo sin ningún rol activo — regla general,
+        // no exclusiva de roles administrativos.
+        var otrosRolesActivos = await _db.UsuarioRoles
+            .CountAsync(ur => ur.IdUsuario == idUsuario && ur.IdRol != idRol && ur.Estado == "ACTIVO");
+        if (otrosRolesActivos == 0)
+            throw new InvalidOperationException("No se puede revocar: el usuario quedaría sin ningún rol asignado.");
+
+        asignacion.Estado          = "INACTIVO";
+        asignacion.FechaRevocacion = DateTime.UtcNow;
+        asignacion.RevocadoPor     = idAdmin;
+        asignacion.Observacion     = observacion;
+
+        RegistrarAuditoria(idAdmin, "USUARIO_ROL_REVOCAR", idUsuario, "ACTIVO", "INACTIVO",
+            observacion ?? $"Revocación de rol {rol.Codigo}.", entidad: "usuario_roles", idEntidad: $"{idUsuario}:{idRol}");
+
+        await _db.SaveChangesAsync();
+        return (await ObtenerDetalleAsync(idUsuario))!;
     }
 
     private static string NombreCompleto(string primerNombre, string? segundoNombre, string primerApellido, string? segundoApellido)

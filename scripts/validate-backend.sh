@@ -1264,6 +1264,309 @@ check_sql_value \
 echo ""
 
 # ════════════════════════════════════════════════════
+# FASE USUARIOS-ADMIN-4 — Asignación y revocación de roles
+# ════════════════════════════════════════════════════
+phase "FASE USUARIOS-ADMIN-4: Asignación y revocación de roles"
+
+info "POST /api/auth/login (ci_admin_solo) — ADMIN_XPAY únicamente, sin SUPERUSUARIO"
+LOGIN_ADMIN_SOLO=$(post_json "$API_URL/api/auth/login" '{
+  "usuario": "ci_admin_solo",
+  "password": "CI-Fixture-AdminSolo#2026"
+}') || fail "POST login ci_admin_solo no respondió"
+assert_ok "$LOGIN_ADMIN_SOLO" "login ci_admin_solo"
+TOKEN_ADMIN_SOLO=$(echo "$LOGIN_ADMIN_SOLO" | jq -r '.data.token')
+[[ -n "$TOKEN_ADMIN_SOLO" && "$TOKEN_ADMIN_SOLO" != "null" ]] || fail "Token JWT vacío tras login de ci_admin_solo"
+ok "Login ci_admin_solo → token=${TOKEN_ADMIN_SOLO:0:30}..."
+
+# UA4.1 Roles asignables para ADMIN_XPAY sin SUPERUSUARIO — no incluyen SUPERUSUARIO
+info "GET /api/admin/roles/asignables (ci_admin_solo) → sin SUPERUSUARIO"
+ROLES_ASIG_SOLO=$(get_auth_json "$TOKEN_ADMIN_SOLO" "$API_URL/api/admin/roles/asignables") \
+  || fail "GET roles/asignables (ci_admin_solo) no respondió"
+echo "$ROLES_ASIG_SOLO" | jq .
+assert_ok "$ROLES_ASIG_SOLO" "roles asignables ci_admin_solo"
+CONTIENE_SUPER_SOLO=$(echo "$ROLES_ASIG_SOLO" | jq '[.data[] | select(.codigo=="SUPERUSUARIO")] | length')
+[[ "$CONTIENE_SUPER_SOLO" == "0" ]] \
+  || fail "roles/asignables para ADMIN_XPAY sin SUPERUSUARIO no debería incluir SUPERUSUARIO"
+ok "roles/asignables (ADMIN_XPAY sin SUPERUSUARIO) → no incluye SUPERUSUARIO ✓"
+
+# UA4.2 Roles asignables para un actor con SUPERUSUARIO — sí lo incluyen
+info "GET /api/admin/roles/asignables (TOKEN_ADMIN, con SUPERUSUARIO) → incluye SUPERUSUARIO"
+ROLES_ASIG_ADMIN=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/roles/asignables") \
+  || fail "GET roles/asignables (TOKEN_ADMIN) no respondió"
+assert_ok "$ROLES_ASIG_ADMIN" "roles asignables TOKEN_ADMIN"
+CONTIENE_SUPER_ADMIN=$(echo "$ROLES_ASIG_ADMIN" | jq '[.data[] | select(.codigo=="SUPERUSUARIO")] | length')
+[[ "$CONTIENE_SUPER_ADMIN" -ge 1 ]] \
+  || fail "roles/asignables para un actor con SUPERUSUARIO debería incluir SUPERUSUARIO"
+ok "roles/asignables (con SUPERUSUARIO) → incluye SUPERUSUARIO ✓"
+
+# UA4.3 Asignar CARTERA_XPAY a estadotest (mismo usuario CI de FASE USUARIOS-ADMIN-3)
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/roles (CARTERA_XPAY) → 200"
+ASIGNAR_CARTERA=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles" \
+  '{"rolCodigo":"CARTERA_XPAY","observacion":"CI USUARIOS-ADMIN-4"}') \
+  || fail "POST asignar CARTERA_XPAY no respondió"
+echo "$ASIGNAR_CARTERA" | jq .
+assert_ok "$ASIGNAR_CARTERA" "asignar CARTERA_XPAY"
+ok "Rol CARTERA_XPAY asignado a estadotest ✓"
+
+# UA4.4 El detalle refleja el rol — captura idRol para los pasos siguientes
+info "GET /api/admin/usuarios/$ID_USUARIO_ET (detalle) → incluye CARTERA_XPAY"
+DETALLE_CON_ROL=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET") \
+  || fail "GET detalle tras asignar no respondió"
+CONTIENE_CARTERA_DETALLE=$(echo "$DETALLE_CON_ROL" | jq '[.data.roles[] | select(.codigo=="CARTERA_XPAY")] | length')
+[[ "$CONTIENE_CARTERA_DETALLE" == "1" ]] \
+  || fail "Detalle esperado con CARTERA_XPAY, no encontrado"
+ID_ROL_CARTERA=$(echo "$DETALLE_CON_ROL" | jq -r '.data.roles[] | select(.codigo=="CARTERA_XPAY") | .idRol')
+ok "Detalle refleja CARTERA_XPAY (idRol=$ID_ROL_CARTERA) ✓"
+
+# UA4.5 Nuevo login de estadotest → roles incluye CARTERA_XPAY
+info "POST /api/auth/login (estadotest) → roles incluye CARTERA_XPAY"
+LOGIN_ET_CON_ROL=$(post_json "$API_URL/api/auth/login" '{"usuario":"estadotest_ci_test","password":"Xpay@Test1!"}') \
+  || fail "Login estadotest (con rol) no respondió"
+assert_ok "$LOGIN_ET_CON_ROL" "login estadotest con rol"
+CONTIENE_CARTERA_LOGIN=$(echo "$LOGIN_ET_CON_ROL" | jq '[.data.roles[] | select(.=="CARTERA_XPAY")] | length')
+[[ "$CONTIENE_CARTERA_LOGIN" == "1" ]] \
+  || fail "Login estadotest esperado con rol CARTERA_XPAY en la respuesta"
+ok "Nuevo login de estadotest → roles incluye CARTERA_XPAY ✓"
+
+# UA4.6 Asignar duplicado → 409
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/roles (CARTERA_XPAY duplicado) → 409"
+STATUS_DUP_ROL=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" \
+  -d '{"rolCodigo":"CARTERA_XPAY"}')
+[[ "$STATUS_DUP_ROL" == "409" ]] \
+  || fail "Asignar rol duplicado esperado 409, obtenido $STATUS_DUP_ROL"
+ok "Asignar CARTERA_XPAY duplicado → 409 ✓"
+
+# UA4.7 Revocar CARTERA_XPAY
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/roles/$ID_ROL_CARTERA/revocar → 200"
+REVOCAR_CARTERA=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles/$ID_ROL_CARTERA/revocar" \
+  '{"observacion":"CI USUARIOS-ADMIN-4 revocación"}') \
+  || fail "POST revocar CARTERA_XPAY no respondió"
+echo "$REVOCAR_CARTERA" | jq .
+assert_ok "$REVOCAR_CARTERA" "revocar CARTERA_XPAY"
+ok "Rol CARTERA_XPAY revocado ✓"
+
+# UA4.8 Nuevo login de estadotest → CARTERA_XPAY ya no aparece
+info "POST /api/auth/login (estadotest) → roles ya NO incluye CARTERA_XPAY"
+LOGIN_ET_SIN_ROL=$(post_json "$API_URL/api/auth/login" '{"usuario":"estadotest_ci_test","password":"Xpay@Test1!"}') \
+  || fail "Login estadotest (sin rol) no respondió"
+assert_ok "$LOGIN_ET_SIN_ROL" "login estadotest sin rol"
+CONTIENE_CARTERA_LOGIN_2=$(echo "$LOGIN_ET_SIN_ROL" | jq '[.data.roles[] | select(.=="CARTERA_XPAY")] | length')
+[[ "$CONTIENE_CARTERA_LOGIN_2" == "0" ]] \
+  || fail "Login estadotest tras revocar no debería incluir CARTERA_XPAY"
+ok "Nuevo login de estadotest → CARTERA_XPAY ya no aparece ✓"
+
+# UA4.9 Revocar nuevamente (ya inactivo) → 409
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/roles/$ID_ROL_CARTERA/revocar (ya inactivo) → 409"
+STATUS_REVOCAR_409=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles/$ID_ROL_CARTERA/revocar" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_REVOCAR_409" == "409" ]] \
+  || fail "Revocar rol ya inactivo esperado 409, obtenido $STATUS_REVOCAR_409"
+ok "Revocar rol ya inactivo → 409 ✓"
+
+# UA4.10 Reactivar una asignación previamente revocada — sin duplicar la PK
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/roles (reasignar CARTERA_XPAY tras revocación) → 200"
+REASIGNAR_CARTERA=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles" \
+  '{"rolCodigo":"CARTERA_XPAY","observacion":"CI reactivación"}') \
+  || fail "POST reasignar CARTERA_XPAY no respondió"
+assert_ok "$REASIGNAR_CARTERA" "reasignar CARTERA_XPAY"
+check_sql_value \
+  "usuario_roles: una sola fila para (estadotest, CARTERA_XPAY) tras revocar+reasignar" \
+  "SELECT COUNT(*) FROM usuario_roles WHERE id_usuario = $ID_USUARIO_ET AND id_rol = $ID_ROL_CARTERA" \
+  "1"
+ok "Reasignación reactiva la fila existente sin duplicar la PK ✓"
+
+# UA4.11 Autoasignación rechazada
+info "POST /api/admin/usuarios/$ID_USUARIO_ADMIN/roles (ci_admin_xpay sobre sí mismo) → 400"
+STATUS_AUTOASIG=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ADMIN/roles" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" \
+  -d '{"rolCodigo":"GERENTE_XPAY"}')
+[[ "$STATUS_AUTOASIG" == "400" ]] \
+  || fail "Autoasignación esperada 400, obtenido $STATUS_AUTOASIG"
+ok "Autoasignación → 400 ✓"
+
+# Detalle propio de ci_admin_xpay — captura los idRol de ADMIN_XPAY y
+# SUPERUSUARIO para los casos de autorrevocación y último administrador.
+info "GET /api/admin/usuarios/$ID_USUARIO_ADMIN (detalle propio) → capturar idRol de ADMIN_XPAY/SUPERUSUARIO"
+DETALLE_ADMIN_PROPIO=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ADMIN") \
+  || fail "GET detalle propio (ci_admin_xpay) no respondió"
+ID_ROL_ADMIN_XPAY_PROPIO=$(echo "$DETALLE_ADMIN_PROPIO" | jq -r '.data.roles[] | select(.codigo=="ADMIN_XPAY") | .idRol')
+ID_ROL_SUPERUSUARIO_PROPIO=$(echo "$DETALLE_ADMIN_PROPIO" | jq -r '.data.roles[] | select(.codigo=="SUPERUSUARIO") | .idRol')
+[[ -n "$ID_ROL_ADMIN_XPAY_PROPIO" && "$ID_ROL_ADMIN_XPAY_PROPIO" != "null" ]] \
+  || fail "No se pudo obtener idRol de ADMIN_XPAY para ci_admin_xpay"
+[[ -n "$ID_ROL_SUPERUSUARIO_PROPIO" && "$ID_ROL_SUPERUSUARIO_PROPIO" != "null" ]] \
+  || fail "No se pudo obtener idRol de SUPERUSUARIO para ci_admin_xpay"
+ok "idRol capturados: ADMIN_XPAY=$ID_ROL_ADMIN_XPAY_PROPIO SUPERUSUARIO=$ID_ROL_SUPERUSUARIO_PROPIO"
+
+# UA4.12 Autorrevocación rechazada
+info "POST /api/admin/usuarios/$ID_USUARIO_ADMIN/roles/$ID_ROL_ADMIN_XPAY_PROPIO/revocar (autorrevocación) → 400"
+STATUS_AUTOREV=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ADMIN/roles/$ID_ROL_ADMIN_XPAY_PROPIO/revocar" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_AUTOREV" == "400" ]] \
+  || fail "Autorrevocación esperada 400, obtenido $STATUS_AUTOREV"
+ok "Autorrevocación → 400 ✓"
+
+# UA4.13 ADMIN_XPAY sin SUPERUSUARIO intenta asignar SUPERUSUARIO → 403
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/roles (SUPERUSUARIO, actor sin ese privilegio) → 403"
+STATUS_ASIG_SUPER_403=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles" \
+  -H "Authorization: Bearer $TOKEN_ADMIN_SOLO" -H "Content-Type: application/json" \
+  -d '{"rolCodigo":"SUPERUSUARIO"}')
+[[ "$STATUS_ASIG_SUPER_403" == "403" ]] \
+  || fail "Asignar SUPERUSUARIO sin privilegio esperado 403, obtenido $STATUS_ASIG_SUPER_403"
+ok "ADMIN_XPAY sin SUPERUSUARIO intenta asignar SUPERUSUARIO → 403 ✓"
+
+# UA4.14 ADMIN_XPAY sin SUPERUSUARIO intenta revocar SUPERUSUARIO → 403
+info "POST /api/admin/usuarios/$ID_USUARIO_ADMIN/roles/$ID_ROL_SUPERUSUARIO_PROPIO/revocar (actor sin ese privilegio) → 403"
+STATUS_REV_SUPER_403=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ADMIN/roles/$ID_ROL_SUPERUSUARIO_PROPIO/revocar" \
+  -H "Authorization: Bearer $TOKEN_ADMIN_SOLO" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_REV_SUPER_403" == "403" ]] \
+  || fail "Revocar SUPERUSUARIO sin privilegio esperado 403, obtenido $STATUS_REV_SUPER_403"
+ok "ADMIN_XPAY sin SUPERUSUARIO intenta revocar SUPERUSUARIO → 403 ✓"
+
+# UA4.15 Rol técnico heredado rechazado al asignar
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/roles (ADMIN_XPAY, rol técnico heredado) → 400"
+STATUS_ROL_HEREDADO=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" \
+  -d '{"rolCodigo":"ADMIN_XPAY"}')
+[[ "$STATUS_ROL_HEREDADO" == "400" ]] \
+  || fail "Asignar rol técnico heredado esperado 400, obtenido $STATUS_ROL_HEREDADO"
+ok "Asignar rol técnico heredado (ADMIN_XPAY) → 400 ✓"
+
+# UA4.16 USUARIO_FINAL → 403 en los 3 endpoints
+info "Los 3 endpoints de roles con USUARIO_FINAL (carlos) → 403"
+STATUS_UF_ASIGNABLES=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_A" "$API_URL/api/admin/roles/asignables")
+[[ "$STATUS_UF_ASIGNABLES" == "403" ]] \
+  || fail "GET roles/asignables con USUARIO_FINAL esperado 403, obtenido $STATUS_UF_ASIGNABLES"
+STATUS_UF_ASIGNAR=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles" \
+  -H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" \
+  -d '{"rolCodigo":"CARTERA_XPAY"}')
+[[ "$STATUS_UF_ASIGNAR" == "403" ]] \
+  || fail "POST roles con USUARIO_FINAL esperado 403, obtenido $STATUS_UF_ASIGNAR"
+STATUS_UF_REVOCAR=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles/$ID_ROL_CARTERA/revocar" \
+  -H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_UF_REVOCAR" == "403" ]] \
+  || fail "POST revocar con USUARIO_FINAL esperado 403, obtenido $STATUS_UF_REVOCAR"
+ok "Los 3 endpoints de roles con USUARIO_FINAL → 403 ✓"
+
+# UA4.17 Sin token → 401 en los 3 endpoints
+info "Los 3 endpoints de roles sin token → 401"
+STATUS_NA_ASIGNABLES=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "$API_URL/api/admin/roles/asignables")
+[[ "$STATUS_NA_ASIGNABLES" == "401" ]] \
+  || fail "GET roles/asignables sin token esperado 401, obtenido $STATUS_NA_ASIGNABLES"
+STATUS_NA_ASIGNAR=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles" -H "Content-Type: application/json" \
+  -d '{"rolCodigo":"CARTERA_XPAY"}')
+[[ "$STATUS_NA_ASIGNAR" == "401" ]] \
+  || fail "POST roles sin token esperado 401, obtenido $STATUS_NA_ASIGNAR"
+STATUS_NA_REVOCAR=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/roles/$ID_ROL_CARTERA/revocar" \
+  -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_NA_REVOCAR" == "401" ]] \
+  || fail "POST revocar sin token esperado 401, obtenido $STATUS_NA_REVOCAR"
+ok "Los 3 endpoints de roles sin token → 401 ✓"
+
+# UA4.18 No dejar a un usuario sin ningún rol activo
+info "POST /api/usuarios/registro-final (usuario con un solo rol, para probar 'no dejar sin roles')"
+REGISTRO_SR=$(post_json "$API_URL/api/usuarios/registro-final" '{
+  "idUnidadNegocio": 1,
+  "tipoDocumento": "CC",
+  "numeroDocumento": "1099008888",
+  "primerNombre": "Solo",
+  "primerApellido": "Rol",
+  "celular": "3008887777",
+  "email": "solo.rol@ci-test.com",
+  "usuario": "solorol_ci_test",
+  "password": "Xpay@Test1!"
+}') || fail "POST registro solorol no respondió"
+assert_ok "$REGISTRO_SR" "registro solorol"
+ID_USUARIO_SR=$(echo "$REGISTRO_SR" | jq -r '.idUsuario')
+
+DETALLE_SR=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_SR") \
+  || fail "GET detalle solorol no respondió"
+ID_ROL_USUARIO_FINAL_SR=$(echo "$DETALLE_SR" | jq -r '.data.roles[] | select(.codigo=="USUARIO_FINAL") | .idRol')
+[[ -n "$ID_ROL_USUARIO_FINAL_SR" && "$ID_ROL_USUARIO_FINAL_SR" != "null" ]] \
+  || fail "No se pudo obtener idRol de USUARIO_FINAL para solorol"
+
+info "POST /api/admin/usuarios/$ID_USUARIO_SR/roles/$ID_ROL_USUARIO_FINAL_SR/revocar (único rol) → 400"
+STATUS_SIN_ROLES=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_SR/roles/$ID_ROL_USUARIO_FINAL_SR/revocar" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_SIN_ROLES" == "400" ]] \
+  || fail "Revocar único rol esperado 400, obtenido $STATUS_SIN_ROLES"
+ok "No dejar usuario sin roles → 400 ✓"
+
+# UA4.19 Protección del último administrador (revocación de rol) — reutiliza
+# el mecanismo de trap EXIT ya construido en FASE USUARIOS-ADMIN-3, esta vez
+# inactivando temporalmente ci_admin_guard Y ci_admin_solo (ambos deben
+# quedar fuera para que ci_admin_xpay sea el único administrador activo).
+restaurar_admins_guard_solo() {
+  "$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+    -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='ACTIVO' WHERE usuario IN ('ci_admin_guard','ci_admin_solo');" \
+    > /dev/null 2>&1 || true
+}
+trap restaurar_admins_guard_solo EXIT
+
+"$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='INACTIVO' WHERE usuario IN ('ci_admin_guard','ci_admin_solo');" \
+  > /dev/null || fail "No se pudo inactivar ci_admin_guard/ci_admin_solo por SQL directo"
+ok "ci_admin_guard y ci_admin_solo inactivados temporalmente (se restauran al finalizar) ✓"
+
+check_sql_value \
+  "Administradores ACTIVO con ADMIN_XPAY/SUPERUSUARIO = 1 (solo ci_admin_xpay)" \
+  "SELECT COUNT(DISTINCT u.id_usuario) FROM usuarios u JOIN usuario_roles ur ON ur.id_usuario = u.id_usuario JOIN roles r ON r.id_rol = ur.id_rol WHERE u.estado = 'ACTIVO' AND ur.estado = 'ACTIVO' AND r.codigo IN ('ADMIN_XPAY','SUPERUSUARIO')" \
+  "1"
+
+# ci_admin_guard ya está INACTIVO en este punto — un login nuevo fallaría con
+# 400 ("El usuario no está activo."), comportamiento ya validado en FASE
+# USUARIOS-ADMIN-3. Para esta prueba se reutiliza deliberadamente el JWT de
+# ci_admin_guard obtenido en esa fase anterior (TOKEN_ADMIN_GUARD, todavía
+# vigente dentro de la misma ejecución de CI) — documentado explícitamente
+# como mecanismo controlado de CI, no como comportamiento a construir en
+# producción.
+[[ -n "${TOKEN_ADMIN_GUARD:-}" ]] || fail "TOKEN_ADMIN_GUARD (de FASE USUARIOS-ADMIN-3) no está disponible para esta prueba"
+
+info "POST /api/admin/usuarios/$ID_USUARIO_ADMIN/roles/$ID_ROL_SUPERUSUARIO_PROPIO/revocar (TOKEN_ADMIN_GUARD, único admin restante) → 400"
+STATUS_ULTIMO_ADMIN_ROL=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ADMIN/roles/$ID_ROL_SUPERUSUARIO_PROPIO/revocar" \
+  -H "Authorization: Bearer $TOKEN_ADMIN_GUARD" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_ULTIMO_ADMIN_ROL" == "400" ]] \
+  || fail "Revocar rol del último administrador esperado 400, obtenido $STATUS_ULTIMO_ADMIN_ROL"
+ok "Protección del último administrador (revocar rol) → 400 ✓"
+
+"$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='ACTIVO' WHERE usuario IN ('ci_admin_guard','ci_admin_solo');" \
+  > /dev/null || fail "No se pudo restaurar ci_admin_guard/ci_admin_solo a ACTIVO"
+ok "ci_admin_guard y ci_admin_solo restaurados a ACTIVO ✓"
+trap - EXIT
+
+# UA4.20 Auditoría persistente — asignación (>=1: hubo asignación inicial +
+# reactivación tras revocar) y revocación (exactamente 1: solo un revocar
+# exitoso; el segundo intento fue rechazado con 409 antes de auditar).
+AUDIT_ASIGNAR_COUNT=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM auditoria WHERE modulo='USUARIOS_ADMIN' AND accion='USUARIO_ROL_ASIGNAR' AND entidad='usuario_roles' AND id_entidad='$ID_USUARIO_ET:$ID_ROL_CARTERA' AND resultado='EXITOSO'" \
+  -h -1 | tr -d ' \r\n')
+[[ "$AUDIT_ASIGNAR_COUNT" -ge 1 ]] \
+  || fail "Auditoría USUARIO_ROL_ASIGNAR esperada >=1, obtenida $AUDIT_ASIGNAR_COUNT"
+ok "Auditoría USUARIO_ROL_ASIGNAR registrada ($AUDIT_ASIGNAR_COUNT fila(s)) ✓"
+
+check_sql_value \
+  "Auditoría USUARIO_ROL_REVOCAR registrada para id_entidad=$ID_USUARIO_ET:$ID_ROL_CARTERA" \
+  "SELECT COUNT(*) FROM auditoria WHERE modulo='USUARIOS_ADMIN' AND accion='USUARIO_ROL_REVOCAR' AND entidad='usuario_roles' AND id_entidad='$ID_USUARIO_ET:$ID_ROL_CARTERA' AND resultado='EXITOSO'" \
+  "1"
+
+echo ""
+
+# ════════════════════════════════════════════════════
 # FASE 35 — Observabilidad básica: diagnostics y correlation id
 # ════════════════════════════════════════════════════
 phase "FASE 35: Observabilidad básica — diagnostics/ping y X-Correlation-ID"

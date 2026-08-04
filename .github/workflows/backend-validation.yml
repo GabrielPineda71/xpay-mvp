@@ -109,6 +109,9 @@ jobs:
           echo "--- Ejecutando 029_wallet_idempotencia.sql ---"
           sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
             -i database/029_wallet_idempotencia.sql
+          echo "--- Ejecutando 030_usuario_roles_revocacion.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/030_usuario_roles_revocacion.sql
           echo "Migraciones aplicadas."
 
       - name: dotnet restore

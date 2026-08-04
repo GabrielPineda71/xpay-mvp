@@ -5,9 +5,15 @@ import { fmtDate } from '../utils.ts';
 import { useAuth } from '../auth/AuthContext.tsx';
 
 interface RolDetalle {
+  idRol:           number;
   codigo:          string;
   nombre:          string;
   fechaAsignacion: string;
+}
+
+interface RolAsignable {
+  codigo: string;
+  nombre: string;
 }
 
 interface UsuarioDetalle {
@@ -38,6 +44,7 @@ interface UsuarioDetalle {
 
 interface ApiResp { success: boolean; data: UsuarioDetalle; }
 interface AccionResp { success: boolean; message: string; data: UsuarioDetalle; }
+interface RolesAsignablesResp { success: boolean; data: RolAsignable[]; }
 
 type Accion = 'activar' | 'inactivar' | 'desbloquear';
 
@@ -46,6 +53,10 @@ const CONFIRMACION: Record<Accion, (usuario: string) => string> = {
   inactivar:    u => `¿Confirmas inactivar a ${u}? No podrá iniciar sesión hasta que sea reactivado.`,
   desbloquear:  u => `¿Confirmas desbloquear a ${u}? Se reiniciarán sus intentos fallidos y podrá iniciar sesión nuevamente.`,
 };
+
+// Fase USUARIOS-ADMIN-4: el cambio de rol no invalida un JWT ya emitido —
+// solo se refleja en el próximo login del usuario objetivo.
+const AVISO_JWT = 'El cambio de rol se reflejará en la próxima sesión del usuario. Una sesión ya abierta puede conservar permisos anteriores hasta que expire el token.';
 
 function estadoBadge(estado: string) {
   const cls = estado === 'ACTIVO' ? 'badge-ok' : 'badge-warn';
@@ -67,6 +78,12 @@ export function AdminUsuarioDetallePage() {
   const [actionMsg,   setActionMsg]   = useState('');
   const [actionError, setActionError] = useState('');
 
+  const [rolesAsignables,  setRolesAsignables]  = useState<RolAsignable[]>([]);
+  const [rolSeleccionado,  setRolSeleccionado]  = useState('');
+  const [rolBusy,          setRolBusy]          = useState(false);
+  const [rolMsg,           setRolMsg]           = useState('');
+  const [rolError,         setRolError]         = useState('');
+
   const cargarDetalle = useCallback(() => {
     if (!id) return;
     setLoading(true);
@@ -77,7 +94,14 @@ export function AdminUsuarioDetallePage() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  const cargarRolesAsignables = useCallback(() => {
+    get<RolesAsignablesResp>('/api/admin/roles/asignables')
+      .then(r => setRolesAsignables(r.data))
+      .catch(() => setRolesAsignables([]));
+  }, []);
+
   useEffect(() => { cargarDetalle(); }, [cargarDetalle]);
+  useEffect(() => { cargarRolesAsignables(); }, [cargarRolesAsignables]);
 
   async function ejecutarAccion(accion: Accion) {
     if (!id || !data) return;
@@ -96,6 +120,41 @@ export function AdminUsuarioDetallePage() {
       setActionError((err as Error).message);
     } finally {
       setActionBusy(false);
+    }
+  }
+
+  async function asignarRol() {
+    if (!id || !data || !rolSeleccionado) return;
+    if (!confirm(`¿Confirmas asignar el rol ${rolSeleccionado} a ${data.usuario}?\n\n${AVISO_JWT}`)) return;
+    setRolBusy(true);
+    setRolMsg('');
+    setRolError('');
+    try {
+      const r = await post<AccionResp>(`/api/admin/usuarios/${id}/roles`, { rolCodigo: rolSeleccionado });
+      setRolMsg(r.message);
+      setRolSeleccionado('');
+      cargarDetalle();
+    } catch (err) {
+      setRolError((err as Error).message);
+    } finally {
+      setRolBusy(false);
+    }
+  }
+
+  async function revocarRol(rol: RolDetalle) {
+    if (!id || !data) return;
+    if (!confirm(`¿Confirmas revocar el rol ${rol.codigo} de ${data.usuario}?\n\n${AVISO_JWT}`)) return;
+    setRolBusy(true);
+    setRolMsg('');
+    setRolError('');
+    try {
+      const r = await post<AccionResp>(`/api/admin/usuarios/${id}/roles/${rol.idRol}/revocar`, {});
+      setRolMsg(r.message);
+      cargarDetalle();
+    } catch (err) {
+      setRolError((err as Error).message);
+    } finally {
+      setRolBusy(false);
     }
   }
 
@@ -197,6 +256,7 @@ export function AdminUsuarioDetallePage() {
                       <th>Código</th>
                       <th>Nombre</th>
                       <th>Fecha de asignación</th>
+                      <th>Acción</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -205,12 +265,53 @@ export function AdminUsuarioDetallePage() {
                         <td className="mono">{r.codigo}</td>
                         <td>{r.nombre}</td>
                         <td className="mono">{fmtDate(r.fechaAsignacion)}</td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-link"
+                            disabled={rolBusy || esPropiaCuenta}
+                            title={esPropiaCuenta ? 'No puedes revocar roles de tu propia cuenta.' : undefined}
+                            onClick={() => revocarRol(r)}
+                          >
+                            Revocar
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
+
+            <div className="detail-actions">
+              <select
+                value={rolSeleccionado}
+                onChange={e => setRolSeleccionado(e.target.value)}
+                disabled={rolBusy || esPropiaCuenta || rolesAsignables.length === 0}
+              >
+                <option value="">
+                  {rolesAsignables.length === 0 ? 'Sin roles disponibles' : 'Seleccionar rol...'}
+                </option>
+                {rolesAsignables
+                  // No ofrecer un rol que el usuario ya tiene activo.
+                  .filter(ra => !data.roles.some(r => r.codigo === ra.codigo))
+                  .map(ra => (
+                    <option key={ra.codigo} value={ra.codigo}>{ra.nombre} ({ra.codigo})</option>
+                  ))}
+              </select>
+              <button
+                type="button"
+                className="btn-search"
+                disabled={rolBusy || esPropiaCuenta || !rolSeleccionado}
+                title={esPropiaCuenta ? 'No puedes asignarte roles a ti mismo.' : undefined}
+                onClick={asignarRol}
+              >
+                {rolBusy ? 'Procesando...' : 'Asignar rol'}
+              </button>
+            </div>
+
+            {rolMsg   && <div className="breb-msg-ok">{rolMsg}</div>}
+            {rolError && <div className="error-msg">Error: {rolError}</div>}
           </div>
         </div>
       )}
