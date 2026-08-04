@@ -932,6 +932,131 @@ ok "GET /api/admin/ledger-transacciones sin token → 401 ✓"
 echo ""
 
 # ════════════════════════════════════════════════════
+# FASE USUARIOS-ADMIN-2 — Listado y consulta de usuarios
+# ════════════════════════════════════════════════════
+phase "FASE USUARIOS-ADMIN-2: Listado y consulta de usuarios"
+
+# UA.1 GET /api/admin/usuarios con ADMIN_XPAY → success=true, al menos 1 item
+info "GET /api/admin/usuarios (ADMIN_XPAY) → success=true, items >= 1"
+USUARIOS_LIST=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios") \
+  || fail "GET /api/admin/usuarios no respondió"
+echo "$USUARIOS_LIST" | jq .
+assert_ok "$USUARIOS_LIST" "GET listado de usuarios"
+USUARIOS_TOTAL=$(echo "$USUARIOS_LIST" | jq -r '.data.total')
+[[ "$USUARIOS_TOTAL" -ge 1 ]] \
+  || fail "Listado usuarios: total esperado >= 1, obtenido $USUARIOS_TOTAL"
+ok "GET /api/admin/usuarios → total=$USUARIOS_TOTAL ✓"
+
+# UA.2 El mismo TOKEN_ADMIN también satisface el rol SUPERUSUARIO — el
+# fixture ci_admin_xpay tiene AMBOS roles activos (ver scripts/ci/
+# ci_admin_xpay_fixture.sql), así que esta misma llamada valida en un
+# solo token que el endpoint acepta indistintamente ADMIN_XPAY o
+# SUPERUSUARIO, sin necesitar un segundo fixture/usuario.
+info "GET /api/admin/usuarios (mismo TOKEN_ADMIN, valida también SUPERUSUARIO) → success=true"
+[[ "$(echo "$USUARIOS_LIST" | jq -r '.success')" == "true" ]] \
+  || fail "El token de ci_admin_xpay (ADMIN_XPAY+SUPERUSUARIO) debió recibir success=true"
+ok "TOKEN_ADMIN (ADMIN_XPAY + SUPERUSUARIO) → GET /api/admin/usuarios → 200 ✓"
+
+# UA.3 USUARIO_FINAL → 403
+info "GET /api/admin/usuarios con USUARIO_FINAL (carlos) → 403"
+STATUS_USUARIOS_403=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_A" \
+  "$API_URL/api/admin/usuarios")
+[[ "$STATUS_USUARIOS_403" == "403" ]] \
+  || fail "GET usuarios con USUARIO_FINAL esperado 403, obtenido $STATUS_USUARIOS_403"
+ok "GET /api/admin/usuarios con USUARIO_FINAL → 403 ✓"
+
+# UA.4 Sin token → 401
+info "GET /api/admin/usuarios sin token → 401"
+STATUS_USUARIOS_401=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  "$API_URL/api/admin/usuarios")
+[[ "$STATUS_USUARIOS_401" == "401" ]] \
+  || fail "GET usuarios sin token esperado 401, obtenido $STATUS_USUARIOS_401"
+ok "GET /api/admin/usuarios sin token → 401 ✓"
+
+# UA.5 Filtro texto
+info "GET /api/admin/usuarios?texto=carlos_ci_test → coincide con carlos"
+USUARIOS_TEXTO=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios?texto=carlos_ci_test") \
+  || fail "GET usuarios?texto no respondió"
+echo "$USUARIOS_TEXTO" | jq .
+assert_ok "$USUARIOS_TEXTO" "GET usuarios filtro texto"
+USUARIOS_TEXTO_ITEMS=$(echo "$USUARIOS_TEXTO" | jq '.data.items | length')
+[[ "$USUARIOS_TEXTO_ITEMS" -ge 1 ]] \
+  || fail "Filtro texto=carlos_ci_test: items esperado >= 1, obtenido $USUARIOS_TEXTO_ITEMS"
+USUARIOS_TEXTO_USUARIO=$(echo "$USUARIOS_TEXTO" | jq -r '.data.items[0].usuario')
+[[ "$USUARIOS_TEXTO_USUARIO" == "carlos_ci_test" ]] \
+  || fail "Filtro texto: esperado usuario=carlos_ci_test, obtenido $USUARIOS_TEXTO_USUARIO"
+ok "GET usuarios?texto=carlos_ci_test → items=$USUARIOS_TEXTO_ITEMS ✓"
+
+# UA.6 Filtro estado
+info "GET /api/admin/usuarios?estado=ACTIVO → todos los items en ACTIVO"
+USUARIOS_ESTADO=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios?estado=ACTIVO") \
+  || fail "GET usuarios?estado no respondió"
+assert_ok "$USUARIOS_ESTADO" "GET usuarios filtro estado"
+USUARIOS_ESTADO_NO_ACTIVO=$(echo "$USUARIOS_ESTADO" | jq '[.data.items[] | select(.estado != "ACTIVO")] | length')
+[[ "$USUARIOS_ESTADO_NO_ACTIVO" == "0" ]] \
+  || fail "Filtro estado=ACTIVO: se encontraron $USUARIOS_ESTADO_NO_ACTIVO usuarios con otro estado"
+ok "GET usuarios?estado=ACTIVO → $(echo "$USUARIOS_ESTADO" | jq '.data.total') resultado(s), todos ACTIVO ✓"
+
+# UA.7 Filtro rol
+info "GET /api/admin/usuarios?rol=ADMIN_XPAY → incluye ci_admin_xpay"
+USUARIOS_ROL=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios?rol=ADMIN_XPAY") \
+  || fail "GET usuarios?rol no respondió"
+echo "$USUARIOS_ROL" | jq .
+assert_ok "$USUARIOS_ROL" "GET usuarios filtro rol"
+USUARIOS_ROL_CONTIENE=$(echo "$USUARIOS_ROL" | jq '[.data.items[] | select(.usuario == "ci_admin_xpay")] | length')
+[[ "$USUARIOS_ROL_CONTIENE" -ge 1 ]] \
+  || fail "Filtro rol=ADMIN_XPAY: no se encontró ci_admin_xpay en los resultados"
+ok "GET usuarios?rol=ADMIN_XPAY → incluye ci_admin_xpay ✓"
+
+# UA.8 soloBloqueados
+info "GET /api/admin/usuarios?soloBloqueados=true → forma correcta"
+USUARIOS_BLOQ=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios?soloBloqueados=true") \
+  || fail "GET usuarios?soloBloqueados no respondió"
+assert_ok "$USUARIOS_BLOQ" "GET usuarios soloBloqueados"
+USUARIOS_BLOQ_NO_BLOQ=$(echo "$USUARIOS_BLOQ" | jq '[.data.items[] | select(.estado != "BLOQUEADO")] | length')
+[[ "$USUARIOS_BLOQ_NO_BLOQ" == "0" ]] \
+  || fail "soloBloqueados=true: se encontraron $USUARIOS_BLOQ_NO_BLOQ usuarios no bloqueados"
+ok "GET usuarios?soloBloqueados=true → $(echo "$USUARIOS_BLOQ" | jq '.data.total') resultado(s), forma correcta ✓"
+
+# UA.9 Paginación
+info "GET /api/admin/usuarios?page=1&pageSize=1 → items <= 1, pageSize=1"
+USUARIOS_PAG=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios?page=1&pageSize=1") \
+  || fail "GET usuarios paginación no respondió"
+assert_ok "$USUARIOS_PAG" "GET usuarios paginación"
+USUARIOS_PAG_ITEMS=$(echo "$USUARIOS_PAG" | jq '.data.items | length')
+USUARIOS_PAG_SIZE=$(echo "$USUARIOS_PAG" | jq -r '.data.pageSize')
+[[ "$USUARIOS_PAG_ITEMS" -le 1 ]] \
+  || fail "Paginación pageSize=1: items esperado <=1, obtenido $USUARIOS_PAG_ITEMS"
+[[ "$USUARIOS_PAG_SIZE" == "1" ]] \
+  || fail "Paginación: pageSize esperado 1, obtenido $USUARIOS_PAG_SIZE"
+ok "GET usuarios?page=1&pageSize=1 → items=$USUARIOS_PAG_ITEMS  pageSize=$USUARIOS_PAG_SIZE ✓"
+
+# UA.10 Detalle existente — usa el idUsuario de carlos (ID_USUARIO_A, FASE 1)
+info "GET /api/admin/usuarios/\$ID_USUARIO_A (existente) → success=true, sin password_hash expuesto"
+USUARIO_DETALLE=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_A") \
+  || fail "GET usuarios/{id} existente no respondió"
+echo "$USUARIO_DETALLE" | jq .
+assert_ok "$USUARIO_DETALLE" "GET usuario detalle"
+USUARIO_DETALLE_ID=$(echo "$USUARIO_DETALLE" | jq -r '.data.idUsuario')
+[[ "$USUARIO_DETALLE_ID" == "$ID_USUARIO_A" ]] \
+  || fail "Detalle usuario: idUsuario esperado $ID_USUARIO_A, obtenido $USUARIO_DETALLE_ID"
+echo "$USUARIO_DETALLE" | grep -iq "password" \
+  && fail "SEGURIDAD: la respuesta de detalle de usuario contiene la palabra 'password' — posible fuga de password_hash"
+ok "GET usuarios/$ID_USUARIO_A → idUsuario=$USUARIO_DETALLE_ID, sin 'password' en la respuesta ✓"
+
+# UA.11 Detalle inexistente
+info "GET /api/admin/usuarios/999999 (inexistente) → 404"
+STATUS_USUARIO_404=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_ADMIN" \
+  "$API_URL/api/admin/usuarios/999999")
+[[ "$STATUS_USUARIO_404" == "404" ]] \
+  || fail "GET usuarios/999999 esperado 404, obtenido $STATUS_USUARIO_404"
+ok "GET /api/admin/usuarios/999999 → 404 ✓"
+
+echo ""
+
+# ════════════════════════════════════════════════════
 # FASE 35 — Observabilidad básica: diagnostics y correlation id
 # ════════════════════════════════════════════════════
 phase "FASE 35: Observabilidad básica — diagnostics/ping y X-Correlation-ID"

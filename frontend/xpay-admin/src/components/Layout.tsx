@@ -113,6 +113,7 @@ export function Layout() {
               <Link to="/admin/cartera-ordinaria">Cartera Ordinaria</Link>
               <Link to="/admin/wallet-recaudos-comercio">Liquidación Recaudos Comercio</Link>
               <Link to="/admin/wallet-cierres-comercio">Cierres Diarios Comercio</Link>
+              <Link to="/admin/usuarios">Usuarios</Link>
             </>
           )}
           {view === 'comercio' && <Link to="/mi-comercio">Mi Comercio</Link>}

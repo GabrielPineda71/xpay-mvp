@@ -25,6 +25,7 @@ builder.Services.AddScoped<LiquidacionComercioService>();
 builder.Services.AddScoped<RetiroComercioService>();
 builder.Services.AddScoped<ReportesService>();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<UsuarioAdminService>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<KycService>();
 builder.Services.AddScoped<BrebService>();

@@ -6,11 +6,14 @@
    !! NO EJECUTAR CONTRA QA NI PRODUCCION                            !!
    !! NO CONTIENE NI GENERA DATOS REALES — NO INVOLUCRA DINERO REAL  !!
 
-   Objetivo: crear el UNICO usuario con rol ADMIN_XPAY que necesita
-   scripts/validate-backend.sh para ejercitar POST /api/wallets/{id}/
-   recarga-manual (restringido a ADMIN_XPAY,SUPERUSUARIO desde el
-   commit 13f4aa2). No crea wallets, comercio ni QR — nada de eso es
-   necesario para este objetivo puntual.
+   Objetivo: crear el UNICO usuario con roles ADMIN_XPAY y SUPERUSUARIO
+   que necesita scripts/validate-backend.sh para ejercitar los endpoints
+   administrativos restringidos a ADMIN_XPAY,SUPERUSUARIO (commit 13f4aa2)
+   — incluye recarga-manual, liquidar-venta-qr, retiros, listados admin,
+   y (Fase USUARIOS-ADMIN-2) el nuevo GET /api/admin/usuarios. Ambos
+   roles sobre el MISMO usuario permiten probar en un solo token que el
+   endpoint acepta cualquiera de los dos, sin crear un segundo fixture.
+   No crea wallets, comercio ni QR — nada de eso es necesario aquí.
 
    Nombre de usuario y contraseña son EXCLUSIVOS de este fixture,
    distintos de cualquier usuario de QA real (qa.admin.xpay, etc.) o
@@ -34,7 +37,7 @@ SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
 GO
 
-PRINT '--- Fixture CI: ci_admin_xpay (rol ADMIN_XPAY) ---';
+PRINT '--- Fixture CI: ci_admin_xpay (roles ADMIN_XPAY + SUPERUSUARIO) ---';
 GO
 
 IF NOT EXISTS (SELECT 1 FROM unidades_negocio WHERE codigo = 'XPAY_COL')
@@ -46,6 +49,12 @@ END
 IF NOT EXISTS (SELECT 1 FROM roles WHERE codigo = 'ADMIN_XPAY')
 BEGIN
     RAISERROR ('ERROR: Rol ADMIN_XPAY no encontrado. Ejecutar 007 primero.', 16, 1);
+    RETURN;
+END
+
+IF NOT EXISTS (SELECT 1 FROM roles WHERE codigo = 'SUPERUSUARIO')
+BEGIN
+    RAISERROR ('ERROR: Rol SUPERUSUARIO no encontrado. Ejecutar 001 primero.', 16, 1);
     RETURN;
 END
 GO
@@ -92,7 +101,8 @@ END
 ELSE PRINT '  Usuario ci_admin_xpay ya existe — omitido.';
 GO
 
--- Asignacion del rol ADMIN_XPAY (unico rol requerido para este fixture).
+-- Asignacion del rol ADMIN_XPAY (ya existente en fixtures previos —
+-- se conserva sin cambios, NOT EXISTS evita duplicar si ya estaba).
 INSERT INTO usuario_roles (id_usuario, id_rol)
 SELECT u.id_usuario, r.id_rol
 FROM   usuarios u
@@ -104,8 +114,25 @@ WHERE  u.usuario = 'ci_admin_xpay'
              AND  ur.id_rol = r.id_rol
        );
 
-PRINT '  Rol asignado: ci_admin_xpay -> ADMIN_XPAY.';
+PRINT '  Rol verificado: ci_admin_xpay -> ADMIN_XPAY.';
 GO
 
-PRINT '--- Fixture CI: ci_admin_xpay listo ---';
+-- Asignacion del rol SUPERUSUARIO (Fase USUARIOS-ADMIN-2) — segundo rol
+-- activo sobre el MISMO usuario, sin tocar la asignacion de ADMIN_XPAY
+-- ni la persona ni el password_hash. NOT EXISTS = idempotente.
+INSERT INTO usuario_roles (id_usuario, id_rol)
+SELECT u.id_usuario, r.id_rol
+FROM   usuarios u
+JOIN   roles r ON r.codigo = 'SUPERUSUARIO'
+WHERE  u.usuario = 'ci_admin_xpay'
+  AND  NOT EXISTS (
+           SELECT 1 FROM usuario_roles ur
+           WHERE  ur.id_usuario = u.id_usuario
+             AND  ur.id_rol = r.id_rol
+       );
+
+PRINT '  Rol verificado: ci_admin_xpay -> SUPERUSUARIO.';
+GO
+
+PRINT '--- Fixture CI: ci_admin_xpay listo (ADMIN_XPAY + SUPERUSUARIO) ---';
 GO

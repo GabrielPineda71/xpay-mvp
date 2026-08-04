@@ -82,11 +82,11 @@ export function useAuth(): AuthCtx {
 export type UserView = 'admin' | 'wallet' | 'comercio' | 'empresa';
 
 export function isAdminUser(user: AuthUser): boolean {
-  return user.roles.includes('ADMIN_XPAY') || user.roles.includes('OPERADOR_XPAY');
+  return user.roles.includes('ADMIN_XPAY') || user.roles.includes('OPERADOR_XPAY') || user.roles.includes('SUPERUSUARIO');
 }
 
 export function getViewForUser(user: AuthUser): UserView {
-  if (user.roles.includes('ADMIN_XPAY') || user.roles.includes('OPERADOR_XPAY')) return 'admin';
+  if (user.roles.includes('ADMIN_XPAY') || user.roles.includes('OPERADOR_XPAY') || user.roles.includes('SUPERUSUARIO')) return 'admin';
   if (user.roles.includes('COMERCIO') || user.usuario === 'qa.comercio1') return 'comercio';
   if (user.usuario === 'qa.empresa1') return 'empresa';
   return 'wallet';

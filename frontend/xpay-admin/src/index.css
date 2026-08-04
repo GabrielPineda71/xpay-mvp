@@ -698,3 +698,18 @@ tr:hover td { background: #f7fafc; }
 .breb-retiros-table th { background: #f7fafc; color: #4a5568; font-weight: 700; padding: 0.35rem 0.5rem; text-align: left; border-bottom: 2px solid #e2e8f0; }
 .breb-retiros-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid #f0f0f0; color: #2d3748; }
 .breb-retiros-table tr:hover td { background: #f7fafc; }
+
+/* ── USUARIOS-ADMIN-2: listado/detalle de usuarios ─────────────────────── */
+.filter-checkbox { flex-direction: row; align-items: center; gap: 0.4rem; }
+.filter-checkbox label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: #2d3748; white-space: nowrap; }
+
+.pagination { display: flex; align-items: center; gap: 1rem; margin-top: 1rem; }
+.pagination-info { font-size: 0.85rem; color: #718096; }
+.pagination .btn-search:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.detail-grid { display: flex; flex-direction: column; gap: 1.5rem; margin-top: 1rem; }
+.detail-section { background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 1rem 1.25rem; }
+.detail-section h3 { margin: 0 0 0.75rem; font-size: 0.95rem; color: #2d3748; }
+.detail-section dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; margin: 0; }
+.detail-section dt { font-size: 0.8rem; color: #718096; font-weight: 500; }
+.detail-section dd { margin: 0; font-size: 0.85rem; color: #2d3748; }

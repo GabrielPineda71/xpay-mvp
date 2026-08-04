@@ -28,6 +28,8 @@ import { CarteraOrdinariaAdminPage } from './pages/CarteraOrdinariaAdminPage.tsx
 import { MiCarteraOrdinariaPage } from './pages/MiCarteraOrdinariaPage.tsx';
 import { AdminWalletRecaudosComercioPage } from './pages/AdminWalletRecaudosComercioPage.tsx';
 import { AdminWalletCierresDiariosComercioPage } from './pages/AdminWalletCierresDiariosComercioPage.tsx';
+import { AdminUsuariosListPage } from './pages/AdminUsuariosListPage.tsx';
+import { AdminUsuarioDetallePage } from './pages/AdminUsuarioDetallePage.tsx';
 
 // Smart redirect based on user role/view
 function UserRedirect() {
@@ -74,6 +76,8 @@ export default function App() {
                 <Route path="admin/cartera-ordinaria" element={<CarteraOrdinariaAdminPage />} />
                 <Route path="admin/wallet-recaudos-comercio" element={<AdminWalletRecaudosComercioPage />} />
                 <Route path="admin/wallet-cierres-comercio" element={<AdminWalletCierresDiariosComercioPage />} />
+                <Route path="admin/usuarios" element={<AdminUsuariosListPage />} />
+                <Route path="admin/usuarios/:id" element={<AdminUsuarioDetallePage />} />
               </Route>
 
               {/* Wallet (usuario final) routes */}
