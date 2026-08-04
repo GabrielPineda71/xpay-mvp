@@ -46,6 +46,19 @@
 
 SET XACT_ABORT ON;
 
+-- Requeridas por SQL Server para crear el índice filtrado de la línea ~190
+-- (ix_wallet_idempotencia_expiracion, WHERE estado = 'COMPLETADA'). sqlcmd
+-- fija QUOTED_IDENTIFIER en OFF por defecto salvo -I, lo que rompe el CREATE
+-- INDEX (Msg 1934). Las 7 opciones son las documentadas por Microsoft como
+-- obligatorias para índices filtrados, no solo la que falló en este entorno.
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+SET ANSI_PADDING ON;
+SET ANSI_WARNINGS ON;
+SET ARITHABORT ON;
+SET CONCAT_NULL_YIELDS_NULL ON;
+SET NUMERIC_ROUNDABORT OFF;
+
 BEGIN TRY
     BEGIN TRANSACTION;
 
