@@ -130,13 +130,38 @@ SALDO_A_INICIAL=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/mi-estado-cuen
 assert_ok "$SALDO_A_INICIAL" "saldo carlos inicial"
 assert_saldo "$SALDO_A_INICIAL" 0 "Saldo inicial carlos"
 
-info "POST /api/wallets/$ID_WALLET_A/recarga-manual (100.000)"
-RECARGA=$(post_auth_json "$TOKEN_A" "$API_URL/api/wallets/$ID_WALLET_A/recarga-manual" \
+# Fase CI-WALLET-ADMIN-FIXTURE: recarga-manual quedó restringido a
+# ADMIN_XPAY/SUPERUSUARIO (commit 13f4aa2, corrección de IDOR — antes
+# cualquier autenticado podía recargar cualquier wallet arbitraria).
+# carlos_ci_test (USUARIO_FINAL) ya no puede ejecutarlo — se usa el
+# fixture ci_admin_xpay (scripts/ci/ci_admin_xpay_fixture.sql) solo
+# para este paso puntual.
+info "POST /api/auth/login (ci_admin_xpay) — fixture ADMIN_XPAY exclusivo de CI"
+LOGIN_ADMIN=$(post_json "$API_URL/api/auth/login" '{
+  "usuario": "ci_admin_xpay",
+  "password": "CI-Fixture-AdminXpay#2026"
+}') || fail "POST login ci_admin_xpay no respondió"
+assert_ok "$LOGIN_ADMIN" "login ci_admin_xpay"
+TOKEN_ADMIN=$(echo "$LOGIN_ADMIN" | jq -r '.data.token')
+[[ -n "$TOKEN_ADMIN" && "$TOKEN_ADMIN" != "null" ]] || fail "Token JWT vacío tras login de ci_admin_xpay"
+ok "Login ci_admin_xpay → token=${TOKEN_ADMIN:0:30}..."
+
+info "POST /api/wallets/$ID_WALLET_A/recarga-manual con USUARIO_FINAL (carlos) → debe retornar 403"
+STATUS_RECARGA_USUARIO_FINAL=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/wallets/$ID_WALLET_A/recarga-manual" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_A" \
+  -d "{\"valor\": 100000, \"creadoPor\": $ID_USUARIO_A, \"observacion\": \"Recarga CI fase 1\"}")
+[[ "$STATUS_RECARGA_USUARIO_FINAL" == "403" ]] \
+  || fail "recarga-manual con USUARIO_FINAL esperado 403, obtenido $STATUS_RECARGA_USUARIO_FINAL"
+ok "recarga-manual con USUARIO_FINAL (carlos) → 403 Forbidden ✓"
+
+info "POST /api/wallets/$ID_WALLET_A/recarga-manual (100.000) con ADMIN_XPAY (ci_admin_xpay)"
+RECARGA=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/wallets/$ID_WALLET_A/recarga-manual" \
   "{\"valor\": 100000, \"creadoPor\": $ID_USUARIO_A, \"observacion\": \"Recarga CI fase 1\"}") \
-  || fail "POST recarga carlos no respondió"
+  || fail "POST recarga (ci_admin_xpay) no respondió"
 echo "$RECARGA" | jq .
 assert_ok "$RECARGA" "recarga carlos"
-ok "Recarga carlos 100.000 → OK"
+ok "Recarga carlos 100.000 (vía ci_admin_xpay) → OK"
 
 info "GET /api/reportes/mi-estado-cuenta (carlos, tras recarga)"
 SALDO_A_RECARGADO=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/mi-estado-cuenta") \
