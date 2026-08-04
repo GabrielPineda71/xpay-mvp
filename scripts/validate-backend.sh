@@ -1197,7 +1197,12 @@ for accion in activar inactivar desbloquear; do
 done
 ok "activar/inactivar/desbloquear sobre la propia cuenta → 400 en los 3 ✓"
 
-# UA3.11 Protección del último administrador — usa el fixture ci_admin_guard
+# UA3.11 Protección del último administrador — dinámico: inactiva TODOS los
+# administradores auxiliares activos (cualquier usuario distinto de
+# ci_admin_xpay con ADMIN_XPAY/SUPERUSUARIO activo), sin hardcodear una
+# lista fija de fixtures. Así la prueba sigue siendo válida sin importar
+# cuántos fixtures administrativos de CI existan (hoy: ci_admin_guard,
+# ci_admin_solo; cualquiera que se agregue después no requiere tocar esto).
 info "POST /api/auth/login (ci_admin_guard) — segundo fixture ADMIN, exclusivo de esta prueba"
 LOGIN_ADMIN_GUARD=$(post_json "$API_URL/api/auth/login" '{
   "usuario": "ci_admin_guard",
@@ -1208,27 +1213,38 @@ TOKEN_ADMIN_GUARD=$(echo "$LOGIN_ADMIN_GUARD" | jq -r '.data.token')
 [[ -n "$TOKEN_ADMIN_GUARD" && "$TOKEN_ADMIN_GUARD" != "null" ]] || fail "Token JWT vacío tras login de ci_admin_guard"
 ok "Login ci_admin_guard → token=${TOKEN_ADMIN_GUARD:0:30}..."
 
-# Se inactiva ci_admin_guard directamente por SQL (no por el endpoint, para
-# no depender de la regla que se está probando) DESPUES de obtener el token
+# Descubrimiento dinámico — cualquier usuario ACTIVO distinto de
+# ci_admin_xpay que tenga ADMIN_XPAY/SUPERUSUARIO activo en este momento,
+# sin asumir nombres fijos de fixture.
+ADMINS_AUXILIARES=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; SELECT DISTINCT u.usuario FROM usuarios u JOIN usuario_roles ur ON ur.id_usuario = u.id_usuario JOIN roles r ON r.id_rol = ur.id_rol WHERE u.usuario <> 'ci_admin_xpay' AND u.estado = 'ACTIVO' AND ur.estado = 'ACTIVO' AND r.codigo IN ('ADMIN_XPAY','SUPERUSUARIO')" \
+  -h -1 | tr -d '\r' | sed 's/[[:space:]]*$//' | sed '/^$/d')
+[[ -n "$ADMINS_AUXILIARES" ]] \
+  || fail "No se detectó ningún administrador auxiliar activo distinto de ci_admin_xpay — no se puede ejecutar la prueba del último administrador"
+ADMINS_AUX_SQL_LIST=$(echo "$ADMINS_AUXILIARES" | sed "s/^/'/;s/$/'/" | paste -sd, -)
+info "Administradores auxiliares detectados dinámicamente: $(echo "$ADMINS_AUXILIARES" | tr '\n' ',' | sed 's/,$//')"
+
+# Se inactivan TODOS por SQL directo (no por el endpoint, para no depender de
+# la regla que se está probando) DESPUES de obtener el token de ci_admin_guard
 # — el JWT vigente se usa deliberadamente como mecanismo controlado de esta
 # prueba (la invalidación inmediata de JWT al inactivar no se resuelve en
 # esta fase, según lo autorizado). trap EXIT garantiza la restauración a
 # ACTIVO incluso si algún assert posterior de esta fase (o de fases
 # siguientes) falla y aborta el script.
-restaurar_admin_guard() {
+restaurar_admins_auxiliares() {
   "$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
-    -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='ACTIVO' WHERE usuario='ci_admin_guard';" \
+    -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='ACTIVO' WHERE usuario IN ($ADMINS_AUX_SQL_LIST);" \
     > /dev/null 2>&1 || true
 }
-trap restaurar_admin_guard EXIT
+trap restaurar_admins_auxiliares EXIT
 
 "$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
-  -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='INACTIVO' WHERE usuario='ci_admin_guard';" \
-  > /dev/null || fail "No se pudo inactivar ci_admin_guard por SQL directo"
-ok "ci_admin_guard inactivado por SQL directo (temporal, se restaura al finalizar) ✓"
+  -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='INACTIVO' WHERE usuario IN ($ADMINS_AUX_SQL_LIST);" \
+  > /dev/null || fail "No se pudieron inactivar los administradores auxiliares por SQL directo"
+ok "Administradores auxiliares inactivados por SQL directo (temporal, se restauran al finalizar) ✓"
 
 check_sql_value \
-  "Administradores ACTIVO con ADMIN_XPAY/SUPERUSUARIO tras inactivar ci_admin_guard = 1 (solo ci_admin_xpay)" \
+  "Administradores ACTIVO con ADMIN_XPAY/SUPERUSUARIO tras inactivar auxiliares = 1 (solo ci_admin_xpay)" \
   "SELECT COUNT(DISTINCT u.id_usuario) FROM usuarios u JOIN usuario_roles ur ON ur.id_usuario = u.id_usuario JOIN roles r ON r.id_rol = ur.id_rol WHERE u.estado = 'ACTIVO' AND ur.estado = 'ACTIVO' AND r.codigo IN ('ADMIN_XPAY','SUPERUSUARIO')" \
   "1"
 
@@ -1241,9 +1257,9 @@ STATUS_ULTIMO_ADMIN=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
 ok "Protección del último administrador → 400 ✓"
 
 "$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
-  -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='ACTIVO' WHERE usuario='ci_admin_guard';" \
-  > /dev/null || fail "No se pudo restaurar ci_admin_guard a ACTIVO"
-ok "ci_admin_guard restaurado a ACTIVO ✓"
+  -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='ACTIVO' WHERE usuario IN ($ADMINS_AUX_SQL_LIST);" \
+  > /dev/null || fail "No se pudieron restaurar los administradores auxiliares a ACTIVO"
+ok "Administradores auxiliares restaurados a ACTIVO ✓"
 trap - EXIT
 
 # UA3.12 El detalle refleja los estados finales
