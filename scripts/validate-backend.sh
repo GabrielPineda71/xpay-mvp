@@ -39,9 +39,15 @@ get_auth_json() {
 }
 
 post_auth_json() {
-  local token="$1" url="$2" body="$3"
-  curl -sf -X POST "$url" -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $token" --max-time 15 -d "$body"
+  local token="$1" url="$2" body="$3" idempotency_key="${4:-}"
+  if [[ -n "$idempotency_key" ]]; then
+    curl -sf -X POST "$url" -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $token" -H "Idempotency-Key: $idempotency_key" \
+      --max-time 15 -d "$body"
+  else
+    curl -sf -X POST "$url" -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $token" --max-time 15 -d "$body"
+  fi
 }
 
 assert_ok() {
@@ -215,9 +221,14 @@ assert_ok "$WALLET_B" "wallet maria"
 ID_WALLET_B=$(echo "$WALLET_B" | jq -r '.data.idWallet')
 ok "Wallet maria → idWallet=$ID_WALLET_B"
 
+# Fase CI-WALLET-IDEMPOTENCY-HEADER: /api/wallets/transferencia exige el
+# header Idempotency-Key (Fase 71.2-E-G, commit 13f4aa2) — GUID nuevo e
+# independiente por operación lógica, nunca reutilizado entre llamadas.
+IDEMPOTENCY_KEY_TRANSFERENCIA=$(python3 -c 'import uuid; print(uuid.uuid4())')
 info "POST /api/wallets/transferencia (25.000)"
 TRANSFERENCIA=$(post_auth_json "$TOKEN_A" "$API_URL/api/wallets/transferencia" \
-  "{\"idWalletOrigen\": $ID_WALLET_A, \"idWalletDestino\": $ID_WALLET_B, \"valor\": 25000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Transferencia CI fase 2\"}") \
+  "{\"idWalletOrigen\": $ID_WALLET_A, \"idWalletDestino\": $ID_WALLET_B, \"valor\": 25000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Transferencia CI fase 2\"}" \
+  "$IDEMPOTENCY_KEY_TRANSFERENCIA") \
   || fail "POST transferencia no respondió"
 echo "$TRANSFERENCIA" | jq .
 assert_ok "$TRANSFERENCIA" "transferencia"
@@ -239,9 +250,14 @@ assert_saldo "$SALDO_B_POST_T" 25000 "Saldo maria tras transferencia"
 # ════════════════════════════════════════════════════
 phase "FASE 3: Pago a comercio por QR"
 
+# Fase CI-WALLET-IDEMPOTENCY-HEADER: /api/qr/pagar también exige
+# Idempotency-Key (mismo helper duplicado en QrController) — GUID propio,
+# distinto del usado en la transferencia de FASE 2.
+IDEMPOTENCY_KEY_PAGAR_QR=$(python3 -c 'import uuid; print(uuid.uuid4())')
 info "POST /api/qr/pagar (30.000)"
 PAGO_QR=$(post_auth_json "$TOKEN_A" "$API_URL/api/qr/pagar" \
-  "{\"codigoQr\": \"QR-DEMO-XPAY-001\", \"idWalletUsuario\": $ID_WALLET_A, \"valor\": 30000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Pago QR CI fase 3\"}") \
+  "{\"codigoQr\": \"QR-DEMO-XPAY-001\", \"idWalletUsuario\": $ID_WALLET_A, \"valor\": 30000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Pago QR CI fase 3\"}" \
+  "$IDEMPOTENCY_KEY_PAGAR_QR") \
   || fail "POST /api/qr/pagar no respondió"
 echo "$PAGO_QR" | jq .
 assert_ok "$PAGO_QR" "pago QR"
