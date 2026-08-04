@@ -713,3 +713,7 @@ tr:hover td { background: #f7fafc; }
 .detail-section dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; margin: 0; }
 .detail-section dt { font-size: 0.8rem; color: #718096; font-weight: 500; }
 .detail-section dd { margin: 0; font-size: 0.85rem; color: #2d3748; }
+
+/* ── USUARIOS-ADMIN-3: acciones activar/inactivar/desbloquear ──────────── */
+.detail-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap; }
+.detail-actions .btn-search:disabled { opacity: 0.5; cursor: not-allowed; }

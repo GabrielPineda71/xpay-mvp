@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { get } from '../api/client.ts';
+import { get, post } from '../api/client.ts';
 import { fmtDate } from '../utils.ts';
+import { useAuth } from '../auth/AuthContext.tsx';
 
 interface RolDetalle {
   codigo:          string;
@@ -36,6 +37,15 @@ interface UsuarioDetalle {
 }
 
 interface ApiResp { success: boolean; data: UsuarioDetalle; }
+interface AccionResp { success: boolean; message: string; data: UsuarioDetalle; }
+
+type Accion = 'activar' | 'inactivar' | 'desbloquear';
+
+const CONFIRMACION: Record<Accion, (usuario: string) => string> = {
+  activar:      u => `¿Confirmas activar a ${u}? Podrá iniciar sesión nuevamente.`,
+  inactivar:    u => `¿Confirmas inactivar a ${u}? No podrá iniciar sesión hasta que sea reactivado.`,
+  desbloquear:  u => `¿Confirmas desbloquear a ${u}? Se reiniciarán sus intentos fallidos y podrá iniciar sesión nuevamente.`,
+};
 
 function estadoBadge(estado: string) {
   const cls = estado === 'ACTIVO' ? 'badge-ok' : 'badge-warn';
@@ -49,11 +59,15 @@ function boolTexto(v: boolean) {
 export function AdminUsuarioDetallePage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [data,    setData]    = useState<UsuarioDetalle | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
+  const { user } = useAuth();
+  const [data,        setData]        = useState<UsuarioDetalle | null>(null);
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState('');
+  const [actionBusy,  setActionBusy]  = useState(false);
+  const [actionMsg,   setActionMsg]   = useState('');
+  const [actionError, setActionError] = useState('');
 
-  useEffect(() => {
+  const cargarDetalle = useCallback(() => {
     if (!id) return;
     setLoading(true);
     setError('');
@@ -62,6 +76,30 @@ export function AdminUsuarioDetallePage() {
       .catch(err => { setData(null); setError((err as Error).message); })
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => { cargarDetalle(); }, [cargarDetalle]);
+
+  async function ejecutarAccion(accion: Accion) {
+    if (!id || !data) return;
+    if (!confirm(CONFIRMACION[accion](data.usuario))) return;
+    setActionBusy(true);
+    setActionMsg('');
+    setActionError('');
+    try {
+      const r = await post<AccionResp>(`/api/admin/usuarios/${id}/${accion}`, {});
+      setActionMsg(r.message);
+      // No se actualiza el estado local de forma optimista — se vuelve a
+      // consultar el detalle real para reflejar exactamente lo que el
+      // backend confirmó (estado, intentosFallidos, fechaBloqueo, etc.).
+      cargarDetalle();
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  const esPropiaCuenta = data != null && user != null && data.idUsuario === user.idUsuario;
 
   return (
     <div className="page">
@@ -102,6 +140,49 @@ export function AdminUsuarioDetallePage() {
               <dt>Fecha de creación</dt><dd className="mono">{fmtDate(data.fechaCreacion)}</dd>
               <dt>Última actualización</dt><dd className="mono">{fmtDate(data.fechaActualizacion)}</dd>
             </dl>
+
+            <div className="detail-actions">
+              {data.estado === 'ACTIVO' && (
+                <button
+                  type="button"
+                  className="btn-search"
+                  style={{ background: '#c53030' }}
+                  disabled={actionBusy || esPropiaCuenta}
+                  title={esPropiaCuenta ? 'No puedes inactivar tu propia cuenta.' : undefined}
+                  onClick={() => ejecutarAccion('inactivar')}
+                >
+                  {actionBusy ? 'Procesando...' : 'Inactivar'}
+                </button>
+              )}
+              {data.estado === 'INACTIVO' && (
+                <button
+                  type="button"
+                  className="btn-search"
+                  disabled={actionBusy || esPropiaCuenta}
+                  title={esPropiaCuenta ? 'No puedes activar tu propia cuenta.' : undefined}
+                  onClick={() => ejecutarAccion('activar')}
+                >
+                  {actionBusy ? 'Procesando...' : 'Activar'}
+                </button>
+              )}
+              {data.estado === 'BLOQUEADO' && (
+                <button
+                  type="button"
+                  className="btn-search"
+                  disabled={actionBusy || esPropiaCuenta}
+                  title={esPropiaCuenta ? 'No puedes desbloquear tu propia cuenta.' : undefined}
+                  onClick={() => ejecutarAccion('desbloquear')}
+                >
+                  {actionBusy ? 'Procesando...' : 'Desbloquear'}
+                </button>
+              )}
+              {esPropiaCuenta && (
+                <span className="results-meta">No puedes ejecutar acciones sobre tu propia cuenta.</span>
+              )}
+            </div>
+
+            {actionMsg   && <div className="breb-msg-ok">{actionMsg}</div>}
+            {actionError && <div className="error-msg">Error: {actionError}</div>}
           </div>
 
           <div className="detail-section">

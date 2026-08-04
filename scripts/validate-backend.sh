@@ -1057,6 +1057,213 @@ ok "GET /api/admin/usuarios/999999 → 404 ✓"
 echo ""
 
 # ════════════════════════════════════════════════════
+# FASE USUARIOS-ADMIN-3 — Activar, inactivar y desbloquear usuarios
+# ════════════════════════════════════════════════════
+phase "FASE USUARIOS-ADMIN-3: Activar, inactivar y desbloquear usuarios"
+
+# ID del propio ci_admin_xpay, reutilizando la respuesta de login ya
+# capturada en FASE 1 (LOGIN_ADMIN) — necesario para el caso de auto-acción.
+ID_USUARIO_ADMIN=$(echo "$LOGIN_ADMIN" | jq -r '.data.idUsuario')
+
+# Usuario final CI dedicado a esta fase — nunca se reutiliza carlos/maria
+# para no afectar los saldos/estados que otras fases ya validaron.
+info "POST /api/usuarios/registro-final (usuario dedicado a USUARIOS-ADMIN-3)"
+REGISTRO_ET=$(post_json "$API_URL/api/usuarios/registro-final" '{
+  "idUnidadNegocio": 1,
+  "tipoDocumento": "CC",
+  "numeroDocumento": "1099009999",
+  "primerNombre": "Estado",
+  "primerApellido": "Test",
+  "celular": "3009998888",
+  "email": "estado.test@ci-test.com",
+  "usuario": "estadotest_ci_test",
+  "password": "Xpay@Test1!"
+}') || fail "POST registro estadotest no respondió"
+assert_ok "$REGISTRO_ET" "registro estadotest"
+ID_USUARIO_ET=$(echo "$REGISTRO_ET" | jq -r '.idUsuario')
+ok "Registro estadotest_ci_test → idUsuario=$ID_USUARIO_ET"
+
+# UA3.1 ADMIN_XPAY inactiva otro usuario
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/inactivar (ADMIN_XPAY) → 200, estado=INACTIVO"
+INACTIVAR_ET=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/inactivar" "{}") \
+  || fail "POST inactivar estadotest no respondió"
+echo "$INACTIVAR_ET" | jq .
+assert_ok "$INACTIVAR_ET" "inactivar estadotest"
+ESTADO_ET_INACTIVO=$(echo "$INACTIVAR_ET" | jq -r '.data.estado')
+[[ "$ESTADO_ET_INACTIVO" == "INACTIVO" ]] \
+  || fail "Tras inactivar: estado esperado INACTIVO, obtenido $ESTADO_ET_INACTIVO"
+ok "Usuario inactivado → estado=$ESTADO_ET_INACTIVO ✓"
+
+# UA3.2 Login rechazado estando INACTIVO
+info "POST /api/auth/login (estadotest, INACTIVO) → 400"
+STATUS_LOGIN_INACTIVO=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/auth/login" -H "Content-Type: application/json" \
+  -d '{"usuario":"estadotest_ci_test","password":"Xpay@Test1!"}')
+[[ "$STATUS_LOGIN_INACTIVO" == "400" ]] \
+  || fail "Login usuario INACTIVO esperado 400, obtenido $STATUS_LOGIN_INACTIVO"
+ok "Login con usuario INACTIVO → 400 ✓"
+
+# UA3.3 Activar usuario inactivo
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/activar (ADMIN_XPAY) → 200, estado=ACTIVO"
+ACTIVAR_ET=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/activar" "{}") \
+  || fail "POST activar estadotest no respondió"
+echo "$ACTIVAR_ET" | jq .
+assert_ok "$ACTIVAR_ET" "activar estadotest"
+ESTADO_ET_ACTIVO=$(echo "$ACTIVAR_ET" | jq -r '.data.estado')
+[[ "$ESTADO_ET_ACTIVO" == "ACTIVO" ]] \
+  || fail "Tras activar: estado esperado ACTIVO, obtenido $ESTADO_ET_ACTIVO"
+ok "Usuario activado → estado=$ESTADO_ET_ACTIVO ✓"
+
+# UA3.4 Login exitoso tras activar
+info "POST /api/auth/login (estadotest, ACTIVO) → success=true"
+LOGIN_ET_OK=$(post_json "$API_URL/api/auth/login" '{"usuario":"estadotest_ci_test","password":"Xpay@Test1!"}') \
+  || fail "Login estadotest tras activar no respondió"
+assert_ok "$LOGIN_ET_OK" "login estadotest tras activar"
+ok "Login estadotest tras activar → success=true ✓"
+
+# UA3.5 Bloqueo real por 5 intentos fallidos
+info "5 intentos fallidos consecutivos → bloqueo automático (comportamiento ya existente de AuthService)"
+for i in 1 2 3 4 5; do
+  curl -s -o /dev/null --max-time 15 -X POST "$API_URL/api/auth/login" \
+    -H "Content-Type: application/json" \
+    -d '{"usuario":"estadotest_ci_test","password":"ClaveIncorrecta!"}'
+done
+DETALLE_ET_BLOQUEADO=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET") \
+  || fail "GET detalle estadotest tras intentos fallidos no respondió"
+ESTADO_ET_BLOQUEADO=$(echo "$DETALLE_ET_BLOQUEADO" | jq -r '.data.estado')
+[[ "$ESTADO_ET_BLOQUEADO" == "BLOQUEADO" ]] \
+  || fail "Tras 5 intentos fallidos: estado esperado BLOQUEADO, obtenido $ESTADO_ET_BLOQUEADO"
+ok "5 intentos fallidos → estado=$ESTADO_ET_BLOQUEADO ✓"
+
+# UA3.6 Desbloquear y limpiar campos
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/desbloquear (ADMIN_XPAY) → 200, campos limpiados"
+DESBLOQUEAR_ET=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/desbloquear" "{}") \
+  || fail "POST desbloquear estadotest no respondió"
+echo "$DESBLOQUEAR_ET" | jq .
+assert_ok "$DESBLOQUEAR_ET" "desbloquear estadotest"
+ESTADO_ET_DESBLOQ=$(echo "$DESBLOQUEAR_ET" | jq -r '.data.estado')
+INTENTOS_ET_DESBLOQ=$(echo "$DESBLOQUEAR_ET" | jq -r '.data.intentosFallidos')
+FECHA_BLOQ_ET_DESBLOQ=$(echo "$DESBLOQUEAR_ET" | jq -r '.data.fechaBloqueo')
+MOTIVO_BLOQ_ET_DESBLOQ=$(echo "$DESBLOQUEAR_ET" | jq -r '.data.motivoBloqueo')
+[[ "$ESTADO_ET_DESBLOQ" == "ACTIVO" ]] \
+  || fail "Tras desbloquear: estado esperado ACTIVO, obtenido $ESTADO_ET_DESBLOQ"
+[[ "$INTENTOS_ET_DESBLOQ" == "0" ]] \
+  || fail "Tras desbloquear: intentosFallidos esperado 0, obtenido $INTENTOS_ET_DESBLOQ"
+[[ "$FECHA_BLOQ_ET_DESBLOQ" == "null" ]] \
+  || fail "Tras desbloquear: fechaBloqueo esperado null, obtenido $FECHA_BLOQ_ET_DESBLOQ"
+[[ "$MOTIVO_BLOQ_ET_DESBLOQ" == "null" ]] \
+  || fail "Tras desbloquear: motivoBloqueo esperado null, obtenido $MOTIVO_BLOQ_ET_DESBLOQ"
+ok "Usuario desbloqueado → estado=$ESTADO_ET_DESBLOQ intentosFallidos=$INTENTOS_ET_DESBLOQ fechaBloqueo=null motivoBloqueo=null ✓"
+
+# UA3.7 Desbloquear un usuario ACTIVO → 409
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/desbloquear (ya ACTIVO) → 409"
+STATUS_DESBLOQ_409=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/desbloquear" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_DESBLOQ_409" == "409" ]] \
+  || fail "Desbloquear usuario ACTIVO esperado 409, obtenido $STATUS_DESBLOQ_409"
+ok "Desbloquear usuario ACTIVO → 409 ✓"
+
+# UA3.8 USUARIO_FINAL → 403 en los 3 endpoints
+info "Los 3 endpoints con USUARIO_FINAL (carlos) → 403"
+for accion in activar inactivar desbloquear; do
+  STATUS_UF_403=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+    -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/$accion" \
+    -H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" -d '{}')
+  [[ "$STATUS_UF_403" == "403" ]] \
+    || fail "$accion con USUARIO_FINAL esperado 403, obtenido $STATUS_UF_403"
+done
+ok "activar/inactivar/desbloquear con USUARIO_FINAL → 403 en los 3 ✓"
+
+# UA3.9 Sin token → 401 en los 3 endpoints
+info "Los 3 endpoints sin token → 401"
+for accion in activar inactivar desbloquear; do
+  STATUS_NOAUTH_401=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+    -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/$accion" \
+    -H "Content-Type: application/json" -d '{}')
+  [[ "$STATUS_NOAUTH_401" == "401" ]] \
+    || fail "$accion sin token esperado 401, obtenido $STATUS_NOAUTH_401"
+done
+ok "activar/inactivar/desbloquear sin token → 401 en los 3 ✓"
+
+# UA3.10 Auto-acción → 400 en los 3 endpoints (ci_admin_xpay sobre sí mismo)
+info "Los 3 endpoints sobre la propia cuenta (ci_admin_xpay) → 400"
+for accion in activar inactivar desbloquear; do
+  STATUS_SELF_400=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+    -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ADMIN/$accion" \
+    -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" -d '{}')
+  [[ "$STATUS_SELF_400" == "400" ]] \
+    || fail "$accion sobre la propia cuenta esperado 400, obtenido $STATUS_SELF_400"
+done
+ok "activar/inactivar/desbloquear sobre la propia cuenta → 400 en los 3 ✓"
+
+# UA3.11 Protección del último administrador — usa el fixture ci_admin_guard
+info "POST /api/auth/login (ci_admin_guard) — segundo fixture ADMIN, exclusivo de esta prueba"
+LOGIN_ADMIN_GUARD=$(post_json "$API_URL/api/auth/login" '{
+  "usuario": "ci_admin_guard",
+  "password": "CI-Fixture-AdminGuard#2026"
+}') || fail "POST login ci_admin_guard no respondió"
+assert_ok "$LOGIN_ADMIN_GUARD" "login ci_admin_guard"
+TOKEN_ADMIN_GUARD=$(echo "$LOGIN_ADMIN_GUARD" | jq -r '.data.token')
+[[ -n "$TOKEN_ADMIN_GUARD" && "$TOKEN_ADMIN_GUARD" != "null" ]] || fail "Token JWT vacío tras login de ci_admin_guard"
+ok "Login ci_admin_guard → token=${TOKEN_ADMIN_GUARD:0:30}..."
+
+# Se inactiva ci_admin_guard directamente por SQL (no por el endpoint, para
+# no depender de la regla que se está probando) DESPUES de obtener el token
+# — el JWT vigente se usa deliberadamente como mecanismo controlado de esta
+# prueba (la invalidación inmediata de JWT al inactivar no se resuelve en
+# esta fase, según lo autorizado). trap EXIT garantiza la restauración a
+# ACTIVO incluso si algún assert posterior de esta fase (o de fases
+# siguientes) falla y aborta el script.
+restaurar_admin_guard() {
+  "$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+    -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='ACTIVO' WHERE usuario='ci_admin_guard';" \
+    > /dev/null 2>&1 || true
+}
+trap restaurar_admin_guard EXIT
+
+"$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='INACTIVO' WHERE usuario='ci_admin_guard';" \
+  > /dev/null || fail "No se pudo inactivar ci_admin_guard por SQL directo"
+ok "ci_admin_guard inactivado por SQL directo (temporal, se restaura al finalizar) ✓"
+
+check_sql_value \
+  "Administradores ACTIVO con ADMIN_XPAY/SUPERUSUARIO tras inactivar ci_admin_guard = 1 (solo ci_admin_xpay)" \
+  "SELECT COUNT(DISTINCT u.id_usuario) FROM usuarios u JOIN usuario_roles ur ON ur.id_usuario = u.id_usuario JOIN roles r ON r.id_rol = ur.id_rol WHERE u.estado = 'ACTIVO' AND ur.estado = 'ACTIVO' AND r.codigo IN ('ADMIN_XPAY','SUPERUSUARIO')" \
+  "1"
+
+info "POST /api/admin/usuarios/$ID_USUARIO_ADMIN/inactivar (con TOKEN_ADMIN_GUARD, único admin restante) → 400"
+STATUS_ULTIMO_ADMIN=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ADMIN/inactivar" \
+  -H "Authorization: Bearer $TOKEN_ADMIN_GUARD" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_ULTIMO_ADMIN" == "400" ]] \
+  || fail "Inactivar último administrador esperado 400, obtenido $STATUS_ULTIMO_ADMIN"
+ok "Protección del último administrador → 400 ✓"
+
+"$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='ACTIVO' WHERE usuario='ci_admin_guard';" \
+  > /dev/null || fail "No se pudo restaurar ci_admin_guard a ACTIVO"
+ok "ci_admin_guard restaurado a ACTIVO ✓"
+trap - EXIT
+
+# UA3.12 El detalle refleja los estados finales
+info "GET /api/admin/usuarios/$ID_USUARIO_ET (detalle final) → estado=ACTIVO"
+DETALLE_ET_FINAL=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET") \
+  || fail "GET detalle final estadotest no respondió"
+ESTADO_ET_FINAL=$(echo "$DETALLE_ET_FINAL" | jq -r '.data.estado')
+[[ "$ESTADO_ET_FINAL" == "ACTIVO" ]] \
+  || fail "Detalle final estadotest: estado esperado ACTIVO, obtenido $ESTADO_ET_FINAL"
+ok "Detalle final refleja estado=$ESTADO_ET_FINAL ✓"
+
+# UA3.13 Auditoría persistente creada
+check_sql_value \
+  "Auditoría USUARIO_INACTIVAR registrada para id_entidad=$ID_USUARIO_ET" \
+  "SELECT COUNT(*) FROM auditoria WHERE modulo = 'USUARIOS_ADMIN' AND accion = 'USUARIO_INACTIVAR' AND entidad = 'usuarios' AND id_entidad = '$ID_USUARIO_ET' AND resultado = 'EXITOSO'" \
+  "1"
+
+echo ""
+
+# ════════════════════════════════════════════════════
 # FASE 35 — Observabilidad básica: diagnostics y correlation id
 # ════════════════════════════════════════════════════
 phase "FASE 35: Observabilidad básica — diagnostics/ping y X-Correlation-ID"
