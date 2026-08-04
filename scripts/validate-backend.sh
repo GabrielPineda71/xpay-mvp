@@ -284,7 +284,7 @@ check_sql_value \
 phase "FASE 4: Liquidación de ventas QR al comercio"
 
 info "POST /api/comercios/liquidar-venta-qr (idVentaQr=$ID_VENTA_QR)"
-LIQUIDACION=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/liquidar-venta-qr" \
+LIQUIDACION=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/liquidar-venta-qr" \
   "{\"idVentaQr\": $ID_VENTA_QR, \"creadoPor\": $ID_USUARIO_A, \"observacion\": \"Liquidacion CI fase 4\"}") \
   || fail "POST liquidar-venta-qr no respondió"
 echo "$LIQUIDACION" | jq .
@@ -297,7 +297,7 @@ ESTADO_VENTA_LIQ=$(echo "$LIQUIDACION"  | jq -r '.data.estadoVenta')
 ok "Liquidación → idComercio=$ID_COMERCIO  idWalletComercio=$ID_WALLET_COMERCIO  estadoVenta=$ESTADO_VENTA_LIQ"
 
 info "Doble liquidación debe retornar error"
-DOBLE_LIQ=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/liquidar-venta-qr" \
+DOBLE_LIQ=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/liquidar-venta-qr" \
   "{\"idVentaQr\": $ID_VENTA_QR, \"creadoPor\": $ID_USUARIO_A}") || true
 [[ "$(echo "$DOBLE_LIQ" | jq -r '.success' 2>/dev/null || echo false)" != "true" ]] \
   || fail "La doble liquidación debió fallar"
@@ -314,7 +314,7 @@ check_sql_value \
   "30000"
 
 info "POST /api/comercios/solicitar-retiro (idComercio=$ID_COMERCIO, valor=20000)"
-RETIRO=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/solicitar-retiro" \
+RETIRO=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/solicitar-retiro" \
   "{\"idComercio\": $ID_COMERCIO, \"valor\": 20000, \"medioRetiro\": \"TRANSFERENCIA_BANCARIA\", \"banco\": \"Banco Demo\", \"tipoCuenta\": \"AHORROS\", \"numeroCuenta\": \"1234567890\", \"titularCuenta\": \"Comercio Demo XPAY\", \"documentoTitular\": \"900123456\", \"observacion\": \"Retiro CI fase 5\", \"creadoPor\": $ID_USUARIO_A}") \
   || fail "POST solicitar-retiro no respondió"
 echo "$RETIRO" | jq .
@@ -326,7 +326,7 @@ ESTADO_RETIRO=$(echo "$RETIRO" | jq -r '.data.estado')
 ok "Retiro → idRetiro=$ID_RETIRO  valor=20000  estado=$ESTADO_RETIRO"
 
 info "GET /api/comercios/retiros/$ID_RETIRO → debe retornar estado=PENDIENTE"
-RETIRO_GET=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/$ID_RETIRO") \
+RETIRO_GET=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/retiros/$ID_RETIRO") \
   || fail "GET retiros/$ID_RETIRO no respondió"
 echo "$RETIRO_GET" | jq .
 assert_ok "$RETIRO_GET" "GET retiro por ID"
@@ -337,7 +337,7 @@ ok "GET /api/comercios/retiros/$ID_RETIRO → estado=$RETIRO_GET_ESTADO ✓"
 
 info "GET /api/comercios/retiros/0 → debe retornar 400 (ID inválido)"
 STATUS_RETIRO_INVALIDO=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
-  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" \
   "$API_URL/api/comercios/retiros/0")
 [[ "$STATUS_RETIRO_INVALIDO" == "400" ]] \
   || fail "GET retiros/0 esperado 400, obtenido $STATUS_RETIRO_INVALIDO"
@@ -345,7 +345,7 @@ ok "GET retiros/0 → 400 (ID inválido) ✓"
 
 info "GET /api/comercios/retiros/99999 → debe retornar 400 (no existe)"
 STATUS_RETIRO_NO_EXISTE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
-  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" \
   "$API_URL/api/comercios/retiros/99999")
 [[ "$STATUS_RETIRO_NO_EXISTE" == "400" ]] \
   || fail "GET retiros/99999 esperado 400, obtenido $STATUS_RETIRO_NO_EXISTE"
@@ -359,7 +359,7 @@ STATUS_RETIRO_NO_AUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
 ok "GET retiros sin token → 401 ✓"
 
 info "GET /api/comercios/retiros (listado) → debe retornar success=true y total >= 1"
-RETIROS_LIST=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros") \
+RETIROS_LIST=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/retiros") \
   || fail "GET /api/comercios/retiros (listado) no respondió"
 echo "$RETIROS_LIST" | jq .
 assert_ok "$RETIROS_LIST" "GET listado de retiros"
@@ -372,7 +372,7 @@ RETIROS_ITEMS=$(echo "$RETIROS_LIST" | jq '.data.items | length')
 ok "GET /api/comercios/retiros → total=$RETIROS_TOTAL  items=$RETIROS_ITEMS ✓"
 
 info "GET /api/comercios/retiros?estado=PENDIENTE → debe traer al menos 1"
-RETIROS_PEND=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros?estado=PENDIENTE") \
+RETIROS_PEND=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/retiros?estado=PENDIENTE") \
   || fail "GET retiros?estado=PENDIENTE no respondió"
 echo "$RETIROS_PEND" | jq .
 assert_ok "$RETIROS_PEND" "GET listado retiros PENDIENTE"
@@ -389,7 +389,7 @@ STATUS_LISTA_NO_AUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
 ok "GET /api/comercios/retiros sin token → 401 ✓"
 
 info "Retiro con saldo insuficiente debe retornar error"
-RETIRO_INVALIDO=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/solicitar-retiro" \
+RETIRO_INVALIDO=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/solicitar-retiro" \
   "{\"idComercio\": $ID_COMERCIO, \"valor\": 99999, \"creadoPor\": $ID_USUARIO_A}") || true
 [[ "$(echo "$RETIRO_INVALIDO" | jq -r '.success' 2>/dev/null || echo false)" != "true" ]] \
   || fail "El retiro con saldo insuficiente debió fallar"
@@ -401,7 +401,7 @@ ok "Retiro con saldo insuficiente rechazado ✓"
 phase "FASE 6: Gestión de retiros del comercio"
 
 info "POST /api/comercios/retiros/confirmar-pago (idRetiro=$ID_RETIRO)"
-CONFIRMAR=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/confirmar-pago" \
+CONFIRMAR=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/retiros/confirmar-pago" \
   "{\"idRetiro\": $ID_RETIRO, \"referenciaPago\": \"PAGO-MANUAL-CI-001\", \"observacion\": \"Pago manual CI fase 6\", \"creadoPor\": $ID_USUARIO_A}") \
   || fail "POST confirmar-pago no respondió"
 echo "$CONFIRMAR" | jq .
@@ -412,7 +412,7 @@ ESTADO_PAGADO=$(echo "$CONFIRMAR" | jq -r '.data.estado')
 ok "Retiro confirmado como PAGADO → idRetiro=$ID_RETIRO  estado=$ESTADO_PAGADO"
 
 info "GET /api/comercios/retiros/$ID_RETIRO tras confirmación → debe reflejar estado=PAGADO"
-RETIRO_GET_PAGADO=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/$ID_RETIRO") \
+RETIRO_GET_PAGADO=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/retiros/$ID_RETIRO") \
   || fail "GET retiros/$ID_RETIRO tras confirmación no respondió"
 echo "$RETIRO_GET_PAGADO" | jq .
 assert_ok "$RETIRO_GET_PAGADO" "GET retiro pagado por ID"
@@ -423,7 +423,7 @@ RETIRO_GET_REF=$(echo "$RETIRO_GET_PAGADO" | jq -r '.data.referenciaPago // empt
 ok "GET retiro/$ID_RETIRO → estado=$RETIRO_GET_ESTADO_PAGADO  referenciaPago=${RETIRO_GET_REF:-—} ✓"
 
 info "GET /api/comercios/retiros?estado=PAGADO → debe traer al menos 1"
-RETIROS_PAG=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros?estado=PAGADO") \
+RETIROS_PAG=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/retiros?estado=PAGADO") \
   || fail "GET retiros?estado=PAGADO no respondió"
 echo "$RETIROS_PAG" | jq .
 assert_ok "$RETIROS_PAG" "GET listado retiros PAGADO"
@@ -433,7 +433,7 @@ RETIROS_PAG_ITEMS=$(echo "$RETIROS_PAG" | jq '.data.items | length')
 ok "GET retiros?estado=PAGADO → items=$RETIROS_PAG_ITEMS ✓"
 
 info "Doble confirmación debe retornar error"
-DOBLE_CONF=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/confirmar-pago" \
+DOBLE_CONF=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/retiros/confirmar-pago" \
   "{\"idRetiro\": $ID_RETIRO, \"creadoPor\": $ID_USUARIO_A}") || true
 [[ "$(echo "$DOBLE_CONF" | jq -r '.success' 2>/dev/null || echo false)" != "true" ]] \
   || fail "La doble confirmación debió fallar"
@@ -455,7 +455,7 @@ check_sql_value \
   "PAGO-MANUAL-CI-001"
 
 info "POST /api/comercios/solicitar-retiro (segundo retiro: valor=5000)"
-RETIRO_2=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/solicitar-retiro" \
+RETIRO_2=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/solicitar-retiro" \
   "{\"idComercio\": $ID_COMERCIO, \"valor\": 5000, \"medioRetiro\": \"TRANSFERENCIA_BANCARIA\", \"observacion\": \"Segundo retiro CI fase 6\", \"creadoPor\": $ID_USUARIO_A}") \
   || fail "POST solicitar-retiro (segundo) no respondió"
 echo "$RETIRO_2" | jq .
@@ -472,7 +472,7 @@ check_sql_value \
   "5000"
 
 info "POST /api/comercios/retiros/rechazar (idRetiro=$ID_RETIRO_2)"
-RECHAZO=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/rechazar" \
+RECHAZO=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/retiros/rechazar" \
   "{\"idRetiro\": $ID_RETIRO_2, \"motivoRechazo\": \"Cuenta bancaria inválida\", \"observacion\": \"Rechazo CI fase 6\", \"creadoPor\": $ID_USUARIO_A}") \
   || fail "POST rechazar no respondió"
 echo "$RECHAZO" | jq .
@@ -483,14 +483,14 @@ ESTADO_RECHAZADO=$(echo "$RECHAZO" | jq -r '.data.estado')
 ok "Retiro rechazado → idRetiro=$ID_RETIRO_2  estado=$ESTADO_RECHAZADO"
 
 info "Doble rechazo debe retornar error"
-DOBLE_RECH=$(post_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros/rechazar" \
+DOBLE_RECH=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/retiros/rechazar" \
   "{\"idRetiro\": $ID_RETIRO_2, \"creadoPor\": $ID_USUARIO_A}") || true
 [[ "$(echo "$DOBLE_RECH" | jq -r '.success' 2>/dev/null || echo false)" != "true" ]] \
   || fail "El doble rechazo debió fallar"
 ok "Doble rechazo rechazado ✓"
 
 info "GET /api/comercios/retiros?estado=RECHAZADO → debe traer al menos 1"
-RETIROS_RECH=$(get_auth_json "$TOKEN_A" "$API_URL/api/comercios/retiros?estado=RECHAZADO") \
+RETIROS_RECH=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/comercios/retiros?estado=RECHAZADO") \
   || fail "GET retiros?estado=RECHAZADO no respondió"
 echo "$RETIROS_RECH" | jq .
 assert_ok "$RETIROS_RECH" "GET listado retiros RECHAZADO"
@@ -781,7 +781,7 @@ phase "FASE 14: Listados administrativos de wallets y comercios"
 
 # 14.1 GET /api/admin/wallets → success=true, al menos 1 item
 info "GET /api/admin/wallets (listado sin filtros) → success=true, items >= 1"
-WALLETS_LIST=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/wallets") \
+WALLETS_LIST=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/wallets") \
   || fail "GET /api/admin/wallets no respondió"
 echo "$WALLETS_LIST" | jq .
 assert_ok "$WALLETS_LIST" "GET listado de wallets"
@@ -795,7 +795,7 @@ ok "GET /api/admin/wallets → total=$WALLETS_TOTAL  items=$WALLETS_ITEMS ✓"
 
 # 14.2 Filtro tipoWallet=PERSONA
 info "GET /api/admin/wallets?tipoWallet=PERSONA → items >= 1"
-WALLETS_PERS=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/wallets?tipoWallet=PERSONA") \
+WALLETS_PERS=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/wallets?tipoWallet=PERSONA") \
   || fail "GET wallets?tipoWallet=PERSONA no respondió"
 echo "$WALLETS_PERS" | jq .
 assert_ok "$WALLETS_PERS" "GET wallets filtro PERSONA"
@@ -806,7 +806,7 @@ ok "GET wallets?tipoWallet=PERSONA → items=$WALLETS_PERS_ITEMS ✓"
 
 # 14.3 Filtro tipoWallet=COMERCIO
 info "GET /api/admin/wallets?tipoWallet=COMERCIO → items >= 1"
-WALLETS_COM=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/wallets?tipoWallet=COMERCIO") \
+WALLETS_COM=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/wallets?tipoWallet=COMERCIO") \
   || fail "GET wallets?tipoWallet=COMERCIO no respondió"
 echo "$WALLETS_COM" | jq .
 assert_ok "$WALLETS_COM" "GET wallets filtro COMERCIO"
@@ -825,7 +825,7 @@ ok "GET /api/admin/wallets sin token → 401 ✓"
 
 # 14.5 GET /api/admin/comercios → success=true, al menos 1 item
 info "GET /api/admin/comercios (listado sin filtros) → success=true, items >= 1"
-COMERCIOS_LIST=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/comercios") \
+COMERCIOS_LIST=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/comercios") \
   || fail "GET /api/admin/comercios no respondió"
 echo "$COMERCIOS_LIST" | jq .
 assert_ok "$COMERCIOS_LIST" "GET listado de comercios"
@@ -839,7 +839,7 @@ ok "GET /api/admin/comercios → total=$COMERCIOS_TOTAL  items=$COMERCIOS_ITEMS 
 
 # 14.6 Filtro texto=Demo (seed: "Comercio Demo XPAY")
 info "GET /api/admin/comercios?texto=Demo → items >= 1"
-COMERCIOS_DEMO=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/comercios?texto=Demo") \
+COMERCIOS_DEMO=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/comercios?texto=Demo") \
   || fail "GET comercios?texto=Demo no respondió"
 echo "$COMERCIOS_DEMO" | jq .
 assert_ok "$COMERCIOS_DEMO" "GET comercios filtro texto"
@@ -865,7 +865,7 @@ phase "FASE 15: Listados administrativos de ventas QR y transacciones ledger"
 
 # 15.1 GET /api/admin/ventas-qr → success=true, al menos 1 item
 info "GET /api/admin/ventas-qr (sin filtros) → success=true, items >= 1"
-VENTAS_LIST=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/ventas-qr") \
+VENTAS_LIST=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/ventas-qr") \
   || fail "GET /api/admin/ventas-qr no respondió"
 echo "$VENTAS_LIST" | jq .
 assert_ok "$VENTAS_LIST" "GET listado de ventas QR"
@@ -879,7 +879,7 @@ ok "GET /api/admin/ventas-qr → total=$VENTAS_TOTAL  items=$VENTAS_ITEMS ✓"
 
 # 15.2 Filtro estado=LIQUIDADA (la venta de Fase 4 queda liquidada tras Fase 5)
 info "GET /api/admin/ventas-qr?estado=LIQUIDADA → items >= 1"
-VENTAS_LIQ=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/ventas-qr?estado=LIQUIDADA") \
+VENTAS_LIQ=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/ventas-qr?estado=LIQUIDADA") \
   || fail "GET ventas-qr?estado=LIQUIDADA no respondió"
 echo "$VENTAS_LIQ" | jq .
 assert_ok "$VENTAS_LIQ" "GET ventas-qr filtro LIQUIDADA"
@@ -898,7 +898,7 @@ ok "GET /api/admin/ventas-qr sin token → 401 ✓"
 
 # 15.4 GET /api/admin/ledger-transacciones → success=true, al menos 1 item
 info "GET /api/admin/ledger-transacciones (sin filtros) → success=true, items >= 1"
-LEDGER_LIST=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/ledger-transacciones") \
+LEDGER_LIST=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/ledger-transacciones") \
   || fail "GET /api/admin/ledger-transacciones no respondió"
 echo "$LEDGER_LIST" | jq .
 assert_ok "$LEDGER_LIST" "GET listado de transacciones ledger"
@@ -912,7 +912,7 @@ ok "GET /api/admin/ledger-transacciones → total=$LEDGER_TOTAL  items=$LEDGER_I
 
 # 15.5 Filtro tipoTransaccion=PAGO_QR
 info "GET /api/admin/ledger-transacciones?tipoTransaccion=PAGO_QR → items >= 1"
-LEDGER_PAGO=$(get_auth_json "$TOKEN_A" "$API_URL/api/admin/ledger-transacciones?tipoTransaccion=PAGO_QR") \
+LEDGER_PAGO=$(get_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/ledger-transacciones?tipoTransaccion=PAGO_QR") \
   || fail "GET ledger-transacciones?tipoTransaccion=PAGO_QR no respondió"
 echo "$LEDGER_PAGO" | jq .
 assert_ok "$LEDGER_PAGO" "GET ledger-transacciones filtro PAGO_QR"
