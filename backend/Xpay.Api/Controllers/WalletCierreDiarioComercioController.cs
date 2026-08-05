@@ -39,6 +39,11 @@ public class WalletCierreDiarioComercioController(WalletCierreDiarioComercioServ
             return Ok(new { success = true, data });
         }
         catch (CierreDuplicadoException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (CajasOperativasPendientesException ex)
+        {
+            return Conflict(new { success = false, message = ex.Message, cantidadCajasOperativas = ex.CantidadCajasOperativas });
+        }
+        catch (OperacionCajaCierreConcurrenteException ex) { return Conflict(new { success = false, message = ex.Message }); }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (KeyNotFoundException ex) { return NotFound(new { success = false, message = ex.Message }); }
         catch (ArgumentException ex) { return BadRequest(new { success = false, message = ex.Message }); }

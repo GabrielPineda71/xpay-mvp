@@ -37,6 +37,8 @@ public class WalletCajaComercioController(WalletCajaComercioService svc) : Contr
             return Ok(new { success = true, data });
         }
         catch (CajaDuplicadaException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (CierreDiarioYaGeneradoException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (OperacionCajaCierreConcurrenteException ex) { return Conflict(new { success = false, message = ex.Message }); }
         catch (ScopeComercioAmbiguoException ex) { return Conflict(new { success = false, message = ex.Message }); }
         catch (TransicionCajaInvalidaException ex) { return Conflict(new { success = false, message = ex.Message }); }
         catch (ArgumentException ex) { return BadRequest(new { success = false, message = ex.Message }); }

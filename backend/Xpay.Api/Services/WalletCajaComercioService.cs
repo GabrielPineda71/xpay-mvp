@@ -13,8 +13,11 @@ namespace Xpay.Api.Services;
 // CorregirFondoInicialAsync, IniciarCuadreAsync, CerrarAsync, RevisarAsync,
 // ListarAsync. Ningún NotImplementedException pendiente.
 //
+// Fase 70.4-B: AbrirAsync sincroniza con
+// WalletCierreDiarioComercioService.GenerarCierreAsync mediante
+// AppLockHelper (sp_getapplock, clave XPAY:CAJA_CIERRE:{idComercio}:{fecha}).
+//
 // Permanecen fuera de este alcance (no implementado todavía):
-// - sincronización bilateral con Fase 70.3 (WalletCierreDiarioComercioService);
 // - integración con recargas en efectivo de Fase 70.1
 //   (WalletRecargaComercioService — ningún movimiento RECARGA_EFECTIVO se
 //   crea todavía desde ningún flujo real);
@@ -320,8 +323,12 @@ public class WalletCajaComercioService(XpayDbContext db, ComercioScopeService sc
     }
 
     // ── Abrir caja (diseño Fase 70.4, secciones 3, 6, 9, 10) ────────────────
-    // No integra 70.1/70.2/70.3, no crea movimientos de caja, no implementa
-    // sp_getapplock — únicamente la apertura en sí.
+    // No integra 70.1/70.2, no crea movimientos de caja. Fase 70.4-B: la
+    // inserción de la caja ocurre dentro de una transacción que adquiere
+    // sp_getapplock (AppLockHelper, clave comercio+fecha) antes de revalidar
+    // que no exista ya un cierre diario generado para ese comercio+fecha —
+    // sincronización bilateral con
+    // WalletCierreDiarioComercioService.GenerarCierreAsync.
     public async Task<CajaDto> AbrirAsync(long idUsuario, AbrirCajaRequest req)
     {
         if (req.FondoInicial < 0)
@@ -399,21 +406,59 @@ public class WalletCajaComercioService(XpayDbContext db, ComercioScopeService sc
             CreatedAt              = now,
         };
 
-        db.WalletCajasComercio.Add(caja);
-        try
+        // ── Sincronización bilateral con Fase 70.3 (diseño Fase 70.4, sección
+        // 10 — Fase 70.4-B). Sección atómica: adquiere el application lock
+        // comercio+fecha antes de revalidar que no exista ya un cierre diario
+        // generado para ese comercio+fecha, y antes de reconfirmar la
+        // duplicidad de caja bajo el lock. La UNIQUE constraint sigue siendo
+        // la garantía final contra la carrera de duplicidad (catch de abajo);
+        // el lock es lo que impide la carrera con GenerarCierreAsync, que no
+        // tiene ninguna restricción de base de datos equivalente.
+        var claveLock = AppLockHelper.ClaveCajaCierre(idComercio, hoy);
+
+        await using (var tx = await db.Database.BeginTransactionAsync())
         {
-            await db.SaveChangesAsync();
-        }
-        catch (DbUpdateException ex) when (EsViolacionUniqueUsuarioComercioFecha(ex))
-        {
-            // Carrera real: dos solicitudes de apertura concurrentes para el mismo
-            // (id_usuario_cajero, id_comercio, fecha_operativa) — el chequeo previo
-            // no la detectó porque ambas lo pasaron antes de que cualquiera
-            // confirmara. Solo se traduce a CajaDuplicadaException cuando el motor
-            // confirma que fue específicamente uq_wcc_usuario_comercio_fecha — no
-            // cualquier DbUpdateException ni cualquier otra violación UNIQUE.
-            throw new CajaDuplicadaException(
-                $"Ya existe una caja para el usuario {idUsuario} en el comercio {idComercio} para la fecha {hoy:yyyy-MM-dd}.");
+            try
+            {
+                var resultadoLock = await AppLockHelper.AdquirirAsync(db, claveLock);
+                AppLockHelper.ValidarResultado(resultadoLock, claveLock);
+
+                var existeCierre = await db.WalletCierresDiariosComercio
+                    .AnyAsync(c => c.IdComercio == idComercio && c.FechaCierre == hoy);
+                if (existeCierre)
+                    throw new CierreDiarioYaGeneradoException(
+                        $"Ya existe un cierre diario generado para el comercio {idComercio} en la fecha {hoy:yyyy-MM-dd} — no puede abrirse una caja nueva para esta fecha.");
+
+                // Revalidación autoritativa de duplicidad bajo el lock — el
+                // chequeo de arriba (fuera de la transacción) es solo una
+                // optimización amigable.
+                var yaExisteCajaBajoLock = await db.WalletCajasComercio.AnyAsync(c =>
+                    c.IdUsuarioCajero == idUsuario && c.IdComercio == idComercio && c.FechaOperativa == hoy);
+                if (yaExisteCajaBajoLock)
+                    throw new CajaDuplicadaException(
+                        $"Ya existe una caja para el usuario {idUsuario} en el comercio {idComercio} para la fecha {hoy:yyyy-MM-dd}.");
+
+                db.WalletCajasComercio.Add(caja);
+                await db.SaveChangesAsync();
+                await tx.CommitAsync();
+            }
+            catch (DbUpdateException ex) when (EsViolacionUniqueUsuarioComercioFecha(ex))
+            {
+                // Carrera real: dos solicitudes de apertura concurrentes para el mismo
+                // (id_usuario_cajero, id_comercio, fecha_operativa) — el chequeo previo
+                // no la detectó porque ambas lo pasaron antes de que cualquiera
+                // confirmara. Solo se traduce a CajaDuplicadaException cuando el motor
+                // confirma que fue específicamente uq_wcc_usuario_comercio_fecha — no
+                // cualquier DbUpdateException ni cualquier otra violación UNIQUE.
+                await tx.RollbackAsync();
+                throw new CajaDuplicadaException(
+                    $"Ya existe una caja para el usuario {idUsuario} en el comercio {idComercio} para la fecha {hoy:yyyy-MM-dd}.");
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
         }
 
         logger.LogInformation(

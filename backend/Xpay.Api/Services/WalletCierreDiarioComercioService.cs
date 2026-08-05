@@ -69,6 +69,8 @@ public class WalletCierreDiarioComercioService(XpayDbContext db, ComercioScopeSe
                 "Para generar el cierre del día actual debes confirmar explícitamente. " +
                 "Las recargas registradas después de este momento no quedarán incluidas en este cierre.");
 
+        // Pre-chequeo amigable — la verificación autoritativa se repite bajo el
+        // application lock más abajo (Fase 70.4-B).
         if (await db.WalletCierresDiariosComercio.AnyAsync(c => c.IdComercio == idComercio && c.FechaCierre == req.Fecha))
             throw new CierreDuplicadoException($"Ya existe un cierre para el comercio {idComercio} en la fecha {req.Fecha:yyyy-MM-dd}.");
 
@@ -78,6 +80,34 @@ public class WalletCierreDiarioComercioService(XpayDbContext db, ComercioScopeSe
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
+            // ── Sincronización bilateral con Fase 70.4 (Caja/Cuadre) — diseño
+            // Fase 70.4, sección 10 (Fase 70.4-B). Misma clave exacta que usa
+            // WalletCajaComercioService.AbrirAsync: comercio+fecha, sin
+            // idEstablecimiento — GenerarCierreAsync sigue operando sobre todo
+            // el comercio, no por sede.
+            var claveLock = AppLockHelper.ClaveCajaCierre(idComercio, req.Fecha);
+            var resultadoLock = await AppLockHelper.AdquirirAsync(db, claveLock);
+            AppLockHelper.ValidarResultado(resultadoLock, claveLock);
+
+            // Solo ABIERTA/EN_CUADRE bloquean la generación del cierre — los
+            // estados terminales (CERRADA, CON_DIFERENCIA, CERRADA_AUTOMATICAMENTE,
+            // REVISADA) no lo hacen. No existe un estado persistido "VENCIDA": el
+            // vencimiento es una condición calculada en tiempo de lectura por
+            // WalletCajaComercioService, no una fila con ese estado en la BD.
+            var cantidadCajasOperativas = await db.WalletCajasComercio.CountAsync(c =>
+                c.IdComercio == idComercio && c.FechaOperativa == req.Fecha
+                && (c.Estado == "ABIERTA" || c.Estado == "EN_CUADRE"));
+            if (cantidadCajasOperativas > 0)
+                throw new CajasOperativasPendientesException(
+                    $"No se puede generar el cierre diario: existen {cantidadCajasOperativas} caja(s) todavía operativas (ABIERTA o EN_CUADRE) para el comercio {idComercio} en la fecha {req.Fecha:yyyy-MM-dd}. Deben cerrarse antes de continuar.",
+                    cantidadCajasOperativas);
+
+            // Revalidación autoritativa de duplicidad bajo el lock — el
+            // chequeo de arriba (fuera de la transacción) es solo una
+            // optimización amigable.
+            if (await db.WalletCierresDiariosComercio.AnyAsync(c => c.IdComercio == idComercio && c.FechaCierre == req.Fecha))
+                throw new CierreDuplicadoException($"Ya existe un cierre para el comercio {idComercio} en la fecha {req.Fecha:yyyy-MM-dd}.");
+
             var corteUtc = DateTime.UtcNow;
             var candidatas = await ObtenerCandidatasParaGenerarAsync(idComercio, req.Fecha, corteUtc);
 
