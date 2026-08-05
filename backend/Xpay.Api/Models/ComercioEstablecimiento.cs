@@ -12,4 +12,5 @@ public class ComercioEstablecimiento
     public string   Estado                 { get; set; } = "ACTIVO";
     public DateTime  CreatedAt             { get; set; }
     public DateTime? UpdatedAt             { get; set; }
+    public TimeOnly? HoraCierreAutomaticoCaja { get; set; }
 }
