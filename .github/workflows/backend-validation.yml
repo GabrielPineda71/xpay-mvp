@@ -135,6 +135,7 @@ jobs:
           ConnectionStrings__XpayConnection: "Server=localhost,1433;Database=XPAY_MVP;User Id=sa;Password=XpayCI@2024!;TrustServerCertificate=True;"
           ASPNETCORE_URLS: "http://+:5000"
           ASPNETCORE_ENVIRONMENT: Development
+          RateLimiting__LoginPermitLimit: "200"
 
       - name: Esperar a que el backend responda
         run: |
