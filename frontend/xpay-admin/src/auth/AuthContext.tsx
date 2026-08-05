@@ -2,18 +2,20 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 import { post } from '../api/client.ts';
 
 export interface AuthUser {
-  idUsuario: number;
-  idPersona: number;
-  usuario:   string;
-  estado:    string;
-  roles:     string[];
-  token:     string;
+  idUsuario:           number;
+  idPersona:           number;
+  usuario:             string;
+  estado:              string;
+  roles:               string[];
+  token:               string;
+  requiereCambioClave: boolean;
 }
 
 interface AuthCtx {
-  user:   AuthUser | null;
-  login:  (usuario: string, password: string) => Promise<void>;
-  logout: () => void;
+  user:            AuthUser | null;
+  login:           (usuario: string, password: string) => Promise<void>;
+  logout:          () => void;
+  actualizarToken: (token: string, requiereCambioClave: boolean) => void;
 }
 
 interface LoginApiResp {
@@ -64,8 +66,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }
 
+  // Fase USUARIOS-ADMIN-5: tras un cambio de contraseña exitoso, el backend
+  // emite un JWT nuevo con el claim requiereCambioClave actualizado — se
+  // reemplaza aquí sin exigir un segundo login manual.
+  function actualizarToken(token: string, requiereCambioClave: boolean): void {
+    setUser(prev => {
+      if (!prev) return prev;
+      const actualizado: AuthUser = { ...prev, token, requiereCambioClave };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(actualizado));
+      localStorage.setItem('xpay_token', token);
+      return actualizado;
+    });
+  }
+
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, actualizarToken }}>
       {children}
     </AuthContext.Provider>
   );

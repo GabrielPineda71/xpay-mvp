@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
@@ -9,11 +10,21 @@ namespace Xpay.Api.Services;
 // Fase USUARIOS-ADMIN-2: solo lectura (listado + detalle).
 // Fase USUARIOS-ADMIN-3: activar/inactivar/desbloquear.
 // Fase USUARIOS-ADMIN-4: asignar/revocar roles (lista blanca). Sigue sin
-// crear usuarios ni editar datos — eso queda para subfases posteriores.
+// crear usuarios ni editar datos.
+// Fase USUARIOS-ADMIN-5: restablecimiento administrativo de contraseña.
 public class UsuarioAdminService
 {
     private const string RolAdminXpay    = "ADMIN_XPAY";
     private const string RolSuperusuario = "SUPERUSUARIO";
+
+    // Fase USUARIOS-ADMIN-5: alfabeto de la clave temporal — sin caracteres
+    // ambiguos (0/O, 1/l/I) para evitar errores de transcripción manual al
+    // comunicar la clave al usuario.
+    private const string AlfabetoMayusculas = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    private const string AlfabetoMinusculas = "abcdefghijkmnopqrstuvwxyz";
+    private const string AlfabetoDigitos    = "23456789";
+    private const string AlfabetoEspeciales = "!@#$%^&*()-_=+";
+    private const int    LongitudClaveTemporal = 14;
 
     // Fase USUARIOS-ADMIN-4: lista blanca exacta de roles asignables desde
     // este módulo — nunca una lista negra. ADMIN_XPAY, OPERADOR_XPAY,
@@ -275,10 +286,74 @@ public class UsuarioAdminService
         return (await ObtenerDetalleAsync(idUsuario))!;
     }
 
+    // Fase USUARIOS-ADMIN-5: restablece la contraseña de otro usuario con una
+    // clave temporal generada por el backend (nunca elegida por el admin).
+    // Nunca persiste la clave en texto plano; nunca la incluye en auditoría.
+    public async Task<(UsuarioAdminDetalleDto Detalle, string ClaveTemporal)> RestablecerClaveAsync(long idUsuario, long idAdmin, string? observacionCruda)
+    {
+        var observacion = NormalizarObservacion(observacionCruda);
+
+        if (idUsuario == idAdmin)
+            throw new InvalidOperationException("No puedes restablecer tu propia contraseña.");
+
+        var usuario = await _db.Usuarios.FindAsync(idUsuario)
+            ?? throw new KeyNotFoundException($"Usuario {idUsuario} no encontrado.");
+
+        if (usuario.Estado != "ACTIVO")
+            throw new TransicionUsuarioInvalidaException(
+                $"El usuario no está ACTIVO (estado actual: {usuario.Estado}). Actívelo o desbloquéelo antes de restablecer la contraseña.");
+
+        if (await ActorTieneRolAsync(idUsuario, RolSuperusuario) && !await ActorTieneRolAsync(idAdmin, RolSuperusuario))
+            throw new UnauthorizedAccessException("Solo un usuario con rol SUPERUSUARIO puede restablecer la contraseña de otro SUPERUSUARIO.");
+
+        var claveTemporal = GenerarClaveTemporal();
+
+        usuario.PasswordHash        = BCrypt.Net.BCrypt.HashPassword(claveTemporal);
+        usuario.RequiereCambioClave = true;
+        usuario.IntentosFallidos    = 0;
+        usuario.FechaActualizacion  = DateTime.UtcNow;
+
+        // valorAnterior/valorNuevo quedan null a propósito — nunca se audita
+        // ni la clave temporal ni ningún hash.
+        RegistrarAuditoria(idAdmin, "USUARIO_RESTABLECER_CLAVE", idUsuario, null, null,
+            observacion ?? "Restablecimiento de contraseña por administrador.");
+
+        await _db.SaveChangesAsync();
+
+        var detalle = (await ObtenerDetalleAsync(idUsuario))!;
+        return (detalle, claveTemporal);
+    }
+
+    // Genera una clave temporal criptográficamente segura con
+    // RandomNumberGenerator (nunca System.Random). Garantiza al menos un
+    // carácter de cada categoría obligatoria y mezcla el resultado con
+    // Fisher-Yates para no dejar las categorías en posiciones predecibles.
+    private static string GenerarClaveTemporal()
+    {
+        var alfabetoCompleto = AlfabetoMayusculas + AlfabetoMinusculas + AlfabetoDigitos + AlfabetoEspeciales;
+        var caracteres = new char[LongitudClaveTemporal];
+
+        caracteres[0] = AlfabetoMayusculas[RandomNumberGenerator.GetInt32(AlfabetoMayusculas.Length)];
+        caracteres[1] = AlfabetoMinusculas[RandomNumberGenerator.GetInt32(AlfabetoMinusculas.Length)];
+        caracteres[2] = AlfabetoDigitos[RandomNumberGenerator.GetInt32(AlfabetoDigitos.Length)];
+        caracteres[3] = AlfabetoEspeciales[RandomNumberGenerator.GetInt32(AlfabetoEspeciales.Length)];
+
+        for (var i = 4; i < LongitudClaveTemporal; i++)
+            caracteres[i] = alfabetoCompleto[RandomNumberGenerator.GetInt32(alfabetoCompleto.Length)];
+
+        for (var i = caracteres.Length - 1; i > 0; i--)
+        {
+            var j = RandomNumberGenerator.GetInt32(i + 1);
+            (caracteres[i], caracteres[j]) = (caracteres[j], caracteres[i]);
+        }
+
+        return new string(caracteres);
+    }
+
     // Agrega la fila de auditoría al mismo ChangeTracker que la modificación
     // del usuario — un único SaveChangesAsync() posterior persiste ambas en
     // la misma transacción implícita de EF Core (misma unidad transaccional).
-    private void RegistrarAuditoria(long idAdmin, string accion, long idUsuarioObjetivo, string valorAnterior, string valorNuevo, string observacion, string entidad = "usuarios", string? idEntidad = null)
+    private void RegistrarAuditoria(long idAdmin, string accion, long idUsuarioObjetivo, string? valorAnterior, string? valorNuevo, string observacion, string entidad = "usuarios", string? idEntidad = null)
     {
         _db.Auditorias.Add(new Auditoria
         {

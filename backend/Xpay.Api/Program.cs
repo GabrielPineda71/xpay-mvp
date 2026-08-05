@@ -2,10 +2,12 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Xpay.Api.Authorization;
 using Xpay.Api.Data;
 using Xpay.Api.Middleware;
 using Xpay.Api.Services;
@@ -101,6 +103,22 @@ builder.Services
             ClockSkew                = TimeSpan.FromSeconds(clockSkewSeconds)
         };
     });
+
+// Fase USUARIOS-ADMIN-5: ClaveVigenteRequirement se agrega a la DefaultPolicy
+// — se combina automáticamente con todo [Authorize]/[Authorize(Roles=...)] sin
+// política explícita en TODA la aplicación (Wallet, Comercio, KYC, BREB,
+// Empresa, etc.), sin tocar esos controladores. Bloquea el acceso mientras
+// usuarios.requiere_cambio_clave = true, verificado en vivo contra BD en cada
+// request. POST /api/auth/cambiar-clave-obligatoria usa la política
+// "SoloAutenticado" (no se combina con DefaultPolicy) para quedar exento.
+builder.Services.AddScoped<IAuthorizationHandler, ClaveVigenteAuthorizationHandler>();
+builder.Services.AddAuthorization(options =>
+{
+    options.DefaultPolicy = new AuthorizationPolicyBuilder(options.DefaultPolicy)
+        .AddRequirements(new ClaveVigenteRequirement())
+        .Build();
+    options.AddPolicy("SoloAutenticado", policy => policy.RequireAuthenticatedUser());
+});
 
 // Rate limiting — FixedWindow por IP para endpoints sensibles (login)
 var rlSection          = builder.Configuration.GetSection("RateLimiting");

@@ -115,6 +115,27 @@ public class UsuariosAdminController : ControllerBase
         catch { return StatusCode(500, new { success = false, message = "Error interno desbloqueando el usuario." }); }
     }
 
+    // Fase USUARIOS-ADMIN-5: la clave temporal solo viaja en esta respuesta,
+    // una única vez — el backend nunca vuelve a poder devolverla.
+    [HttpPost("{id:long}/restablecer-clave")]
+    public async Task<IActionResult> RestablecerClave(long id, [FromBody] RestablecerClaveRequest request)
+    {
+        if (!TryGetUsuarioId(out var idAdmin)) return Unauthorized(new { success = false, message = "Token inválido." });
+        _audit.LogSensitiveAction(HttpContext, "USUARIO_RESTABLECER_CLAVE_ATTEMPT", new { idUsuario = id });
+        try
+        {
+            var (detalle, claveTemporal) = await _usuarioAdminService.RestablecerClaveAsync(id, idAdmin, request.Observacion);
+            _audit.LogSensitiveAction(HttpContext, "USUARIO_RESTABLECER_CLAVE_SUCCESS", new { idUsuario = id });
+            var data = new RestablecerClaveResponse { Usuario = detalle, ClaveTemporal = claveTemporal };
+            return Ok(new { success = true, message = "Contraseña restablecida correctamente.", data });
+        }
+        catch (KeyNotFoundException ex)              { return NotFound(new { success = false, message = ex.Message }); }
+        catch (TransicionUsuarioInvalidaException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (UnauthorizedAccessException)           { return Forbid(); }
+        catch (InvalidOperationException ex)          { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno restableciendo la contraseña." }); }
+    }
+
     [HttpGet("/api/admin/roles/asignables")]
     public async Task<IActionResult> RolesAsignables()
     {

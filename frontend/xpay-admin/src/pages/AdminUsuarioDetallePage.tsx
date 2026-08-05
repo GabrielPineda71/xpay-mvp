@@ -45,6 +45,7 @@ interface UsuarioDetalle {
 interface ApiResp { success: boolean; data: UsuarioDetalle; }
 interface AccionResp { success: boolean; message: string; data: UsuarioDetalle; }
 interface RolesAsignablesResp { success: boolean; data: RolAsignable[]; }
+interface RestablecerClaveResp { success: boolean; message: string; data: { usuario: UsuarioDetalle; claveTemporal: string } }
 
 type Accion = 'activar' | 'inactivar' | 'desbloquear';
 
@@ -53,6 +54,11 @@ const CONFIRMACION: Record<Accion, (usuario: string) => string> = {
   inactivar:    u => `¿Confirmas inactivar a ${u}? No podrá iniciar sesión hasta que sea reactivado.`,
   desbloquear:  u => `¿Confirmas desbloquear a ${u}? Se reiniciarán sus intentos fallidos y podrá iniciar sesión nuevamente.`,
 };
+
+// Fase USUARIOS-ADMIN-5: la clave anterior deja de servir de inmediato — se
+// advierte explícitamente antes de confirmar la acción.
+const CONFIRMACION_RESTABLECER = (usuario: string) =>
+  `¿Confirmas restablecer la contraseña de ${usuario}? La contraseña actual dejará de funcionar inmediatamente. Se generará una contraseña temporal que solo se mostrará una vez.`;
 
 // Fase USUARIOS-ADMIN-4: el cambio de rol no invalida un JWT ya emitido —
 // solo se refleja en el próximo login del usuario objetivo.
@@ -83,6 +89,14 @@ export function AdminUsuarioDetallePage() {
   const [rolBusy,          setRolBusy]          = useState(false);
   const [rolMsg,           setRolMsg]           = useState('');
   const [rolError,         setRolError]         = useState('');
+
+  // Fase USUARIOS-ADMIN-5: claveTemporal vive únicamente en este estado de
+  // React — nunca en localStorage/sessionStorage, y se descarta al cerrar
+  // el modal (sin forma de volver a mostrarla).
+  const [resetBusy,        setResetBusy]        = useState(false);
+  const [resetError,       setResetError]       = useState('');
+  const [claveTemporal,    setClaveTemporal]    = useState<string | null>(null);
+  const [copiado,          setCopiado]          = useState(false);
 
   const cargarDetalle = useCallback(() => {
     if (!id) return;
@@ -155,6 +169,38 @@ export function AdminUsuarioDetallePage() {
       setRolError((err as Error).message);
     } finally {
       setRolBusy(false);
+    }
+  }
+
+  async function restablecerClave() {
+    if (!id || !data) return;
+    if (!confirm(CONFIRMACION_RESTABLECER(data.usuario))) return;
+    setResetBusy(true);
+    setResetError('');
+    try {
+      const r = await post<RestablecerClaveResp>(`/api/admin/usuarios/${id}/restablecer-clave`, {});
+      setClaveTemporal(r.data.claveTemporal);
+      setCopiado(false);
+      cargarDetalle();
+    } catch (err) {
+      setResetError((err as Error).message);
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  function cerrarModalClaveTemporal() {
+    setClaveTemporal(null);
+    setCopiado(false);
+  }
+
+  async function copiarClaveTemporal() {
+    if (!claveTemporal) return;
+    try {
+      await navigator.clipboard.writeText(claveTemporal);
+      setCopiado(true);
+    } catch {
+      setCopiado(false);
     }
   }
 
@@ -235,6 +281,17 @@ export function AdminUsuarioDetallePage() {
                   {actionBusy ? 'Procesando...' : 'Desbloquear'}
                 </button>
               )}
+              {data.estado === 'ACTIVO' && (
+                <button
+                  type="button"
+                  className="btn-search"
+                  disabled={resetBusy || esPropiaCuenta}
+                  title={esPropiaCuenta ? 'No puedes restablecer tu propia contraseña.' : undefined}
+                  onClick={restablecerClave}
+                >
+                  {resetBusy ? 'Procesando...' : 'Restablecer contraseña'}
+                </button>
+              )}
               {esPropiaCuenta && (
                 <span className="results-meta">No puedes ejecutar acciones sobre tu propia cuenta.</span>
               )}
@@ -242,6 +299,7 @@ export function AdminUsuarioDetallePage() {
 
             {actionMsg   && <div className="breb-msg-ok">{actionMsg}</div>}
             {actionError && <div className="error-msg">Error: {actionError}</div>}
+            {resetError  && <div className="error-msg">Error: {resetError}</div>}
           </div>
 
           <div className="detail-section">
@@ -312,6 +370,29 @@ export function AdminUsuarioDetallePage() {
 
             {rolMsg   && <div className="breb-msg-ok">{rolMsg}</div>}
             {rolError && <div className="error-msg">Error: {rolError}</div>}
+          </div>
+        </div>
+      )}
+
+      {claveTemporal && (
+        <div className="modal-overlay" role="dialog" aria-modal="true">
+          <div className="modal-box">
+            <h3>Contraseña temporal generada</h3>
+            <p className="results-meta">
+              Esta contraseña no volverá a mostrarse. Compártela de forma segura con el usuario.
+              Deberá cambiarla en su próximo inicio de sesión.
+            </p>
+            <div className="clave-temporal-box">
+              <code className="mono">{claveTemporal}</code>
+            </div>
+            <div className="detail-actions">
+              <button type="button" className="btn-search" onClick={copiarClaveTemporal}>
+                {copiado ? 'Copiado ✓' : 'Copiar'}
+              </button>
+              <button type="button" className="btn-link" onClick={cerrarModalClaveTemporal}>
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -49,6 +49,22 @@ public class RevocarRolRequest
     public string? Observacion { get; set; }
 }
 
+// Fase USUARIOS-ADMIN-5: el admin nunca elige la clave — el backend genera
+// una temporal aleatoria. Observacion sigue el mismo criterio de todo el
+// módulo (opcional, normalizada con NormalizarObservacion).
+public class RestablecerClaveRequest
+{
+    public string? Observacion { get; set; }
+}
+
+// La clave temporal viaja en esta respuesta una única vez — el backend nunca
+// vuelve a poder devolverla (solo conserva su hash).
+public class RestablecerClaveResponse
+{
+    public UsuarioAdminDetalleDto Usuario { get; set; } = null!;
+    public string ClaveTemporal { get; set; } = string.Empty;
+}
+
 public class UsuarioAdminDetalleDto
 {
     public long IdUsuario { get; set; }

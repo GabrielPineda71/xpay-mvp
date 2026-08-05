@@ -1583,6 +1583,204 @@ check_sql_value \
 echo ""
 
 # ════════════════════════════════════════════════════
+# FASE USUARIOS-ADMIN-5 — Restablecimiento de contraseña
+# ════════════════════════════════════════════════════
+phase "FASE USUARIOS-ADMIN-5: Restablecimiento de contraseña"
+
+# UA5.1 Restablecimiento exitoso — captura claveTemporal para los pasos siguientes
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/restablecer-clave (TOKEN_ADMIN) → 200"
+RESET_ET=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/restablecer-clave" \
+  '{"observacion":"CI USUARIOS-ADMIN-5"}') \
+  || fail "POST restablecer-clave estadotest no respondió"
+assert_ok "$RESET_ET" "restablecer-clave estadotest"
+CLAVE_TEMPORAL_ET=$(echo "$RESET_ET" | jq -r '.data.claveTemporal')
+[[ -n "$CLAVE_TEMPORAL_ET" && "$CLAVE_TEMPORAL_ET" != "null" ]] \
+  || fail "claveTemporal vacía o ausente en la respuesta de restablecer-clave"
+ok "Restablecimiento exitoso → claveTemporal capturada (longitud=${#CLAVE_TEMPORAL_ET}) ✓"
+
+# UA5.2 La respuesta contiene claveTemporal pero NUNCA un hash ni passwordHash
+RESET_ET_LEAK=$(echo "$RESET_ET" | grep -i "passwordHash\|\\\$2a\\\$" || true)
+[[ -z "$RESET_ET_LEAK" ]] \
+  || fail "La respuesta de restablecer-clave no debe contener hash ni passwordHash: $RESET_ET_LEAK"
+ok "Respuesta de restablecer-clave → sin hash ni passwordHash ✓"
+
+# UA5.3 El login anterior (Xpay@Test1!) deja de funcionar de inmediato
+info "POST /api/auth/login (estadotest, clave anterior) → 400"
+STATUS_LOGIN_CLAVE_ANTERIOR=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/auth/login" -H "Content-Type: application/json" \
+  -d '{"usuario":"estadotest_ci_test","password":"Xpay@Test1!"}')
+[[ "$STATUS_LOGIN_CLAVE_ANTERIOR" == "400" ]] \
+  || fail "Login con clave anterior tras restablecer esperado 400, obtenido $STATUS_LOGIN_CLAVE_ANTERIOR"
+ok "Login con clave anterior tras restablecer → 400 ✓"
+
+# UA5.4 / UA5.5 Login con la clave temporal funciona y requiereCambioClave=true
+info "POST /api/auth/login (estadotest, clave temporal) → 200, requiereCambioClave=true"
+LOGIN_ET_TEMP=$(post_json "$API_URL/api/auth/login" \
+  "{\"usuario\":\"estadotest_ci_test\",\"password\":\"$CLAVE_TEMPORAL_ET\"}") \
+  || fail "Login estadotest con clave temporal no respondió"
+assert_ok "$LOGIN_ET_TEMP" "login estadotest con clave temporal"
+TOKEN_ET_TEMP=$(echo "$LOGIN_ET_TEMP" | jq -r '.data.token')
+[[ -n "$TOKEN_ET_TEMP" && "$TOKEN_ET_TEMP" != "null" ]] || fail "Token JWT vacío tras login con clave temporal"
+REQUIERE_CAMBIO_LOGIN=$(echo "$LOGIN_ET_TEMP" | jq -r '.data.requiereCambioClave')
+[[ "$REQUIERE_CAMBIO_LOGIN" == "true" ]] \
+  || fail "Login con clave temporal: requiereCambioClave esperado true, obtenido $REQUIERE_CAMBIO_LOGIN"
+ok "Login con clave temporal → 200, requiereCambioClave=true ✓"
+
+# UA5.6 Enforcement real: con el JWT de clave temporal, un endpoint normal → 403
+info "GET /api/wallets/mi-wallet (TOKEN_ET_TEMP, requiere cambio de clave) → 403"
+STATUS_ENDPOINT_BLOQUEADO=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_ET_TEMP" "$API_URL/api/wallets/mi-wallet")
+[[ "$STATUS_ENDPOINT_BLOQUEADO" == "403" ]] \
+  || fail "Endpoint normal con requiereCambioClave=true esperado 403, obtenido $STATUS_ENDPOINT_BLOQUEADO"
+ok "Enforcement real (ClaveVigenteAuthorizationHandler) → endpoint normal bloqueado con 403 ✓"
+
+# UA5.7 Cambio obligatorio de contraseña — exento del enforcement anterior
+NUEVA_CLAVE_ET='Xpay@Nueva1!'
+info "POST /api/auth/cambiar-clave-obligatoria (TOKEN_ET_TEMP) → 200"
+CAMBIO_OBLIGATORIO_ET=$(curl -sf -X POST "$API_URL/api/auth/cambiar-clave-obligatoria" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_ET_TEMP" --max-time 15 \
+  -d "{\"claveActual\":\"$CLAVE_TEMPORAL_ET\",\"claveNueva\":\"$NUEVA_CLAVE_ET\",\"confirmacionClaveNueva\":\"$NUEVA_CLAVE_ET\"}") \
+  || fail "POST cambiar-clave-obligatoria no respondió"
+assert_ok "$CAMBIO_OBLIGATORIO_ET" "cambiar-clave-obligatoria"
+REQUIERE_CAMBIO_POST=$(echo "$CAMBIO_OBLIGATORIO_ET" | jq -r '.data.requiereCambioClave')
+[[ "$REQUIERE_CAMBIO_POST" == "false" ]] \
+  || fail "Tras cambiar-clave-obligatoria: requiereCambioClave esperado false, obtenido $REQUIERE_CAMBIO_POST"
+ok "cambiar-clave-obligatoria (exento del enforcement) → 200, requiereCambioClave=false ✓"
+
+# UA5.8 La clave temporal deja de funcionar tras el cambio obligatorio
+info "POST /api/auth/login (estadotest, clave temporal ya usada) → 400"
+STATUS_LOGIN_TEMP_USADA=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/auth/login" -H "Content-Type: application/json" \
+  -d "{\"usuario\":\"estadotest_ci_test\",\"password\":\"$CLAVE_TEMPORAL_ET\"}")
+[[ "$STATUS_LOGIN_TEMP_USADA" == "400" ]] \
+  || fail "Login con clave temporal ya usada esperado 400, obtenido $STATUS_LOGIN_TEMP_USADA"
+ok "Login con clave temporal ya usada → 400 ✓"
+
+# UA5.9 / UA5.10 La clave nueva funciona y requiereCambioClave=false
+info "POST /api/auth/login (estadotest, clave nueva) → 200, requiereCambioClave=false"
+LOGIN_ET_NUEVA=$(post_json "$API_URL/api/auth/login" \
+  "{\"usuario\":\"estadotest_ci_test\",\"password\":\"$NUEVA_CLAVE_ET\"}") \
+  || fail "Login estadotest con clave nueva no respondió"
+assert_ok "$LOGIN_ET_NUEVA" "login estadotest con clave nueva"
+REQUIERE_CAMBIO_FINAL=$(echo "$LOGIN_ET_NUEVA" | jq -r '.data.requiereCambioClave')
+[[ "$REQUIERE_CAMBIO_FINAL" == "false" ]] \
+  || fail "Login con clave nueva: requiereCambioClave esperado false, obtenido $REQUIERE_CAMBIO_FINAL"
+ok "Login con clave nueva → 200, requiereCambioClave=false ✓"
+
+# UA5.11 ADMIN_XPAY sin SUPERUSUARIO no puede restablecer a un SUPERUSUARIO
+ID_USUARIO_ADMIN_GUARD=$(echo "$LOGIN_ADMIN_GUARD" | jq -r '.data.idUsuario')
+info "POST /api/admin/usuarios/$ID_USUARIO_ADMIN_GUARD/restablecer-clave (TOKEN_ADMIN_SOLO sobre ci_admin_guard, SUPERUSUARIO) → 403"
+STATUS_RESET_SUPER_403=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ADMIN_GUARD/restablecer-clave" \
+  -H "Authorization: Bearer $TOKEN_ADMIN_SOLO" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_RESET_SUPER_403" == "403" ]] \
+  || fail "ADMIN_XPAY sin SUPERUSUARIO restableciendo a un SUPERUSUARIO esperado 403, obtenido $STATUS_RESET_SUPER_403"
+ok "ADMIN_XPAY sin SUPERUSUARIO → restablecer clave de SUPERUSUARIO → 403 ✓"
+
+# UA5.12 SUPERUSUARIO sí puede restablecer a otro SUPERUSUARIO
+info "POST /api/admin/usuarios/$ID_USUARIO_ADMIN_GUARD/restablecer-clave (TOKEN_ADMIN, con SUPERUSUARIO) → 200"
+RESET_GUARD=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ADMIN_GUARD/restablecer-clave" '{}') \
+  || fail "POST restablecer-clave ci_admin_guard no respondió"
+assert_ok "$RESET_GUARD" "restablecer-clave ci_admin_guard"
+ok "SUPERUSUARIO restablece clave de otro SUPERUSUARIO → 200 ✓"
+
+# UA5.13 Auto-restablecimiento → 400
+info "POST /api/admin/usuarios/$ID_USUARIO_ADMIN/restablecer-clave (ci_admin_xpay sobre sí mismo) → 400"
+STATUS_AUTO_RESET=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ADMIN/restablecer-clave" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_AUTO_RESET" == "400" ]] \
+  || fail "Auto-restablecimiento esperado 400, obtenido $STATUS_AUTO_RESET"
+ok "Auto-restablecimiento → 400 ✓"
+
+# UA5.14 INACTIVO/BLOQUEADO → 409 (inactiva temporalmente estadotest por el
+# endpoint real, ya validado en FASE USUARIOS-ADMIN-3; se restaura al finalizar
+# el bloque, incluso si algún assert posterior falla).
+restaurar_estadotest_activo() {
+  "$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+    -Q "SET NOCOUNT ON; UPDATE usuarios SET estado='ACTIVO' WHERE usuario='estadotest_ci_test';" \
+    > /dev/null 2>&1 || true
+}
+trap restaurar_estadotest_activo EXIT
+
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/inactivar (para probar precondición ACTIVO) → 200"
+INACTIVAR_ET_UA5=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/inactivar" "{}") \
+  || fail "POST inactivar estadotest (UA5.14) no respondió"
+assert_ok "$INACTIVAR_ET_UA5" "inactivar estadotest (UA5.14)"
+
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/restablecer-clave (usuario INACTIVO) → 409"
+STATUS_RESET_INACTIVO=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/restablecer-clave" \
+  -H "Authorization: Bearer $TOKEN_ADMIN" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_RESET_INACTIVO" == "409" ]] \
+  || fail "Restablecer clave de usuario INACTIVO esperado 409, obtenido $STATUS_RESET_INACTIVO"
+ok "Restablecer clave de usuario INACTIVO → 409 ✓"
+
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/activar (restaurar estado tras UA5.14) → 200"
+ACTIVAR_ET_UA5=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/activar" "{}") \
+  || fail "POST activar estadotest (UA5.14) no respondió"
+assert_ok "$ACTIVAR_ET_UA5" "activar estadotest (UA5.14)"
+trap - EXIT
+ok "estadotest restaurado a ACTIVO ✓"
+
+# UA5.15 USUARIO_FINAL (carlos) → 403
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/restablecer-clave (USUARIO_FINAL) → 403"
+STATUS_RESET_UF_403=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/restablecer-clave" \
+  -H "Authorization: Bearer $TOKEN_A" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_RESET_UF_403" == "403" ]] \
+  || fail "Restablecer clave con USUARIO_FINAL esperado 403, obtenido $STATUS_RESET_UF_403"
+ok "Restablecer clave con USUARIO_FINAL → 403 ✓"
+
+# UA5.16 Sin token → 401
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/restablecer-clave (sin token) → 401"
+STATUS_RESET_401=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/restablecer-clave" -H "Content-Type: application/json" -d '{}')
+[[ "$STATUS_RESET_401" == "401" ]] \
+  || fail "Restablecer clave sin token esperado 401, obtenido $STATUS_RESET_401"
+ok "Restablecer clave sin token → 401 ✓"
+
+# UA5.17 Auditoría persistente sin clave ni hash
+check_sql_value \
+  "Auditoría USUARIO_RESTABLECER_CLAVE registrada para id_entidad=$ID_USUARIO_ET (UA5.1)" \
+  "SELECT COUNT(*) FROM auditoria WHERE modulo='USUARIOS_ADMIN' AND accion='USUARIO_RESTABLECER_CLAVE' AND entidad='usuarios' AND id_entidad='$ID_USUARIO_ET' AND resultado='EXITOSO'" \
+  "1"
+check_sql_value \
+  "Auditoría USUARIO_RESTABLECER_CLAVE (UA5.1): valor_anterior y valor_nuevo son NULL" \
+  "SELECT COUNT(*) FROM auditoria WHERE modulo='USUARIOS_ADMIN' AND accion='USUARIO_RESTABLECER_CLAVE' AND id_entidad='$ID_USUARIO_ET' AND valor_anterior IS NULL AND valor_nuevo IS NULL" \
+  "1"
+AUDIT_CLAVE_LEAK=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM auditoria WHERE modulo='USUARIOS_ADMIN' AND accion='USUARIO_RESTABLECER_CLAVE' AND (observacion LIKE '%$CLAVE_TEMPORAL_ET%' OR CAST(valor_anterior AS NVARCHAR(MAX)) LIKE '%\$2a\$%' OR CAST(valor_nuevo AS NVARCHAR(MAX)) LIKE '%\$2a\$%')" \
+  -h -1 | tr -d ' \r\n')
+[[ "$AUDIT_CLAVE_LEAK" == "0" ]] \
+  || fail "Auditoría USUARIO_RESTABLECER_CLAVE no debe contener la clave temporal ni ningún hash — filas encontradas: $AUDIT_CLAVE_LEAK"
+ok "Auditoría USUARIO_RESTABLECER_CLAVE → sin clave temporal ni hash ✓"
+
+# UA5.18 cambiar-clave-obligatoria rechaza política de contraseña inválida
+info "POST /api/admin/usuarios/$ID_USUARIO_ET/restablecer-clave (para probar política de cambiar-clave-obligatoria)"
+RESET_ET_UA518=$(post_auth_json "$TOKEN_ADMIN" "$API_URL/api/admin/usuarios/$ID_USUARIO_ET/restablecer-clave" '{}') \
+  || fail "POST restablecer-clave (UA5.18) no respondió"
+assert_ok "$RESET_ET_UA518" "restablecer-clave estadotest (UA5.18)"
+CLAVE_TEMPORAL_UA518=$(echo "$RESET_ET_UA518" | jq -r '.data.claveTemporal')
+
+LOGIN_ET_UA518=$(post_json "$API_URL/api/auth/login" \
+  "{\"usuario\":\"estadotest_ci_test\",\"password\":\"$CLAVE_TEMPORAL_UA518\"}") \
+  || fail "Login estadotest (UA5.18) no respondió"
+assert_ok "$LOGIN_ET_UA518" "login estadotest (UA5.18)"
+TOKEN_ET_UA518=$(echo "$LOGIN_ET_UA518" | jq -r '.data.token')
+
+info "POST /api/auth/cambiar-clave-obligatoria (contraseña sin carácter especial) → 400"
+STATUS_POLITICA_400=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/auth/cambiar-clave-obligatoria" \
+  -H "Authorization: Bearer $TOKEN_ET_UA518" -H "Content-Type: application/json" \
+  -d "{\"claveActual\":\"$CLAVE_TEMPORAL_UA518\",\"claveNueva\":\"Abc12345\",\"confirmacionClaveNueva\":\"Abc12345\"}")
+[[ "$STATUS_POLITICA_400" == "400" ]] \
+  || fail "cambiar-clave-obligatoria con política inválida esperado 400, obtenido $STATUS_POLITICA_400"
+ok "cambiar-clave-obligatoria con contraseña sin carácter especial → 400 ✓"
+
+echo ""
+
+# ════════════════════════════════════════════════════
 # FASE 35 — Observabilidad básica: diagnostics y correlation id
 # ════════════════════════════════════════════════════
 phase "FASE 35: Observabilidad básica — diagnostics/ping y X-Correlation-ID"

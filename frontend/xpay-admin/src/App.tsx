@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth, getViewForUser } from './auth/AuthContext.tsx';
 import { PrivateRoute } from './router/PrivateRoute.tsx';
 import { RequireView } from './router/RequireView.tsx';
+import { RequireClaveVigente } from './router/RequireClaveVigente.tsx';
 import { Layout } from './components/Layout.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
@@ -30,6 +31,7 @@ import { AdminWalletRecaudosComercioPage } from './pages/AdminWalletRecaudosCome
 import { AdminWalletCierresDiariosComercioPage } from './pages/AdminWalletCierresDiariosComercioPage.tsx';
 import { AdminUsuariosListPage } from './pages/AdminUsuariosListPage.tsx';
 import { AdminUsuarioDetallePage } from './pages/AdminUsuarioDetallePage.tsx';
+import { CambiarClaveObligatoriaPage } from './pages/CambiarClaveObligatoriaPage.tsx';
 
 // Smart redirect based on user role/view
 function UserRedirect() {
@@ -49,6 +51,10 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route element={<PrivateRoute />}>
+            {/* Fase USUARIOS-ADMIN-5: fuera de RequireClaveVigente a propósito
+                — es la única ruta accesible mientras requiereCambioClave=true. */}
+            <Route path="cambiar-clave-obligatoria" element={<CambiarClaveObligatoriaPage />} />
+            <Route element={<RequireClaveVigente />}>
             <Route element={<Layout />}>
               <Route index element={<UserRedirect />} />
 
@@ -100,6 +106,7 @@ export default function App() {
 
               {/* Catch-all: smart redirect per role */}
               <Route path="*" element={<UserRedirect />} />
+            </Route>
             </Route>
           </Route>
         </Routes>

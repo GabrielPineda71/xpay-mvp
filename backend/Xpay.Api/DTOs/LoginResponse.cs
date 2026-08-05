@@ -8,4 +8,5 @@ public class LoginResponse
     public string Estado { get; set; } = string.Empty;
     public List<string> Roles { get; set; } = new();
     public string Token { get; set; } = string.Empty;
+    public bool RequiereCambioClave { get; set; }
 }
