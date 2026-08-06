@@ -2310,7 +2310,7 @@ ok "FASE 70.4-C: ADMIN_SEDE_COMERCIO — ciclo completo abrir→recargar→cuadr
 # ── Caso 14: uq_wcjm_recarga impide el doble vínculo defensivo a nivel de BD ──
 info "INSERT directo duplicando id_recarga=$ID_RECARGA_1 en wallet_caja_movimientos → debe fallar por UNIQUE"
 DUP_OUTPUT=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
-  -Q "INSERT INTO wallet_caja_movimientos (id_caja, id_recarga, tipo_movimiento, naturaleza, valor, created_at) VALUES ($ID_CAJA_CAJERO, $ID_RECARGA_1, 'RECARGA_EFECTIVO', 'E', 1, SYSUTCDATETIME())" 2>&1) \
+  -Q "SET ANSI_NULLS ON; SET QUOTED_IDENTIFIER ON; INSERT INTO wallet_caja_movimientos (id_caja, id_recarga, tipo_movimiento, naturaleza, valor, created_at) VALUES ($ID_CAJA_CAJERO, $ID_RECARGA_1, 'RECARGA_EFECTIVO', 'E', 1, SYSUTCDATETIME())" 2>&1) \
   && fail "FASE 70.4-C caso 14: el INSERT duplicado debía fallar por uq_wcjm_recarga y no falló"
 echo "$DUP_OUTPUT" | grep -qi "unique\|duplicate" \
   || fail "FASE 70.4-C caso 14: el INSERT falló pero no por violación UNIQUE — salida: $DUP_OUTPUT"
