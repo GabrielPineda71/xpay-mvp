@@ -2179,7 +2179,7 @@ info "PATCH /api/comercio/cajas/$ID_CAJA_CAJERO/fondo-inicial tras recarga real 
 STATUS_C6=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   -X PATCH "$API_URL/api/comercio/cajas/$ID_CAJA_CAJERO/fondo-inicial" \
   -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_CAJERO" \
-  -d '{"fondoInicial": 60000}')
+  -d '{"fondoInicial": 60000, "motivo": "Validación CI: corrección bloqueada después de una recarga"}')
 [[ "$STATUS_C6" == "409" ]] || fail "FASE 70.4-C caso 6: corregir fondo tras recarga esperado 409, obtenido $STATUS_C6"
 ok "FASE 70.4-C caso 6: corregir fondo inicial tras recarga real → 409 ✓"
 
