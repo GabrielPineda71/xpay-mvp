@@ -50,6 +50,15 @@ post_auth_json() {
   fi
 }
 
+# Fase 70.4-C: variante que NO usa -f — necesaria para inspeccionar el body
+# de una respuesta de error (4xx), que curl -f descarta. Devuelve
+# "<http_code>\n<body>" en una sola cadena, separados por salto de línea.
+post_auth_json_status() {
+  local token="$1" url="$2" body="$3"
+  curl -s -w '\n%{http_code}' -X POST "$url" -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $token" --max-time 15 -d "$body"
+}
+
 assert_ok() {
   local resp="$1" label="$2"
   local success
@@ -2031,5 +2040,290 @@ READY_CID=$(echo "$READY_BODY" | jq -r '.correlationId // empty')
   || fail "FASE 47: correlationId ausente en /api/diagnostics/ready"
 ok "FASE 47: correlationId presente (cid=$READY_CID) ✓"
 
+# ════════════════════════════════════════════════════
+# FASE 70.4-C — Recargas en efectivo vinculadas a caja
+# ════════════════════════════════════════════════════
+# Hasta esta fase, scripts/validate-backend.sh nunca ejercitó el dominio
+# comercios_aliados/comercio_usuarios (ADMIN_COMERCIO/ADMIN_SEDE_COMERCIO/
+# CAJERO) ni ningún endpoint /api/comercio/cajas o /api/comercio/wallet-
+# recargas — no existía ningún fixture para ello. El fixture de esta fase
+# (scripts/ci/ci_comercio_caja_fixture.sql) lo crea por primera vez,
+# reutilizando $ID_COMERCIO (capturado en FASE 4) como comercio existente
+# del nuevo comercio aliado — no crea un comercio nuevo desde cero.
+phase "FASE 70.4-C: Recargas en efectivo vinculadas a caja"
+
+info "Aplicando fixture CI: comercio aliado + 4 usuarios operativos (Fase 70.4-C)"
+[[ -n "${ID_COMERCIO:-}" ]] || fail "FASE 70.4-C: \$ID_COMERCIO no está disponible (se esperaba de FASE 4)"
+"$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -v ID_COMERCIO="$ID_COMERCIO" \
+  -i scripts/ci/ci_comercio_caja_fixture.sql \
+  || fail "FASE 70.4-C: fixture SQL de comercio/caja falló"
+ok "Fixture comercio aliado + caja aplicado (id_comercio_existente=$ID_COMERCIO)"
+
+info "POST /api/auth/login (ci_cajero_comercio / ci_admin_sede_comercio / ci_admin_comercio / ci_cajero_ambiguo)"
+LOGIN_CAJERO=$(post_json "$API_URL/api/auth/login" '{"usuario":"ci_cajero_comercio","password":"CI-Fixture-Cajero#2026"}') \
+  || fail "POST login ci_cajero_comercio no respondió"
+assert_ok "$LOGIN_CAJERO" "login ci_cajero_comercio"
+TOKEN_CAJERO=$(echo "$LOGIN_CAJERO" | jq -r '.data.token')
+[[ -n "$TOKEN_CAJERO" && "$TOKEN_CAJERO" != "null" ]] || fail "Token vacío para ci_cajero_comercio"
+
+LOGIN_ADMIN_SEDE=$(post_json "$API_URL/api/auth/login" '{"usuario":"ci_admin_sede_comercio","password":"CI-Fixture-AdminSede#2026"}') \
+  || fail "POST login ci_admin_sede_comercio no respondió"
+assert_ok "$LOGIN_ADMIN_SEDE" "login ci_admin_sede_comercio"
+TOKEN_ADMIN_SEDE=$(echo "$LOGIN_ADMIN_SEDE" | jq -r '.data.token')
+[[ -n "$TOKEN_ADMIN_SEDE" && "$TOKEN_ADMIN_SEDE" != "null" ]] || fail "Token vacío para ci_admin_sede_comercio"
+
+LOGIN_ADMIN_COMERCIO=$(post_json "$API_URL/api/auth/login" '{"usuario":"ci_admin_comercio","password":"CI-Fixture-AdminComercio#2026"}') \
+  || fail "POST login ci_admin_comercio no respondió"
+assert_ok "$LOGIN_ADMIN_COMERCIO" "login ci_admin_comercio"
+TOKEN_ADMIN_COMERCIO=$(echo "$LOGIN_ADMIN_COMERCIO" | jq -r '.data.token')
+[[ -n "$TOKEN_ADMIN_COMERCIO" && "$TOKEN_ADMIN_COMERCIO" != "null" ]] || fail "Token vacío para ci_admin_comercio"
+
+LOGIN_CAJERO_AMBIGUO=$(post_json "$API_URL/api/auth/login" '{"usuario":"ci_cajero_ambiguo","password":"CI-Fixture-CajeroAmbiguo#2026"}') \
+  || fail "POST login ci_cajero_ambiguo no respondió"
+assert_ok "$LOGIN_CAJERO_AMBIGUO" "login ci_cajero_ambiguo"
+TOKEN_CAJERO_AMBIGUO=$(echo "$LOGIN_CAJERO_AMBIGUO" | jq -r '.data.token')
+[[ -n "$TOKEN_CAJERO_AMBIGUO" && "$TOKEN_CAJERO_AMBIGUO" != "null" ]] || fail "Token vacío para ci_cajero_ambiguo"
+ok "4 logins de fixture Fase 70.4-C → OK"
+
+# ── Caso 19: USUARIO_FINAL (carlos, sin ningún comercio_usuarios) → 403 ──
+info "POST /api/comercio/wallet-recargas con USUARIO_FINAL (carlos) → debe retornar 403"
+STATUS_C19=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/comercio/wallet-recargas" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_A" \
+  -d "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"1234567\"}")
+[[ "$STATUS_C19" == "403" ]] || fail "FASE 70.4-C caso 19: USUARIO_FINAL esperado 403, obtenido $STATUS_C19"
+ok "FASE 70.4-C caso 19: USUARIO_FINAL (carlos) → 403 ✓"
+
+# ── Caso 20: sin token → 401 ──
+info "POST /api/comercio/wallet-recargas sin token → debe retornar 401"
+STATUS_C20=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/comercio/wallet-recargas" \
+  -H "Content-Type: application/json" \
+  -d "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"1234567\"}")
+[[ "$STATUS_C20" == "401" ]] || fail "FASE 70.4-C caso 20: sin token esperado 401, obtenido $STATUS_C20"
+ok "FASE 70.4-C caso 20: sin token → 401 ✓"
+
+# ── Caso 11: scope ambiguo (2 comercio_usuarios ACTIVOS) → 409 ──
+info "POST /api/comercio/wallet-recargas con scope ambiguo (ci_cajero_ambiguo) → debe retornar 409"
+RESP_C11=$(post_auth_json_status "$TOKEN_CAJERO_AMBIGUO" "$API_URL/api/comercio/wallet-recargas" \
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"1234567\"}")
+STATUS_C11=$(echo "$RESP_C11" | tail -1)
+BODY_C11=$(echo "$RESP_C11" | sed '$d')
+[[ "$STATUS_C11" == "409" ]] || fail "FASE 70.4-C caso 11: scope ambiguo esperado 409, obtenido $STATUS_C11 ($BODY_C11)"
+ok "FASE 70.4-C caso 11: scope ambiguo (ci_cajero_ambiguo) → 409 ScopeComercioAmbiguoException ✓"
+
+# ── Caso 10: ADMIN_COMERCIO no autorizado a recargar → 403 ──
+info "POST /api/comercio/wallet-recargas con ADMIN_COMERCIO (ci_admin_comercio) → debe retornar 403"
+STATUS_C10=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/comercio/wallet-recargas" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_ADMIN_COMERCIO" \
+  -d "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"1234567\"}")
+[[ "$STATUS_C10" == "403" ]] || fail "FASE 70.4-C caso 10: ADMIN_COMERCIO esperado 403, obtenido $STATUS_C10"
+ok "FASE 70.4-C caso 10: ADMIN_COMERCIO (ci_admin_comercio) → 403 ✓"
+
+# ── Caso 7/12: recarga sin caja (ci_admin_sede_comercio, antes de abrir la ──
+# suya) → 409, y prueba de aislamiento: la caja ABIERTA de ci_cajero_comercio
+# (que se abre justo después) nunca podría reutilizarse aquí, sin fuga de
+# información de esa caja ajena en el mensaje. ──────────────────────────────
+info "POST /api/comercio/wallet-recargas sin caja abierta (ci_admin_sede_comercio) → debe retornar 409"
+RESP_C7=$(post_auth_json_status "$TOKEN_ADMIN_SEDE" "$API_URL/api/comercio/wallet-recargas" \
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"1234567\"}")
+STATUS_C7=$(echo "$RESP_C7" | tail -1)
+BODY_C7=$(echo "$RESP_C7" | sed '$d')
+[[ "$STATUS_C7" == "409" ]] || fail "FASE 70.4-C caso 7/12: sin caja esperado 409, obtenido $STATUS_C7 ($BODY_C7)"
+echo "$BODY_C7" | jq -e '.message | contains("caja abierta")' > /dev/null \
+  || fail "FASE 70.4-C caso 7/12: mensaje inesperado ($BODY_C7)"
+ok "FASE 70.4-C caso 7/12: recarga sin caja (ci_admin_sede_comercio) → 409 CajaNoAbiertaException, sin fuga ✓"
+
+# ── Caso 1: CAJERO abre su caja → 200 ──
+info "POST /api/comercio/cajas/abrir (ci_cajero_comercio, fondoInicial=50000)"
+ABRIR_CAJERO=$(post_auth_json "$TOKEN_CAJERO" "$API_URL/api/comercio/cajas/abrir" '{"fondoInicial": 50000}') \
+  || fail "FASE 70.4-C caso 1: abrir caja (CAJERO) no respondió"
+assert_ok "$ABRIR_CAJERO" "abrir caja CAJERO"
+ID_CAJA_CAJERO=$(echo "$ABRIR_CAJERO" | jq -r '.data.idCaja')
+ESTADO_CAJA_CAJERO=$(echo "$ABRIR_CAJERO" | jq -r '.data.estado')
+[[ "$ESTADO_CAJA_CAJERO" == "ABIERTA" ]] || fail "FASE 70.4-C caso 1: estado esperado ABIERTA, obtenido $ESTADO_CAJA_CAJERO"
+ok "FASE 70.4-C caso 1: CAJERO abre caja → idCaja=$ID_CAJA_CAJERO estado=ABIERTA ✓"
+
+# ── Casos 2/3/4: recarga con caja ABIERTA propia → 200, vínculo completo ──
+info "POST /api/comercio/wallet-recargas (20.000, CAJERO → wallet de carlos)"
+RECARGA_1=$(post_auth_json "$TOKEN_CAJERO" "$API_URL/api/comercio/wallet-recargas" \
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 20000, \"pin\": \"1234567\", \"observaciones\": \"Recarga CI Fase 70.4-C\"}") \
+  || fail "FASE 70.4-C caso 2: recarga con caja abierta no respondió"
+assert_ok "$RECARGA_1" "recarga con caja abierta"
+ID_RECARGA_1=$(echo "$RECARGA_1" | jq -r '.data.idRecarga')
+ok "FASE 70.4-C caso 2: recarga con caja ABIERTA propia → idRecarga=$ID_RECARGA_1 ✓"
+
+check_sql_value \
+  "FASE 70.4-C caso 3: wallet_caja_movimientos de la recarga $ID_RECARGA_1" \
+  "SELECT CONCAT(tipo_movimiento,'|',naturaleza,'|',CAST(valor AS INT),'|',id_caja) FROM wallet_caja_movimientos WHERE id_recarga = $ID_RECARGA_1" \
+  "RECARGA_EFECTIVO|E|20000|$ID_CAJA_CAJERO"
+
+check_sql_value \
+  "FASE 70.4-C caso 4: exactamente 1 wallet_caja_movimientos para la recarga $ID_RECARGA_1" \
+  "SELECT COUNT(*) FROM wallet_caja_movimientos WHERE id_recarga = $ID_RECARGA_1" \
+  "1"
+check_sql_value \
+  "FASE 70.4-C caso 4: exactamente 1 wallet_movimientos vinculado a la recarga $ID_RECARGA_1" \
+  "SELECT COUNT(*) FROM wallet_movimientos WHERE referencia_tipo='wallet_recargas_comercio' AND referencia_id=$ID_RECARGA_1" \
+  "1"
+check_sql_value \
+  "FASE 70.4-C caso 4: exactamente 2 ledger_movimientos (D+C) vinculados a la recarga $ID_RECARGA_1" \
+  "SELECT COUNT(*) FROM ledger_movimientos WHERE referencia_tipo='wallet_recargas_comercio' AND referencia_id=$ID_RECARGA_1" \
+  "2"
+ok "FASE 70.4-C caso 4: recarga+ledger+wallet_movimiento+caja_movimiento consistentes en una sola transacción ✓"
+
+# ── Caso 6: corregir fondo inicial con recargas vinculadas → 409 ──
+info "PATCH /api/comercio/cajas/$ID_CAJA_CAJERO/fondo-inicial tras recarga real → debe retornar 409"
+STATUS_C6=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X PATCH "$API_URL/api/comercio/cajas/$ID_CAJA_CAJERO/fondo-inicial" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_CAJERO" \
+  -d '{"fondoInicial": 60000}')
+[[ "$STATUS_C6" == "409" ]] || fail "FASE 70.4-C caso 6: corregir fondo tras recarga esperado 409, obtenido $STATUS_C6"
+ok "FASE 70.4-C caso 6: corregir fondo inicial tras recarga real → 409 ✓"
+
+# ── Caso 5: iniciar cuadre → EfectivoEsperado = FondoInicial + recargas ──
+info "POST /api/comercio/cajas/$ID_CAJA_CAJERO/iniciar-cuadre"
+CUADRE_CAJERO=$(post_auth_json "$TOKEN_CAJERO" "$API_URL/api/comercio/cajas/$ID_CAJA_CAJERO/iniciar-cuadre" '{}') \
+  || fail "FASE 70.4-C caso 5: iniciar cuadre no respondió"
+assert_ok "$CUADRE_CAJERO" "iniciar cuadre CAJERO"
+EFECTIVO_ESPERADO_CAJERO=$(echo "$CUADRE_CAJERO" | jq -r '.data.efectivoEsperado')
+[[ "$EFECTIVO_ESPERADO_CAJERO" == "70000" ]] \
+  || fail "FASE 70.4-C caso 5: efectivoEsperado esperado 70000 (50000+20000), obtenido $EFECTIVO_ESPERADO_CAJERO"
+ok "FASE 70.4-C caso 5: iniciar cuadre → efectivoEsperado=70000 (50000 fondo + 20000 recarga) ✓"
+
+# ── Caso 8: recarga con caja EN_CUADRE → 409 ──
+info "POST /api/comercio/wallet-recargas con caja EN_CUADRE (ci_cajero_comercio) → debe retornar 409"
+RESP_C8=$(post_auth_json_status "$TOKEN_CAJERO" "$API_URL/api/comercio/wallet-recargas" \
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"1234567\"}")
+STATUS_C8=$(echo "$RESP_C8" | tail -1)
+[[ "$STATUS_C8" == "409" ]] || fail "FASE 70.4-C caso 8: caja EN_CUADRE esperado 409, obtenido $STATUS_C8"
+ok "FASE 70.4-C caso 8: recarga con caja EN_CUADRE → 409 ✓"
+
+# ── Cerrar la caja del CAJERO exactamente en 70.000 (sin diferencia → CERRADA) ──
+info "POST /api/comercio/cajas/$ID_CAJA_CAJERO/cerrar (efectivoContado=70000)"
+CIERRE_CAJERO=$(post_auth_json "$TOKEN_CAJERO" "$API_URL/api/comercio/cajas/$ID_CAJA_CAJERO/cerrar" \
+  '{"efectivoContado": 70000}') \
+  || fail "FASE 70.4-C: cerrar caja CAJERO no respondió"
+assert_ok "$CIERRE_CAJERO" "cerrar caja CAJERO"
+ESTADO_CIERRE_CAJERO=$(echo "$CIERRE_CAJERO" | jq -r '.data.estado')
+[[ "$ESTADO_CIERRE_CAJERO" == "CERRADA" ]] || fail "FASE 70.4-C: estado esperado CERRADA, obtenido $ESTADO_CIERRE_CAJERO"
+ok "FASE 70.4-C: caja CAJERO cerrada sin diferencia → CERRADA ✓"
+
+# ── Caso 9: recarga con caja en estado terminal (CERRADA) → 409 ──
+info "POST /api/comercio/wallet-recargas con caja CERRADA (ci_cajero_comercio) → debe retornar 409"
+RESP_C9=$(post_auth_json_status "$TOKEN_CAJERO" "$API_URL/api/comercio/wallet-recargas" \
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"1234567\"}")
+STATUS_C9=$(echo "$RESP_C9" | tail -1)
+[[ "$STATUS_C9" == "409" ]] || fail "FASE 70.4-C caso 9: caja terminal esperado 409, obtenido $STATUS_C9"
+ok "FASE 70.4-C caso 9: recarga con caja en estado terminal (CERRADA) → 409 ✓"
+
+# ── Caso 13: fallo posterior a la adquisición del lock de caja → rollback ──
+# completo. ci_admin_sede_comercio abre su propia caja y luego se le hace
+# fallar la recarga en un punto DESPUÉS del lock (usuario destino inexistente,
+# resuelto ya dentro de la transacción) — no debe quedar wallet_recarga_comercio
+# ni wallet_caja_movimientos huérfano para esa caja. ─────────────────────────
+info "POST /api/comercio/cajas/abrir (ci_admin_sede_comercio, fondoInicial=30000)"
+ABRIR_ADMINSEDE=$(post_auth_json "$TOKEN_ADMIN_SEDE" "$API_URL/api/comercio/cajas/abrir" '{"fondoInicial": 30000}') \
+  || fail "FASE 70.4-C: abrir caja (ADMIN_SEDE_COMERCIO) no respondió"
+assert_ok "$ABRIR_ADMINSEDE" "abrir caja ADMIN_SEDE_COMERCIO"
+ID_CAJA_ADMINSEDE=$(echo "$ABRIR_ADMINSEDE" | jq -r '.data.idCaja')
+ok "FASE 70.4-C: ADMIN_SEDE_COMERCIO abre caja → idCaja=$ID_CAJA_ADMINSEDE ✓"
+
+MOVS_ANTES_C13=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM wallet_caja_movimientos WHERE id_caja=$ID_CAJA_ADMINSEDE" -h -1 | tr -d ' \r\n')
+RECARGAS_ANTES_C13=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM wallet_recargas_comercio WHERE id_usuario_cajero=(SELECT id_usuario FROM usuarios WHERE usuario='ci_admin_sede_comercio')" -h -1 | tr -d ' \r\n')
+
+info "POST /api/comercio/wallet-recargas con usuario destino inexistente → debe retornar 404 y hacer rollback completo"
+STATUS_C13=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -X POST "$API_URL/api/comercio/wallet-recargas" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_ADMIN_SEDE" \
+  -d '{"idUsuarioWallet": 999999999, "valor": 10000, "pin": "1234567"}')
+[[ "$STATUS_C13" == "404" ]] || fail "FASE 70.4-C caso 13: usuario destino inexistente esperado 404, obtenido $STATUS_C13"
+
+MOVS_DESPUES_C13=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM wallet_caja_movimientos WHERE id_caja=$ID_CAJA_ADMINSEDE" -h -1 | tr -d ' \r\n')
+RECARGAS_DESPUES_C13=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM wallet_recargas_comercio WHERE id_usuario_cajero=(SELECT id_usuario FROM usuarios WHERE usuario='ci_admin_sede_comercio')" -h -1 | tr -d ' \r\n')
+[[ "$MOVS_ANTES_C13" == "$MOVS_DESPUES_C13" ]] \
+  || fail "FASE 70.4-C caso 13: wallet_caja_movimientos cambió tras un fallo (antes=$MOVS_ANTES_C13, después=$MOVS_DESPUES_C13) — rollback incompleto"
+[[ "$RECARGAS_ANTES_C13" == "$RECARGAS_DESPUES_C13" ]] \
+  || fail "FASE 70.4-C caso 13: wallet_recargas_comercio cambió tras un fallo (antes=$RECARGAS_ANTES_C13, después=$RECARGAS_DESPUES_C13) — rollback incompleto"
+ok "FASE 70.4-C caso 13: fallo posterior al lock de caja → 404, rollback completo (0 filas huérfanas) ✓"
+
+# ── Concurrencia — dos recargas simultáneas sobre la misma caja ABIERTA ──
+# (ci_admin_sede_comercio). Caso determinista: bajo el lock UPDLOCK/ROWLOCK
+# de la fila de caja, SQL Server serializa ambas transacciones — ambas deben
+# tener éxito, sin update perdido. No se prueba aquí la carrera recarga vs.
+# IniciarCuadreAsync/CerrarAsync (ver nota de "pendiente" en el informe final)
+# porque su desenlace depende de qué transacción gana el lock primero — no
+# hay una aserción determinista posible desde bash sin control fino de
+# temporización, y no se va a fingir haberla probado.
+info "Dos recargas concurrentes (5.000 y 7.000) sobre la misma caja ABIERTA (ci_admin_sede_comercio)"
+# trap EXIT garantiza limpieza de archivos temporales y de los procesos curl
+# en background incluso si un wait/fail posterior aborta el script — mismo
+# patrón ya usado en FASE USUARIOS-ADMIN-3 (restaurar_admins_auxiliares).
+# Sin esto, un "fail" entre el lanzamiento y el rm -f de más abajo (p. ej. si
+# una de las dos llamadas concurrentes falla) dejaría /tmp/concurrente_*.json
+# huérfanos y, potencialmente, la otra llamada aún corriendo en background.
+limpiar_concurrencia_70_4_c() {
+  kill "$PID_CONC_A" "$PID_CONC_B" 2>/dev/null || true
+  rm -f /tmp/concurrente_a.json /tmp/concurrente_b.json
+}
+(post_auth_json "$TOKEN_ADMIN_SEDE" "$API_URL/api/comercio/wallet-recargas" \
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 5000, \"pin\": \"1234567\"}" > /tmp/concurrente_a.json 2>&1) &
+PID_CONC_A=$!
+(post_auth_json "$TOKEN_ADMIN_SEDE" "$API_URL/api/comercio/wallet-recargas" \
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 7000, \"pin\": \"1234567\"}" > /tmp/concurrente_b.json 2>&1) &
+PID_CONC_B=$!
+trap limpiar_concurrencia_70_4_c EXIT
+wait "$PID_CONC_A" || fail "FASE 70.4-C: recarga concurrente A falló"
+wait "$PID_CONC_B" || fail "FASE 70.4-C: recarga concurrente B falló"
+assert_ok "$(cat /tmp/concurrente_a.json)" "recarga concurrente A"
+assert_ok "$(cat /tmp/concurrente_b.json)" "recarga concurrente B"
+rm -f /tmp/concurrente_a.json /tmp/concurrente_b.json
+trap - EXIT
+check_sql_value \
+  "FASE 70.4-C: exactamente 2 wallet_caja_movimientos nuevos en la caja $ID_CAJA_ADMINSEDE tras la concurrencia" \
+  "SELECT COUNT(*) FROM wallet_caja_movimientos WHERE id_caja=$ID_CAJA_ADMINSEDE" \
+  "2"
+ok "FASE 70.4-C: dos recargas concurrentes sobre la misma caja → ambas exitosas, sin update perdido ✓"
+
+info "POST /api/comercio/cajas/$ID_CAJA_ADMINSEDE/iniciar-cuadre (ADMIN_SEDE_COMERCIO)"
+CUADRE_ADMINSEDE=$(post_auth_json "$TOKEN_ADMIN_SEDE" "$API_URL/api/comercio/cajas/$ID_CAJA_ADMINSEDE/iniciar-cuadre" '{}') \
+  || fail "FASE 70.4-C: iniciar cuadre ADMIN_SEDE_COMERCIO no respondió"
+assert_ok "$CUADRE_ADMINSEDE" "iniciar cuadre ADMIN_SEDE_COMERCIO"
+EFECTIVO_ESPERADO_ADMINSEDE=$(echo "$CUADRE_ADMINSEDE" | jq -r '.data.efectivoEsperado')
+[[ "$EFECTIVO_ESPERADO_ADMINSEDE" == "42000" ]] \
+  || fail "FASE 70.4-C: efectivoEsperado ADMIN_SEDE_COMERCIO esperado 42000 (30000+5000+7000), obtenido $EFECTIVO_ESPERADO_ADMINSEDE"
+ok "FASE 70.4-C: ADMIN_SEDE_COMERCIO — recarga concurrente reflejada íntegra en efectivoEsperado=42000 ✓"
+
+info "POST /api/comercio/cajas/$ID_CAJA_ADMINSEDE/cerrar (efectivoContado=42000)"
+CIERRE_ADMINSEDE=$(post_auth_json "$TOKEN_ADMIN_SEDE" "$API_URL/api/comercio/cajas/$ID_CAJA_ADMINSEDE/cerrar" \
+  '{"efectivoContado": 42000}') \
+  || fail "FASE 70.4-C: cerrar caja ADMIN_SEDE_COMERCIO no respondió"
+assert_ok "$CIERRE_ADMINSEDE" "cerrar caja ADMIN_SEDE_COMERCIO"
+ok "FASE 70.4-C: ADMIN_SEDE_COMERCIO — ciclo completo abrir→recargar→cuadrar→cerrar → OK ✓"
+
+# ── Caso 14: uq_wcjm_recarga impide el doble vínculo defensivo a nivel de BD ──
+info "INSERT directo duplicando id_recarga=$ID_RECARGA_1 en wallet_caja_movimientos → debe fallar por UNIQUE"
+DUP_OUTPUT=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "INSERT INTO wallet_caja_movimientos (id_caja, id_recarga, tipo_movimiento, naturaleza, valor, created_at) VALUES ($ID_CAJA_CAJERO, $ID_RECARGA_1, 'RECARGA_EFECTIVO', 'E', 1, SYSUTCDATETIME())" 2>&1) \
+  && fail "FASE 70.4-C caso 14: el INSERT duplicado debía fallar por uq_wcjm_recarga y no falló"
+echo "$DUP_OUTPUT" | grep -qi "unique\|duplicate" \
+  || fail "FASE 70.4-C caso 14: el INSERT falló pero no por violación UNIQUE — salida: $DUP_OUTPUT"
+check_sql_value \
+  "FASE 70.4-C caso 14: sigue existiendo exactamente 1 wallet_caja_movimientos para la recarga $ID_RECARGA_1 tras el intento" \
+  "SELECT COUNT(*) FROM wallet_caja_movimientos WHERE id_recarga = $ID_RECARGA_1" \
+  "1"
+ok "FASE 70.4-C caso 14: uq_wcjm_recarga rechaza el doble vínculo, sin corromper el existente ✓"
+
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 47: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica, error handling global, política JWT, HTTPS/HSTS readiness, readiness probe y todos los endpoints OK ═══"
+ok "═══ FASE 70.4-C COMPLETA: caja obligatoria, vínculo wallet_caja_movimientos, EfectivoEsperado, bloqueo EN_CUADRE/terminal, scope estricto, roles CAJERO/ADMIN_SEDE_COMERCIO, rollback atómico, concurrencia de recargas simultáneas y UNIQUE defensivo — OK ═══"
+info "PENDIENTE (no cubierto de forma determinista en este pipeline bash): carrera real recarga vs. IniciarCuadreAsync/CerrarAsync — su desenlace depende de cuál transacción gana el UPDLOCK primero; requiere un arnés de prueba con control explícito de temporización (p. ej. un test de integración .NET que fuerce el orden de adquisición del lock), no simulable de forma no frágil desde curl+bash."
+info "PENDIENTE (fuera de alcance de esta subfase): cobertura CI de Fase 70.2 (liquidación de recaudos) y Fase 70.3 (cierre diario) — ninguna de las dos tiene fixture ni prueba en este script, con o sin Fase 70.4-C; gap preexistente, no introducido aquí."
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 47 + 70.4-C: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica, error handling global, política JWT, HTTPS/HSTS readiness, readiness probe, recargas en efectivo vinculadas a caja y todos los endpoints OK ═══"

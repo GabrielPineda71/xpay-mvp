@@ -63,7 +63,10 @@ public class WalletCajaComercioService(XpayDbContext db, ComercioScopeService sc
     // caja.Estado IN (ABIERTA, EN_CUADRE) AND (
     //     FechaOperativa < HoyColombia()
     //     OR (FechaOperativa == HoyColombia() AND HoraColombia() > HoraLimiteCierre))
-    private static bool EstaVencida(WalletCajaComercio caja)
+    // Fase 70.4-C: internal (no private) — WalletRecargaComercioService la
+    // reutiliza tal cual, misma fórmula, sin duplicarla. Sigue siendo estática
+    // y sin estado propio, solo cambia su visibilidad.
+    internal static bool EstaVencida(WalletCajaComercio caja)
     {
         if (caja.Estado != EstadoAbierta && caja.Estado != EstadoEnCuadre) return false;
 
@@ -83,7 +86,10 @@ public class WalletCajaComercioService(XpayDbContext db, ComercioScopeService sc
     // No usa FirstOrDefaultAsync — cuenta explícitamente antes de resolver,
     // a diferencia de ComercioScopeService.GetScopeAsync (que sí lo hace y que
     // aquí solo se invoca una vez confirmado que existe una única fila activa).
-    private async Task<ComercioScope> ResolverScopeUnicoAsync(long idUsuario)
+    // Fase 70.4-C: internal (no private) — WalletRecargaComercioService la
+    // reutiliza tal cual (mismo criterio estricto 0/1/>1 scopes), sin
+    // inventar un segundo algoritmo.
+    internal async Task<ComercioScope> ResolverScopeUnicoAsync(long idUsuario)
     {
         var cantidadScopesActivos = await db.ComercioUsuarios
             .CountAsync(u => u.IdUsuario == idUsuario && u.Estado == "ACTIVO");
@@ -150,7 +156,13 @@ public class WalletCajaComercioService(XpayDbContext db, ComercioScopeService sc
     // EstaVencida bajo el lock (por si otro proceso ya la cerró/revisó), aplica
     // el snapshot mínimo y confirma. No implementa sp_getapplock ni el patrón de
     // dos fases completo (eso es de escritura) — esto es solo la Capa 3.
-    private async Task<WalletCajaComercio> AutoSanarAsync(WalletCajaComercio cajaDetectada)
+    // Fase 70.4-C: internal (no private) — WalletRecargaComercioService la
+    // invoca cuando detecta la misma condición de vencimiento sobre su propia
+    // caja, siempre después de haber revertido (RollbackAsync) su propia
+    // transacción — nunca hay dos transacciones activas a la vez sobre el
+    // mismo XpayDbContext (ambos servicios son Scoped y comparten la misma
+    // instancia de db dentro de la misma request).
+    internal async Task<WalletCajaComercio> AutoSanarAsync(WalletCajaComercio cajaDetectada)
     {
         await using var tx = await db.Database.BeginTransactionAsync();
         try
@@ -222,7 +234,10 @@ public class WalletCajaComercioService(XpayDbContext db, ComercioScopeService sc
     // acceso de ADMIN_SEDE_COMERCIO/ADMIN_COMERCIO a cajas de otros cajeros
     // (ListarAsync/GET por id), deberá generalizarse para recibir también al
     // solicitante y su rol.
-    private async Task<CajaDto> ProyectarAsync(WalletCajaComercio caja)
+    // Fase 70.4-C: internal (no private) — WalletRecargaComercioService la
+    // reutiliza para construir el CajaDto que transporta CajaVencidaException
+    // tras auto-sanar, mismo contrato ya usado por Corregir/Iniciar/Cerrar.
+    internal async Task<CajaDto> ProyectarAsync(WalletCajaComercio caja)
     {
         var nombreComercio = await db.Comercios.AsNoTracking()
             .Where(c => c.IdComercio == caja.IdComercio)

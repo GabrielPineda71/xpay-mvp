@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Xpay.Api.DTOs;
+using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
@@ -30,6 +31,10 @@ public class WalletRecargaComercioController(WalletRecargaComercioService svc) :
             var data = await svc.RecargarWalletAsync(req, uid);
             return Ok(new { success = true, data });
         }
+        catch (CajaNoAbiertaException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (CajaVencidaException ex) { return Conflict(new { success = false, message = ex.Message, data = ex.CajaActual }); }
+        catch (TransicionCajaInvalidaException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (ScopeComercioAmbiguoException ex) { return Conflict(new { success = false, message = ex.Message }); }
         catch (UnauthorizedAccessException) { return Forbid(); }
         catch (KeyNotFoundException ex) { return NotFound(new { success = false, message = ex.Message }); }
         catch (ArgumentException ex) { return BadRequest(new { success = false, message = ex.Message }); }
