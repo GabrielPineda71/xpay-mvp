@@ -106,6 +106,18 @@ jobs:
           echo "--- Ejecutando 017_comercio_usuarios_contexto.sql ---"
           sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
             -i database/017_comercio_usuarios_contexto.sql
+          echo "--- Ejecutando 025_wallet_recargas_comercio.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/025_wallet_recargas_comercio.sql
+          echo "--- Ejecutando 026_wallet_liquidacion_recaudos_comercio.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/026_wallet_liquidacion_recaudos_comercio.sql
+          echo "--- Ejecutando 027_wallet_cierres_diarios_comercio.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/027_wallet_cierres_diarios_comercio.sql
+          echo "--- Ejecutando 028_wallet_cajas_comercio.sql ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/028_wallet_cajas_comercio.sql
           echo "--- Ejecutando 029_wallet_idempotencia.sql ---"
           sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
             -i database/029_wallet_idempotencia.sql
