@@ -24,7 +24,20 @@
 -- TRANSACTION + BEGIN CATCH/ROLLBACK/THROW), mismo patrón que la
 -- migración 027, para que un fallo a mitad de la migración no deje
 -- tablas o constraints a medio crear.
+--
+-- Corrección CI: uq_wcjm_recarga (sección 2) es un índice único FILTRADO
+-- (WHERE id_recarga IS NOT NULL) — SQL Server exige QUOTED_IDENTIFIER ON
+-- en la sesión para crearlo. sqlcmd, a diferencia de la conexión ODBC con
+-- la que esta migración se verificó manualmente en QA, no lo activa por
+-- defecto — de ahí que el CREATE INDEX fallara la primera vez que 028 se
+-- ejecutó vía sqlcmd (pipeline CI). ANSI_NULLS ON se agrega junto con él
+-- por ser el par estándar recomendado por Microsoft para este escenario.
 -- =====================================================================
+
+SET ANSI_NULLS ON;
+GO
+SET QUOTED_IDENTIFIER ON;
+GO
 
 SET XACT_ABORT ON;
 
