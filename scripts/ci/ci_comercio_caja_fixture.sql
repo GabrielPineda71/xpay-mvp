@@ -8,9 +8,10 @@
 
    Objetivo: hasta la Fase 70.4-C, scripts/validate-backend.sh nunca
    ejercitó el dominio comercios_aliados/comercio_usuarios (ADMIN_COMERCIO/
-   ADMIN_SEDE_COMERCIO/CAJERO) — cero fixtures, cero llamadas a
-   /api/comercio/*. Este fixture crea, por primera vez, un comercio aliado
-   con 4 usuarios operativos (uno por escenario de prueba) para poder
+   ADMIN_SEDE_COMERCIO/CAJERO) — cero fixtures, cero llamadas a ningún
+   endpoint bajo /api/comercio/. Este fixture crea, por primera vez, un
+   comercio aliado con 4 usuarios operativos (uno por escenario de prueba)
+   para poder
    ejercitar WalletRecargaComercioService/WalletCajaComercioService end to
    end en CI.
 
