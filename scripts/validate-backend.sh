@@ -2189,7 +2189,7 @@ CUADRE_CAJERO=$(post_auth_json "$TOKEN_CAJERO" "$API_URL/api/comercio/cajas/$ID_
   || fail "FASE 70.4-C caso 5: iniciar cuadre no respondió"
 assert_ok "$CUADRE_CAJERO" "iniciar cuadre CAJERO"
 EFECTIVO_ESPERADO_CAJERO=$(echo "$CUADRE_CAJERO" | jq -r '.data.efectivoEsperado')
-[[ "$EFECTIVO_ESPERADO_CAJERO" == "70000" ]] \
+echo "$CUADRE_CAJERO" | jq -e '(.data.efectivoEsperado | tonumber) == 70000' > /dev/null \
   || fail "FASE 70.4-C caso 5: efectivoEsperado esperado 70000 (50000+20000), obtenido $EFECTIVO_ESPERADO_CAJERO"
 ok "FASE 70.4-C caso 5: iniciar cuadre → efectivoEsperado=70000 (50000 fondo + 20000 recarga) ✓"
 
@@ -2296,7 +2296,7 @@ CUADRE_ADMINSEDE=$(post_auth_json "$TOKEN_ADMIN_SEDE" "$API_URL/api/comercio/caj
   || fail "FASE 70.4-C: iniciar cuadre ADMIN_SEDE_COMERCIO no respondió"
 assert_ok "$CUADRE_ADMINSEDE" "iniciar cuadre ADMIN_SEDE_COMERCIO"
 EFECTIVO_ESPERADO_ADMINSEDE=$(echo "$CUADRE_ADMINSEDE" | jq -r '.data.efectivoEsperado')
-[[ "$EFECTIVO_ESPERADO_ADMINSEDE" == "42000" ]] \
+echo "$CUADRE_ADMINSEDE" | jq -e '(.data.efectivoEsperado | tonumber) == 42000' > /dev/null \
   || fail "FASE 70.4-C: efectivoEsperado ADMIN_SEDE_COMERCIO esperado 42000 (30000+5000+7000), obtenido $EFECTIVO_ESPERADO_ADMINSEDE"
 ok "FASE 70.4-C: ADMIN_SEDE_COMERCIO — recarga concurrente reflejada íntegra en efectivoEsperado=42000 ✓"
 
