@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, getViewForUser } from '../auth/AuthContext.tsx';
 import { WalletShell, type WalletNavItem, type WalletPrimaryAction } from './wallet/WalletShell.tsx';
+import { useComercioScope } from '../auth/useComercioScope.ts';
 
 function getApiLabel(): string {
   const url = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
@@ -17,6 +18,11 @@ export function Layout() {
   const navigate          = useNavigate();
   const { pathname }      = useLocation();
   const view              = user ? getViewForUser(user) : 'wallet';
+  // Fase 70.4-E: rol_comercio fino (CAJERO/ADMIN_SEDE_COMERCIO/ADMIN_COMERCIO)
+  // para decidir qué enlaces de Caja/Cuadre mostrar — RequireView solo conoce
+  // la vista coarse ('comercio'). enabled=false fuera de esa vista para no
+  // llamar /api/comercio/mi-scope sin el rol global COMERCIO.
+  const { scope: comercioScope } = useComercioScope(view === 'comercio');
 
   function handleLogout() {
     logout();
@@ -116,7 +122,17 @@ export function Layout() {
               <Link to="/admin/usuarios">Usuarios</Link>
             </>
           )}
-          {view === 'comercio' && <Link to="/mi-comercio">Mi Comercio</Link>}
+          {view === 'comercio' && (
+            <>
+              <Link to="/mi-comercio">Mi Comercio</Link>
+              {comercioScope && ['CAJERO', 'ADMIN_SEDE_COMERCIO'].includes(comercioScope.rolComercio) && (
+                <Link to="/comercio/mi-caja">Mi Caja</Link>
+              )}
+              {comercioScope && ['ADMIN_SEDE_COMERCIO', 'ADMIN_COMERCIO'].includes(comercioScope.rolComercio) && (
+                <Link to="/comercio/cajas">Cajas</Link>
+              )}
+            </>
+          )}
           {view === 'empresa'  && (
             <>
               <Link to="/mi-empresa">Mi Empresa</Link>

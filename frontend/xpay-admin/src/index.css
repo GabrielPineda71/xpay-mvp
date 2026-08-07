@@ -55,6 +55,17 @@ body {
   width: 100%;
 }
 
+/* Fase 70.4-E: la barra superior (usada también por la vista 'comercio')
+   no tenía reglas responsive — en móvil, .nav-links (hasta ~19 enlaces en
+   admin) desbordaba y forzaba scroll horizontal de toda la página. Se aísla
+   el scroll dentro de .nav-links en vez de dejarlo propagarse al documento. */
+@media (max-width: 767px) {
+  .nav { flex-wrap: wrap; height: auto; padding: 0.5rem 0.75rem; gap: 0.4rem; }
+  .nav-links { flex: 1 1 100%; order: 3; overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 0.15rem; }
+  .nav-links a { white-space: nowrap; }
+  .main-content { padding: 1rem; }
+}
+
 /* ── LOGIN ── */
 .login-container {
   min-height: 100vh;

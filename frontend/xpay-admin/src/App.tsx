@@ -3,6 +3,7 @@ import { AuthProvider, useAuth, getViewForUser } from './auth/AuthContext.tsx';
 import { PrivateRoute } from './router/PrivateRoute.tsx';
 import { RequireView } from './router/RequireView.tsx';
 import { RequireClaveVigente } from './router/RequireClaveVigente.tsx';
+import { RequireRolComercio } from './router/RequireRolComercio.tsx';
 import { Layout } from './components/Layout.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { DashboardPage } from './pages/DashboardPage.tsx';
@@ -17,6 +18,9 @@ import { VentasQrListPage } from './pages/VentasQrListPage.tsx';
 import { LedgerTransaccionesListPage } from './pages/LedgerTransaccionesListPage.tsx';
 import { UserWalletPage } from './pages/UserWalletPage.tsx';
 import { MiComercioPage } from './pages/MiComercioPage.tsx';
+import { MiCajaPage } from './pages/comercio/MiCajaPage.tsx';
+import { CajasListaPage } from './pages/comercio/CajasListaPage.tsx';
+import { CajaDetallePage } from './pages/comercio/CajaDetallePage.tsx';
 import { MiEmpresaPage } from './pages/MiEmpresaPage.tsx';
 import { BrebLlavesAdminPage } from './pages/BrebLlavesAdminPage.tsx';
 import { BrebRetirosAdminPage } from './pages/BrebRetirosAdminPage.tsx';
@@ -96,6 +100,16 @@ export default function App() {
               {/* Comercio routes */}
               <Route element={<RequireView allowedViews={['comercio']} />}>
                 <Route path="mi-comercio" element={<MiComercioPage />} />
+
+                {/* Fase 70.4-E: Caja/Cuadre — acotado además por rol_comercio,
+                    ya que RequireView solo distingue admin/comercio/empresa/wallet. */}
+                <Route element={<RequireRolComercio allowedRoles={['CAJERO', 'ADMIN_SEDE_COMERCIO']} />}>
+                  <Route path="comercio/mi-caja" element={<MiCajaPage />} />
+                </Route>
+                <Route element={<RequireRolComercio allowedRoles={['ADMIN_SEDE_COMERCIO', 'ADMIN_COMERCIO']} />}>
+                  <Route path="comercio/cajas" element={<CajasListaPage />} />
+                  <Route path="comercio/cajas/:id" element={<CajaDetallePage />} />
+                </Route>
               </Route>
 
               {/* Empresa routes */}

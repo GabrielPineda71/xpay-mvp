@@ -1,0 +1,348 @@
+/* Fase 70.4-E — Wallet Caja/Cuadre Comercio — mobile-first.
+   Estilos propios (prefijo caja-), aislados del CSS existente para no
+   arriesgar regresiones en las vistas admin/comercio ya en producción. */
+
+.caja-page {
+  padding: 1rem;
+  padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  max-width: 720px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.caja-page * { box-sizing: border-box; }
+
+.caja-page-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin: 0 0 0.25rem;
+}
+
+.caja-page-subtitle {
+  font-size: 0.85rem;
+  color: #718096;
+  margin: 0 0 1rem;
+}
+
+.caja-page-loading,
+.caja-page-empty {
+  text-align: center;
+  color: #a0aec0;
+  font-style: italic;
+  padding: 2.5rem 1rem;
+}
+
+.caja-error-banner {
+  background: #fff5f5;
+  color: #c53030;
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  border-left: 4px solid #fc8181;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  word-break: break-word;
+}
+
+.caja-success-banner {
+  background: #f0fff4;
+  color: #276749;
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  border-left: 4px solid #68d391;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+/* ── Badge de estado ─────────────────────────────────────────────────── */
+
+.caja-badge {
+  display: inline-block;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.caja-badge-abierta         { background: #bee3f8; color: #2b6cb0; }
+.caja-badge-en_cuadre       { background: #feebc8; color: #9c4221; }
+.caja-badge-cerrada         { background: #c6f6d5; color: #276749; }
+.caja-badge-con_diferencia  { background: #fed7d7; color: #9b2c2c; }
+.caja-badge-cerrada_automaticamente { background: #e2e8f0; color: #4a5568; }
+.caja-badge-revisada        { background: #d6bcfa; color: #553c9a; }
+
+/* ── Tarjeta resumen de "Mi Caja" ────────────────────────────────────── */
+
+.caja-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.caja-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.caja-field-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.6rem 1rem;
+}
+
+.caja-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.caja-field-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a0aec0;
+}
+
+.caja-field-value {
+  font-size: 1rem;
+  color: #1a202c;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.caja-field-value.caja-money { font-size: 1.15rem; }
+.caja-field-value.caja-diferencia-positiva { color: #276749; }
+.caja-field-value.caja-diferencia-negativa { color: #c53030; }
+
+/* ── Acciones — botones táctiles, mínimo 44px ───────────────────────── */
+
+.caja-acciones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+@media (min-width: 480px) {
+  .caja-acciones { flex-direction: row; flex-wrap: wrap; }
+}
+
+.caja-btn {
+  min-height: 44px;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+}
+
+@media (min-width: 480px) {
+  .caja-btn { width: auto; flex: 1 1 auto; min-width: 160px; }
+}
+
+.caja-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.caja-btn-primary   { background: #2b6cb0; color: #fff; }
+.caja-btn-primary:hover:not(:disabled)   { background: #2c5282; }
+.caja-btn-confirm   { background: #276749; color: #fff; }
+.caja-btn-confirm:hover:not(:disabled)   { background: #22543d; }
+.caja-btn-secondary { background: #edf2f7; color: #2d3748; border-color: #cbd5e0; }
+.caja-btn-secondary:hover:not(:disabled) { background: #e2e8f0; }
+.caja-btn-danger    { background: #fff5f5; color: #c53030; border-color: #fc8181; }
+.caja-btn-danger:hover:not(:disabled)    { background: #fed7d7; }
+.caja-btn-link {
+  background: transparent; color: #2b6cb0; border: none; text-decoration: underline;
+  min-height: 44px; padding: 0.4rem 0.25rem; width: auto; flex: 0 0 auto;
+}
+
+/* ── Estado vacío (sin caja abierta) ─────────────────────────────────── */
+
+.caja-empty-state {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  background: #fff;
+  border: 1px dashed #cbd5e0;
+  border-radius: 12px;
+}
+
+.caja-empty-state-icon { font-size: 2.2rem; margin-bottom: 0.5rem; }
+.caja-empty-state-text { color: #718096; font-size: 0.92rem; margin-bottom: 1.25rem; }
+
+/* ── Formularios (dentro de diálogos) ────────────────────────────────── */
+
+.caja-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.caja-form-field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.caja-form-field input,
+.caja-form-field textarea {
+  font-size: 1rem; /* >=16px evita zoom automático de iOS en focus */
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 8px;
+  font-family: inherit;
+  width: 100%;
+}
+
+.caja-form-field input:focus,
+.caja-form-field textarea:focus {
+  outline: none;
+  border-color: #2b6cb0;
+  box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.15);
+}
+
+.caja-form-hint { font-size: 0.78rem; color: #718096; }
+
+.caja-form-preview {
+  background: #f7fafc;
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1rem;
+  font-size: 0.88rem;
+}
+.caja-form-preview-row { display: flex; justify-content: space-between; padding: 0.15rem 0; }
+
+/* ── Diálogo modal — accesible en teclado móvil (sin quedar oculto) ──── */
+
+.caja-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+  padding: 0;
+}
+
+@media (min-width: 480px) {
+  .caja-dialog-overlay { align-items: center; padding: 1rem; }
+}
+
+.caja-dialog-box {
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  padding: 1.25rem 1.1rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
+}
+
+@media (min-width: 480px) {
+  .caja-dialog-box { border-radius: 12px; padding: 1.5rem; }
+}
+
+.caja-dialog-box h3 { margin: 0 0 0.75rem; font-size: 1.05rem; color: #1a1a2e; }
+.caja-dialog-actions { display: flex; flex-direction: column-reverse; gap: 0.6rem; margin-top: 1rem; }
+@media (min-width: 480px) { .caja-dialog-actions { flex-direction: row; justify-content: flex-end; } }
+
+/* ── Skeleton loading ────────────────────────────────────────────────── */
+
+.caja-skeleton {
+  background: linear-gradient(90deg, #f0f0f3 25%, #e6e6ea 37%, #f0f0f3 63%);
+  background-size: 400% 100%;
+  animation: caja-skeleton-loading 1.4s ease infinite;
+  border-radius: 8px;
+}
+@keyframes caja-skeleton-loading {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+.caja-skeleton-line { height: 14px; margin-bottom: 0.5rem; }
+.caja-skeleton-card { height: 220px; margin-bottom: 1rem; }
+
+/* ── Listado — cards en móvil, tabla en desktop ─────────────────────── */
+
+.caja-list-cards { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.caja-list-item {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  cursor: pointer;
+  min-height: 44px;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+}
+.caja-list-item:hover { border-color: #a0aec0; }
+
+.caja-list-item-row { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.caja-list-item-label { font-size: 0.78rem; color: #a0aec0; }
+.caja-list-item-value { font-size: 0.9rem; color: #2d3748; font-weight: 600; }
+
+.caja-table-wrapper { display: none; }
+
+@media (min-width: 768px) {
+  .caja-list-cards { display: none; }
+  .caja-table-wrapper { display: block; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 10px; }
+  .caja-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  .caja-table th { text-align: left; padding: 0.6rem 0.9rem; background: #f7fafc; color: #718096; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .caja-table td { padding: 0.6rem 0.9rem; border-top: 1px solid #edf2f7; }
+  .caja-table tr { cursor: pointer; }
+  .caja-table tr:hover { background: #f7fafc; }
+}
+
+/* ── Filtros ──────────────────────────────────────────────────────────── */
+
+.caja-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.9rem;
+}
+
+@media (min-width: 640px) {
+  .caja-filters { flex-direction: row; flex-wrap: wrap; align-items: flex-end; }
+}
+
+.caja-filter-field { display: flex; flex-direction: column; gap: 0.25rem; flex: 1 1 140px; }
+.caja-filter-field label { font-size: 0.75rem; color: #718096; }
+.caja-filter-field select,
+.caja-filter-field input {
+  font-size: 0.95rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  min-height: 40px;
+  font-family: inherit;
+}
+
+/* ── Paginación ───────────────────────────────────────────────────────── */
+
+.caja-pagination { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem; }
+.caja-pagination span { font-size: 0.85rem; color: #718096; }
+
+/* ── Cero scroll horizontal — red de seguridad ──────────────────────── */
+
+@media (max-width: 767px) {
+  .caja-page { overflow-x: hidden; }
+}
