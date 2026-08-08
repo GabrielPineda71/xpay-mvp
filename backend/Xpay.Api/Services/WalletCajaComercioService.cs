@@ -59,10 +59,15 @@ public class WalletCajaComercioService(XpayDbContext db, ComercioScopeService sc
     private static TimeOnly HoraColombia() =>
         TimeOnly.FromDateTime(ColombiaTime.DesdeUtc(DateTime.UtcNow));
 
-    // ── EstaVencida (diseño Fase 70.4, sección 9 — fórmula fecha+hora, sin >=) ──
-    // caja.Estado IN (ABIERTA, EN_CUADRE) AND (
-    //     FechaOperativa < HoyColombia()
-    //     OR (FechaOperativa == HoyColombia() AND HoraColombia() > HoraLimiteCierre))
+    // ── EstaVencida (mejora operativa pre-lanzamiento — fórmula basada
+    // únicamente en fecha operativa, ya no en hora) ─────────────────────────
+    // caja.Estado IN (ABIERTA, EN_CUADRE) AND FechaOperativa < HoyColombia()
+    // Antes también vencía una caja de HOY si HoraColombia() > HoraLimiteCierre
+    // (corte fijo a las 21:00 salvo configuración de sede) — esa rama se quitó
+    // deliberadamente: un comercio puede operar hasta las 23:59 sin que su caja
+    // venza; solo vence al cambiar el día calendario Colombia. HoraLimiteCierre
+    // sigue congelándose al abrir (ver AbrirAsync) y la columna no se toca —
+    // simplemente ya no participa en esta decisión.
     // Fase 70.4-C: internal (no private) — WalletRecargaComercioService la
     // reutiliza tal cual, misma fórmula, sin duplicarla. Sigue siendo estática
     // y sin estado propio, solo cambia su visibilidad.
@@ -70,9 +75,7 @@ public class WalletCajaComercioService(XpayDbContext db, ComercioScopeService sc
     {
         if (caja.Estado != EstadoAbierta && caja.Estado != EstadoEnCuadre) return false;
 
-        var hoy = HoyColombia();
-        if (caja.FechaOperativa < hoy) return true;
-        return caja.FechaOperativa == hoy && HoraColombia() > caja.HoraLimiteCierre;
+        return caja.FechaOperativa < HoyColombia();
     }
 
     // El patrón transaccional completo de dos fases (Fase A/Fase B) NO se
@@ -382,15 +385,15 @@ public class WalletCajaComercioService(XpayDbContext db, ComercioScopeService sc
         if (establecimiento.Estado != "ACTIVO")
             throw new TransicionCajaInvalidaException("La sede seleccionada no está activa.");
 
-        var hoy        = HoyColombia();
-        var horaActual = HoraColombia();
+        var hoy = HoyColombia();
+        // Mejora operativa pre-lanzamiento: ya no se rechaza la apertura por
+        // hora — una caja puede abrirse a cualquier hora del día calendario
+        // Colombia. horaLimiteEfectiva se sigue calculando y congelando en
+        // HoraLimiteCierre (columna intacta, ver comentario en su asignación
+        // más abajo) por compatibilidad, pero ya no participa en ninguna
+        // decisión de negocio — el vencimiento ahora depende únicamente de
+        // FechaOperativa (ver EstaVencida).
         var horaLimiteEfectiva = establecimiento.HoraCierreAutomaticoCaja ?? HoraLimiteCierrePorDefecto;
-
-        // fecha_operativa siempre es hoy — no existe apertura retroactiva ni
-        // programada a futuro en 70.4.1, así que basta comparar la hora.
-        if (horaActual > horaLimiteEfectiva)
-            throw new TransicionCajaInvalidaException(
-                $"No se puede abrir una caja después de la hora límite de cierre de esta sede ({horaLimiteEfectiva:HH:mm}). Contacta a tu administrador si necesitas operar en un turno posterior.");
 
         // Chequeo previo amigable — el UNIQUE(id_usuario_cajero, id_comercio,
         // fecha_operativa) es la garantía real contra la carrera de concurrencia

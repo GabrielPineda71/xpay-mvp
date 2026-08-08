@@ -70,6 +70,16 @@ IF NOT EXISTS (SELECT 1 FROM personas WHERE tipo_documento='CC' AND numero_docum
 IF NOT EXISTS (SELECT 1 FROM personas WHERE tipo_documento='CC' AND numero_documento = '999000013')
     INSERT INTO personas (id_unidad_negocio, tipo_documento, numero_documento, primer_nombre, primer_apellido, celular, email, estado)
     VALUES (@idUnidad, 'CC', '999000013', 'CI Fixture', 'CajeroAmbiguo', '3000000013', 'ci.cajero.ambiguo@ci-test.local', 'ACTIVA');
+
+-- Mejora operativa pre-lanzamiento (apertura sin restricción de hora / vencimiento
+-- por fecha_operativa) — 2 personas dedicadas, mismo criterio de aislamiento.
+IF NOT EXISTS (SELECT 1 FROM personas WHERE tipo_documento='CC' AND numero_documento = '999000014')
+    INSERT INTO personas (id_unidad_negocio, tipo_documento, numero_documento, primer_nombre, primer_apellido, celular, email, estado)
+    VALUES (@idUnidad, 'CC', '999000014', 'CI Fixture', 'CajeroVencimiento', '3000000014', 'ci.cajero.vencimiento@ci-test.local', 'ACTIVA');
+
+IF NOT EXISTS (SELECT 1 FROM personas WHERE tipo_documento='CC' AND numero_documento = '999000015')
+    INSERT INTO personas (id_unidad_negocio, tipo_documento, numero_documento, primer_nombre, primer_apellido, celular, email, estado)
+    VALUES (@idUnidad, 'CC', '999000015', 'CI Fixture', 'CajeroVigente', '3000000015', 'ci.cajero.vigente@ci-test.local', 'ACTIVA');
 GO
 
 -- ── Usuarios fixture (contraseñas exclusivas de CI, hash BCrypt $2a$11$ real) ──
@@ -92,14 +102,24 @@ IF NOT EXISTS (SELECT 1 FROM usuarios WHERE usuario = 'ci_cajero_ambiguo')
     INSERT INTO usuarios (id_persona, usuario, password_hash, estado)
     SELECT p.id_persona, 'ci_cajero_ambiguo', '$2a$11$KqsOVCQN3mVet9MChHSfhuNlMvfFn6jHH5lC1vr8HnFD8PT6luKF.', 'ACTIVO'
     FROM personas p WHERE p.tipo_documento='CC' AND p.numero_documento = '999000013';
+
+IF NOT EXISTS (SELECT 1 FROM usuarios WHERE usuario = 'ci_cajero_vencimiento')
+    INSERT INTO usuarios (id_persona, usuario, password_hash, estado)
+    SELECT p.id_persona, 'ci_cajero_vencimiento', '$2a$11$oZqaK.qvtwnx58rqLwm26e5UXNf0NZHanGnuN6Do1r4lHY3KMPv3K', 'ACTIVO'
+    FROM personas p WHERE p.tipo_documento='CC' AND p.numero_documento = '999000014';
+
+IF NOT EXISTS (SELECT 1 FROM usuarios WHERE usuario = 'ci_cajero_vigente')
+    INSERT INTO usuarios (id_persona, usuario, password_hash, estado)
+    SELECT p.id_persona, 'ci_cajero_vigente', '$2a$11$3Auw4dUtfPN.T2lXkFg1.O5jDnoyGvXHM.gsuylH3tEihTzk/e4ke', 'ACTIVO'
+    FROM personas p WHERE p.tipo_documento='CC' AND p.numero_documento = '999000015';
 GO
 
--- ── Rol JWT "COMERCIO" (gate de [Authorize(Roles="COMERCIO")]) para los 4 ──
+-- ── Rol JWT "COMERCIO" (gate de [Authorize(Roles="COMERCIO")]) para los 6 ──
 INSERT INTO usuario_roles (id_usuario, id_rol)
 SELECT u.id_usuario, r.id_rol
 FROM usuarios u
 JOIN roles r ON r.codigo = 'COMERCIO'
-WHERE u.usuario IN ('ci_cajero_comercio','ci_admin_sede_comercio','ci_admin_comercio','ci_cajero_ambiguo')
+WHERE u.usuario IN ('ci_cajero_comercio','ci_admin_sede_comercio','ci_admin_comercio','ci_cajero_ambiguo','ci_cajero_vencimiento','ci_cajero_vigente')
   AND NOT EXISTS (SELECT 1 FROM usuario_roles ur WHERE ur.id_usuario = u.id_usuario AND ur.id_rol = r.id_rol);
 GO
 
@@ -126,10 +146,22 @@ IF NOT EXISTS (SELECT 1 FROM comercio_establecimientos WHERE id_comercio_aliado 
         (id_comercio_aliado, nombre_establecimiento, estado, hora_cierre_automatico_caja)
     VALUES
         (@idComercioAliado, 'CI Fixture Sede Principal', 'ACTIVO', '23:59:00');
+
+-- Mejora operativa pre-lanzamiento: sede dedicada SIN override de hora
+-- (NULL = cae al default del sistema, hoy 21:00, ya sin efecto sobre la
+-- decisión de negocio) — usada por ci_cajero_vencimiento/ci_cajero_vigente
+-- para probar que abrir ya no depende de la hora, sea cual sea la hora real
+-- a la que corra el pipeline.
+IF NOT EXISTS (SELECT 1 FROM comercio_establecimientos WHERE id_comercio_aliado = @idComercioAliado AND nombre_establecimiento = 'CI Fixture Sede Sin Override Hora')
+    INSERT INTO comercio_establecimientos
+        (id_comercio_aliado, nombre_establecimiento, estado, hora_cierre_automatico_caja)
+    VALUES
+        (@idComercioAliado, 'CI Fixture Sede Sin Override Hora', 'ACTIVO', NULL);
 GO
 
 DECLARE @idComercioAliado2 BIGINT = (SELECT id_comercio_aliado FROM comercios_aliados WHERE nit = '900999001-1');
 DECLARE @idEstablecimiento BIGINT = (SELECT id_establecimiento FROM comercio_establecimientos WHERE id_comercio_aliado = @idComercioAliado2 AND nombre_establecimiento = 'CI Fixture Sede Principal');
+DECLARE @idEstablecimientoSinHora BIGINT = (SELECT id_establecimiento FROM comercio_establecimientos WHERE id_comercio_aliado = @idComercioAliado2 AND nombre_establecimiento = 'CI Fixture Sede Sin Override Hora');
 DECLARE @idComercioExistente2 BIGINT = $(ID_COMERCIO);
 
 -- ── comercio_usuarios — un scope por usuario, salvo ci_cajero_ambiguo (2) ──
@@ -159,6 +191,17 @@ INSERT INTO comercio_usuarios (id_comercio_aliado, id_comercio_existente, id_est
 SELECT @idComercioAliado2, @idComercioExistente2, @idEstablecimiento, u.id_usuario, 'CAJERO', 'ACTIVO'
 FROM usuarios u WHERE u.usuario = 'ci_cajero_ambiguo'
   AND (SELECT COUNT(*) FROM comercio_usuarios cu WHERE cu.id_usuario = u.id_usuario AND cu.estado='ACTIVO') < 2;
+
+-- ci_cajero_vencimiento / ci_cajero_vigente — sede sin override de hora.
+INSERT INTO comercio_usuarios (id_comercio_aliado, id_comercio_existente, id_establecimiento, id_usuario, rol_comercio, estado)
+SELECT @idComercioAliado2, @idComercioExistente2, @idEstablecimientoSinHora, u.id_usuario, 'CAJERO', 'ACTIVO'
+FROM usuarios u WHERE u.usuario = 'ci_cajero_vencimiento'
+  AND NOT EXISTS (SELECT 1 FROM comercio_usuarios cu WHERE cu.id_usuario = u.id_usuario AND cu.rol_comercio='CAJERO' AND cu.id_establecimiento=@idEstablecimientoSinHora);
+
+INSERT INTO comercio_usuarios (id_comercio_aliado, id_comercio_existente, id_establecimiento, id_usuario, rol_comercio, estado)
+SELECT @idComercioAliado2, @idComercioExistente2, @idEstablecimientoSinHora, u.id_usuario, 'CAJERO', 'ACTIVO'
+FROM usuarios u WHERE u.usuario = 'ci_cajero_vigente'
+  AND NOT EXISTS (SELECT 1 FROM comercio_usuarios cu WHERE cu.id_usuario = u.id_usuario AND cu.rol_comercio='CAJERO' AND cu.id_establecimiento=@idEstablecimientoSinHora);
 GO
 
 PRINT '--- Fixture CI: comercio aliado + caja listo (Fase 70.4-C) ---';

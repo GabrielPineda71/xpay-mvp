@@ -2325,5 +2325,142 @@ ok "═══ FASE 70.4-C COMPLETA: caja obligatoria, vínculo wallet_caja_movim
 info "PENDIENTE (no cubierto de forma determinista en este pipeline bash): carrera real recarga vs. IniciarCuadreAsync/CerrarAsync — su desenlace depende de cuál transacción gana el UPDLOCK primero; requiere un arnés de prueba con control explícito de temporización (p. ej. un test de integración .NET que fuerce el orden de adquisición del lock), no simulable de forma no frágil desde curl+bash."
 info "PENDIENTE (fuera de alcance de esta subfase): cobertura CI de Fase 70.2 (liquidación de recaudos) y Fase 70.3 (cierre diario) — ninguna de las dos tiene fixture ni prueba en este script, con o sin Fase 70.4-C; gap preexistente, no introducido aquí."
 
+# ════════════════════════════════════════════════════
+# FASE 70.4-F — Apertura sin restricción de hora / vencimiento por fecha operativa
+# ════════════════════════════════════════════════════
+# Mejora operativa pre-lanzamiento: se elimina el corte fijo de apertura a
+# las 21:00 (WalletCajaComercioService.AbrirAsync) y EstaVencida pasa a
+# depender únicamente de fecha_operativa < HoyColombia(), no de la hora.
+# ci_cajero_vencimiento/ci_cajero_vigente usan una sede SIN override de hora
+# (hora_cierre_automatico_caja = NULL) — antes de este cambio, caía al
+# default 21:00 y el caso T1 hubiera sido intermitente según a qué hora
+# corriera el pipeline; con el cambio, es 100% determinista: abrir ya no
+# puede fallar por hora, sea cual sea la hora real de ejecución de CI.
+phase "FASE 70.4-F: Apertura sin restricción de hora / vencimiento por fecha operativa"
+
+info "POST /api/auth/login (ci_cajero_vencimiento / ci_cajero_vigente)"
+LOGIN_VENC=$(post_json "$API_URL/api/auth/login" '{"usuario":"ci_cajero_vencimiento","password":"CI-Fixture-CajeroVencimiento#2026"}') \
+  || fail "POST login ci_cajero_vencimiento no respondió"
+assert_ok "$LOGIN_VENC" "login ci_cajero_vencimiento"
+TOKEN_VENC=$(echo "$LOGIN_VENC" | jq -r '.data.token')
+[[ -n "$TOKEN_VENC" && "$TOKEN_VENC" != "null" ]] || fail "Token vacío para ci_cajero_vencimiento"
+
+LOGIN_VIG=$(post_json "$API_URL/api/auth/login" '{"usuario":"ci_cajero_vigente","password":"CI-Fixture-CajeroVigente#2026"}') \
+  || fail "POST login ci_cajero_vigente no respondió"
+assert_ok "$LOGIN_VIG" "login ci_cajero_vigente"
+TOKEN_VIG=$(echo "$LOGIN_VIG" | jq -r '.data.token')
+[[ -n "$TOKEN_VIG" && "$TOKEN_VIG" != "null" ]] || fail "Token vacío para ci_cajero_vigente"
+ok "2 logins de fixture Fase 70.4-F → OK"
+
+# ── T1: abrir caja — ya no debe depender de la hora ──────────────────────
+info "POST /api/comercio/cajas/abrir (ci_cajero_vencimiento, sede sin override de hora) → debe retornar 200 sin importar la hora real"
+ABRIR_VENC=$(post_auth_json "$TOKEN_VENC" "$API_URL/api/comercio/cajas/abrir" '{"fondoInicial": 5000}') \
+  || fail "FASE 70.4-F T1: abrir caja ci_cajero_vencimiento no respondió"
+assert_ok "$ABRIR_VENC" "FASE 70.4-F T1: abrir caja ci_cajero_vencimiento"
+ID_CAJA_VENC=$(echo "$ABRIR_VENC" | jq -r '.data.idCaja')
+[[ -n "$ID_CAJA_VENC" && "$ID_CAJA_VENC" != "null" ]] || fail "FASE 70.4-F T1: idCaja vacío"
+ok "FASE 70.4-F T1: apertura exitosa sin restricción de hora (idCaja=$ID_CAJA_VENC) ✓"
+
+# ── T2: simular caja abierta "ayer" (SQL directo — no hay forma de mover el
+# reloj del sistema desde bash de forma segura) y confirmar vencimiento por
+# fecha, cierre automático vía la misma AutoSanarAsync que usará el nuevo
+# BackgroundService, y ausencia total de efecto en ledger/wallet ──────────
+info "UPDATE directo: fecha_operativa de la caja $ID_CAJA_VENC → ayer (simula caja abierta el día anterior, todavía ABIERTA)"
+"$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET ANSI_NULLS ON; SET QUOTED_IDENTIFIER ON; UPDATE wallet_cajas_comercio SET fecha_operativa = DATEADD(DAY,-1,fecha_operativa) WHERE id_caja = $ID_CAJA_VENC" \
+  || fail "FASE 70.4-F T2: UPDATE de fecha_operativa falló"
+ok "FASE 70.4-F T2: fecha_operativa retrocedida un día para la caja $ID_CAJA_VENC ✓"
+
+# Conteos GLOBALES antes/después — wallet_movimientos/ledger_transacciones/
+# ledger_movimientos no tienen id_caja para filtrar directamente, así que la
+# única forma real de demostrar que AutoSanarAsync no les afecta es comparar
+# el conteo total antes y después del disparo (comparar solo
+# wallet_caja_movimientos WHERE id_caja=... no alcanza a cubrir estas 3 tablas).
+WALLETMOV_ANTES_70_4_F=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM wallet_movimientos" -h -1 | tr -d ' \r\n')
+LEDGERTX_ANTES_70_4_F=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM ledger_transacciones" -h -1 | tr -d ' \r\n')
+LEDGERMOV_ANTES_70_4_F=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
+  -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM ledger_movimientos" -h -1 | tr -d ' \r\n')
+
+info "GET /api/comercio/cajas/mi-caja-actual (ci_cajero_vencimiento) → debe auto-sanar en esta misma lectura y devolver data=null"
+MI_CAJA_VENC=$(get_auth_json "$TOKEN_VENC" "$API_URL/api/comercio/cajas/mi-caja-actual") \
+  || fail "FASE 70.4-F T2: GET mi-caja-actual no respondió"
+assert_ok "$MI_CAJA_VENC" "FASE 70.4-F T2: GET mi-caja-actual tras vencimiento"
+echo "$MI_CAJA_VENC" | jq -e '.data == null' > /dev/null \
+  || fail "FASE 70.4-F T2: se esperaba data=null (caja de ayer ya no es 'la de hoy'), obtenido: $MI_CAJA_VENC"
+ok "FASE 70.4-F T2: caja vencida por fecha (no por hora) auto-sanada en lectura, mi-caja-actual → null ✓"
+
+check_sql_value \
+  "FASE 70.4-F T2: caja $ID_CAJA_VENC quedó CERRADA_AUTOMATICAMENTE" \
+  "SELECT estado FROM wallet_cajas_comercio WHERE id_caja=$ID_CAJA_VENC" \
+  "CERRADA_AUTOMATICAMENTE"
+check_sql_value \
+  "FASE 70.4-F T2: cerrada_automaticamente=1" \
+  "SELECT CAST(cerrada_automaticamente AS INT) FROM wallet_cajas_comercio WHERE id_caja=$ID_CAJA_VENC" \
+  "1"
+check_sql_value \
+  "FASE 70.4-F T2: efectivo_esperado = fondo_inicial (5000, sin recargas)" \
+  "SELECT CAST(efectivo_esperado AS INT) FROM wallet_cajas_comercio WHERE id_caja=$ID_CAJA_VENC" \
+  "5000"
+check_sql_value \
+  "FASE 70.4-F T2: efectivo_contado sigue NULL (cierre automático, no manual)" \
+  "SELECT ISNULL(CAST(efectivo_contado AS VARCHAR), 'NULL') FROM wallet_cajas_comercio WHERE id_caja=$ID_CAJA_VENC" \
+  "NULL"
+check_sql_value \
+  "FASE 70.4-F T2: diferencia sigue NULL (cierre automático, no manual)" \
+  "SELECT ISNULL(CAST(diferencia AS VARCHAR), 'NULL') FROM wallet_cajas_comercio WHERE id_caja=$ID_CAJA_VENC" \
+  "NULL"
+check_sql_value \
+  "FASE 70.4-F: cierre automático no crea ningún wallet_caja_movimientos para esta caja" \
+  "SELECT COUNT(*) FROM wallet_caja_movimientos WHERE id_caja=$ID_CAJA_VENC" \
+  "0"
+
+# Conteos globales DESPUÉS — deben ser idénticos a los de antes del disparo
+# de AutoSanarAsync (evidencia real de "no toca wallet_movimientos/ledger",
+# no solo una inferencia por lectura de código).
+check_sql_value \
+  "FASE 70.4-F: wallet_movimientos sin cambios tras el cierre automático" \
+  "SELECT COUNT(*) FROM wallet_movimientos" \
+  "$WALLETMOV_ANTES_70_4_F"
+check_sql_value \
+  "FASE 70.4-F: ledger_transacciones sin cambios tras el cierre automático" \
+  "SELECT COUNT(*) FROM ledger_transacciones" \
+  "$LEDGERTX_ANTES_70_4_F"
+check_sql_value \
+  "FASE 70.4-F: ledger_movimientos sin cambios tras el cierre automático" \
+  "SELECT COUNT(*) FROM ledger_movimientos" \
+  "$LEDGERMOV_ANTES_70_4_F"
+ok "FASE 70.4-F T2: cierre automático reutiliza AutoSanarAsync sin afectar wallet_movimientos, ledger_transacciones, ledger_movimientos ni wallet_caja_movimientos ✓"
+
+# ── T3: caja de hoy sigue vigente (no se auto-sana) ───────────────────────
+info "POST /api/comercio/cajas/abrir (ci_cajero_vigente) → caja de hoy"
+ABRIR_VIG=$(post_auth_json "$TOKEN_VIG" "$API_URL/api/comercio/cajas/abrir" '{"fondoInicial": 7000}') \
+  || fail "FASE 70.4-F T3: abrir caja ci_cajero_vigente no respondió"
+assert_ok "$ABRIR_VIG" "FASE 70.4-F T3: abrir caja ci_cajero_vigente"
+ID_CAJA_VIG=$(echo "$ABRIR_VIG" | jq -r '.data.idCaja')
+[[ -n "$ID_CAJA_VIG" && "$ID_CAJA_VIG" != "null" ]] || fail "FASE 70.4-F T3: idCaja vacío"
+
+info "GET /api/comercio/cajas/mi-caja-actual (ci_cajero_vigente) → debe seguir ABIERTA, sin auto-sanar"
+MI_CAJA_VIG=$(get_auth_json "$TOKEN_VIG" "$API_URL/api/comercio/cajas/mi-caja-actual") \
+  || fail "FASE 70.4-F T3: GET mi-caja-actual no respondió"
+assert_ok "$MI_CAJA_VIG" "FASE 70.4-F T3: GET mi-caja-actual caja vigente"
+echo "$MI_CAJA_VIG" | jq -e ".data.idCaja == $ID_CAJA_VIG and .data.estado == \"ABIERTA\"" > /dev/null \
+  || fail "FASE 70.4-F T3: se esperaba caja $ID_CAJA_VIG en estado ABIERTA, obtenido: $MI_CAJA_VIG"
+ok "FASE 70.4-F T3: caja de hoy sigue vigente, no vence por hora ✓"
+
+info "Cierre limpio de la caja vigente ($ID_CAJA_VIG) — orden de cuadre normal"
+CUADRE_VIG=$(post_auth_json "$TOKEN_VIG" "$API_URL/api/comercio/cajas/$ID_CAJA_VIG/iniciar-cuadre" '{}') \
+  || fail "FASE 70.4-F: iniciar cuadre ci_cajero_vigente no respondió"
+assert_ok "$CUADRE_VIG" "FASE 70.4-F: iniciar cuadre ci_cajero_vigente"
+CIERRE_VIG=$(post_auth_json "$TOKEN_VIG" "$API_URL/api/comercio/cajas/$ID_CAJA_VIG/cerrar" '{"efectivoContado": 7000}') \
+  || fail "FASE 70.4-F: cerrar caja ci_cajero_vigente no respondió"
+assert_ok "$CIERRE_VIG" "FASE 70.4-F: cerrar caja ci_cajero_vigente"
+ok "FASE 70.4-F: caja vigente cerrada limpiamente (diferencia=0) ✓"
+
 echo ""
-ok "═══ VALIDACIÓN COMPLETA FASES 1 a 47 + 70.4-C: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica, error handling global, política JWT, HTTPS/HSTS readiness, readiness probe, recargas en efectivo vinculadas a caja y todos los endpoints OK ═══"
+ok "═══ FASE 70.4-F COMPLETA: apertura sin restricción de hora, vencimiento únicamente por fecha_operativa, cierre automático vía AutoSanarAsync sin afectar wallet/ledger — OK ═══"
+info "PENDIENTE (no practicable dentro de un run de CI de duración normal): verificar el disparo real del BackgroundService cada 15 minutos — este bloque prueba exhaustivamente la lógica que ese servicio reutiliza (EstaVencida/AutoSanarAsync, idéntica a la vía perezosa), no el temporizador en sí. Verificación del temporizador queda para QA post-deploy (dejar una caja vencida y confirmar que se cierra sola en ≤15-20 min sin que nadie la toque)."
+
+echo ""
+ok "═══ VALIDACIÓN COMPLETA FASES 1 a 47 + 70.4-C + 70.4-F: listados ventas QR y ledger, admin wallets/comercios, retiros, gestión, CORS hardening, configuración QA, observabilidad básica, security headers, rate limiting, auditoría básica, error handling global, política JWT, HTTPS/HSTS readiness, readiness probe, recargas en efectivo vinculadas a caja, apertura sin restricción de hora y cierre automático por fecha operativa, y todos los endpoints OK ═══"
