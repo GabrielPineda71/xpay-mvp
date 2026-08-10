@@ -611,11 +611,11 @@ export function MiCarteraOrdinariaPage() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {creditos.map(c => (
-              <div key={c.idUtilizacion} style={{ border: '1px solid #ddd', borderRadius: 8, padding: '1rem', background: '#fff', maxWidth: 780 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '0.75rem' }}>
+              <div key={c.idUtilizacion} style={{ border: '1px solid #ddd', borderRadius: 8, padding: '1rem', background: '#fff', maxWidth: 780, boxSizing: 'border-box' }}>
+                <div className="cartera-grid" style={{ marginBottom: '0.75rem' }}>
                   <div><div style={{ fontSize: 11, color: '#666' }}>Crédito #</div><div style={{ fontWeight: 600 }}>{c.nroCredito}</div></div>
-                  <div><div style={{ fontSize: 11, color: '#666' }}>Tipo</div><div>{c.tipoUtilizacion}</div></div>
-                  <div><div style={{ fontSize: 11, color: '#666' }}>Valor desembolsado</div><div>{fmt(c.valorCapital)}</div></div>
+                  <div><div style={{ fontSize: 11, color: '#666' }}>Tipo</div><div className="cartera-amount">{c.tipoUtilizacion}</div></div>
+                  <div><div style={{ fontSize: 11, color: '#666' }}>Valor desembolsado</div><div className="cartera-amount">{fmt(c.valorCapital)}</div></div>
                   <div>
                     <div style={{ fontSize: 11, color: '#666' }}>Estado</div>
                     <span style={{
@@ -624,14 +624,14 @@ export function MiCarteraOrdinariaPage() {
                       color: c.estado === 'PAGADA' ? '#2e7d32' : '#e65100',
                     }}>{c.estado}</span>
                   </div>
-                  <div><div style={{ fontSize: 11, color: '#666' }}>Saldo pendiente</div><div style={{ fontWeight: 600 }}>{fmt(c.saldoPendiente)}</div></div>
+                  <div><div style={{ fontSize: 11, color: '#666' }}>Saldo pendiente</div><div className="cartera-amount" style={{ fontWeight: 600 }}>{fmt(c.saldoPendiente)}</div></div>
                   <div>
                     <div style={{ fontSize: 11, color: '#666' }}>Próxima cuota</div>
-                    <div>{c.proximaCuota ? `#${c.proximaCuota} — ${fmt(c.valorProximaCuota ?? 0)}` : '—'}</div>
+                    <div className="cartera-amount">{c.proximaCuota ? `#${c.proximaCuota} — ${fmt(c.valorProximaCuota ?? 0)}` : '—'}</div>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <button onClick={() => toggleCuotas(c.idUtilizacion)}
                     style={{ background: 'none', border: '1px solid #1976d2', color: '#1976d2', borderRadius: 4, padding: '4px 12px', cursor: 'pointer', fontSize: 13 }}>
                     {cuotasVisibles[c.idUtilizacion] ? 'Ocultar cuotas' : 'Ver cuotas'}
