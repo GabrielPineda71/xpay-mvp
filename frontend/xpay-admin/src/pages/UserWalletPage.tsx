@@ -729,11 +729,6 @@ export function UserWalletPage() {
         Usuario: <strong>{user.usuario}</strong>
         {' · '}Wallet #{miWallet.idWallet}
         {' · '}<span className="badge badge-info">QA / Demo</span>
-        {cuenta && !loading && (
-          <span style={{ marginLeft: '1rem', color: '#276749', fontWeight: 700 }}>
-            {fmtMoney(cuenta.saldoDisponible)}
-          </span>
-        )}
       </p>
 
       {/* ── Auto-refresh status bar ──────────────────────────────────────── */}
@@ -808,29 +803,6 @@ export function UserWalletPage() {
           </div>
         );
       })()}
-
-      {/* Tab navigation */}
-      <div className="wallet-tabs">
-        {(['saldo', 'recibir', 'enviar', 'pagar', 'movimientos', 'banco'] as Tab[]).map(t => {
-          const labels: Record<Tab, string> = {
-            saldo: 'Mi Saldo', recibir: 'Recibir', enviar: 'Enviar',
-            pagar: 'Pagar QR', movimientos: 'Movimientos', banco: 'Retirar a mi banco',
-          };
-          return (
-            <button
-              key={t}
-              className={`wallet-tab-btn${tab === t ? ' wallet-tab-btn--active' : ''}`}
-              onClick={() => {
-                setTab(t);
-                if (t !== 'enviar') setEnvScanning(false);
-                if (t !== 'pagar')  setPagScanning(false);
-              }}
-            >
-              {labels[t]}
-            </button>
-          );
-        })}
-      </div>
 
       {/* ── SALDO ─────────────────────────────────────────────────────────── */}
       {tab === 'saldo' && (

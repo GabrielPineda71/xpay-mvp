@@ -39,7 +39,7 @@ interface NavDef {
 }
 
 const NAV_ITEMS: NavDef[] = [
-  { key: 'home', label: 'Inicio', icon: IconHome },
+  { key: 'home', label: 'Mi Wallet', icon: IconHome },
   { key: 'movements', label: 'Movimientos', icon: IconHistory },
   { key: 'qr', label: 'QR', icon: IconQr, elevated: true },
   { key: 'products', label: 'Productos', icon: IconGrid },

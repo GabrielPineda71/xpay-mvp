@@ -46,6 +46,9 @@ export function Layout() {
         case 'pay-qr':
           navigate('/mi-wallet?tab=pagar');
           break;
+        case 'withdraw-bank':
+          navigate('/mi-wallet?tab=banco');
+          break;
         case 'breb-key':
         case 'where-to-buy':
           // Sin ruta/backend real todavía. breb-key en particular NO debe

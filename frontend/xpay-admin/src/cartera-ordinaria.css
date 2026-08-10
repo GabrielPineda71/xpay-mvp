@@ -1,0 +1,26 @@
+/* ── Cartera Ordinaria (MiCarteraOrdinariaPage.tsx) — grids responsive.
+   Mobile-first: 1 columna por defecto (garantiza cero scroll horizontal
+   en 360/375/390/430px), 2 columnas desde 641px (mismo breakpoint ya
+   usado en wallet-shell.css). Nombres .cartera-* no colisionables,
+   importado únicamente desde MiCarteraOrdinariaPage.tsx. ── */
+.cartera-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.cartera-grid > * {
+  min-width: 0;
+}
+@media (min-width: 641px) {
+  .cartera-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Evita que un monto largo ($1.234.567) fuerce el ancho de su columna
+   o desborde el viewport, independientemente del breakpoint. */
+.cartera-amount {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { get, post } from '../api/client.ts';
+import '../cartera-ordinaria.css';
 
 interface MiCupo {
   idCupo: number;
@@ -360,7 +361,7 @@ export function MiCarteraOrdinariaPage() {
           {cupoError}
         </div>
       ) : cupo ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '2rem' }}>
+        <div className="cartera-grid" style={{ marginBottom: '2rem' }}>
           {[
             { label: 'Cupo aprobado',   value: fmt(cupo.cupoAprobado),   color: '#1565c0' },
             { label: 'Cupo utilizado',  value: fmt(cupo.cupoUsado),      color: '#c62828' },
@@ -371,7 +372,7 @@ export function MiCarteraOrdinariaPage() {
               background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.08)',
             }}>
               <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>{c.label}</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: c.color }}>{c.value}</div>
+              <div className="cartera-amount" style={{ fontSize: 22, fontWeight: 700, color: c.color }}>{c.value}</div>
             </div>
           ))}
         </div>
@@ -420,7 +421,7 @@ export function MiCarteraOrdinariaPage() {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.75rem' }}>
+        <div className="cartera-grid" style={{ marginBottom: '0.75rem' }}>
           <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13 }}>
             Monto (COP)
             <input type="number" value={monto} placeholder="Ej: 500000"
@@ -492,7 +493,7 @@ export function MiCarteraOrdinariaPage() {
             </span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
+          <div className="cartera-grid" style={{ marginBottom: '1rem' }}>
             {[
               { label: modo === 'desembolso' ? 'Monto a recibir' : 'Valor compra', value: fmt(sim.valorCapital) },
               { label: `Cuota ${sim.frecuencia.toLowerCase()}`, value: fmt(sim.valorCuota) },
@@ -506,7 +507,7 @@ export function MiCarteraOrdinariaPage() {
             ].map(item => (
               <div key={item.label} style={{ background: '#fff', borderRadius: 6, padding: '0.6rem 0.8rem' }}>
                 <div style={{ fontSize: 11, color: '#555', marginBottom: 2 }}>{item.label}</div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: modo === 'desembolso' ? '#1b5e20' : '#0d47a1' }}>{item.value}</div>
+                <div className="cartera-amount" style={{ fontSize: 15, fontWeight: 600, color: modo === 'desembolso' ? '#1b5e20' : '#0d47a1' }}>{item.value}</div>
               </div>
             ))}
           </div>
@@ -523,7 +524,7 @@ export function MiCarteraOrdinariaPage() {
                 <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#fff8e1', borderRadius: 6, border: '1px solid #ffe082', fontSize: 13 }}>
                   Al confirmar, {fmt(sim.valorCapital)} se acreditará de inmediato a tu Wallet y se generará el plan de cuotas para el cobro.
                 </div>
-                <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, maxWidth: 200, marginBottom: '0.75rem' }}>
+                <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, marginBottom: '0.75rem' }}>
                   Clave de 7 dígitos
                   <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
                   <input

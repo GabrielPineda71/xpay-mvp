@@ -31,8 +31,11 @@ function IconKeySend(p: IconProps) {
 function IconStore(p: IconProps) {
   return <Svg {...p}><path d="M3.5 9 5 4h14l1.5 5" /><path d="M4 9v10.5h16V9" /><path d="M9.5 19.5V14h5v5.5" /><path d="M3.5 9c0 1.4 1.1 2.5 2.5 2.5S8.5 10.4 8.5 9M8.5 9c0 1.4 1.1 2.5 2.5 2.5S13.5 10.4 13.5 9M13.5 9c0 1.4 1.1 2.5 2.5 2.5S18.5 10.4 18.5 9" /></Svg>;
 }
+function IconBank(p: IconProps) {
+  return <Svg {...p}><path d="M3.5 9.5 12 4l8.5 5.5" /><path d="M4.5 9.5v9.5h15V9.5" /><path d="M8 19v-6M12 19v-6M16 19v-6" /><path d="M3.5 19h17" /></Svg>;
+}
 
-export type WalletPrimaryAction = 'receive' | 'send' | 'pay-qr' | 'breb-key' | 'where-to-buy';
+export type WalletPrimaryAction = 'receive' | 'send' | 'pay-qr' | 'breb-key' | 'where-to-buy' | 'withdraw-bank';
 
 interface ActionDef {
   key: WalletPrimaryAction;
@@ -46,6 +49,7 @@ const ACTIONS: ActionDef[] = [
   { key: 'pay-qr', label: 'Pagar QR', icon: IconQr },
   { key: 'breb-key', label: 'Enviar a mi llave Bre-B', icon: IconKeySend },
   { key: 'where-to-buy', label: 'Dónde comprar', icon: IconStore },
+  { key: 'withdraw-bank', label: 'Retirar a mi banco', icon: IconBank },
 ];
 
 interface UserPrimaryActionsProps {
