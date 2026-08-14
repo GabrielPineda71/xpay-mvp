@@ -165,6 +165,8 @@ public class XpayDbContext : DbContext
         // horario) — se excluye explícitamente del converter global de UTC de
         // ConfigureConventions, que solo tiene sentido para instantes (DATETIME2).
         e.Property(x => x.FechaNacimiento).HasColumnName("fecha_nacimiento").HasConversion((Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime?, DateTime?>?)null);
+        // Commit 2 — ver database/032_persona_identidad_verificada.sql (no ejecutado).
+        e.Property(x => x.IdentidadVerificada).HasColumnName("identidad_verificada"); e.Property(x => x.IdentidadVerificadaProveedor).HasColumnName("identidad_verificada_proveedor"); e.Property(x => x.IdentidadVerificadaFecha).HasColumnName("identidad_verificada_fecha"); e.Property(x => x.NombreVerificadoCompleto).HasColumnName("nombre_verificado_completo"); e.Property(x => x.ApellidoVerificadoCompleto).HasColumnName("apellido_verificado_completo"); e.Property(x => x.TipoDocumentoVeriffRaw).HasColumnName("tipo_documento_veriff_raw"); e.Property(x => x.NumeroDocumentoVerificado).HasColumnName("numero_documento_verificado");
     }
     private static void MapUsuario(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Usuario> e)
     {

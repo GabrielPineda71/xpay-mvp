@@ -42,7 +42,7 @@ public class WalletRecargaComercioService(
             from u in db.Usuarios
             join p in db.Personas on u.IdPersona equals p.IdPersona
             where u.NombreUsuario.Contains(q)
-               || p.NumeroDocumento.Contains(q)
+               || (p.NumeroDocumento != null && p.NumeroDocumento.Contains(q))
                || p.Celular.Contains(q)
                || (p.Email != null && p.Email.Contains(q))
             select new { u, p })
@@ -73,7 +73,7 @@ public class WalletRecargaComercioService(
                 IdUsuario:     c.u.IdUsuario,
                 NombreUsuario: c.u.NombreUsuario,
                 NombreCompleto: nombreCompleto,
-                Documento:     esCajero ? EnmascararDocumento(c.p.NumeroDocumento) : c.p.NumeroDocumento,
+                Documento:     esCajero ? EnmascararDocumento(c.p.NumeroDocumento ?? string.Empty) : (c.p.NumeroDocumento ?? string.Empty),
                 Celular:       esCajero ? null : c.p.Celular,
                 Correo:        esCajero ? null : c.p.Email,
                 IdWallet:      wallet.IdWallet,
