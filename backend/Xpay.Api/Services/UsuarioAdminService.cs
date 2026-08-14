@@ -55,8 +55,8 @@ public class UsuarioAdminService
             query = query.Where(x =>
                 x.u.NombreUsuario.Contains(t) ||
                 (x.p.NumeroDocumento != null && x.p.NumeroDocumento.Contains(t)) ||
-                x.p.PrimerNombre.Contains(t) ||
-                x.p.PrimerApellido.Contains(t) ||
+                (x.p.PrimerNombre != null && x.p.PrimerNombre.Contains(t)) ||
+                (x.p.PrimerApellido != null && x.p.PrimerApellido.Contains(t)) ||
                 (x.p.Email != null && x.p.Email.Contains(t)));
         }
 
@@ -107,7 +107,7 @@ public class UsuarioAdminService
         {
             IdUsuario           = x.u.IdUsuario,
             Usuario             = x.u.NombreUsuario,
-            NombreCompleto      = NombreCompleto(x.p.PrimerNombre, x.p.SegundoNombre, x.p.PrimerApellido, x.p.SegundoApellido),
+            NombreCompleto      = NombreCompleto(x.p.PrimerNombre ?? string.Empty, x.p.SegundoNombre, x.p.PrimerApellido ?? string.Empty, x.p.SegundoApellido),
             TipoDocumento       = x.p.TipoDocumento ?? string.Empty,
             NumeroDocumento     = x.p.NumeroDocumento ?? string.Empty,
             Email               = x.p.Email,
@@ -156,7 +156,7 @@ public class UsuarioAdminService
             IdUsuario           = usuarioEntidad.IdUsuario,
             IdPersona           = personaEntidad.IdPersona,
             Usuario             = usuarioEntidad.NombreUsuario,
-            NombreCompleto      = NombreCompleto(personaEntidad.PrimerNombre, personaEntidad.SegundoNombre, personaEntidad.PrimerApellido, personaEntidad.SegundoApellido),
+            NombreCompleto      = NombreCompleto(personaEntidad.PrimerNombre ?? string.Empty, personaEntidad.SegundoNombre, personaEntidad.PrimerApellido ?? string.Empty, personaEntidad.SegundoApellido),
             TipoDocumento       = personaEntidad.TipoDocumento ?? string.Empty,
             NumeroDocumento     = personaEntidad.NumeroDocumento ?? string.Empty,
             Email               = personaEntidad.Email,

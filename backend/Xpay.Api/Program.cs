@@ -19,6 +19,7 @@ builder.Services.AddDbContext<XpayDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("XpayConnection")));
 
 builder.Services.AddScoped<RegistroUsuarioFinalService>();
+builder.Services.AddScoped<RegistroInicialService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<WalletService>();
 builder.Services.AddScoped<WalletOperacionService>();

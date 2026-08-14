@@ -111,7 +111,7 @@ public class AuthService
     // obligatorio tras un restablecimiento — no se aplica retroactivamente a
     // usuarios existentes ni a registro-final (deuda técnica documentada en el
     // precheck, fuera de este alcance).
-    private static void ValidarPoliticaClave(string clave, string nombreUsuario)
+    internal static void ValidarPoliticaClave(string clave, string nombreUsuario)
     {
         if (string.IsNullOrEmpty(clave) || clave.Length < 8 || clave.Length > 128)
             throw new InvalidOperationException("La contraseña debe tener entre 8 y 128 caracteres.");
