@@ -43,6 +43,7 @@ builder.Services.AddScoped<WalletRecargaComercioService>();
 builder.Services.AddScoped<WalletLiquidacionRecaudoComercioService>();
 builder.Services.AddScoped<WalletCierreDiarioComercioService>();
 builder.Services.AddScoped<WalletCajaComercioService>();
+builder.Services.AddScoped<CatalogoGeograficoService>();
 builder.Services.AddHostedService<CajaVencidaSchedulerService>();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 {

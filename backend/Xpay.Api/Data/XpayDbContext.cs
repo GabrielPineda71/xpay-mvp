@@ -90,6 +90,9 @@ public class XpayDbContext : DbContext
     public DbSet<WalletCajaComercio>                      WalletCajasComercio                       => Set<WalletCajaComercio>();
     public DbSet<WalletCajaMovimiento>                    WalletCajaMovimientos                     => Set<WalletCajaMovimiento>();
     public DbSet<WalletIdempotencia>                      WalletIdempotencias                       => Set<WalletIdempotencia>();
+    public DbSet<CatalogoPais>                            CatalogoPaises                             => Set<CatalogoPais>();
+    public DbSet<CatalogoDepartamento>                    CatalogoDepartamentos                      => Set<CatalogoDepartamento>();
+    public DbSet<CatalogoCiudad>                          CatalogoCiudades                           => Set<CatalogoCiudad>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -150,6 +153,9 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<WalletCajaComercio>(e => { e.ToTable("wallet_cajas_comercio"); e.HasKey(x => x.IdCaja); MapWalletCajaComercio(e); });
         modelBuilder.Entity<WalletCajaMovimiento>(e => { e.ToTable("wallet_caja_movimientos"); e.HasKey(x => x.IdMovimiento); MapWalletCajaMovimiento(e); });
         modelBuilder.Entity<WalletIdempotencia>(e => { e.ToTable("wallet_idempotencia"); e.HasKey(x => x.IdIdempotencia); MapWalletIdempotencia(e); });
+        modelBuilder.Entity<CatalogoPais>(e => { e.ToTable("catalogo_paises"); e.HasKey(x => x.IdPais); MapCatalogoPais(e); });
+        modelBuilder.Entity<CatalogoDepartamento>(e => { e.ToTable("catalogo_departamentos"); e.HasKey(x => x.IdDepartamento); MapCatalogoDepartamento(e); });
+        modelBuilder.Entity<CatalogoCiudad>(e => { e.ToTable("catalogo_ciudades"); e.HasKey(x => x.IdCiudad); MapCatalogoCiudad(e); });
     }
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)
@@ -301,4 +307,12 @@ public class XpayDbContext : DbContext
     // Fase 71.2-E-G — ver database/029_wallet_idempotencia.sql (no ejecutado).
     private static void MapWalletIdempotencia(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WalletIdempotencia> e)
     { e.Property(x => x.IdIdempotencia).HasColumnName("id_idempotencia"); e.Property(x => x.IdUsuario).HasColumnName("id_usuario"); e.Property(x => x.Endpoint).HasColumnName("endpoint"); e.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key"); e.Property(x => x.RequestHash).HasColumnName("request_hash"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.HttpStatus).HasColumnName("http_status"); e.Property(x => x.IdRecurso).HasColumnName("id_recurso"); e.Property(x => x.IdTransaccionLedger).HasColumnName("id_transaccion_ledger"); e.Property(x => x.RespuestaDataJson).HasColumnName("respuesta_data_json"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaCompletado).HasColumnName("fecha_completado"); e.Property(x => x.FechaExpiracion).HasColumnName("fecha_expiracion"); }
+
+    // Commit 1 — ver database/031_catalogo_geografico.sql (ejecutado en QA).
+    private static void MapCatalogoPais(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<CatalogoPais> e)
+    { e.Property(x => x.IdPais).HasColumnName("id_pais"); e.Property(x => x.Codigo).HasColumnName("codigo"); e.Property(x => x.Nombre).HasColumnName("nombre"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion"); }
+    private static void MapCatalogoDepartamento(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<CatalogoDepartamento> e)
+    { e.Property(x => x.IdDepartamento).HasColumnName("id_departamento"); e.Property(x => x.IdPais).HasColumnName("id_pais"); e.Property(x => x.CodigoDivipola).HasColumnName("codigo_divipola"); e.Property(x => x.Nombre).HasColumnName("nombre"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion"); }
+    private static void MapCatalogoCiudad(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<CatalogoCiudad> e)
+    { e.Property(x => x.IdCiudad).HasColumnName("id_ciudad"); e.Property(x => x.IdDepartamento).HasColumnName("id_departamento"); e.Property(x => x.CodigoDivipola).HasColumnName("codigo_divipola"); e.Property(x => x.Nombre).HasColumnName("nombre"); e.Property(x => x.Tipo).HasColumnName("tipo"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion"); }
 }
