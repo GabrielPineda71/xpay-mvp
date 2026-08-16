@@ -16,4 +16,6 @@ public class KycVerificacion
     public DateTime  FechaCreacion       { get; set; }
     public DateTime? FechaActualizacion  { get; set; }
     public DateTime? FechaDecision       { get; set; }
+    public string?   AttemptIdVeriff     { get; set; }
+    public DateTime? DecisionTimeVeriff  { get; set; }
 }
