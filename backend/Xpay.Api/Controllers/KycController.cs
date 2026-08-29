@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using System.Text;
 using Xpay.Api.DTOs;
+using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
@@ -106,10 +107,117 @@ public class KycController : ControllerBase
             var code = ex.Message.StartsWith("Veriff sandbox no configurado") ? 503 : 400;
             return StatusCode(code, new { success = false, message = ex.Message });
         }
+        catch (KycUsuarioConcurrenteException ex)
+        {
+            // Contención transitoria de sincronización KYC del usuario (p. ej.
+            // doble-clic/doble-pestaña) — mismo criterio que
+            // ReconciliarVeriff: no es un error de negocio/solicitud, nunca
+            // se mapea a 400 ni a un 500 genérico.
+            return StatusCode(503, new { success = false, message = ex.Message });
+        }
         catch
         {
             return StatusCode(500, new { success = false, message = "Error interno iniciando verificación." });
         }
+    }
+
+    /// <summary>
+    /// POST /api/kyc/admin/reconciliar-veriff
+    /// Solo ADMIN_XPAY o SUPERUSUARIO. Reconcilia manualmente una fila
+    /// kyc_verificaciones existente consultando GET /v1/sessions/{sessionId}/decision
+    /// de Veriff — para sesiones que quedaron sin decisión de webhook (perdida,
+    /// tardía, o nunca entregada).
+    ///
+    /// El sessionId consultado a Veriff sale EXCLUSIVAMENTE de la fila
+    /// persistida en XPAY (nunca del request) — el request solo identifica
+    /// QUÉ fila propia reconciliar, para que el operador nunca pueda hacer
+    /// que XPAY consulte un sessionId externo arbitrario que no corresponda
+    /// a una fila real ya existente.
+    ///
+    /// La validación de elegibilidad (proveedor VERIFF, EsActual, sessionId
+    /// presente, estado PENDIENTE/EN_REVISION) es solo best-effort para
+    /// evitar una llamada HTTP inútil — la garantía real de consistencia la
+    /// da KycService.ProcesarDecisionVeriffAsync, que recarga el estado
+    /// fresco bajo el lock XPAY:KYC_USUARIO:{idUsuario} antes de decidir
+    /// cualquier escritura.
+    ///
+    /// Body: { "idKycVerificacion": 12 }
+    /// </summary>
+    [HttpPost("admin/reconciliar-veriff")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> ReconciliarVeriff([FromBody] ReconciliarVeriffRequest request)
+    {
+        _audit.LogSensitiveAction(HttpContext, "KYC_RECONCILIACION_VERIFF_ATTEMPT",
+            new { idKycVerificacion = request.IdKycVerificacion });
+
+        try
+        {
+            var resultado = await _kyc.ReconciliarVeriffAsync(request.IdKycVerificacion, HttpContext.RequestAborted);
+
+            _audit.LogSensitiveAction(HttpContext, "KYC_RECONCILIACION_VERIFF_RESULTADO",
+                new { idKycVerificacion = request.IdKycVerificacion, categoria = resultado.Categoria.ToString() });
+
+            return resultado.Categoria switch
+            {
+                ReconciliacionVeriffCategoria.ProcesadoConCambios
+                    or ReconciliacionVeriffCategoria.ProcesadoSinCambiosPorIdempotencia
+                    or ReconciliacionVeriffCategoria.SinDecisionTodavia
+                    => Ok(new { success = true, categoria = resultado.Categoria.ToString(), estadoKyc = resultado.EstadoMapeado }),
+
+                ReconciliacionVeriffCategoria.FilaNoEncontrada
+                    or ReconciliacionVeriffCategoria.SesionNoEncontradaEnVeriff
+                    => NotFound(new { success = false, message = resultado.Mensaje ?? "No encontrado." }),
+
+                ReconciliacionVeriffCategoria.NoElegible
+                    or ReconciliacionVeriffCategoria.ErrorDefinitivoVeriff
+                    => BadRequest(new { success = false, message = resultado.Mensaje ?? "Solicitud no válida." }),
+
+                ReconciliacionVeriffCategoria.ErrorTransitorioVeriff
+                    => StatusCode(503, new { success = false, message = resultado.Mensaje ?? "Error transitorio consultando Veriff." }),
+
+                _ => StatusCode(500, new { success = false, message = "Error interno reconciliando la sesión." }),
+            };
+        }
+        catch (KycUsuarioConcurrenteException ex)
+        {
+            // Contención transitoria de sincronización KYC del usuario — no
+            // es un error de negocio/solicitud, nunca se mapea a 400.
+            return StatusCode(503, new { success = false, message = ex.Message });
+        }
+        catch (IdentidadDocumentoConcurrenteException ex)
+        {
+            // Contención transitoria del lock de identidad-documento — mismo
+            // criterio que arriba.
+            return StatusCode(503, new { success = false, message = ex.Message });
+        }
+        catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            // El cliente/admin canceló o cerró la conexión — no es una falla
+            // interna ni una contención transitoria. Se re-lanza (mismo
+            // criterio que CajaVencidaSchedulerService.EjecutarBarridoSeguroAsync
+            // con el apagado normal del host): ASP.NET Core ya sabe que la
+            // conexión fue abortada y no intentará escribir ninguna
+            // respuesta útil — construir un StatusCode aquí sería una
+            // clasificación artificial de "error interno" para algo que no
+            // lo es, y contaminaría el monitoreo de esta acción.
+            throw;
+        }
+        catch
+        {
+            // Incluye InvalidOperationException del núcleo (fila
+            // desaparecida entre el lookup best-effort y la recarga bajo
+            // lock — defensivo, no debería ocurrir en operación normal) y
+            // cualquier otra falla técnica no clasificada.
+            return StatusCode(500, new { success = false, message = "Error interno reconciliando la sesión." });
+        }
+    }
+
+    // Request mínimo del endpoint admin — nested, no DTO público nuevo: el
+    // sessionId nunca viaja en el request, solo el identificador propio de
+    // XPAY.
+    public sealed class ReconciliarVeriffRequest
+    {
+        public long IdKycVerificacion { get; set; }
     }
 
     /// <summary>
