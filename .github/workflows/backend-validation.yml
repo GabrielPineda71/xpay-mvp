@@ -65,65 +65,23 @@ jobs:
 
       - name: Crear base de datos y ejecutar migraciones
         run: |
+          set -euo pipefail
           sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -b -C \
             -Q "IF DB_ID('$DB_NAME') IS NULL CREATE DATABASE [$DB_NAME]; PRINT 'DB $DB_NAME lista.'"
-          echo "--- Ejecutando 001_security_identity.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/001_security_identity.sql
-          echo "--- Ejecutando 002_wallet_ledger.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/002_wallet_ledger.sql
-          echo "--- Ejecutando 003_comercios_qr.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/003_comercios_qr.sql
-          echo "--- Ejecutando 004_liquidacion_qr.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/004_liquidacion_qr.sql
-          echo "--- Ejecutando 005_retiros_comercio.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/005_retiros_comercio.sql
-          echo "--- Ejecutando 006_gestion_retiros_comercio.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/006_gestion_retiros_comercio.sql
-          echo "--- Ejecutando 007_security_roles_jwt.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/007_security_roles_jwt.sql
-          echo "--- Ejecutando scripts/ci/ci_admin_xpay_fixture.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i scripts/ci/ci_admin_xpay_fixture.sql
-          echo "--- Ejecutando 009_kyc_verificaciones.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/009_kyc_verificaciones.sql
-          echo "--- Ejecutando 010_passport_breb_base.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/010_passport_breb_base.sql
-          echo "--- Ejecutando 015_comercios_aliados.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/015_comercios_aliados.sql
-          echo "--- Ejecutando 016_comercio_disponibilidad.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/016_comercio_disponibilidad.sql
-          echo "--- Ejecutando 017_comercio_usuarios_contexto.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/017_comercio_usuarios_contexto.sql
-          echo "--- Ejecutando 025_wallet_recargas_comercio.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/025_wallet_recargas_comercio.sql
-          echo "--- Ejecutando 026_wallet_liquidacion_recaudos_comercio.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/026_wallet_liquidacion_recaudos_comercio.sql
-          echo "--- Ejecutando 027_wallet_cierres_diarios_comercio.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/027_wallet_cierres_diarios_comercio.sql
-          echo "--- Ejecutando 028_wallet_cajas_comercio.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/028_wallet_cajas_comercio.sql
-          echo "--- Ejecutando 029_wallet_idempotencia.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/029_wallet_idempotencia.sql
-          echo "--- Ejecutando 030_usuario_roles_revocacion.sql ---"
-          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
-            -i database/030_usuario_roles_revocacion.sql
+          for migration in database/*.sql; do
+            base="$(basename "$migration")"
+            if [ "$base" = "008_seed_qa_dataset.sql" ]; then
+              # 008 es seed exclusivo de QA/dev — CI usa en su lugar el
+              # fixture mínimo scripts/ci/ci_admin_xpay_fixture.sql.
+              echo "--- Ejecutando fixture CI en lugar de 008_seed_qa_dataset.sql ---"
+              sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+                -i scripts/ci/ci_admin_xpay_fixture.sql
+            else
+              echo "--- Ejecutando $base ---"
+              sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+                -i "$migration"
+            fi
+          done
           echo "Migraciones aplicadas."
 
       - name: dotnet restore
