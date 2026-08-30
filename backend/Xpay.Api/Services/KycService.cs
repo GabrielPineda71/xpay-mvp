@@ -116,11 +116,8 @@ public class KycService
         {
             Verification = new
             {
-                Callback    = "https://xpay-api-qa.azurewebsites.net/api/kyc/veriff/webhook",
-                VendorData  = vendorData,
-                Timestamp   = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-                // RedirectUrl: redirect user back to XPAY after Veriff completion. Veriff V1 may ignore this field.
-                RedirectUrl = "https://xpay-admin-qa.azurewebsites.net/mi-wallet?kyc=return",
+                Callback   = "https://xpay-api-qa.azurewebsites.net/api/kyc/veriff/webhook",
+                VendorData = vendorData,
             }
         };
 
