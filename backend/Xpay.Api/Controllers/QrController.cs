@@ -62,6 +62,7 @@ public class QrController : ControllerBase
     // cliente. Antes de esta corrección, request.IdWalletUsuario venía directo
     // del cliente sin validar ownership (IDOR de escritura — ver
     // docs/security/FASE_71.2_E_B_AUTORIZACION_IDOR.md, V18).
+    [Authorize(Policy = "KycAprobado")]
     [HttpPost("pagar")]
     public async Task<IActionResult> Pagar([FromBody] PagoQrRequest request)
     {

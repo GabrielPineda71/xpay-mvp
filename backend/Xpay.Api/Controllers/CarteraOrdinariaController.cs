@@ -85,6 +85,7 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
     }
 
     // ── USUARIO: Mi cupo ──────────────────────────────────────────────
+    [Authorize(Policy = "KycAprobado")]
     [HttpGet("mi-cupo")]
     public async Task<IActionResult> GetMiCupo()
     {
@@ -102,6 +103,7 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
     }
 
     // ── USUARIO: Confirmación real de utilización (AVANCE_WALLET) ─────
+    [Authorize(Policy = "KycAprobado")]
     [HttpPost("confirmar-avance-wallet")]
     public async Task<IActionResult> ConfirmarAvanceWallet([FromBody] SimularUtilizacionRequest req)
     {
@@ -112,10 +114,12 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
     }
 
     // ── USUARIO: Mis créditos y pago manual de cuotas ──────────────────
+    [Authorize(Policy = "KycAprobado")]
     [HttpGet("mis-creditos")]
     public async Task<IActionResult> GetMisCreditos()
         => Ok(await svc.GetMisCreditosAsync(IdUsuarioActual));
 
+    [Authorize(Policy = "KycAprobado")]
     [HttpGet("mis-creditos/{idUtilizacion:long}/cuotas")]
     public async Task<IActionResult> GetCuotasCredito(long idUtilizacion)
     {
@@ -123,6 +127,7 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
         catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
     }
 
+    [Authorize(Policy = "KycAprobado")]
     [HttpPost("pagar-cuota-wallet")]
     public async Task<IActionResult> PagarCuotaWallet([FromBody] PagarCuotaWalletRequest req)
     {
@@ -133,6 +138,7 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
     }
 
     // ── USUARIO: Compra QR con Cupo Ordinario ──────────────────────────
+    [Authorize(Policy = "KycAprobado")]
     [HttpPost("pagar-qr-con-cupo")]
     public async Task<IActionResult> PagarQrConCupo([FromBody] PagarQrConCupoRequest req)
     {

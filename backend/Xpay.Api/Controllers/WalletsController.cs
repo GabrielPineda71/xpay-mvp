@@ -146,6 +146,7 @@ public class WalletsController : ControllerBase
     // El cliente solo puede enviar destino, valor y descripción (ver DTO). No
     // existe hoy un flujo administrativo separado que transfiera en nombre de
     // un tercero — único consumidor confirmado es UserWalletPage.tsx.
+    [Authorize(Policy = "KycAprobado")]
     [HttpPost("transferencia")]
     public async Task<IActionResult> Transferir([FromBody] TransferenciaWalletRequest request)
     {

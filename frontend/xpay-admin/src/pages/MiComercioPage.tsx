@@ -610,7 +610,7 @@ export function MiComercioPage() {
     setBrebRetBusy(true); setBrebRetMsg(null);
     try {
       const r = await post<{ success: boolean; data?: BrebRetiro; message?: string }>(
-        '/api/breb/retiros/simular',
+        '/api/breb/retiros/simular/comercio',
         { valor: val, idComercio },
       );
       if (r.success && r.data) {

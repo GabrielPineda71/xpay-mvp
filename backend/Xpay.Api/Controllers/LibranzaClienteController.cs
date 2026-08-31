@@ -24,6 +24,7 @@ public class LibranzaClienteController : ControllerBase
 
     // ── GET /api/libranza/cliente/mi-cupo?fecha=YYYY-MM-DD ────────────────
 
+    [Authorize(Policy = "KycAprobado")]
     [HttpGet("mi-cupo")]
     public async Task<IActionResult> GetMiCupo([FromQuery] string? fecha)
     {
@@ -63,6 +64,7 @@ public class LibranzaClienteController : ControllerBase
 
     // ── POST /api/libranza/cliente/anticipos ──────────────────────────────
 
+    [Authorize(Policy = "KycAprobado")]
     [HttpPost("anticipos")]
     public async Task<IActionResult> SolicitarAnticipo([FromBody] SolicitarAnticipoRequest req)
     {
@@ -95,6 +97,7 @@ public class LibranzaClienteController : ControllerBase
 
     // ── GET /api/libranza/cliente/anticipos ───────────────────────────────
 
+    [Authorize(Policy = "KycAprobado")]
     [HttpGet("anticipos")]
     public async Task<IActionResult> GetMisAnticipos()
     {

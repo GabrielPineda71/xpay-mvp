@@ -8,15 +8,35 @@ namespace Xpay.Api.Controllers;
 [ApiController]
 public class BrebController : ControllerBase
 {
-    private readonly BrebService     _breb;
-    private readonly AuditLogService _audit;
-    private readonly IConfiguration  _config;
+    private readonly BrebService          _breb;
+    private readonly AuditLogService      _audit;
+    private readonly IConfiguration       _config;
+    private readonly ComercioScopeService _scope;
 
-    public BrebController(BrebService breb, AuditLogService audit, IConfiguration config)
+    public BrebController(BrebService breb, AuditLogService audit, IConfiguration config, ComercioScopeService scope)
     {
         _breb   = breb;
         _audit  = audit;
         _config = config;
+        _scope  = scope;
+    }
+
+    // KYC-GATING-001 / BREB-COMERCIO-IDOR-FIX-001: valida que el idComercio
+    // solicitado esté dentro del scope operativo del usuario autenticado —
+    // solo cuando el caller tiene rol COMERCIO. ADMIN_XPAY/SUPERUSUARIO
+    // preservan su alcance administrativo actual sobre cualquier comercio
+    // (no tienen fila propia en ComercioUsuarios, así que aplicarles el
+    // mismo check los bloquearía incorrectamente — comportamiento actual
+    // preservado a propósito, no una omisión).
+    private async Task<IActionResult?> ValidarScopeComercioAsync(long idUsuario, long idComercio)
+    {
+        if (!User.IsInRole("COMERCIO")) return null;
+        try
+        {
+            await _scope.RequireScopeForComercioAsync(idUsuario, idComercio);
+            return null;
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
     }
 
     private bool TryGetIdPersona(out long id) =>
@@ -43,6 +63,7 @@ public class BrebController : ControllerBase
     // ──────────────────────────────────────────────────────────────────────
     [HttpGet("api/breb/mi-llave")]
     [Authorize]
+    [Authorize(Policy = "KycAprobado")]
     public async Task<IActionResult> GetMiLlave()
     {
         if (!TryGetIdPersona(out var idPersona))
@@ -65,6 +86,7 @@ public class BrebController : ControllerBase
     // ──────────────────────────────────────────────────────────────────────
     [HttpPost("api/breb/mi-llave")]
     [Authorize]
+    [Authorize(Policy = "KycAprobado")]
     public async Task<IActionResult> RegistrarMiLlave([FromBody] RegistrarLlaveRequest request)
     {
         if (!TryGetIdPersona(out var idPersona) || !TryGetIdUsuario(out var idUsuario))
@@ -95,6 +117,10 @@ public class BrebController : ControllerBase
     {
         if (idComercio <= 0)
             return BadRequest(new { success = false, message = "idComercio inválido." });
+        if (!TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+        if (await ValidarScopeComercioAsync(idUsuario, idComercio) is { } denied)
+            return denied;
         try
         {
             var llave = await _breb.GetLlaveComercioAsync(idComercio);
@@ -118,6 +144,8 @@ public class BrebController : ControllerBase
             return Unauthorized(new { success = false, message = "Token inválido." });
         if (request.IdComercio is null or <= 0)
             return BadRequest(new { success = false, message = "idComercio requerido para contexto COMERCIO." });
+        if (await ValidarScopeComercioAsync(idUsuario, request.IdComercio.Value) is { } denied)
+            return denied;
 
         _audit.LogSensitiveAction(HttpContext, "BREB_LLAVE_COMERCIO_REGISTRO_ATTEMPT",
             new { idUsuario, idComercio = request.IdComercio, keyType = request.KeyType });
@@ -274,6 +302,7 @@ public class BrebController : ControllerBase
     // ──────────────────────────────────────────────────────────────────────
     [HttpGet("api/breb/mis-retiros")]
     [Authorize]
+    [Authorize(Policy = "KycAprobado")]
     public async Task<IActionResult> GetMisRetiros()
     {
         if (!TryGetIdPersona(out var idPersona))
@@ -299,6 +328,10 @@ public class BrebController : ControllerBase
     {
         if (idComercio <= 0)
             return BadRequest(new { success = false, message = "idComercio inválido." });
+        if (!TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+        if (await ValidarScopeComercioAsync(idUsuario, idComercio) is { } denied)
+            return denied;
         try
         {
             var retiros = await _breb.GetRetirosComercioAsync(idComercio);
@@ -312,31 +345,63 @@ public class BrebController : ControllerBase
 
     // ──────────────────────────────────────────────────────────────────────
     // POST /api/breb/retiros/simular
-    // Usuario autenticado — crea retiro simulado (USUARIO o COMERCIO).
+    // KYC-GATING-001: separado del endpoint COMERCIO (antes una sola action
+    // ramificaba por request.IdComercio) para poder exigir identidad
+    // verificada exclusivamente en el contexto USUARIO sin bloquear COMERCIO,
+    // que tiene sus propias reglas de autorización. Ruta sin cambios —
+    // mismo contrato ya consumido por UserWalletPage.tsx.
+    // Usuario final autenticado — crea retiro simulado propio.
     // En Fase 64: CREADO, sin tocar ledger ni saldo.
     // En Fase 65: llamará Passport real, moverá saldo transaccionalmente.
     // ──────────────────────────────────────────────────────────────────────
     [HttpPost("api/breb/retiros/simular")]
     [Authorize]
+    [Authorize(Policy = "KycAprobado")]
     public async Task<IActionResult> SimularRetiro([FromBody] SimularRetiroRequest request)
     {
         if (!TryGetIdPersona(out var idPersona) || !TryGetIdUsuario(out var idUsuario))
             return Unauthorized(new { success = false, message = "Token inválido." });
 
         _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_SIMULAR_ATTEMPT",
+            new { idUsuario, valor = request.Valor });
+        try
+        {
+            var retiro = await _breb.SimularRetiroAsync(idPersona, idUsuario, request);
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_SIMULAR_OK",
+                new { idUsuario, idBrebRetiro = retiro.IdBrebRetiro, estado = retiro.Estado });
+            return Ok(new { success = true, data = retiro });
+        }
+        catch (InvalidOperationException ex)
+        { return BadRequest(new { success = false, message = ex.Message }); }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno creando retiro." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/retiros/simular/comercio
+    // KYC-GATING-001: nueva ruta — mismo patrón ya usado en este controller
+    // para separar USUARIO/COMERCIO (mi-llave/comercio, mis-retiros/comercio).
+    // COMERCIO o ADMIN — crea retiro simulado del comercio. Sin KycAprobado:
+    // la identidad de persona natural verificada vía Veriff no aplica al
+    // onboarding/KYB de un comercio (alcance futuro separado).
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpPost("api/breb/retiros/simular/comercio")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO,COMERCIO")]
+    public async Task<IActionResult> SimularRetiroComercio([FromBody] SimularRetiroRequest request)
+    {
+        if (!TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+        if (request.IdComercio is null or <= 0)
+            return BadRequest(new { success = false, message = "idComercio requerido para contexto COMERCIO." });
+        if (await ValidarScopeComercioAsync(idUsuario, request.IdComercio.Value) is { } denied)
+            return denied;
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_SIMULAR_COMERCIO_ATTEMPT",
             new { idUsuario, valor = request.Valor, idComercio = request.IdComercio });
         try
         {
-            BrebRetiroResponse retiro;
-            if (request.IdComercio is > 0)
-            {
-                retiro = await _breb.SimularRetiroComercioAsync(request.IdComercio!.Value, idUsuario, request);
-            }
-            else
-            {
-                retiro = await _breb.SimularRetiroAsync(idPersona, idUsuario, request);
-            }
-            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_SIMULAR_OK",
+            var retiro = await _breb.SimularRetiroComercioAsync(request.IdComercio!.Value, idUsuario, request);
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_SIMULAR_COMERCIO_OK",
                 new { idUsuario, idBrebRetiro = retiro.IdBrebRetiro, estado = retiro.Estado });
             return Ok(new { success = true, data = retiro });
         }

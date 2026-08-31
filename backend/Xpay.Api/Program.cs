@@ -116,12 +116,20 @@ builder.Services
 // request. POST /api/auth/cambiar-clave-obligatoria usa la política
 // "SoloAutenticado" (no se combina con DefaultPolicy) para quedar exento.
 builder.Services.AddScoped<IAuthorizationHandler, ClaveVigenteAuthorizationHandler>();
+
+// KYC-GATING-001: policy nombrada de opt-in — NO se agrega a DefaultPolicy.
+// Se combina (AND) con el [Authorize]/[Authorize(Roles=...)] ya existente
+// solo en los endpoints financieros que declaran explícitamente
+// [Authorize(Policy = "KycAprobado")]. Ver Authorization/KycAprobadoRequirement.cs.
+builder.Services.AddScoped<IAuthorizationHandler, KycAprobadoAuthorizationHandler>();
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, KycAuthorizationResultHandler>();
 builder.Services.AddAuthorization(options =>
 {
     options.DefaultPolicy = new AuthorizationPolicyBuilder(options.DefaultPolicy)
         .AddRequirements(new ClaveVigenteRequirement())
         .Build();
     options.AddPolicy("SoloAutenticado", policy => policy.RequireAuthenticatedUser());
+    options.AddPolicy("KycAprobado", policy => policy.AddRequirements(new KycAprobadoRequirement()));
 });
 
 // Rate limiting — FixedWindow por IP para endpoints sensibles (login)
