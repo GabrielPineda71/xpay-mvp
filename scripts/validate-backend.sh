@@ -212,11 +212,17 @@ ok "POST transferencia (carlos, sin KYC) → 403 KYC_REQUIRED ✓"
 # equivalente a cualquier otro fixture sintético ya usado en este script
 # (p.ej. ci_admin_xpay), no una emulación de Veriff.
 info "Fixture CI: aprobar KYC de carlos_ci_test en la BD efímera (sin Veriff, sin kyc_verificaciones)"
-"$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C -Q "
+# CI-SQLCMD-CAPTURE-FIX-001: sqlcmd clásico imprime los errores de batch SQL
+# (Msg N, Level X) por stdout, no por stderr — un `> /dev/null` los silencia
+# por completo, dejando solo el mensaje genérico de fail() sin ninguna pista
+# real. Se captura stdout+stderr (2>&1) y se incluye en fail() si falla,
+# redactando SA_PASS de la salida como defensa adicional (sqlcmd no suele
+# ecoar la contraseña en sus mensajes de error, pero no se asume).
+SQL_KYC_FIXTURE_OUTPUT=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C -Q "
 SET NOCOUNT ON;
 UPDATE usuarios SET estado_kyc_actual = 'APROBADO' WHERE id_usuario = $ID_USUARIO_A;
 UPDATE personas SET identidad_verificada = 1 WHERE id_persona = $ID_PERSONA_A;
-" > /dev/null || fail "No se pudo preparar el fixture KYC aprobado (carlos_ci_test)"
+" 2>&1) || fail "No se pudo preparar el fixture KYC aprobado (carlos_ci_test). Salida: ${SQL_KYC_FIXTURE_OUTPUT//$SA_PASS/***}"
 
 check_sql_value \
   "usuarios.estado_kyc_actual tras fixture (carlos_ci_test)" \
