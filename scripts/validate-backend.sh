@@ -184,6 +184,50 @@ SALDO_A_RECARGADO=$(get_auth_json "$TOKEN_A" "$API_URL/api/reportes/mi-estado-cu
 assert_saldo "$SALDO_A_RECARGADO" 100000 "Saldo carlos tras recarga"
 
 # ════════════════════════════════════════════════════
+# FASE 1.5 — KYC-GATING-001: usuario no verificado bloqueado,
+# luego fixture de KYC aprobado SOLO en la BD efímera de este job de CI.
+# No invoca Veriff, no genera decisión ni sesión real — es preparación de
+# precondición para poder seguir probando los endpoints financieros
+# protegidos por la policy KycAprobado en las fases siguientes.
+# ════════════════════════════════════════════════════
+phase "FASE 1.5: KYC Gating — bloqueo sin KYC, luego fixture aprobado (carlos_ci_test)"
+
+info "POST /api/wallets/transferencia (carlos, SIN KYC aprobado) → debe retornar 403 KYC_REQUIRED"
+RESP_KYC_NEG=$(post_auth_json_status "$TOKEN_A" "$API_URL/api/wallets/transferencia" \
+  "{\"idWalletOrigen\": $ID_WALLET_A, \"idWalletDestino\": 999999999, \"valor\": 1000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"CI negative KYC test\"}")
+STATUS_KYC_NEG=$(echo "$RESP_KYC_NEG" | tail -1)
+BODY_KYC_NEG=$(echo "$RESP_KYC_NEG" | sed '$d')
+[[ "$STATUS_KYC_NEG" == "403" ]] \
+  || fail "KYC negativo (carlos sin aprobar) esperado 403, obtenido $STATUS_KYC_NEG ($BODY_KYC_NEG)"
+echo "$BODY_KYC_NEG" | jq -e '.error == "KYC_REQUIRED"' > /dev/null \
+  || fail "KYC negativo (carlos sin aprobar) esperado error=KYC_REQUIRED, obtenido $(echo "$BODY_KYC_NEG" | jq -r '.error // "null"')"
+ok "POST transferencia (carlos, sin KYC) → 403 KYC_REQUIRED ✓"
+
+# Fixture CI: aprueba KYC de carlos_ci_test directamente en la BD efímera de
+# este job (localhost,1433, destruida al final del run — nunca QA/producción).
+# No inserta filas en kyc_verificaciones: no existe constraint/trigger que lo
+# requiera (verificado: sin CREATE TRIGGER en database/*.sql, columnas
+# estado_kyc_actual/identidad_verificada solo tienen DEFAULT, sin CHECK). Solo
+# ajusta las dos columnas que exige la condición canónica del guard —
+# equivalente a cualquier otro fixture sintético ya usado en este script
+# (p.ej. ci_admin_xpay), no una emulación de Veriff.
+info "Fixture CI: aprobar KYC de carlos_ci_test en la BD efímera (sin Veriff, sin kyc_verificaciones)"
+"$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C -Q "
+SET NOCOUNT ON;
+UPDATE usuarios SET estado_kyc_actual = 'APROBADO' WHERE id_usuario = $ID_USUARIO_A;
+UPDATE personas SET identidad_verificada = 1 WHERE id_persona = $ID_PERSONA_A;
+" > /dev/null || fail "No se pudo preparar el fixture KYC aprobado (carlos_ci_test)"
+
+check_sql_value \
+  "usuarios.estado_kyc_actual tras fixture (carlos_ci_test)" \
+  "SELECT estado_kyc_actual FROM usuarios WHERE id_usuario = $ID_USUARIO_A" \
+  "APROBADO"
+check_sql_value \
+  "personas.identidad_verificada tras fixture (carlos_ci_test)" \
+  "SELECT CAST(identidad_verificada AS INT) FROM personas WHERE id_persona = $ID_PERSONA_A" \
+  "1"
+
+# ════════════════════════════════════════════════════
 # FASE 2 — Transferencias XPAY a XPAY
 # ════════════════════════════════════════════════════
 phase "FASE 2: Transferencias XPAY a XPAY"
