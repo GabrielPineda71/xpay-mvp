@@ -220,6 +220,7 @@ info "Fixture CI: aprobar KYC de carlos_ci_test en la BD efímera (sin Veriff, s
 # ecoar la contraseña en sus mensajes de error, pero no se asume).
 SQL_KYC_FIXTURE_OUTPUT=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C -Q "
 SET NOCOUNT ON;
+SET QUOTED_IDENTIFIER ON;
 UPDATE usuarios SET estado_kyc_actual = 'APROBADO' WHERE id_usuario = $ID_USUARIO_A;
 UPDATE personas SET identidad_verificada = 1 WHERE id_persona = $ID_PERSONA_A;
 " 2>&1) || fail "No se pudo preparar el fixture KYC aprobado (carlos_ci_test). Salida: ${SQL_KYC_FIXTURE_OUTPUT//$SA_PASS/***}"
