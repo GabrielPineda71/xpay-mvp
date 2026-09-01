@@ -235,6 +235,200 @@ check_sql_value \
   "1"
 
 # ════════════════════════════════════════════════════
+# FASE CARTERA-ORIGINACION — Migración 035 (estructura real) +
+# smoke HTTP de POST /api/cartera-ordinaria/solicitar-cupo (PRE-CALL).
+# Reutiliza el usuario sintético carlos_ci_test (ya KYC-aprobado por la
+# FASE 1.5) y la política de crédito ACTIVA sembrada por la migración 021.
+# No crea usuarios, personas, fixtures KYC ni políticas nuevas. No llama a
+# ningún proveedor (DataCrédito/MiDecisor). BD efímera — sin cleanup.
+# ════════════════════════════════════════════════════
+phase "FASE CARTERA-ORIGINACION: migración 035 estructural + originación de cupo PRE-CALL"
+
+# POST solicitar-cupo con control de Idempotency-Key: si $2 está vacío, se
+# OMITE el header (CASE A); si trae valor, se envía tal cual (CASE B/C/D/L/F/G).
+# Devuelve "<body>\n<http_code>" — mismo formato que post_auth_json_status.
+solicitar_cupo() {
+  local token="$1" key="$2" body="$3"
+  if [[ -n "$key" ]]; then
+    curl -s -w '\n%{http_code}' -X POST "$API_URL/api/cartera-ordinaria/solicitar-cupo" \
+      -H "Content-Type: application/json" -H "Authorization: Bearer $token" \
+      -H "Idempotency-Key: $key" --max-time 15 -d "$body"
+  else
+    curl -s -w '\n%{http_code}' -X POST "$API_URL/api/cartera-ordinaria/solicitar-cupo" \
+      -H "Content-Type: application/json" -H "Authorization: Bearer $token" \
+      --max-time 15 -d "$body"
+  fi
+}
+
+TBL_SOL="dbo.cartera_solicitudes_cupo"
+TBL_INT="dbo.cartera_solicitud_cupo_intentos"
+
+# ── B1 — Tablas creadas por la migración 035 ─────────────────────────────
+check_sql_value "035: existe $TBL_SOL" \
+  "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo' AND t.name = 'cartera_solicitudes_cupo'" "1"
+check_sql_value "035: existe $TBL_INT" \
+  "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE s.name = 'dbo' AND t.name = 'cartera_solicitud_cupo_intentos'" "1"
+
+# ── B2 — Primary keys reales: EXACTAMENTE una key column, key_ordinal = 1,
+#        is_included_column = 0 (una PK compuesta o sobre otra columna falla) ─
+check_sql_value "035: PK $TBL_SOL = exactamente (id_solicitud)" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.key_constraints kc WHERE kc.parent_object_id = OBJECT_ID('dbo.cartera_solicitudes_cupo') AND kc.type = 'PK' AND (SELECT COUNT(*) FROM sys.index_columns x WHERE x.object_id = kc.parent_object_id AND x.index_id = kc.unique_index_id AND x.key_ordinal > 0) = 1 AND EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id AND ic.key_ordinal = 1 AND ic.is_included_column = 0 AND c.name = 'id_solicitud')) THEN 1 ELSE 0 END" "1"
+check_sql_value "035: PK $TBL_INT = exactamente (id_intento)" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.key_constraints kc WHERE kc.parent_object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND kc.type = 'PK' AND (SELECT COUNT(*) FROM sys.index_columns x WHERE x.object_id = kc.parent_object_id AND x.index_id = kc.unique_index_id AND x.key_ordinal > 0) = 1 AND EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id AND ic.key_ordinal = 1 AND ic.is_included_column = 0 AND c.name = 'id_intento')) THEN 1 ELSE 0 END" "1"
+
+# ── B3 — Foreign keys reales (child.col -> ref.col), una por relación ────
+fk_exists() {
+  # $1 label, $2 tabla hija, $3 col hija, $4 tabla ref, $5 col ref
+  check_sql_value "035: FK $1" \
+    "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.foreign_keys fk JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id WHERE fk.parent_object_id = OBJECT_ID('dbo.$2') AND fk.referenced_object_id = OBJECT_ID('dbo.$4') AND pc.name = '$3' AND rc.name = '$5') THEN 1 ELSE 0 END" "1"
+}
+fk_exists "cartera_solicitudes_cupo.id_usuario -> usuarios.id_usuario"                    "cartera_solicitudes_cupo" "id_usuario"           "usuarios"                 "id_usuario"
+fk_exists "cartera_solicitudes_cupo.id_persona -> personas.id_persona"                    "cartera_solicitudes_cupo" "id_persona"           "personas"                 "id_persona"
+fk_exists "cartera_solicitudes_cupo.id_politica_aplicada -> cartera_politicas_credito.id_politica" "cartera_solicitudes_cupo" "id_politica_aplicada" "cartera_politicas_credito" "id_politica"
+fk_exists "cartera_solicitudes_cupo.id_cupo_ordinario -> cartera_cupos_ordinarios.id_cupo" "cartera_solicitudes_cupo" "id_cupo_ordinario"    "cartera_cupos_ordinarios"  "id_cupo"
+fk_exists "cartera_solicitud_cupo_intentos.id_solicitud -> cartera_solicitudes_cupo.id_solicitud" "cartera_solicitud_cupo_intentos" "id_solicitud" "cartera_solicitudes_cupo"  "id_solicitud"
+
+# ── B4 — UNIQUE de idempotency_key (unicolumna, no filtrado) ─────────────
+check_sql_value "035: UNIQUE $TBL_INT(idempotency_key)" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.indexes i JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE i.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND i.is_unique = 1 AND i.has_filter = 0 AND c.name = 'idempotency_key' AND (SELECT COUNT(*) FROM sys.index_columns x WHERE x.object_id = i.object_id AND x.index_id = i.index_id) = 1) THEN 1 ELSE 0 END" "1"
+
+# ── B5 — UNIQUE compuesto (id_solicitud, numero_intento) EN ESE ORDEN ───
+check_sql_value "035: UNIQUE $TBL_INT(id_solicitud,numero_intento)" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.indexes i WHERE i.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND i.is_unique = 1 AND i.has_filter = 0 AND (SELECT COUNT(*) FROM sys.index_columns x WHERE x.object_id = i.object_id AND x.index_id = i.index_id) = 2 AND (SELECT c.name FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 1) = 'id_solicitud' AND (SELECT c.name FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 2) = 'numero_intento') THEN 1 ELSE 0 END" "1"
+
+# ── B6 — UNIQUE filtrado de solicitud activa por usuario ────────────────
+# UNA sola assertion correlacionada contra EL MISMO índice: unique + filtrado
+# + key EXACTA (id_usuario, key_ordinal=1, is_included_column=0, una sola key
+# column) + el MISMO filter_definition contiene los 5 estados activos. Falla
+# si el filtro y la unicidad viven en índices distintos, si id_usuario es sólo
+# INCLUDE, si la key es compuesta o si falta cualquiera de los 5 estados. No
+# compara el filter_definition completo (LIKE por literal, tolera normalización).
+check_sql_value "035: ux_...usuario_activa (unique+filtrado+key exacta id_usuario+5 estados en el MISMO indice)" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.indexes i WHERE i.object_id = OBJECT_ID('dbo.cartera_solicitudes_cupo') AND i.is_unique = 1 AND i.has_filter = 1 AND i.filter_definition IS NOT NULL AND (SELECT COUNT(*) FROM sys.index_columns x WHERE x.object_id = i.object_id AND x.index_id = i.index_id AND x.key_ordinal > 0) = 1 AND EXISTS (SELECT 1 FROM sys.index_columns ic JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id WHERE ic.object_id = i.object_id AND ic.index_id = i.index_id AND ic.key_ordinal = 1 AND ic.is_included_column = 0 AND c.name = 'id_usuario') AND i.filter_definition LIKE '%RECIBIDA%' AND i.filter_definition LIKE '%VALIDANDO%' AND i.filter_definition LIKE '%CONSULTANDO_RIESGO%' AND i.filter_definition LIKE '%EN_EVALUACION%' AND i.filter_definition LIKE '%APROBADA_PENDIENTE_CUPO%') THEN 1 ELSE 0 END" "1"
+
+# ── B7 — Nullability corregida (obligatorias) ───────────────────────────
+check_sql_value "035: cartera_solicitudes_cupo.estado_score is_nullable" \
+  "SELECT CAST(c.is_nullable AS INT) FROM sys.columns c WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitudes_cupo') AND c.name = 'estado_score'" "1"
+check_sql_value "035: cartera_solicitudes_cupo.edad_calculada_al_momento is_nullable" \
+  "SELECT CAST(c.is_nullable AS INT) FROM sys.columns c WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitudes_cupo') AND c.name = 'edad_calculada_al_momento'" "1"
+check_sql_value "035: cartera_solicitud_cupo_intentos.resultado_tecnico is_nullable" \
+  "SELECT CAST(c.is_nullable AS INT) FROM sys.columns c WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'resultado_tecnico'" "1"
+
+# ── Precondiciones HTTP (READ-ONLY, sin escribir nada) ──────────────────
+check_sql_value "originación: carlos_ci_test KYC = APROBADO" \
+  "SELECT estado_kyc_actual FROM usuarios WHERE id_usuario = $ID_USUARIO_A" "APROBADO"
+check_sql_value "originación: persona de carlos_ci_test identidad_verificada = 1" \
+  "SELECT CAST(identidad_verificada AS INT) FROM personas WHERE id_persona = $ID_PERSONA_A" "1"
+check_sql_value "originación: existe politica de credito ACTIVA (seed migración 021)" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM cartera_politicas_credito WHERE estado = 'ACTIVO') THEN 1 ELSE 0 END" "1"
+
+# ── Datos de prueba (montos dentro de [cupo_minimo, cupo_maximo] del seed 021) ─
+ORIGINACION_KEY=$(python3 -c 'import uuid; print(uuid.uuid4())')
+ORIGINACION_KEY_2=$(python3 -c 'import uuid; print(uuid.uuid4())')
+ORIGINACION_MONTO=500000
+ORIGINACION_MONTO_G=750000
+ORIGINACION_MONTO_F=300000
+
+# ── CASE A — sin header Idempotency-Key → 400 ───────────────────────────
+info "CASE A: POST solicitar-cupo SIN Idempotency-Key → 400"
+RESP_A=$(solicitar_cupo "$TOKEN_A" "" "{\"montoSolicitado\": $ORIGINACION_MONTO}")
+CODE_A=$(echo "$RESP_A" | tail -1); BODY_A=$(echo "$RESP_A" | sed '$d')
+[[ "$CODE_A" == "400" ]] || fail "CASE A esperado 400, obtenido $CODE_A ($BODY_A)"
+echo "$BODY_A" | jq -e '.error != null' > /dev/null || fail "CASE A: se esperaba un campo 'error' en el body"
+ok "CASE A → 400 + error ✓"
+
+# ── CASE B — Idempotency-Key no parseable como GUID → 400 ───────────────
+info "CASE B: POST solicitar-cupo con Idempotency-Key 'not-a-guid' → 400"
+RESP_B=$(solicitar_cupo "$TOKEN_A" "not-a-guid" "{\"montoSolicitado\": $ORIGINACION_MONTO}")
+CODE_B=$(echo "$RESP_B" | tail -1)
+[[ "$CODE_B" == "400" ]] || fail "CASE B esperado 400, obtenido $CODE_B"
+ok "CASE B → 400 ✓"
+
+# ── CASE C — Idempotency-Key = Guid.Empty → 400 ────────────────────────
+info "CASE C: POST solicitar-cupo con Idempotency-Key 00000000-... → 400"
+RESP_C=$(solicitar_cupo "$TOKEN_A" "00000000-0000-0000-0000-000000000000" "{\"montoSolicitado\": $ORIGINACION_MONTO}")
+CODE_C=$(echo "$RESP_C" | tail -1)
+[[ "$CODE_C" == "400" ]] || fail "CASE C esperado 400, obtenido $CODE_C"
+ok "CASE C → 400 ✓"
+
+# ── CASE D — montoSolicitado = 0 → 400 ─────────────────────────────────
+info "CASE D: POST solicitar-cupo con montoSolicitado 0 → 400"
+RESP_D=$(solicitar_cupo "$TOKEN_A" "$(python3 -c 'import uuid; print(uuid.uuid4())')" "{\"montoSolicitado\": 0}")
+CODE_D=$(echo "$RESP_D" | tail -1)
+[[ "$CODE_D" == "400" ]] || fail "CASE D esperado 400, obtenido $CODE_D"
+ok "CASE D → 400 ✓"
+
+# ── Los requests inválidos NO materializaron ninguna solicitud ─────────
+check_sql_value "originación: A/B/C/D no crearon ninguna solicitud para carlos_ci_test" \
+  "SELECT COUNT(*) FROM cartera_solicitudes_cupo WHERE id_usuario = $ID_USUARIO_A" "0"
+
+# ── CASE L — request válido → 200 + SolicitudCupoResponse (PRE-CALL) ───
+info "CASE L: POST solicitar-cupo válido → 200"
+RESP_L=$(solicitar_cupo "$TOKEN_A" "$ORIGINACION_KEY" "{\"montoSolicitado\": $ORIGINACION_MONTO}")
+CODE_L=$(echo "$RESP_L" | tail -1); BODY_L=$(echo "$RESP_L" | sed '$d')
+[[ "$CODE_L" == "200" ]] || fail "CASE L esperado 200, obtenido $CODE_L ($BODY_L)"
+echo "$BODY_L" | jq -e '.idSolicitud > 0' > /dev/null                       || fail "CASE L: idSolicitud > 0"
+echo "$BODY_L" | jq -e ".montoSolicitado == $ORIGINACION_MONTO" > /dev/null  || fail "CASE L: montoSolicitado == $ORIGINACION_MONTO"
+echo "$BODY_L" | jq -e '.estadoSolicitud == "RECIBIDA"' > /dev/null          || fail "CASE L: estadoSolicitud == RECIBIDA"
+echo "$BODY_L" | jq -e '.decisionCrediticia == "PENDIENTE"' > /dev/null      || fail "CASE L: decisionCrediticia == PENDIENTE"
+echo "$BODY_L" | jq -e '.montoAprobado == null' > /dev/null                  || fail "CASE L: montoAprobado == null"
+echo "$BODY_L" | jq -e '.codigoMotivoDecision == null' > /dev/null           || fail "CASE L: codigoMotivoDecision == null"
+echo "$BODY_L" | jq -e '.idCupoOrdinario == null' > /dev/null                || fail "CASE L: idCupoOrdinario == null"
+ID_SOLICITUD_L=$(echo "$BODY_L" | jq -r '.idSolicitud')
+ok "CASE L → 200 + solicitud #$ID_SOLICITUD_L RECIBIDA/PENDIENTE ✓"
+
+# ── POST CASE L — estado real en la BD efímera (PRE-CALL) ──────────────
+check_sql_value "CASE L: 1 solicitud RECIBIDA/PENDIENTE con monto y numero_intento=1" \
+  "SELECT COUNT(*) FROM cartera_solicitudes_cupo WHERE id_usuario = $ID_USUARIO_A AND estado_solicitud = 'RECIBIDA' AND decision_crediticia = 'PENDIENTE' AND monto_solicitado = $ORIGINACION_MONTO AND numero_intento = 1" "1"
+check_sql_value "CASE L: exactamente 1 solicitud para carlos_ci_test" \
+  "SELECT COUNT(*) FROM cartera_solicitudes_cupo WHERE id_usuario = $ID_USUARIO_A" "1"
+check_sql_value "CASE L: 1 intento PRE-CALL (numero_intento=1, key correcta, columnas de resultado NULL, flag 0)" \
+  "SELECT COUNT(*) FROM cartera_solicitud_cupo_intentos i JOIN cartera_solicitudes_cupo s ON s.id_solicitud = i.id_solicitud WHERE s.id_usuario = $ID_USUARIO_A AND i.numero_intento = 1 AND i.idempotency_key = '$ORIGINACION_KEY' AND i.resultado_tecnico IS NULL AND i.http_status_observado IS NULL AND i.content_status_observado IS NULL AND i.es_intento_con_resultado_util = 0" "1"
+check_sql_value "CASE L: exactamente 1 intento para esa solicitud" \
+  "SELECT COUNT(*) FROM cartera_solicitud_cupo_intentos WHERE id_solicitud = $ID_SOLICITUD_L" "1"
+check_sql_value "CASE L: campos de proveedor / edad / cupo NULL en PRE-CALL" \
+  "SELECT COUNT(*) FROM cartera_solicitudes_cupo WHERE id_solicitud = $ID_SOLICITUD_L AND estado_score IS NULL AND edad_calculada_al_momento IS NULL AND score_observado IS NULL AND viabilidad_observada IS NULL AND rating_recaudos_observado IS NULL AND monto_sugerido_observado IS NULL AND id_cupo_ordinario IS NULL" "1"
+
+# ── REPLAY_SAME_KEY_SAME_AMOUNT — misma key + mismo monto → 200, misma solicitud ─
+info "REPLAY_SAME_KEY_SAME_AMOUNT: repetir POST con misma key y mismo monto → 200 + misma idSolicitud"
+RESP_R=$(solicitar_cupo "$TOKEN_A" "$ORIGINACION_KEY" "{\"montoSolicitado\": $ORIGINACION_MONTO}")
+CODE_R=$(echo "$RESP_R" | tail -1); BODY_R=$(echo "$RESP_R" | sed '$d')
+[[ "$CODE_R" == "200" ]] || fail "REPLAY esperado 200, obtenido $CODE_R ($BODY_R)"
+echo "$BODY_R" | jq -e ".idSolicitud == $ID_SOLICITUD_L" > /dev/null || fail "REPLAY: idSolicitud debe ser $ID_SOLICITUD_L, obtenido $(echo "$BODY_R" | jq -r '.idSolicitud')"
+check_sql_value "REPLAY: sigue habiendo 1 solicitud para carlos_ci_test" \
+  "SELECT COUNT(*) FROM cartera_solicitudes_cupo WHERE id_usuario = $ID_USUARIO_A" "1"
+check_sql_value "REPLAY: sigue habiendo 1 intento (no se creo un segundo)" \
+  "SELECT COUNT(*) FROM cartera_solicitud_cupo_intentos WHERE id_solicitud = $ID_SOLICITUD_L" "1"
+ok "REPLAY_SAME_KEY_SAME_AMOUNT → 200, misma solicitud, sin duplicar intento ✓"
+
+# ── CASE G — misma key + monto distinto → 409, sin mutación ────────────
+info "CASE G: POST solicitar-cupo con misma key y monto distinto → 409"
+RESP_G=$(solicitar_cupo "$TOKEN_A" "$ORIGINACION_KEY" "{\"montoSolicitado\": $ORIGINACION_MONTO_G}")
+CODE_G=$(echo "$RESP_G" | tail -1); BODY_G=$(echo "$RESP_G" | sed '$d')
+[[ "$CODE_G" == "409" ]] || fail "CASE G esperado 409, obtenido $CODE_G ($BODY_G)"
+echo "$BODY_G" | jq -e '.idSolicitud == null' > /dev/null || fail "CASE G: la respuesta de conflicto no debe exponer idSolicitud"
+check_sql_value "CASE G: sigue habiendo 1 solicitud, con el monto original" \
+  "SELECT COUNT(*) FROM cartera_solicitudes_cupo WHERE id_usuario = $ID_USUARIO_A AND monto_solicitado = $ORIGINACION_MONTO" "1"
+check_sql_value "CASE G: sigue habiendo 1 intento" \
+  "SELECT COUNT(*) FROM cartera_solicitud_cupo_intentos WHERE id_solicitud = $ID_SOLICITUD_L" "1"
+ok "CASE G → 409, sin mutación ✓"
+
+# ── CASE F — key nueva, usuario con solicitud activa → 409, sin mutación ─
+info "CASE F: POST solicitar-cupo con key NUEVA (solicitud activa ya existe) → 409"
+RESP_F=$(solicitar_cupo "$TOKEN_A" "$ORIGINACION_KEY_2" "{\"montoSolicitado\": $ORIGINACION_MONTO_F}")
+CODE_F=$(echo "$RESP_F" | tail -1); BODY_F=$(echo "$RESP_F" | sed '$d')
+[[ "$CODE_F" == "409" ]] || fail "CASE F esperado 409, obtenido $CODE_F ($BODY_F)"
+check_sql_value "CASE F: no se creo una segunda solicitud" \
+  "SELECT COUNT(*) FROM cartera_solicitudes_cupo WHERE id_usuario = $ID_USUARIO_A" "1"
+check_sql_value "CASE F: no se creo un intento con la key nueva" \
+  "SELECT COUNT(*) FROM cartera_solicitud_cupo_intentos WHERE idempotency_key = '$ORIGINACION_KEY_2'" "0"
+check_sql_value "CASE F: la solicitud original conserva su unico intento" \
+  "SELECT COUNT(*) FROM cartera_solicitud_cupo_intentos WHERE id_solicitud = $ID_SOLICITUD_L" "1"
+ok "CASE F → 409, sin nueva solicitud ni intento ✓"
+
+ok "═══ FASE CARTERA-ORIGINACION COMPLETA: migración 035 estructural verificada + originación PRE-CALL (CASE A/B/C/D/L, replay, G, F) — OK ═══"
+
+# ════════════════════════════════════════════════════
 # FASE 2 — Transferencias XPAY a XPAY
 # ════════════════════════════════════════════════════
 phase "FASE 2: Transferencias XPAY a XPAY"
