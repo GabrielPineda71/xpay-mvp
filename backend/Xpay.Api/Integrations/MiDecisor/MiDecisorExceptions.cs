@@ -28,5 +28,16 @@ public sealed class MiDecisorTransportException(string message) : MiDecisorExcep
 // o expires_in ausente / no numérico / <= 0.
 public sealed class MiDecisorProtocolException(string message) : MiDecisorException(message);
 
-// El endpoint de auth respondió 401 o 403.
+// El endpoint de auth (o de consulta) respondió 401 o 403.
 public sealed class MiDecisorAuthenticationException(string message) : MiDecisorException(message);
+
+// M2.2 — el request de consulta no pasó la validación LOCAL (tipo de
+// documento no soportado, número no numérico o de longitud inválida,
+// apellido en blanco). Se lanza ANTES de pedir token y ANTES de cualquier
+// HTTP. El mensaje nombra la regla incumplida, nunca el valor recibido.
+public sealed class MiDecisorRequestValidationException(string message) : MiDecisorException(message);
+
+// M2.2 — el proveedor devolvió HTTP 200 con envelope status
+// "PRECONDITION_FAILED": rechazó el payload de la consulta. Mensaje
+// genérico y saneado; NO se copia msjExcepcion ni el body del proveedor.
+public sealed class MiDecisorQueryRejectedException(string message) : MiDecisorException(message);
