@@ -52,6 +52,15 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 });
 builder.Services.AddHttpClient();
 
+// MiDecisor / DataCrédito — M2.1: sólo el token provider (auth OAuth2 +
+// cache en memoria). NO se registra IMiDecisorClient todavía; la integración
+// real permanece inactiva. El provider hace fail-closed cuando se invoca sin
+// configuración válida — el arranque NUNCA resuelve BASE_URL ni credenciales.
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.MiDecisor.IMiDecisorTokenProvider,
+    Xpay.Api.Integrations.MiDecisor.MiDecisorTokenProvider>();
+
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.
 var configuredOrigins = builder.Configuration
