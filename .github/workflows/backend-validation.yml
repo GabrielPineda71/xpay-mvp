@@ -84,6 +84,18 @@ jobs:
           done
           echo "Migraciones aplicadas."
 
+          # Cartera Ordinaria — originación: la migración 035 es idempotente /
+          # fail-fast por diseño (crea si no existe; si ya existe, verifica la
+          # estructura crítica y aborta con THROW ante cualquier discrepancia).
+          # Se ejecuta una segunda vez, contra la misma BD efímera, para probar
+          # esa reentrancia — mismo sqlcmd, misma credencial y mismos flags
+          # (-b -C) que el loop, de modo que cualquier error SQL falle el job.
+          # Ninguna otra migración se reejecuta.
+          echo "--- Revalidando migración 035 (segunda ejecución — prueba de idempotencia/reentrancia) ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/035_cartera_solicitud_cupo.sql
+          echo "Migración 035 revalidada (segunda ejecución OK)."
+
       - name: dotnet restore
         run: dotnet restore backend/Xpay.Api/Xpay.Api.csproj
 

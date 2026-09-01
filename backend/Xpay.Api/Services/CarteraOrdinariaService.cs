@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
 using Xpay.Api.Models;
@@ -16,6 +17,19 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
     private const string CodIngresoAdmin          = "410303"; // Ingreso Administración Cartera Ordinaria (INGRESO, C)
     private const string CodIvaCarteraPagar       = "240803"; // IVA Cartera Ordinaria por Pagar (PASIVO, C)
     private const long IdUnidadNegocio = 1;
+
+    // Estados "activos" de una solicitud de cupo — copia exacta del filtro del
+    // índice UNIQUE ux_cartera_solicitudes_cupo_usuario_activa de la migración
+    // 035 (una solicitud activa por usuario). No se declara en
+    // CarteraSolicitudCupoEstados (ETAPA 2, fuera de alcance de esta etapa).
+    private static readonly string[] EstadosSolicitudActivos =
+    {
+        CarteraSolicitudCupoEstados.Recibida,
+        CarteraSolicitudCupoEstados.Validando,
+        CarteraSolicitudCupoEstados.ConsultandoRiesgo,
+        CarteraSolicitudCupoEstados.EnEvaluacion,
+        CarteraSolicitudCupoEstados.AprobadaPendienteCupo,
+    };
 
     // ── Parámetros de utilización ──────────────────────────────────────
     public async Task<List<ParametroUtilizacionDto>> GetParametrosAsync()
@@ -976,6 +990,214 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
         }
     }
 
+    // ── Originación de cupo — creación segura de la solicitud (PRE-CALL) ─
+    // ETAPA 3: sólo crea la solicitud inicial (estado RECIBIDA / decisión
+    // PENDIENTE) y su primer intento en estado PRE-CALL (resultado_tecnico
+    // NULL). NO llama a ningún proveedor (DataCrédito/MiDecisor), NO evalúa
+    // elegibilidad, NO calcula edad, NO materializa cupo. El snapshot de
+    // política que se persiste es sólo auditoría histórica — ninguna de sus
+    // columnas se compara aquí contra datos del usuario.
+    //
+    // El controller (etapa posterior) resolverá idUsuario desde el JWT, la
+    // Idempotency-Key desde el header HTTP y el correlationId según la
+    // convención del proyecto, y los pasará como argumentos.
+    public async Task<SolicitudCupoResponse> CrearSolicitudCupoAsync(
+        long idUsuario,
+        Guid idempotencyKey,
+        decimal montoSolicitado,
+        string correlationId)
+    {
+        if (montoSolicitado <= 0)
+            throw new ArgumentException("El monto solicitado debe ser mayor a cero");
+        if (idempotencyKey == Guid.Empty)
+            throw new ArgumentException("Idempotency-Key inválido");
+        if (string.IsNullOrWhiteSpace(correlationId))
+            throw new ArgumentException("correlationId requerido");
+
+        var now = DateTime.UtcNow;
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
+        {
+            // ── Sección crítica: serializa la creación de solicitud para este
+            // usuario (mismo patrón que KycService — AppLock adquirido dentro de
+            // la transacción, antes de cualquier otra consulta de la sección).
+            // El AppLock es por idUsuario; la unicidad GLOBAL de la
+            // Idempotency-Key y la de "una solicitud activa por usuario" siguen
+            // garantizadas por los índices UNIQUE de la migración 035 (backstop
+            // definitivo — ver catch de IsUniqueViolation más abajo).
+            var claveLock = $"XPAY:CARTERA_SOLICITUD_CUPO:{idUsuario}";
+            ValidarResultadoLockSolicitudCupo(await AppLockHelper.AdquirirAsync(db, claveLock));
+
+            // ── Replay de Idempotency-Key ──────────────────────────────────
+            // La key vive en el intento. Si ya existe un intento con esta key,
+            // esta solicitud ya se creó: se devuelve la solicitud asociada sin
+            // crear nada nuevo. Releído dentro del lock, nunca desde una lectura
+            // previa.
+            var intentoPrevio = await db.CarteraSolicitudCupoIntentos
+                .FirstOrDefaultAsync(i => i.IdempotencyKey == idempotencyKey);
+            if (intentoPrevio is not null)
+            {
+                var solicitudPrevia = await db.CarteraSolicitudesCupo
+                    .FirstOrDefaultAsync(s => s.IdSolicitud == intentoPrevio.IdSolicitud)
+                    ?? throw new InvalidOperationException("Intento de solicitud sin solicitud asociada — inconsistencia de datos.");
+                // Sólo es replay válido si la Idempotency-Key pertenece a ESTE
+                // usuario y al MISMO request (mismo monto). Si no, es conflicto
+                // de dominio y no se expone ningún dato de la solicitud previa.
+                var respuestaReplay = ReplayValidadoOConflicto(solicitudPrevia, idUsuario, montoSolicitado);
+                await tx.CommitAsync();
+                return respuestaReplay;
+            }
+
+            // ── Resolución de usuario y persona ────────────────────────────
+            var usuario = await db.Usuarios
+                .FirstOrDefaultAsync(u => u.IdUsuario == idUsuario)
+                ?? throw new KeyNotFoundException("Usuario no encontrado");
+            var persona = await db.Personas
+                .FirstOrDefaultAsync(p => p.IdPersona == usuario.IdPersona)
+                ?? throw new KeyNotFoundException("Persona asociada no encontrada");
+
+            // ── Política activa (mismo criterio que GetPoliticaVigenteAsync) ─
+            var politica = await db.CarteraPoliticasCredito
+                .Where(x => x.Estado == "ACTIVO")
+                .OrderByDescending(x => x.VigenteDesde)
+                .FirstOrDefaultAsync()
+                ?? throw new InvalidOperationException("No hay una política de crédito activa");
+
+            // ── Una solicitud activa por usuario ───────────────────────────
+            var yaTieneActiva = await db.CarteraSolicitudesCupo
+                .AnyAsync(s => s.IdUsuario == idUsuario && EstadosSolicitudActivos.Contains(s.EstadoSolicitud));
+            if (yaTieneActiva)
+                throw new InvalidOperationException("Ya tienes una solicitud de cupo en curso");
+
+            // ── Inserción atómica: solicitud + primer intento PRE-CALL ─────
+            var solicitud = new CarteraSolicitudCupo
+            {
+                IdUsuario                      = idUsuario,
+                IdPersona                      = persona.IdPersona,
+                MontoSolicitado                = montoSolicitado,
+                EstadoSolicitud                = CarteraSolicitudCupoEstados.Recibida,
+                DecisionCrediticia             = CarteraDecisionCrediticia.Pendiente,
+                MontoAprobado                  = null,
+                CodigoMotivoDecision           = null,
+                IdPoliticaAplicada             = politica.IdPolitica,
+                ScoreDatacreditoMinimoAplicado = politica.ScoreDatacreditoMinimo,
+                CupoMinimoAplicado             = politica.CupoMinimo,
+                CupoMaximoAplicado             = politica.CupoMaximo,
+                EdadMinimaAplicada             = politica.EdadMinima,
+                EdadMaximaAplicada             = politica.EdadMaxima,
+                EdadCalculadaAlMomento         = null,  // decisión 016 — no se calcula en PRE-CALL
+                ScoreObservado                 = null,
+                EstadoScore                    = null,
+                ViabilidadObservada            = null,
+                RatingRecaudosObservado        = null,
+                MontoSugeridoObservado         = null,
+                NumeroIntento                  = 1,
+                IdCupoOrdinario                = null,
+                CorrelationId                  = correlationId,
+                FechaSolicitud                 = now,
+                FechaDecision                  = null,
+                FechaMaterializacionCupo       = null,
+                FechaActualizacion             = now,
+            };
+            db.CarteraSolicitudesCupo.Add(solicitud);
+            await db.SaveChangesAsync(); // genera IdSolicitud
+
+            db.CarteraSolicitudCupoIntentos.Add(new CarteraSolicitudCupoIntento
+            {
+                IdSolicitud               = solicitud.IdSolicitud,
+                NumeroIntento             = 1,
+                IdempotencyKey            = idempotencyKey,
+                FechaInicio               = now,
+                FechaFin                  = null,
+                ResultadoTecnico          = null,  // PRE-CALL — TX1 (etapa posterior) lo completa
+                HttpStatusObservado       = null,
+                ContentStatusObservado    = null,
+                CorrelationId             = correlationId,
+                EsIntentoConResultadoUtil = false,
+            });
+            await db.SaveChangesAsync();
+
+            await tx.CommitAsync();
+            return ToSolicitudResponse(solicitud);
+        }
+        catch (Exception ex) when (SqlExceptionHelper.IsUniqueViolation(ex))
+        {
+            // Carrera que el AppLock por idUsuario no cubre: otro request (p. ej.
+            // de OTRO usuario) insertó primero un intento con la misma
+            // Idempotency-Key global, o una solicitud activa del mismo usuario
+            // ganó la carrera del índice filtrado. El índice UNIQUE de la BD es
+            // el backstop definitivo; aquí se traduce a replay (si el intento
+            // ganador es visible) o a conflicto de dominio.
+            await tx.RollbackAsync();
+            db.ChangeTracker.Clear();
+
+            var intentoGanador = await db.CarteraSolicitudCupoIntentos
+                .FirstOrDefaultAsync(i => i.IdempotencyKey == idempotencyKey);
+            if (intentoGanador is not null)
+            {
+                var solicitudGanadora = await db.CarteraSolicitudesCupo
+                    .FirstOrDefaultAsync(s => s.IdSolicitud == intentoGanador.IdSolicitud)
+                    ?? throw new InvalidOperationException("Intento de solicitud sin solicitud asociada — inconsistencia de datos.");
+                // Mismas comprobaciones que el pre-check: ownership + monto. Un
+                // usuario distinto o un monto distinto es conflicto, nunca replay.
+                return ReplayValidadoOConflicto(solicitudGanadora, idUsuario, montoSolicitado);
+            }
+            // No hay intento con esta key → la violación fue del índice filtrado
+            // de solicitud activa por usuario (u otra UNIQUE): conflicto de
+            // solicitud activa, sin exponer datos.
+            throw new InvalidOperationException("Ya tienes una solicitud de cupo en curso");
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    // Decide si una solicitud recuperada por Idempotency-Key puede devolverse
+    // como replay. Reglas (ETAPA 3 — hardening 017):
+    //   - debe pertenecer al MISMO usuario (ownership) — si no, la key se usó
+    //     para otra solicitud: conflicto, sin exponer nada de la ajena;
+    //   - debe corresponder al MISMO request — como SolicitarCupoRequest sólo
+    //     lleva MontoSolicitado, basta comparar ese campo (sin request hash).
+    // El mensaje de conflicto nunca incluye idUsuario, IdSolicitud, monto ni
+    // dato personal de la solicitud previa.
+    private static SolicitudCupoResponse ReplayValidadoOConflicto(
+        CarteraSolicitudCupo solicitudPrevia, long idUsuario, decimal montoSolicitado)
+    {
+        if (solicitudPrevia.IdUsuario != idUsuario)
+            throw new InvalidOperationException("Idempotency-Key ya utilizada para otra solicitud.");
+        if (solicitudPrevia.MontoSolicitado != montoSolicitado)
+            throw new InvalidOperationException("Idempotency-Key ya utilizada con parámetros diferentes.");
+        return ToSolicitudResponse(solicitudPrevia);
+    }
+
+    // Interpreta el código de retorno de sp_getapplock para la clave
+    // XPAY:CARTERA_SOLICITUD_CUPO:{idUsuario}. Mismo criterio que
+    // KycService.ValidarResultadoLockKycUsuario, pero traducido a las
+    // convenciones de excepción de este service (InvalidOperationException →
+    // 400 en el controller actual; cuando exista el endpoint de originación,
+    // -1/-2/-3 debería mapearse a 409 con una excepción de concurrencia
+    // dedicada). 0/1 = adquirido. Cualquier otro código = error técnico de la
+    // llamada, se relanza sin tipar.
+    private static void ValidarResultadoLockSolicitudCupo(int resultado)
+    {
+        switch (resultado)
+        {
+            case 0:
+            case 1:
+                return;
+            case -1:
+            case -2:
+            case -3:
+                throw new InvalidOperationException(
+                    "Hay otra solicitud de cupo en proceso para este usuario. Intenta de nuevo en unos segundos.");
+            default:
+                throw new Exception($"sp_getapplock devolvió un código inesperado: {resultado}.");
+        }
+    }
+
     // ── Helpers de simulación/confirmación ──────────────────────────────
     private async Task<CarteraParametroUtilizacion> GetParametroValidadoAsync(SimularUtilizacionRequest req)
     {
@@ -1095,6 +1317,20 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
         x.IdPolitica, x.ScoreDatacreditoMinimo, x.RequiereVeriff,
         x.CupoMinimo, x.CupoMaximo, x.EdadMinima, x.EdadMaxima,
         x.Estado, x.VigenteDesde, x.VigenteHasta);
+
+    // Proyección pública de una solicitud de cupo — sólo los campos definidos
+    // en ETAPA 2. NO expone score, edad, snapshot de política, viabilidad,
+    // rating, monto sugerido, correlationId ni detalle técnico del intento.
+    private static SolicitudCupoResponse ToSolicitudResponse(CarteraSolicitudCupo s) => new(
+        s.IdSolicitud,
+        s.MontoSolicitado,
+        s.EstadoSolicitud,
+        s.DecisionCrediticia,
+        s.MontoAprobado,
+        s.CodigoMotivoDecision,
+        s.FechaSolicitud,
+        s.FechaDecision,
+        s.IdCupoOrdinario);
 
     private static CupoOrdinarioDto ToCupoDto(CarteraCupoOrdinario c, string nombreUsuario) => new(
         c.IdCupo, c.IdUsuario, nombreUsuario, c.IdWallet,

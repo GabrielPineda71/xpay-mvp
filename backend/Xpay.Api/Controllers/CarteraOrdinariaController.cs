@@ -12,6 +12,50 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
 {
     private long IdUsuarioActual => long.Parse(User.FindFirst("idUsuario")?.Value ?? "0");
 
+    // Idempotency-Key: header HTTP obligatorio generado por el cliente — nunca
+    // por el backend. Mismo criterio que WalletsController/QrController
+    // (presente, valor único, GUID válido) más el rechazo explícito de
+    // Guid.Empty exigido por la originación de cupo.
+    private bool TryGetIdempotencyKey(out Guid idempotencyKey, out string errorMessage)
+    {
+        idempotencyKey = Guid.Empty;
+        if (!Request.Headers.TryGetValue("Idempotency-Key", out var values) || values.Count == 0)
+        {
+            errorMessage = "Falta el encabezado Idempotency-Key.";
+            return false;
+        }
+        if (values.Count > 1)
+        {
+            errorMessage = "Se recibió más de un valor para Idempotency-Key.";
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(values[0]) || !Guid.TryParse(values[0], out idempotencyKey) || idempotencyKey == Guid.Empty)
+        {
+            errorMessage = "Idempotency-Key debe ser un identificador válido.";
+            return false;
+        }
+        errorMessage = string.Empty;
+        return true;
+    }
+
+    // Mensajes EXACTOS que CrearSolicitudCupoAsync (Etapa 3 + hardening 017)
+    // lanza como InvalidOperationException para conflictos de originación /
+    // idempotencia / concurrencia → HTTP 409. Cualquier OTRA
+    // InvalidOperationException del service (p. ej. "No hay una política de
+    // crédito activa", o una inconsistencia interna) NO entra aquí: se deja
+    // propagar a ErrorHandlingMiddleware, que responde 500 genérico sin
+    // exponer el mensaje.
+    private static readonly string[] MensajesConflictoSolicitudCupo =
+    {
+        "Ya tienes una solicitud de cupo en curso",
+        "Idempotency-Key ya utilizada para otra solicitud.",
+        "Idempotency-Key ya utilizada con parámetros diferentes.",
+        "Hay otra solicitud de cupo en proceso para este usuario. Intenta de nuevo en unos segundos.",
+    };
+
+    private static bool EsConflictoSolicitudCupo(string message) =>
+        Array.Exists(MensajesConflictoSolicitudCupo, m => m == message);
+
     // ── ADMIN: Parámetros de utilización ──────────────────────────────
     [HttpGet("admin/parametros")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
@@ -91,6 +135,46 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
     {
         var cupo = await svc.GetMiCupoAsync(IdUsuarioActual);
         return cupo is null ? NotFound(new { error = "No tienes un cupo ordinario activo" }) : Ok(cupo);
+    }
+
+    // ── USUARIO: Solicitar cupo ordinario (originación PRE-CALL) ──────
+    // ETAPA 4: sólo expone CrearSolicitudCupoAsync. El service resuelve
+    // idempotencia, AppLock, snapshot de política, replay + ownership y la
+    // creación atómica de solicitud + primer intento. Sin proveedor, sin
+    // decisión crediticia, sin cálculo de edad, sin uso de score.
+    [Authorize(Policy = "KycAprobado")]
+    [HttpPost("solicitar-cupo")]
+    public async Task<IActionResult> SolicitarCupo([FromBody] SolicitarCupoRequest req)
+    {
+        if (!TryGetIdempotencyKey(out var idempotencyKey, out var idempotencyError))
+            return BadRequest(new { error = idempotencyError });
+
+        // correlationId controlado por el servidor — CorrelationIdMiddleware ya
+        // lo dejó en HttpContext.Items["CorrelationId"] (del header
+        // X-Correlation-ID entrante o un GUID nuevo). Nunca se toma del body.
+        var correlationId = HttpContext.Items["CorrelationId"]?.ToString() ?? HttpContext.TraceIdentifier;
+
+        try
+        {
+            var result = await svc.CrearSolicitudCupoAsync(
+                IdUsuarioActual, idempotencyKey, req.MontoSolicitado, correlationId);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (InvalidOperationException ex) when (EsConflictoSolicitudCupo(ex.Message))
+        {
+            return Conflict(new { error = ex.Message });
+        }
+        // Otras InvalidOperationException (config ausente / inconsistencia
+        // interna) y cualquier excepción no prevista se propagan a
+        // ErrorHandlingMiddleware → 500 genérico sin detalle.
     }
 
     // ── USUARIO: Simulador ────────────────────────────────────────────
