@@ -105,6 +105,11 @@ jobs:
             --no-restore \
             --configuration Release
 
+      - name: dotnet test (unit)
+        run: |
+          dotnet test backend/Xpay.Api.Tests/Xpay.Api.Tests.csproj \
+            --configuration Release
+
       - name: Iniciar backend en background
         run: |
           dotnet run \
