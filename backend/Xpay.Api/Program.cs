@@ -60,6 +60,11 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<
     Xpay.Api.Integrations.MiDecisor.IMiDecisorTokenProvider,
     Xpay.Api.Integrations.MiDecisor.MiDecisorTokenProvider>();
+// M2.2 — query client (consulta de riesgo PN). Depende del token provider
+// vía la abstracción; NO conoce credenciales; NO hace llamadas al arranque.
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.MiDecisor.IMiDecisorClient,
+    Xpay.Api.Integrations.MiDecisor.MiDecisorClient>();
 
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.

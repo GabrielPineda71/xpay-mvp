@@ -31,13 +31,19 @@ public sealed class MiDecisorOptions
     public const string EnvUsername     = "MIDECISOR_USERNAME";
     public const string EnvPassword     = "MIDECISOR_PASSWORD";
 
-    // M2.1 — config NO secreta.
+    // M2.1 / M2.2 — config NO secreta.
     public const string EnvAuthPath                 = "MIDECISOR_AUTH_PATH";
+    public const string EnvQueryPath                = "MIDECISOR_QUERY_PATH";
     public const string EnvTimeoutSeconds           = "MIDECISOR_TIMEOUT_SECONDS";
     public const string EnvTokenSafetyMarginSeconds = "MIDECISOR_TOKEN_SAFETY_MARGIN_SECONDS";
 
     // Defaults estructurales (no son secretos, no son URLs de ambiente).
     public const string DefaultAuthPath                 = "/spla/oauth2/v1/token";
+    // STRUCTURAL_DEFAULT — el endpoint unificado `/client` aparece en las dos
+    // fuentes Swagger y acepta el body PN de 3 campos. NO implica que `/client`
+    // (ni `/pn`) esté autorizado para UAT: la elección de endpoint queda por
+    // confirmar con el proveedor (bloqueador 066 UAT_GATE_C).
+    public const string DefaultQueryPath                = "/co/cs/midecisor/v1/client";
     public const int    DefaultTimeoutSeconds           = 30;
     public const int    DefaultTokenSafetyMarginSeconds = 30;
 
@@ -51,7 +57,11 @@ public sealed class MiDecisorOptions
     // del contrato oficial confirmado.
     public string AuthPath { get; set; } = DefaultAuthPath;
 
-    // Timeout de transporte para la llamada de auth (segundos).
+    // Ruta del endpoint de consulta de riesgo, relativa a BaseUrl.
+    // Default = STRUCTURAL_DEFAULT (ver DefaultQueryPath).
+    public string QueryPath { get; set; } = DefaultQueryPath;
+
+    // Timeout de transporte para las llamadas HTTP (auth y query), en segundos.
     public int TimeoutSeconds { get; set; } = DefaultTimeoutSeconds;
 
     // Margen de seguridad restado a expires_in antes de considerar el token
@@ -94,6 +104,9 @@ public sealed class MiDecisorOptions
 
         var authPath = configuration[EnvAuthPath];
         opts.AuthPath = string.IsNullOrWhiteSpace(authPath) ? DefaultAuthPath : authPath.Trim();
+
+        var queryPath = configuration[EnvQueryPath];
+        opts.QueryPath = string.IsNullOrWhiteSpace(queryPath) ? DefaultQueryPath : queryPath.Trim();
 
         opts.TimeoutSeconds =
             ParseBoundedIntOrDefault(configuration[EnvTimeoutSeconds], DefaultTimeoutSeconds, EnvTimeoutSeconds, minInclusive: 1, warnings);
