@@ -116,3 +116,52 @@ public interface ICarteraResultadoRiesgoPurga
     Task<ResultadoPurgaIntento> PurgarResultadoIntentoAsync(
         long idSolicitud, int numeroIntento, DateTime cutoffUtc, CancellationToken cancellationToken);
 }
+
+// M2.4a — resultado de un intento de CONSUMO durable del resultado MiDecisor.
+public enum ResultadoConsumoRiesgo
+{
+    // Se normalizaron los 6 crudos a observaciones tipadas de la solicitud
+    // (con_informacion_observado / score_observado / estado_score /
+    // viabilidad_observada / rating_recaudos_observado /
+    // monto_sugerido_observado / alertas_count_observado) y se marcó
+    // resultado_consumido_utc en el intento, atómicamente.
+    Consumido,
+    // El intento ya tenía resultado_consumido_utc != NULL — no-op idempotente.
+    // La marca durable es autoritativa: NO se re-normaliza ni se "repara".
+    YaConsumido,
+    // El intento/solicitud no cumple las precondiciones de consumo (no existe,
+    // solicitud no EN_EVALUACION, intento no FINALIZADO, intento sin resultado
+    // útil, o intento ya purgado).
+    NoElegible,
+}
+
+// M2.4a — INFRAESTRUCTURA DORMIDA. Contrato SEPARADO de
+// ICarteraConsultaRiesgoStore y de ICarteraResultadoRiesgoPurga: convierte de
+// forma determinista un intento MiDecisor FINALIZADO con resultado útil en
+// observaciones normalizadas y purga-seguras de la solicitud, y marca
+// durablemente que ese resultado fue consumido.
+//
+// NO emite veredicto crediticio: NO toca decision_crediticia / monto_aprobado
+// / codigo_motivo_decision / fecha_decision / estado_solicitud /
+// id_cupo_ordinario / edad_calculada_al_momento / los snapshots de política, ni
+// ninguno de los 6 crudos del intento.
+//
+// NO está registrada en DI. NO tiene ningún caller de runtime (scheduler /
+// job / endpoint / worker / BackgroundService). Se alcanza sólo instanciando
+// CarteraConsultaRiesgoStore explícitamente (tests).
+public interface ICarteraResultadoRiesgoConsumo
+{
+    // Transacción pequeña bajo AppLock XPAY:CARTERA_RIESGO:{idSolicitud}
+    // (owner=Transaction). Re-lee solicitud + intento (idSolicitud,
+    // numeroIntento) dentro del lock y aplica los guards en orden: existencia →
+    // resultado_consumido_utc == NULL (si no → YaConsumido) → estado ==
+    // EN_EVALUACION → fase == FINALIZADO → es_intento_con_resultado_util == true
+    // → resultado_purgado_utc == NULL (todos los NoElegible). Si util == true
+    // pero resultado_tecnico no es ACEPTADA/SIN_INFORMACION → invariante
+    // (corrupción). Si todos pasan: normaliza (CarteraResultadoRiesgoNormalizer)
+    // y persiste el snapshot en cartera_solicitudes_cupo + fecha_actualizacion,
+    // y resultado_consumido_utc en el intento, con un único DateTime.UtcNow.
+    // Idempotente. Sin retry automático. Sin red.
+    Task<ResultadoConsumoRiesgo> ConsumirResultadoRiesgoAsync(
+        long idSolicitud, int numeroIntento, CancellationToken cancellationToken = default);
+}

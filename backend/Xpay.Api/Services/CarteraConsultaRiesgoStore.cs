@@ -16,8 +16,12 @@ namespace Xpay.Api.Services;
 // M2.3b3 — también implementa ICarteraResultadoRiesgoPurga (infraestructura
 // DORMIDA de purga de crudos): esa cara del contrato NO está registrada en DI
 // y NO tiene ningún caller de runtime.
+//
+// M2.4a — también implementa ICarteraResultadoRiesgoConsumo (infraestructura
+// DORMIDA de consumo durable del resultado): igualmente SIN registro en DI y
+// SIN caller de runtime.
 public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
-    : ICarteraConsultaRiesgoStore, ICarteraResultadoRiesgoPurga
+    : ICarteraConsultaRiesgoStore, ICarteraResultadoRiesgoPurga, ICarteraResultadoRiesgoConsumo
 {
     public async Task<ConsultaRiesgoContexto?> CargarContextoAsync(
         long idSolicitud, long idUsuario, CancellationToken cancellationToken)
@@ -227,6 +231,103 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
 
     private static async Task<ResultadoPurgaIntento> NoPurgarAsync(
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx, ResultadoPurgaIntento resultado)
+    {
+        await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        return resultado;
+    }
+
+    // ── M2.4a — ICarteraResultadoRiesgoConsumo (infraestructura DORMIDA) ──
+    // Ver el doc del contrato: NO emite veredicto, NO está registrada en DI,
+    // sin caller de runtime. Convierte un intento MiDecisor FINALIZADO con
+    // resultado útil en observaciones normalizadas y purga-seguras de la
+    // solicitud, y marca resultado_consumido_utc. Todo-o-nada bajo AppLock.
+    public async Task<ResultadoConsumoRiesgo> ConsumirResultadoRiesgoAsync(
+        long idSolicitud, int numeroIntento, CancellationToken cancellationToken = default)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ValidarResultadoLock(await AppLockHelper
+                .AdquirirAsync(db, $"XPAY:CARTERA_RIESGO:{idSolicitud}", cancellationToken)
+                .ConfigureAwait(false));
+
+            var solicitud = await db.CarteraSolicitudesCupo
+                .FirstOrDefaultAsync(s => s.IdSolicitud == idSolicitud, cancellationToken)
+                .ConfigureAwait(false);
+
+            var intento = await db.CarteraSolicitudCupoIntentos
+                .FirstOrDefaultAsync(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == numeroIntento, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Orden de guards (diseño 109, PASO 11). La marca durable de consumo
+            // se comprueba ANTES que estado/fase: es autoritativa y NO se
+            // "reparan" datos después de ella.
+            if (solicitud is null || intento is null)
+                return await NoConsumirAsync(tx, ResultadoConsumoRiesgo.NoElegible).ConfigureAwait(false);
+
+            if (intento.ResultadoConsumidoUtc is not null)
+                return await NoConsumirAsync(tx, ResultadoConsumoRiesgo.YaConsumido).ConfigureAwait(false);
+
+            if (!string.Equals(solicitud.EstadoSolicitud, CarteraSolicitudCupoEstados.EnEvaluacion, StringComparison.Ordinal))
+                return await NoConsumirAsync(tx, ResultadoConsumoRiesgo.NoElegible).ConfigureAwait(false);
+
+            if (!string.Equals(intento.FaseIntento, CarteraIntentoFases.Finalizado, StringComparison.Ordinal))
+                return await NoConsumirAsync(tx, ResultadoConsumoRiesgo.NoElegible).ConfigureAwait(false);
+
+            if (!intento.EsIntentoConResultadoUtil)
+                return await NoConsumirAsync(tx, ResultadoConsumoRiesgo.NoElegible).ConfigureAwait(false);
+
+            if (intento.ResultadoPurgadoUtc is not null)
+                return await NoConsumirAsync(tx, ResultadoConsumoRiesgo.NoElegible).ConfigureAwait(false);
+
+            // util == true pero resultado_tecnico no consumible ⇒ imposible según
+            // la clasificación de M2.3b1 ⇒ corrupción durable (fail-closed).
+            if (!string.Equals(intento.ResultadoTecnico, CarteraConsultaRiesgoResultados.Aceptada, StringComparison.Ordinal)
+                && !string.Equals(intento.ResultadoTecnico, CarteraConsultaRiesgoResultados.SinInformacion, StringComparison.Ordinal))
+            {
+                throw new CarteraConsumoResultadoInvarianteException(
+                    "Intento con es_intento_con_resultado_util = 1 pero resultado_tecnico no es ACEPTADA/SIN_INFORMACION.");
+            }
+
+            var norm = CarteraResultadoRiesgoNormalizer.Normalizar(
+                intento.ConInformacion,
+                intento.ScoreRaw,
+                intento.ViabilidadRaw,
+                intento.RatingRecaudosRaw,
+                intento.MontoSugeridoRaw,
+                intento.AlertasCount);
+
+            var nowUtc = DateTime.UtcNow;
+
+            solicitud.ConInformacionObservado = norm.ConInformacion;
+            solicitud.ScoreObservado          = norm.Score;
+            solicitud.EstadoScore             = norm.EstadoScore;
+            solicitud.ViabilidadObservada     = norm.Viabilidad;
+            solicitud.RatingRecaudosObservado = norm.RatingRecaudos;
+            solicitud.MontoSugeridoObservado  = norm.MontoSugerido;
+            solicitud.AlertasCountObservado   = norm.AlertasCount;
+            solicitud.FechaActualizacion      = nowUtc;
+            // NO se toca estado_solicitud / decision_crediticia / monto_aprobado
+            // / codigo_motivo_decision / fecha_decision / id_cupo_ordinario /
+            // fecha_materializacion_cupo / edad_calculada_al_momento / los
+            // snapshots de política, ni ningún crudo del intento.
+
+            intento.ResultadoConsumidoUtc = nowUtc;
+
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return ResultadoConsumoRiesgo.Consumido;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private static async Task<ResultadoConsumoRiesgo> NoConsumirAsync(
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx, ResultadoConsumoRiesgo resultado)
     {
         await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
         return resultado;
