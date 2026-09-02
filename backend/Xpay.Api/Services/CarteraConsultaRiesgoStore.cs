@@ -4,10 +4,11 @@ using Xpay.Api.Data;
 
 namespace Xpay.Api.Services;
 
-// M2.3a — implementación EF Core de ICarteraConsultaRiesgoStore. Mismo patrón
+// M2.3b1 — implementación EF Core de ICarteraConsultaRiesgoStore. Mismo patrón
 // que CarteraOrdinariaService / KycService: BeginTransactionAsync →
-// AppLockHelper.AdquirirAsync (owner=Transaction) → re-lectura dentro del
-// lock → SaveChangesAsync → CommitAsync, con rollback seguro.
+// AppLockHelper.AdquirirAsync (owner=Transaction) para la transición inicial
+// → re-lectura dentro de la transacción → SaveChangesAsync → CommitAsync, con
+// rollback seguro.
 //
 // NO abre conexiones propias. NO usa SQL crudo salvo el sp_getapplock ya
 // encapsulado en AppLockHelper. NO cambia el esquema.
@@ -52,7 +53,7 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db) : ICarteraConsu
                 || solicitud.IdUsuario != idUsuario
                 || !string.Equals(solicitud.EstadoSolicitud, CarteraSolicitudCupoEstados.Recibida, StringComparison.Ordinal))
             {
-                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
                 return false;
             }
 
@@ -70,32 +71,73 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db) : ICarteraConsu
         }
     }
 
-    public async Task CompletarIntentoAsync(
-        long idSolicitud, ResultadoIntentoDurable outcome, CancellationToken cancellationToken)
+    public async Task MarcarEnvioInciertoAsync(
+        long idSolicitud, long idUsuario, DateTime fechaUtc, CancellationToken cancellationToken)
     {
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var solicitud = await db.CarteraSolicitudesCupo
-                .FirstOrDefaultAsync(s => s.IdSolicitud == idSolicitud, cancellationToken)
-                .ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Solicitud de cupo desaparecida durante la consulta de riesgo — inconsistencia de datos.");
+            var (solicitud, intento) = await CargarSolicitudIntentoAsync(idSolicitud, cancellationToken).ConfigureAwait(false);
 
-            var intento = await db.CarteraSolicitudCupoIntentos
-                .Where(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == 1)
-                .FirstOrDefaultAsync(cancellationToken)
-                .ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Intento PRE-CALL ausente durante la consulta de riesgo — inconsistencia de datos.");
+            ExigirGuard(
+                solicitud is not null
+                && solicitud.IdUsuario == idUsuario
+                && string.Equals(solicitud.EstadoSolicitud, CarteraSolicitudCupoEstados.ConsultandoRiesgo, StringComparison.Ordinal)
+                && intento is not null
+                && string.Equals(intento.FaseIntento, CarteraIntentoFases.PreCall, StringComparison.Ordinal)
+                && intento.FechaFin is null
+                && intento.ResultadoTecnico is null,
+                "No se puede marcar el envío como incierto: estado o fase de intento inesperados.");
 
-            intento.ResultadoTecnico          = outcome.ResultadoTecnico;
-            intento.HttpStatusObservado       = outcome.HttpStatusObservado;
-            intento.ContentStatusObservado    = outcome.ContentStatusObservado;
-            intento.FechaFin                  = outcome.FechaFinUtc;
-            intento.EsIntentoConResultadoUtil = outcome.EsResultadoUtil;
+            intento!.FaseIntento = CarteraIntentoFases.EnvioIncierto;
+            solicitud!.FechaActualizacion = fechaUtc;
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
 
-            solicitud.EstadoSolicitud    = outcome.EstadoSolicitudFinal;
-            solicitud.FechaActualizacion = outcome.FechaFinUtc;
-            // decision_crediticia y las columnas de score/monto quedan intactas.
+    public async Task FinalizarIntentoAsync(
+        long idSolicitud, long idUsuario, ResultadoIntentoDurable outcome, CancellationToken cancellationToken)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var (solicitud, intento) = await CargarSolicitudIntentoAsync(idSolicitud, cancellationToken).ConfigureAwait(false);
+
+            ExigirGuard(
+                solicitud is not null
+                && solicitud.IdUsuario == idUsuario
+                && string.Equals(solicitud.EstadoSolicitud, CarteraSolicitudCupoEstados.ConsultandoRiesgo, StringComparison.Ordinal)
+                && intento is not null
+                && string.Equals(intento.FaseIntento, CarteraIntentoFases.EnvioIncierto, StringComparison.Ordinal)
+                && intento.FechaFin is null
+                && intento.ResultadoTecnico is null,
+                "No se puede finalizar el intento: estado o fase inesperados.");
+
+            intento!.ResultadoTecnico          = outcome.ResultadoTecnico;
+            intento.HttpStatusObservado        = outcome.HttpStatusObservado;
+            intento.ContentStatusObservado     = outcome.ContentStatusObservado;
+            intento.FechaFin                   = outcome.FechaFinUtc;
+            intento.EsIntentoConResultadoUtil  = outcome.EsResultadoUtil;
+            intento.ConInformacion             = outcome.ConInformacion;
+            intento.ScoreRaw                   = outcome.ScoreRaw;
+            intento.ViabilidadRaw              = outcome.ViabilidadRaw;
+            intento.RatingRecaudosRaw          = outcome.RatingRecaudosRaw;
+            intento.MontoSugeridoRaw           = outcome.MontoSugeridoRaw;
+            intento.AlertasCount               = outcome.AlertasCount;
+            intento.FaseIntento                = CarteraIntentoFases.Finalizado;
+
+            solicitud!.EstadoSolicitud    = outcome.EstadoSolicitudFinal;
+            solicitud.FechaActualizacion  = outcome.FechaFinUtc;
+            // decision_crediticia y las columnas de decisión de la solicitud
+            // (score_observado, monto_sugerido_observado, estado_score,
+            // viabilidad_observada, rating_recaudos_observado) quedan intactas.
 
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -106,6 +148,27 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db) : ICarteraConsu
             db.ChangeTracker.Clear();
             throw;
         }
+    }
+
+    private async Task<(Models.CarteraSolicitudCupo? solicitud, Models.CarteraSolicitudCupoIntento? intento)>
+        CargarSolicitudIntentoAsync(long idSolicitud, CancellationToken cancellationToken)
+    {
+        var solicitud = await db.CarteraSolicitudesCupo
+            .FirstOrDefaultAsync(s => s.IdSolicitud == idSolicitud, cancellationToken)
+            .ConfigureAwait(false);
+
+        var intento = await db.CarteraSolicitudCupoIntentos
+            .Where(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == 1)
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return (solicitud, intento);
+    }
+
+    private static void ExigirGuard(bool ok, string mensaje)
+    {
+        if (!ok)
+            throw new InvalidOperationException(mensaje);
     }
 
     // Mismo criterio que CarteraOrdinariaService.ValidarResultadoLockSolicitudCupo:

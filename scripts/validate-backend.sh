@@ -314,6 +314,33 @@ check_sql_value "035: cartera_solicitudes_cupo.edad_calculada_al_momento is_null
 check_sql_value "035: cartera_solicitud_cupo_intentos.resultado_tecnico is_nullable" \
   "SELECT CAST(c.is_nullable AS INT) FROM sys.columns c WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'resultado_tecnico'" "1"
 
+# ── B8 — Migración 036: persistencia tipada del resultado MiDecisor por ──
+# intento. 7 columnas nuevas en cartera_solicitud_cupo_intentos + CHECK de
+# fase. Cada assertion correlaciona tipo + longitud + nullability por nombre
+# de columna (mismo estilo que B7). fase_intento: VARCHAR(20) NOT NULL con
+# DEFAULT 'PRE_CALL'; el resto NULLABLE. La columna score/monto crudas son
+# VARCHAR (no INT/DECIMAL): guardan el string verbatim del proveedor.
+check_sql_value "036: intentos.fase_intento = VARCHAR(20) NOT NULL" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'fase_intento' AND ty.name = 'varchar' AND c.max_length = 20 AND c.is_nullable = 0) THEN 1 ELSE 0 END" "1"
+check_sql_value "036: intentos.fase_intento DEFAULT contiene 'PRE_CALL'" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.default_constraints dc JOIN sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'fase_intento' AND dc.definition LIKE '%PRE_CALL%') THEN 1 ELSE 0 END" "1"
+check_sql_value "036: intentos.con_informacion = BIT NULL" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'con_informacion' AND ty.name = 'bit' AND c.is_nullable = 1) THEN 1 ELSE 0 END" "1"
+check_sql_value "036: intentos.score_raw = VARCHAR(20) NULL" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'score_raw' AND ty.name = 'varchar' AND c.max_length = 20 AND c.is_nullable = 1) THEN 1 ELSE 0 END" "1"
+check_sql_value "036: intentos.viabilidad_raw = VARCHAR(10) NULL" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'viabilidad_raw' AND ty.name = 'varchar' AND c.max_length = 10 AND c.is_nullable = 1) THEN 1 ELSE 0 END" "1"
+check_sql_value "036: intentos.rating_recaudos_raw = VARCHAR(2) NULL" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'rating_recaudos_raw' AND ty.name = 'varchar' AND c.max_length = 2 AND c.is_nullable = 1) THEN 1 ELSE 0 END" "1"
+check_sql_value "036: intentos.monto_sugerido_raw = VARCHAR(20) NULL" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'monto_sugerido_raw' AND ty.name = 'varchar' AND c.max_length = 20 AND c.is_nullable = 1) THEN 1 ELSE 0 END" "1"
+check_sql_value "036: intentos.alertas_count = INT NULL" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'alertas_count' AND ty.name = 'int' AND c.is_nullable = 1) THEN 1 ELSE 0 END" "1"
+check_sql_value "036: CHECK ck_cartera_intento_fase enumera PRE_CALL/ENVIO_INCIERTO/FINALIZADO" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.check_constraints cc WHERE cc.parent_object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND cc.name = 'ck_cartera_intento_fase' AND cc.definition LIKE '%PRE_CALL%' AND cc.definition LIKE '%ENVIO_INCIERTO%' AND cc.definition LIKE '%FINALIZADO%') THEN 1 ELSE 0 END" "1"
+check_sql_value "036: los 8 intentos PRE-CALL del smoke siguen sin resultado (fase PRE_CALL)" \
+  "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM dbo.cartera_solicitud_cupo_intentos WHERE resultado_tecnico IS NULL AND fase_intento <> 'PRE_CALL') THEN 1 ELSE 0 END" "1"
+
 # ── Precondiciones HTTP (READ-ONLY, sin escribir nada) ──────────────────
 check_sql_value "originación: carlos_ci_test KYC = APROBADO" \
   "SELECT estado_kyc_actual FROM usuarios WHERE id_usuario = $ID_USUARIO_A" "APROBADO"
