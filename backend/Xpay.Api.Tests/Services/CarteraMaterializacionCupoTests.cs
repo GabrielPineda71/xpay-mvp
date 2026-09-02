@@ -117,7 +117,7 @@ public sealed class CarteraMaterializacionCupoTests
             var r = await new CarteraMaterializacionCupoStore(ctx).MaterializarCupoAsync(s.IdSolicitud, default);
             Assert.Equal(ResultadoMaterializacionCupo.NoElegible, r);
 
-            await AssertNadaMaterializadoAsync(cs, s.IdSolicitud, s.IdUsuario);
+            await AssertNadaMaterializadoAsync(cs, s.IdSolicitud, s.IdUsuario, estado);
         }
         finally { await LimpiarAsync(cs, creados); }
     }
@@ -137,7 +137,7 @@ public sealed class CarteraMaterializacionCupoTests
             await Assert.ThrowsAsync<CarteraMaterializacionInvarianteException>(
                 () => new CarteraMaterializacionCupoStore(ctx).MaterializarCupoAsync(s.IdSolicitud, default));
 
-            await AssertNadaMaterializadoAsync(cs, s.IdSolicitud, s.IdUsuario);
+            await AssertNadaMaterializadoAsync(cs, s.IdSolicitud, s.IdUsuario, "APROBADA_PENDIENTE_CUPO");
         }
         finally { await LimpiarAsync(cs, creados); }
     }
@@ -157,7 +157,7 @@ public sealed class CarteraMaterializacionCupoTests
             await Assert.ThrowsAsync<CarteraMaterializacionInvarianteException>(
                 () => new CarteraMaterializacionCupoStore(ctx).MaterializarCupoAsync(s.IdSolicitud, default));
 
-            await AssertNadaMaterializadoAsync(cs, s.IdSolicitud, s.IdUsuario);
+            await AssertNadaMaterializadoAsync(cs, s.IdSolicitud, s.IdUsuario, "APROBADA_PENDIENTE_CUPO");
         }
         finally { await LimpiarAsync(cs, creados); }
     }
@@ -179,7 +179,7 @@ public sealed class CarteraMaterializacionCupoTests
             await Assert.ThrowsAsync<CarteraMaterializacionInvarianteException>(
                 () => new CarteraMaterializacionCupoStore(ctx).MaterializarCupoAsync(s.IdSolicitud, default));
 
-            await AssertNadaMaterializadoAsync(cs, s.IdSolicitud, s.IdUsuario);
+            await AssertNadaMaterializadoAsync(cs, s.IdSolicitud, s.IdUsuario, "APROBADA_PENDIENTE_CUPO");
         }
         finally { await LimpiarAsync(cs, creados); }
     }
@@ -605,13 +605,17 @@ public sealed class CarteraMaterializacionCupoTests
         return await ctx.Database.SqlQueryRaw<int>(fullSqlWithValueAlias).SingleAsync();
     }
 
-    private static async Task AssertNadaMaterializadoAsync(string cs, long idSolicitud, long idUsuario)
+    // "Nada materializado" = ningún enlace de cupo, ninguna fecha de
+    // materialización, ningún cupo creado, y el estado_solicitud QUEDA EXACTAMENTE
+    // como se sembró (no se asume "≠ APROBADA": la solicitud pudo sembrarse ya
+    // en APROBADA para probar el guard de estado).
+    private static async Task AssertNadaMaterializadoAsync(string cs, long idSolicitud, long idUsuario, string estadoEsperado)
     {
         await using var v = NuevoContexto(cs);
         var sol = await v.CarteraSolicitudesCupo.AsNoTracking().SingleAsync(x => x.IdSolicitud == idSolicitud);
         Assert.Null(sol.IdCupoOrdinario);
         Assert.Null(sol.FechaMaterializacionCupo);
-        Assert.NotEqual("APROBADA", sol.EstadoSolicitud);
+        Assert.Equal(estadoEsperado, sol.EstadoSolicitud);
         Assert.Equal(0, await v.CarteraCuposOrdinarios.AsNoTracking().CountAsync(c => c.IdUsuario == idUsuario));
     }
 
