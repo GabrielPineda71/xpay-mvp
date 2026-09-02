@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
+using Xpay.Api.Exceptions;
 using Xpay.Api.Models;
 
 namespace Xpay.Api.Services;
@@ -149,25 +150,74 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
 
     public async Task<CupoOrdinarioDto> AsignarCupoAsync(AsignarCupoRequest req, long idAdmin)
     {
+        // El usuario es contexto inmutable para esta operación (ninguna operación
+        // de cupo muta `usuarios`): se resuelve ANTES de la transacción para no
+        // alargar la sección crítica. `req.IdUsuario` es además la entrada de la
+        // clave del AppLock — no requiere ninguna lectura.
         var user = await db.Usuarios.FindAsync(req.IdUsuario)
                    ?? throw new KeyNotFoundException("Usuario no encontrado");
-        var wallet = await db.Wallets
-            .FirstOrDefaultAsync(w => w.IdPersona == user.IdPersona && w.TipoWallet == "PERSONA")
-            ?? throw new InvalidOperationException("Wallet no encontrada");
 
-        var row = await db.CarteraCuposOrdinarios.FirstOrDefaultAsync(x => x.IdUsuario == req.IdUsuario);
-        if (row is null)
+        // ── Sección crítica ────────────────────────────────────────────────
+        // Serializa la asignación admin del cupo ordinario con la
+        // materialización TX2 (M2.4c) y con otra asignación admin del mismo
+        // usuario, mediante el MISMO AppLock que
+        // CarteraMaterializacionCupoStore: XPAY:CARTERA_CUPO:{idUsuario}
+        // (owner=Transaction, adquirido dentro de la transacción, antes de
+        // cualquier otra consulta). La fila del cupo NO se lee hasta tener el
+        // lock: así el write nunca se basa en un snapshot que otro escritor con
+        // lock pueda cambiar después. NO impone ninguna regla comercial de cupo
+        // — el admin conserva su autoridad para fijar cualquier valor sobre
+        // estado autoritativo re-leído.
+        await using var tx = await db.Database.BeginTransactionAsync();
+        try
         {
-            row = new CarteraCupoOrdinario { IdUsuario = req.IdUsuario, IdWallet = wallet.IdWallet, CreatedAt = DateTime.UtcNow, FechaAprobacion = DateTime.UtcNow };
-            db.CarteraCuposOrdinarios.Add(row);
+            ValidarResultadoLockCupo(
+                await AppLockHelper.AdquirirAsync(db, $"XPAY:CARTERA_CUPO:{req.IdUsuario}"));
+
+            // Re-lectura AUTORITATIVA del cupo bajo el lock, con el mismo lock
+            // pesimista de fila (UPDLOCK, ROWLOCK) que usan TX2 y las
+            // operaciones de utilización sobre esta tabla. Entidad TRACKED.
+            var row = await db.CarteraCuposOrdinarios
+                .FromSqlInterpolated(
+                    $"SELECT * FROM cartera_cupos_ordinarios WITH (UPDLOCK, ROWLOCK) WHERE id_usuario = {req.IdUsuario}")
+                .FirstOrDefaultAsync();
+
+            var ahora = DateTime.UtcNow;
+            if (row is null)
+            {
+                // Regla de wallet EXISTENTE (sin filtro de estado). El finding
+                // de wallet activa queda deliberadamente FUERA de alcance de
+                // este hardening de concurrencia.
+                var wallet = await db.Wallets
+                    .FirstOrDefaultAsync(w => w.IdPersona == user.IdPersona && w.TipoWallet == "PERSONA")
+                    ?? throw new InvalidOperationException("Wallet no encontrada");
+                row = new CarteraCupoOrdinario
+                {
+                    IdUsuario       = req.IdUsuario,
+                    IdWallet        = wallet.IdWallet,
+                    CreatedAt       = ahora,
+                    FechaAprobacion = ahora,
+                };
+                db.CarteraCuposOrdinarios.Add(row);
+            }
+
+            // Write-set INALTERADO respecto de la versión previa.
+            row.CupoAprobado       = req.CupoAprobado;
+            row.FechaVencimiento   = req.FechaVencimiento;
+            row.AprobadoPorUsuario = idAdmin;
+            row.Observaciones      = req.Observaciones;
+            row.UpdatedAt          = ahora;
+
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+            return ToCupoDto(row, user.NombreUsuario);
         }
-        row.CupoAprobado       = req.CupoAprobado;
-        row.FechaVencimiento   = req.FechaVencimiento;
-        row.AprobadoPorUsuario = idAdmin;
-        row.Observaciones      = req.Observaciones;
-        row.UpdatedAt          = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-        return ToCupoDto(row, user.NombreUsuario);
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+            db.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     // ── Mi cupo (vista usuario) ────────────────────────────────────────
@@ -1193,6 +1243,31 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
             case -3:
                 throw new InvalidOperationException(
                     "Hay otra solicitud de cupo en proceso para este usuario. Intenta de nuevo en unos segundos.");
+            default:
+                throw new Exception($"sp_getapplock devolvió un código inesperado: {resultado}.");
+        }
+    }
+
+    // Interpreta el código de retorno de sp_getapplock para la clave
+    // XPAY:CARTERA_CUPO:{idUsuario} — compartida con
+    // CarteraMaterializacionCupoStore (M2.4c). 0/1 = adquirido. -1/-2/-3 =
+    // contención transitoria de otra asignación de cupo o de la materialización
+    // TX2 del mismo usuario → CarteraCupoConcurrenteException, que el controller
+    // mapea a 409 (misma convención que el AppLock de Caja/Cierre y el de KYC).
+    // Cualquier otro código = error técnico de la llamada: se relanza sin tipar
+    // (Exception plano) → 500 genérico, nunca una excepción de dominio.
+    private static void ValidarResultadoLockCupo(int resultado)
+    {
+        switch (resultado)
+        {
+            case 0:
+            case 1:
+                return;
+            case -1:
+            case -2:
+            case -3:
+                throw new CarteraCupoConcurrenteException(
+                    "Hay otra operación sobre el cupo de este usuario en curso. Intenta de nuevo en unos segundos.");
             default:
                 throw new Exception($"sp_getapplock devolvió un código inesperado: {resultado}.");
         }
