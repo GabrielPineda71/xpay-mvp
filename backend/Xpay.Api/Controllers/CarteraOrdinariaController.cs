@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Xpay.Api.DTOs;
+using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
@@ -125,6 +126,7 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
     {
         try { return Ok(await svc.AsignarCupoAsync(req, IdUsuarioActual)); }
         catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+        catch (CarteraCupoConcurrenteException ex) { return Conflict(new { error = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
     }
 
