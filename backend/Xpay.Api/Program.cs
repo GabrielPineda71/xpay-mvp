@@ -65,6 +65,16 @@ builder.Services.AddSingleton<
 builder.Services.AddSingleton<
     Xpay.Api.Integrations.MiDecisor.IMiDecisorClient,
     Xpay.Api.Integrations.MiDecisor.MiDecisorClient>();
+// M2.3a — orquestación estructural Cartera ↔ MiDecisor. Ningún endpoint /
+// scheduler la invoca, y el consentimiento runtime devuelve SIEMPRE false:
+// dos barreras independientes contra una consulta real.
+builder.Services.AddScoped<Xpay.Api.Services.CarteraConsultaRiesgoService>();
+builder.Services.AddScoped<
+    Xpay.Api.Services.ICarteraConsultaRiesgoStore,
+    Xpay.Api.Services.CarteraConsultaRiesgoStore>();
+builder.Services.AddScoped<
+    Xpay.Api.Integrations.MiDecisor.IConsultaRiesgoAutorizacion,
+    Xpay.Api.Integrations.MiDecisor.AutorizacionConsultaRiesgoNoDisponible>();
 
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.
