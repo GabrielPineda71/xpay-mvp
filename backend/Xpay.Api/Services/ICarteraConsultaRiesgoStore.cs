@@ -95,19 +95,24 @@ public enum ResultadoPurgaIntento
 // job / endpoint / worker / BackgroundService). NO define período de
 // retención. `cutoffUtc` lo provee el llamador.
 //
+// El gate durable de consumo YA está implementado técnicamente: la purga
+// exige `resultado_consumido_utc != NULL` (marca que escribe M2.4a al
+// normalizar el resultado a observaciones de la solicitud). Un intento no
+// consumido → NoElegible.
+//
 // NO invocar operacionalmente hasta definir (decisiones externas):
 //   - política / duración de retención;
 //   - evento a partir del cual empieza a contar el plazo;
-//   - gate durable que demuestre que los crudos ya no serán consumidos por
-//     el (futuro) motor de decisión de crédito;
 //   - invocador autorizado.
 public interface ICarteraResultadoRiesgoPurga
 {
     // Transacción pequeña bajo AppLock XPAY:CARTERA_RIESGO:{idSolicitud}
     // (owner=Transaction). Re-lee el intento (idSolicitud, numeroIntento)
-    // dentro del lock y aplica los guards: fase == FINALIZADO;
-    // resultado_purgado_utc == NULL (si no → YaPurgado); fecha_fin != NULL y
-    // fecha_fin < cutoffUtc; al menos un crudo != NULL. Si todos pasan:
+    // dentro del lock y aplica los guards, en orden: fase == FINALIZADO;
+    // resultado_purgado_utc == NULL (si no → YaPurgado);
+    // resultado_consumido_utc != NULL (si no → NoElegible — gate de consumo);
+    // fecha_fin != NULL y fecha_fin < cutoffUtc; al menos un crudo != NULL.
+    // Si todos pasan:
     // NULL de los 6 crudos + set resultado_purgado_utc → Purgado. NO toca
     // resultado_tecnico / es_intento_con_resultado_util / http/content status
     // / fase_intento / fechas originales / numero_intento / idempotency_key /

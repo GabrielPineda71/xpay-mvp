@@ -191,6 +191,15 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
             if (intento.ResultadoPurgadoUtc is not null)
                 return await NoPurgarAsync(tx, ResultadoPurgaIntento.YaPurgado).ConfigureAwait(false);
 
+            // Gate de consumo (M2.4a): NUNCA purgar los crudos de un intento
+            // cuyo resultado todavía no fue consumido duraderamente por el
+            // motor de decisión. `resultado_consumido_utc == NULL` es un estado
+            // legítimo de "aún no listo", no corrupción → NoElegible.
+            // Va DESPUÉS de YaPurgado (esa marca es autoritativa e idempotente)
+            // y ANTES del cutoff / de la comprobación de crudos.
+            if (intento.ResultadoConsumidoUtc is null)
+                return await NoPurgarAsync(tx, ResultadoPurgaIntento.NoElegible).ConfigureAwait(false);
+
             if (intento.FechaFin is null || intento.FechaFin >= cutoffUtc)
                 return await NoPurgarAsync(tx, ResultadoPurgaIntento.NoElegible).ConfigureAwait(false);
 
