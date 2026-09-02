@@ -323,6 +323,250 @@ public sealed class CarteraResultadoPurgaTests
         }
     }
 
+    // ── G1 — gate de consumo: intento no consumido no es purgable ─────────
+    [Fact]
+    public async Task NoConsumido_NoElegible_CrudosIntactos_TimestampNull()
+    {
+        if (!TryConnString(out var cs)) return;
+
+        var idUnidad = await LeerIdUnidadAsync(cs);
+        var idPolitica = await LeerIdPoliticaActivaAsync(cs);
+        var creados = new Sembrados();
+        try
+        {
+            var (idSolicitud, numeroIntento) = await SembrarIntentoAsync(
+                cs, idUnidad, idPolitica, CarteraIntentoFases.Finalizado, conCrudos: true,
+                DateTime.UtcNow.AddDays(-10), creados, consumido: false);
+
+            await using var ctx = NuevoContexto(cs);
+            var r = await new CarteraConsultaRiesgoStore(ctx)
+                .PurgarResultadoIntentoAsync(idSolicitud, numeroIntento, DateTime.UtcNow, default);
+            Assert.Equal(ResultadoPurgaIntento.NoElegible, r);
+
+            await using var v = NuevoContexto(cs);
+            var it = await v.CarteraSolicitudCupoIntentos.AsNoTracking()
+                .SingleAsync(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == numeroIntento);
+            Assert.Null(it.ResultadoPurgadoUtc);
+            Assert.Null(it.ResultadoConsumidoUtc);
+            Assert.True(it.ConInformacion);
+            Assert.Equal(ScoreRaw, it.ScoreRaw);
+            Assert.Equal(ViabilidadRaw, it.ViabilidadRaw);
+            Assert.Equal(RatingRaw, it.RatingRecaudosRaw);
+            Assert.Equal(MontoRaw, it.MontoSugeridoRaw);
+            Assert.Equal(0, it.AlertasCount);
+        }
+        finally
+        {
+            await LimpiarAsync(cs, creados);
+        }
+    }
+
+    // ── G4 — consume real → purge real: purgado sin perder el snapshot ────
+    [Fact]
+    public async Task ConsumeReal_LuegoPurgeReal_Purgado_SnapshotObservadoPreservado()
+    {
+        if (!TryConnString(out var cs)) return;
+
+        var idUnidad = await LeerIdUnidadAsync(cs);
+        var idPolitica = await LeerIdPoliticaActivaAsync(cs);
+        var creados = new Sembrados();
+        try
+        {
+            var (idSolicitud, numeroIntento) = await SembrarIntentoAsync(
+                cs, idUnidad, idPolitica, CarteraIntentoFases.Finalizado, conCrudos: true,
+                DateTime.UtcNow.AddDays(-10), creados, consumido: false);
+
+            await using (var c = NuevoContexto(cs))
+            {
+                var rc = await new CarteraConsultaRiesgoStore(c)
+                    .ConsumirResultadoRiesgoAsync(idSolicitud, numeroIntento, default);
+                Assert.Equal(ResultadoConsumoRiesgo.Consumido, rc);
+            }
+
+            await using (var p = NuevoContexto(cs))
+            {
+                var rp = await new CarteraConsultaRiesgoStore(p)
+                    .PurgarResultadoIntentoAsync(idSolicitud, numeroIntento, DateTime.UtcNow, default);
+                Assert.Equal(ResultadoPurgaIntento.Purgado, rp);
+            }
+
+            await using var v = NuevoContexto(cs);
+            var it = await v.CarteraSolicitudCupoIntentos.AsNoTracking()
+                .SingleAsync(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == numeroIntento);
+            Assert.NotNull(it.ResultadoConsumidoUtc);
+            Assert.NotNull(it.ResultadoPurgadoUtc);
+            Assert.Null(it.ConInformacion);
+            Assert.Null(it.ScoreRaw);
+            Assert.Null(it.ViabilidadRaw);
+            Assert.Null(it.RatingRecaudosRaw);
+            Assert.Null(it.MontoSugeridoRaw);
+            Assert.Null(it.AlertasCount);
+
+            var sol = await v.CarteraSolicitudesCupo.AsNoTracking().SingleAsync(s => s.IdSolicitud == idSolicitud);
+            Assert.Equal(777, sol.ScoreObservado);
+            Assert.Equal(CarteraEstadoScore.Disponible, sol.EstadoScore);
+            Assert.Equal("ALTA", sol.ViabilidadObservada);
+            Assert.Equal("A", sol.RatingRecaudosObservado);
+            Assert.Equal(1_500_000m, sol.MontoSugeridoObservado);
+            Assert.True(sol.ConInformacionObservado);
+            Assert.Equal(0, sol.AlertasCountObservado);
+        }
+        finally
+        {
+            await LimpiarAsync(cs, creados);
+        }
+    }
+
+    // ── G5 — purge rechazado antes del consumo no deja el intento bloqueado ─
+    [Fact]
+    public async Task PurgeAntesDeConsumo_NoElegible_LuegoConsume_LuegoPurge_Purgado()
+    {
+        if (!TryConnString(out var cs)) return;
+
+        var idUnidad = await LeerIdUnidadAsync(cs);
+        var idPolitica = await LeerIdPoliticaActivaAsync(cs);
+        var creados = new Sembrados();
+        try
+        {
+            var (idSolicitud, numeroIntento) = await SembrarIntentoAsync(
+                cs, idUnidad, idPolitica, CarteraIntentoFases.Finalizado, conCrudos: true,
+                DateTime.UtcNow.AddDays(-10), creados, consumido: false);
+
+            await using (var p1 = NuevoContexto(cs))
+            {
+                var r1 = await new CarteraConsultaRiesgoStore(p1)
+                    .PurgarResultadoIntentoAsync(idSolicitud, numeroIntento, DateTime.UtcNow, default);
+                Assert.Equal(ResultadoPurgaIntento.NoElegible, r1);
+            }
+
+            await using (var q = NuevoContexto(cs))
+            {
+                var it0 = await q.CarteraSolicitudCupoIntentos.AsNoTracking()
+                    .SingleAsync(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == numeroIntento);
+                Assert.Null(it0.ResultadoPurgadoUtc);
+                Assert.Equal(ScoreRaw, it0.ScoreRaw);
+            }
+
+            await using (var c = NuevoContexto(cs))
+                Assert.Equal(ResultadoConsumoRiesgo.Consumido,
+                    await new CarteraConsultaRiesgoStore(c).ConsumirResultadoRiesgoAsync(idSolicitud, numeroIntento, default));
+
+            await using (var p2 = NuevoContexto(cs))
+                Assert.Equal(ResultadoPurgaIntento.Purgado,
+                    await new CarteraConsultaRiesgoStore(p2).PurgarResultadoIntentoAsync(idSolicitud, numeroIntento, DateTime.UtcNow, default));
+
+            await using var v = NuevoContexto(cs);
+            var it = await v.CarteraSolicitudCupoIntentos.AsNoTracking()
+                .SingleAsync(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == numeroIntento);
+            Assert.NotNull(it.ResultadoConsumidoUtc);
+            Assert.NotNull(it.ResultadoPurgadoUtc);
+            Assert.Null(it.ScoreRaw);
+            Assert.Null(it.MontoSugeridoRaw);
+            var sol = await v.CarteraSolicitudesCupo.AsNoTracking().SingleAsync(s => s.IdSolicitud == idSolicitud);
+            Assert.Equal(777, sol.ScoreObservado);
+        }
+        finally
+        {
+            await LimpiarAsync(cs, creados);
+        }
+    }
+
+    // ── G6 — consumo ‖ purga concurrentes: nunca purgado sin consumido ────
+    [Fact]
+    public async Task ConsumoYPurgaConcurrentes_NuncaPurgadoSinConsumido()
+    {
+        if (!TryConnString(out var cs)) return;
+
+        var idUnidad = await LeerIdUnidadAsync(cs);
+        var idPolitica = await LeerIdPoliticaActivaAsync(cs);
+        var creados = new Sembrados();
+        try
+        {
+            var (idSolicitud, numeroIntento) = await SembrarIntentoAsync(
+                cs, idUnidad, idPolitica, CarteraIntentoFases.Finalizado, conCrudos: true,
+                DateTime.UtcNow.AddDays(-10), creados, consumido: false);
+
+            await using var cConsume = NuevoContexto(cs);
+            await using var cPurge = NuevoContexto(cs);
+            var cutoff = DateTime.UtcNow;
+
+            var consumeTask = new CarteraConsultaRiesgoStore(cConsume)
+                .ConsumirResultadoRiesgoAsync(idSolicitud, numeroIntento, default);
+            var purgeTask = new CarteraConsultaRiesgoStore(cPurge)
+                .PurgarResultadoIntentoAsync(idSolicitud, numeroIntento, cutoff, default);
+
+            var consumeResult = await consumeTask;
+            var purgeResult = await purgeTask;
+
+            // El consumo es el único escritor del snapshot; el intento parte sin
+            // consumir → siempre Consumido.
+            Assert.Equal(ResultadoConsumoRiesgo.Consumido, consumeResult);
+            // La purga: Purgado (obtuvo el lock tras el commit del consumo) o
+            // NoElegible (lo obtuvo primero, gate de consumo). Nunca otra cosa.
+            Assert.Contains(purgeResult, new[] { ResultadoPurgaIntento.Purgado, ResultadoPurgaIntento.NoElegible });
+
+            await using var v = NuevoContexto(cs);
+            var it = await v.CarteraSolicitudCupoIntentos.AsNoTracking()
+                .SingleAsync(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == numeroIntento);
+            var sol = await v.CarteraSolicitudesCupo.AsNoTracking().SingleAsync(s => s.IdSolicitud == idSolicitud);
+
+            // INVARIANTE CENTRAL: nunca purgado sin consumido.
+            Assert.NotNull(it.ResultadoConsumidoUtc);
+            if (it.ResultadoPurgadoUtc is not null)
+            {
+                Assert.Null(it.ScoreRaw);
+                Assert.Null(it.MontoSugeridoRaw);
+                Assert.Null(it.AlertasCount);
+            }
+            else
+            {
+                Assert.Equal(ScoreRaw, it.ScoreRaw);
+                Assert.Equal(MontoRaw, it.MontoSugeridoRaw);
+            }
+
+            // El snapshot durable de consumo siempre completo.
+            Assert.Equal(777, sol.ScoreObservado);
+            Assert.Equal("ALTA", sol.ViabilidadObservada);
+            Assert.Equal(1_500_000m, sol.MontoSugeridoObservado);
+        }
+        finally
+        {
+            await LimpiarAsync(cs, creados);
+        }
+    }
+
+    // ── G8 — el guard de fase precede al gate de consumo ──────────────────
+    [Fact]
+    public async Task NoFinalizadoPeroConsumido_NoElegible_PorGuardDeFase()
+    {
+        if (!TryConnString(out var cs)) return;
+
+        var idUnidad = await LeerIdUnidadAsync(cs);
+        var idPolitica = await LeerIdPoliticaActivaAsync(cs);
+        var creados = new Sembrados();
+        try
+        {
+            var (idSolicitud, numeroIntento) = await SembrarIntentoAsync(
+                cs, idUnidad, idPolitica, CarteraIntentoFases.EnvioIncierto, conCrudos: true,
+                DateTime.UtcNow.AddDays(-10), creados, consumido: true);
+
+            await using var ctx = NuevoContexto(cs);
+            var r = await new CarteraConsultaRiesgoStore(ctx)
+                .PurgarResultadoIntentoAsync(idSolicitud, numeroIntento, DateTime.UtcNow, default);
+            Assert.Equal(ResultadoPurgaIntento.NoElegible, r);
+
+            await using var v = NuevoContexto(cs);
+            var it = await v.CarteraSolicitudCupoIntentos.AsNoTracking()
+                .SingleAsync(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == numeroIntento);
+            Assert.Null(it.ResultadoPurgadoUtc);
+            Assert.Equal(ScoreRaw, it.ScoreRaw);
+        }
+        finally
+        {
+            await LimpiarAsync(cs, creados);
+        }
+    }
+
     // ════════════════════ infraestructura de test ════════════════════════
 
     private static bool TryConnString(out string cs)
@@ -365,8 +609,14 @@ public sealed class CarteraResultadoPurgaTests
         public List<long> Solicitudes { get; } = new();
     }
 
+    // `consumido` (default true): siembra `resultado_consumido_utc` != NULL para
+    // que el intento sea elegible para purga tras el gate de consumo de M2.4a.
+    // Pasar `consumido: false` para probar el gate (o para un intento que aún
+    // debe pasar por ConsumirResultadoRiesgoAsync real). El timestamp sólo
+    // indica "ya consumido", sin más semántica.
     private static async Task<(long idSolicitud, int numeroIntento)> SembrarIntentoAsync(
-        string cs, long idUnidad, long idPolitica, string fase, bool conCrudos, DateTime? fechaFin, Sembrados creados)
+        string cs, long idUnidad, long idPolitica, string fase, bool conCrudos, DateTime? fechaFin, Sembrados creados,
+        bool consumido = true)
     {
         await using var ctx = NuevoContexto(cs);
         var ahora = DateTime.UtcNow;
@@ -443,6 +693,7 @@ public sealed class CarteraResultadoPurgaTests
             RatingRecaudosRaw         = conCrudos ? RatingRaw : null,
             MontoSugeridoRaw          = conCrudos ? MontoRaw : null,
             AlertasCount              = conCrudos ? 0 : null,
+            ResultadoConsumidoUtc     = consumido ? (fechaFin ?? ahora) : null,
         });
         await ctx.SaveChangesAsync();
 
