@@ -180,21 +180,38 @@ BEGIN TRY
     -- ── 8) Backfill de fase_intento para intentos históricos finalizados ─
     -- Sólo promueve filas con resultado_tecnico ya persistido y que aún no
     -- estén FINALIZADO. Nunca revierte FINALIZADO → PRE_CALL. Idempotente.
-    UPDATE dbo.cartera_solicitud_cupo_intentos
-       SET fase_intento = 'FINALIZADO'
-     WHERE resultado_tecnico IS NOT NULL
-       AND fase_intento <> 'FINALIZADO';
-    PRINT CONCAT('OK: backfill fase_intento = FINALIZADO en ', @@ROWCOUNT, ' fila(s) histórica(s) con resultado.');
+    --
+    -- Se ejecuta vía EXEC() para diferir el binding de la columna fase_intento
+    -- hasta runtime: en la PRIMERA ejecución la columna se acaba de crear en
+    -- este mismo batch, y una referencia directa a fase_intento en una
+    -- sentencia DML/DDL del mismo batch falla al compilar el batch
+    -- (SQL Server, Msg 207 "Invalid column name"). El batch dinámico corre en
+    -- ESTA misma transacción y sesión; con XACT_ABORT ON cualquier error se
+    -- propaga al TRY/CATCH exterior. Cadena constante, sin concatenación ni
+    -- parámetros externos.
+    EXEC (N'
+        UPDATE dbo.cartera_solicitud_cupo_intentos
+           SET fase_intento = ''FINALIZADO''
+         WHERE resultado_tecnico IS NOT NULL
+           AND fase_intento <> ''FINALIZADO'';
+        PRINT CONCAT(''OK: backfill fase_intento = FINALIZADO en '', @@ROWCOUNT, '' fila(s) histórica(s) con resultado.'');
+    ');
 
     -- ── 9) CHECK ck_cartera_intento_fase (tras el backfill) ────────────
+    -- El ADD CONSTRAINT también se ejecuta vía EXEC() por la misma razón que
+    -- el backfill (binding de fase_intento diferido a runtime). El IF NOT
+    -- EXISTS conserva la idempotencia; el EXEC corre dentro de esta
+    -- transacción y propaga errores al TRY/CATCH.
     IF NOT EXISTS (
         SELECT 1 FROM sys.check_constraints
         WHERE parent_object_id = @objIdIntento AND name = 'ck_cartera_intento_fase'
     )
     BEGIN
-        ALTER TABLE dbo.cartera_solicitud_cupo_intentos
-            ADD CONSTRAINT ck_cartera_intento_fase
-            CHECK (fase_intento IN ('PRE_CALL', 'ENVIO_INCIERTO', 'FINALIZADO'));
+        EXEC (N'
+            ALTER TABLE dbo.cartera_solicitud_cupo_intentos
+                ADD CONSTRAINT ck_cartera_intento_fase
+                CHECK (fase_intento IN (''PRE_CALL'', ''ENVIO_INCIERTO'', ''FINALIZADO''));
+        ');
         PRINT 'OK: constraint ck_cartera_intento_fase agregada';
     END
     ELSE
