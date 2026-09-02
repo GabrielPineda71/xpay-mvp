@@ -17,11 +17,18 @@ public class CarteraSolicitudCupo
     public int       EdadMinimaAplicada                { get; set; }
     public int       EdadMaximaAplicada                { get; set; }
     public int?      EdadCalculadaAlMomento            { get; set; }
+    // M2.4a — snapshot NORMALIZADO y purga-seguro del resultado MiDecisor útil,
+    // escrito por CarteraConsultaRiesgoStore.ConsumirResultadoRiesgoAsync. NO
+    // son un veredicto crediticio (eso vive en DecisionCrediticia, que M2.4a
+    // nunca toca). Sobreviven a la purga de crudos del intento (M2.3b3 no toca
+    // esta tabla).
+    public bool?     ConInformacionObservado           { get; set; }
     public int?      ScoreObservado                    { get; set; }
     public string?   EstadoScore                       { get; set; }
     public string?   ViabilidadObservada               { get; set; }
     public string?   RatingRecaudosObservado           { get; set; }
     public decimal?  MontoSugeridoObservado            { get; set; }
+    public int?      AlertasCountObservado             { get; set; }
     public int       NumeroIntento                     { get; set; } = 1;
     public long?     IdCupoOrdinario                   { get; set; }
     public string    CorrelationId                     { get; set; } = string.Empty;

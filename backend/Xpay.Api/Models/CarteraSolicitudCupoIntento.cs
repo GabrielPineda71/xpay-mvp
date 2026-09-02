@@ -37,4 +37,15 @@ public class CarteraSolicitudCupoIntento
     // inmutable. NO se infiere por nulabilidad de los crudos: un intento sin
     // resultado recibido tiene los crudos NULL pero resultado_purgado_utc NULL.
     public DateTime? ResultadoPurgadoUtc           { get; set; }
+
+    // M2.4a — marca de CONSUMO durable de los 6 crudos de arriba (columna
+    // `resultado_consumido_utc DATETIME2 NULL`, migración 038). NULL = no se
+    // ha completado un consumo durable. NOT NULL = el resultado de este intento
+    // se normalizó y se persistió como observaciones de la solicitud
+    // (con_informacion_observado / score_observado / estado_score /
+    // viabilidad_observada / rating_recaudos_observado / monto_sugerido_observado
+    // / alertas_count_observado) en ese instante UTC; inmutable. NO es
+    // fecha_decision (no hay veredicto), NO inicia el reloj de retención, NO
+    // autoriza la purga por sí sola.
+    public DateTime? ResultadoConsumidoUtc         { get; set; }
 }

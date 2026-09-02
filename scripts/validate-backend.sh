@@ -347,6 +347,16 @@ check_sql_value "036: los 8 intentos PRE-CALL del smoke siguen sin resultado (fa
 check_sql_value "037: cartera_solicitud_cupo_intentos.resultado_purgado_utc = DATETIME2 NULL (exactamente una)" \
   "SELECT CASE WHEN (SELECT COUNT(*) FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'resultado_purgado_utc' AND ty.name = 'datetime2' AND c.is_nullable = 1) = 1 THEN 1 ELSE 0 END" "1"
 
+# ── B10 — Migración 038: consumo durable DORMIDO del resultado MiDecisor ─
+# (M2.4a). Assert EXCLUSIVAMENTE estructural: cada columna nueva existe
+# exactamente una vez, con su tipo y nullability. Sin asserts de datos.
+check_sql_value "038: cartera_solicitud_cupo_intentos.resultado_consumido_utc = DATETIME2 NULL (exactamente una)" \
+  "SELECT CASE WHEN (SELECT COUNT(*) FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'resultado_consumido_utc' AND ty.name = 'datetime2' AND c.is_nullable = 1) = 1 THEN 1 ELSE 0 END" "1"
+check_sql_value "038: cartera_solicitudes_cupo.con_informacion_observado = BIT NULL (exactamente una)" \
+  "SELECT CASE WHEN (SELECT COUNT(*) FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitudes_cupo') AND c.name = 'con_informacion_observado' AND ty.name = 'bit' AND c.is_nullable = 1) = 1 THEN 1 ELSE 0 END" "1"
+check_sql_value "038: cartera_solicitudes_cupo.alertas_count_observado = INT NULL (exactamente una)" \
+  "SELECT CASE WHEN (SELECT COUNT(*) FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitudes_cupo') AND c.name = 'alertas_count_observado' AND ty.name = 'int' AND c.is_nullable = 1) = 1 THEN 1 ELSE 0 END" "1"
+
 # ── Precondiciones HTTP (READ-ONLY, sin escribir nada) ──────────────────
 check_sql_value "originación: carlos_ci_test KYC = APROBADO" \
   "SELECT estado_kyc_actual FROM usuarios WHERE id_usuario = $ID_USUARIO_A" "APROBADO"
