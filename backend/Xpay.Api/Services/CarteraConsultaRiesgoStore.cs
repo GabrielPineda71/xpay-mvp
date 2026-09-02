@@ -12,7 +12,12 @@ namespace Xpay.Api.Services;
 //
 // NO abre conexiones propias. NO usa SQL crudo salvo el sp_getapplock ya
 // encapsulado en AppLockHelper. NO cambia el esquema.
-public sealed class CarteraConsultaRiesgoStore(XpayDbContext db) : ICarteraConsultaRiesgoStore
+//
+// M2.3b3 — también implementa ICarteraResultadoRiesgoPurga (infraestructura
+// DORMIDA de purga de crudos): esa cara del contrato NO está registrada en DI
+// y NO tiene ningún caller de runtime.
+public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
+    : ICarteraConsultaRiesgoStore, ICarteraResultadoRiesgoPurga
 {
     public async Task<ConsultaRiesgoContexto?> CargarContextoAsync(
         long idSolicitud, long idUsuario, CancellationToken cancellationToken)
@@ -148,6 +153,83 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db) : ICarteraConsu
             db.ChangeTracker.Clear();
             throw;
         }
+    }
+
+    // ── M2.3b3 — ICarteraResultadoRiesgoPurga (infraestructura DORMIDA) ──
+    // Ver el doc del contrato: NO invocar operacionalmente sin política de
+    // retención, evento de inicio, gate de consumo por el motor de decisión
+    // e invocador autorizado definidos. Sin caller de runtime.
+    public async Task<ResultadoPurgaIntento> PurgarResultadoIntentoAsync(
+        long idSolicitud, int numeroIntento, DateTime cutoffUtc, CancellationToken cancellationToken)
+    {
+        // cutoffUtc debe ser un instante UTC inequívoco. Se exige
+        // DateTimeKind.Utc exacto: Local y Unspecified se rechazan (sin
+        // conversión automática), para que un llamador no pueda pasar una
+        // fecha ambigua sin darse cuenta.
+        if (cutoffUtc.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("cutoffUtc debe tener DateTimeKind.Utc.", nameof(cutoffUtc));
+
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ValidarResultadoLock(await AppLockHelper
+                .AdquirirAsync(db, $"XPAY:CARTERA_RIESGO:{idSolicitud}", cancellationToken)
+                .ConfigureAwait(false));
+
+            var intento = await db.CarteraSolicitudCupoIntentos
+                .FirstOrDefaultAsync(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == numeroIntento, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (intento is null
+                || !string.Equals(intento.FaseIntento, CarteraIntentoFases.Finalizado, StringComparison.Ordinal))
+                return await NoPurgarAsync(tx, ResultadoPurgaIntento.NoElegible).ConfigureAwait(false);
+
+            if (intento.ResultadoPurgadoUtc is not null)
+                return await NoPurgarAsync(tx, ResultadoPurgaIntento.YaPurgado).ConfigureAwait(false);
+
+            if (intento.FechaFin is null || intento.FechaFin >= cutoffUtc)
+                return await NoPurgarAsync(tx, ResultadoPurgaIntento.NoElegible).ConfigureAwait(false);
+
+            var tieneCrudo =
+                intento.ConInformacion is not null
+                || intento.ScoreRaw is not null
+                || intento.ViabilidadRaw is not null
+                || intento.RatingRecaudosRaw is not null
+                || intento.MontoSugeridoRaw is not null
+                || intento.AlertasCount is not null;
+
+            if (!tieneCrudo)
+                return await NoPurgarAsync(tx, ResultadoPurgaIntento.NoElegible).ConfigureAwait(false);
+
+            intento.ConInformacion      = null;
+            intento.ScoreRaw            = null;
+            intento.ViabilidadRaw       = null;
+            intento.RatingRecaudosRaw   = null;
+            intento.MontoSugeridoRaw    = null;
+            intento.AlertasCount        = null;
+            intento.ResultadoPurgadoUtc = DateTime.UtcNow;
+            // NO se toca resultado_tecnico / es_intento_con_resultado_util /
+            // http_status_observado / content_status_observado / fase_intento /
+            // fecha_inicio / fecha_fin / numero_intento / idempotency_key /
+            // correlation_id, ni ninguna columna de cartera_solicitudes_cupo.
+
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return ResultadoPurgaIntento.Purgado;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private static async Task<ResultadoPurgaIntento> NoPurgarAsync(
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx, ResultadoPurgaIntento resultado)
+    {
+        await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        return resultado;
     }
 
     private async Task<(Models.CarteraSolicitudCupo? solicitud, Models.CarteraSolicitudCupoIntento? intento)>

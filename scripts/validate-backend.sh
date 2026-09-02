@@ -341,6 +341,12 @@ check_sql_value "036: CHECK ck_cartera_intento_fase enumera PRE_CALL/ENVIO_INCIE
 check_sql_value "036: los 8 intentos PRE-CALL del smoke siguen sin resultado (fase PRE_CALL)" \
   "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM dbo.cartera_solicitud_cupo_intentos WHERE resultado_tecnico IS NULL AND fase_intento <> 'PRE_CALL') THEN 1 ELSE 0 END" "1"
 
+# ── B9 — Migración 037: marca de purga de datos crudos (infraestructura ──
+# DORMIDA de M2.3b3). Assert EXCLUSIVAMENTE estructural: la columna
+# resultado_purgado_utc existe exactamente una vez, es DATETIME2 y NULLABLE.
+check_sql_value "037: cartera_solicitud_cupo_intentos.resultado_purgado_utc = DATETIME2 NULL (exactamente una)" \
+  "SELECT CASE WHEN (SELECT COUNT(*) FROM sys.columns c JOIN sys.types ty ON ty.user_type_id = c.user_type_id WHERE c.object_id = OBJECT_ID('dbo.cartera_solicitud_cupo_intentos') AND c.name = 'resultado_purgado_utc' AND ty.name = 'datetime2' AND c.is_nullable = 1) = 1 THEN 1 ELSE 0 END" "1"
+
 # ── Precondiciones HTTP (READ-ONLY, sin escribir nada) ──────────────────
 check_sql_value "originación: carlos_ci_test KYC = APROBADO" \
   "SELECT estado_kyc_actual FROM usuarios WHERE id_usuario = $ID_USUARIO_A" "APROBADO"

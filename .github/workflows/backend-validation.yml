@@ -107,6 +107,16 @@ jobs:
             -i database/036_cartera_intento_resultado_riesgo.sql
           echo "Migración 036 revalidada (segunda ejecución OK)."
 
+          # MiDecisor M2.3b3 — la migración 037 es aditiva e idempotente por
+          # diseño (ADD COLUMN sólo si falta; si ya existe, verifica tipo/
+          # nullability y aborta con THROW ante discrepancia; sin DEFAULT/CHECK/
+          # índice/backfill). Se reejecuta contra la misma BD efímera con los
+          # mismos flags (-b -C) para probar esa reentrancia.
+          echo "--- Revalidando migración 037 (segunda ejecución — prueba de idempotencia/reentrancia) ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/037_cartera_intento_resultado_purgado.sql
+          echo "Migración 037 revalidada (segunda ejecución OK)."
+
       - name: dotnet restore
         run: dotnet restore backend/Xpay.Api/Xpay.Api.csproj
 

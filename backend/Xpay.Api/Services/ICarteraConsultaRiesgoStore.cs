@@ -71,3 +71,48 @@ public sealed record ResultadoIntentoDurable(
     string?  RatingRecaudosRaw,
     string?  MontoSugeridoRaw,
     int?     AlertasCount);
+
+// M2.3b3 — resultado de un intento de purga de los campos crudos.
+public enum ResultadoPurgaIntento
+{
+    // Se pusieron NULL los 6 crudos y se marcó resultado_purgado_utc.
+    Purgado,
+    // El intento ya tenía resultado_purgado_utc != NULL — no-op idempotente.
+    YaPurgado,
+    // El intento no cumple las precondiciones técnicas de purga (no existe,
+    // no está FINALIZADO, no vencido respecto a cutoffUtc, o no tiene ningún
+    // crudo que purgar).
+    NoElegible,
+}
+
+// M2.3b3 — INFRAESTRUCTURA DORMIDA. Contrato SEPARADO de
+// ICarteraConsultaRiesgoStore: purga (NULL) los 6 campos crudos de MiDecisor
+// (con_informacion / score_raw / viabilidad_raw / rating_recaudos_raw /
+// monto_sugerido_raw / alertas_count) de un intento y deja una marca de
+// auditoría (resultado_purgado_utc).
+//
+// NO está registrada en DI. NO tiene ningún caller de runtime (scheduler /
+// job / endpoint / worker / BackgroundService). NO define período de
+// retención. `cutoffUtc` lo provee el llamador.
+//
+// NO invocar operacionalmente hasta definir (decisiones externas):
+//   - política / duración de retención;
+//   - evento a partir del cual empieza a contar el plazo;
+//   - gate durable que demuestre que los crudos ya no serán consumidos por
+//     el (futuro) motor de decisión de crédito;
+//   - invocador autorizado.
+public interface ICarteraResultadoRiesgoPurga
+{
+    // Transacción pequeña bajo AppLock XPAY:CARTERA_RIESGO:{idSolicitud}
+    // (owner=Transaction). Re-lee el intento (idSolicitud, numeroIntento)
+    // dentro del lock y aplica los guards: fase == FINALIZADO;
+    // resultado_purgado_utc == NULL (si no → YaPurgado); fecha_fin != NULL y
+    // fecha_fin < cutoffUtc; al menos un crudo != NULL. Si todos pasan:
+    // NULL de los 6 crudos + set resultado_purgado_utc → Purgado. NO toca
+    // resultado_tecnico / es_intento_con_resultado_util / http/content status
+    // / fase_intento / fechas originales / numero_intento / idempotency_key /
+    // correlation_id, ni ninguna columna de cartera_solicitudes_cupo.
+    // Idempotente. Sin retry automático. `cutoffUtc` debe ser UTC.
+    Task<ResultadoPurgaIntento> PurgarResultadoIntentoAsync(
+        long idSolicitud, int numeroIntento, DateTime cutoffUtc, CancellationToken cancellationToken);
+}
