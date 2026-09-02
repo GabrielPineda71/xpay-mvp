@@ -29,4 +29,12 @@ public class CarteraSolicitudCupoIntento
     public string?   RatingRecaudosRaw             { get; set; }
     public string?   MontoSugeridoRaw              { get; set; }
     public int?      AlertasCount                  { get; set; }
+
+    // M2.3b3 — marca de auditoría de PURGA de los 6 campos crudos de arriba
+    // (columna `resultado_purgado_utc DATETIME2 NULL`, migración 037).
+    // NULL = no se ha aplicado una operación formal de purga. NOT NULL = una
+    // purga formal (NULL de los 6 crudos) se aplicó en ese instante UTC;
+    // inmutable. NO se infiere por nulabilidad de los crudos: un intento sin
+    // resultado recibido tiene los crudos NULL pero resultado_purgado_utc NULL.
+    public DateTime? ResultadoPurgadoUtc           { get; set; }
 }
