@@ -4,7 +4,7 @@ using Xpay.Api.Integrations.MiDecisor;
 
 namespace Xpay.Api.Services;
 
-// M2.3a — orquestación estructural Cartera ↔ MiDecisor (consulta de riesgo PN).
+// M2.3a/b1 — orquestación estructural Cartera ↔ MiDecisor (consulta de riesgo PN).
 //
 // Flujo por invocación:
 //   PRE-FLIGHT (sin transacción, sin token, sin HTTP):
@@ -13,12 +13,17 @@ namespace Xpay.Api.Services;
 //     Cualquier fallo aquí deja la solicitud en RECIBIDA; 0 llamadas al proveedor.
 //   TX-A: ganar la transición RECIBIDA → CONSULTANDO_RIESGO (applock + re-lectura).
 //     El perdedor NO llama al proveedor.
+//   TX-ENVIO_INCIERTO: marcar el intento numero_intento=1 como ENVIO_INCIERTO
+//     ANTES de SendAsync. Si esta marca falla, NO se llama al proveedor y la
+//     solicitud queda CONSULTANDO_RIESGO / intento PRE_CALL para reconciliación.
 //   HTTP: EXACTAMENTE UNA llamada a IMiDecisorClient. Sin transacción SQL abierta.
-//   TX-B: completar el intento numero_intento=1 + transición final
-//     (EN_EVALUACION | ERROR_PROVEEDOR). Sin retry, sin re-auth, sin invalidar
-//     token, sin decisión de crédito, sin persistir score/monto.
+//   TX-B: transición ÚNICA guardada — completar el intento numero_intento=1
+//     (resultado_tecnico, http/content status, fecha_fin, es_intento_util, los 6
+//     campos normalizados CRUDOS, fase = FINALIZADO) + estado final de la
+//     solicitud (EN_EVALUACION | ERROR_PROVEEDOR). Sin retry, sin re-auth, sin
+//     invalidar token, sin decisión de crédito, sin interpretar score/monto.
 //
-// M2.3a NO se registra en ningún endpoint / scheduler / flujo. Junto con el
+// M2.3a/b1 NO se registra en ningún endpoint / scheduler / flujo. Junto con el
 // consentimiento runtime fail-closed, son dos barreras independientes contra
 // una llamada real al proveedor.
 //
@@ -30,6 +35,14 @@ public sealed class CarteraConsultaRiesgoService(
     TimeProvider timeProvider,
     ILogger<CarteraConsultaRiesgoService> logger)
 {
+    // Longitud máxima de cada columna cruda (migración 036). Un valor del
+    // proveedor más largo => se rechaza TODA la invocación como ERROR_PROTOCOLO
+    // sin persistir ningún crudo (fail-closed: nada de datos parciales).
+    private const int MaxScoreRaw          = 20;
+    private const int MaxViabilidadRaw     = 10;
+    private const int MaxRatingRecaudosRaw = 2;
+    private const int MaxMontoSugeridoRaw  = 20;
+
     public async Task<ConsultaRiesgoResultado> EjecutarConsultaRiesgoAsync(
         long idSolicitud,
         long idUsuario,
@@ -70,6 +83,12 @@ public sealed class CarteraConsultaRiesgoService(
             throw new InvalidOperationException("La consulta de riesgo ya fue iniciada para esta solicitud.");
         }
 
+        // ── TX-ENVIO_INCIERTO: marcar la frontera de no-retry-automático ──
+        // Si falla, se propaga SIN llamar al proveedor: la solicitud queda
+        // CONSULTANDO_RIESGO y el intento en PRE_CALL (reconciliación externa).
+        await store.MarcarEnvioInciertoAsync(
+            idSolicitud, idUsuario, timeProvider.GetUtcNow().UtcDateTime, cancellationToken).ConfigureAwait(false);
+
         // ── HTTP: exactamente una llamada, sin transacción SQL abierta ────
         var startedAt = timeProvider.GetTimestamp();
         MiDecisorResultado? resultado = null;
@@ -81,18 +100,19 @@ public sealed class CarteraConsultaRiesgoService(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Cancelación del caller DURANTE la llamada: el proveedor pudo haber
-            // sido contactado / procesado. Se persiste RESULTADO_INCIERTO con un
-            // token no cancelable y se re-lanza la cancelación original.
-            await store.CompletarIntentoAsync(
+            // Cancelación del caller DESPUÉS de ENVIO_INCIERTO: el proveedor pudo
+            // haber sido contactado / procesado. Se cierra el intento como
+            // RESULTADO_INCIERTO con un token NO cancelable y se re-lanza la
+            // cancelación original. Ningún crudo se persiste.
+            await store.FinalizarIntentoAsync(
                 idSolicitud,
-                new ResultadoIntentoDurable(
+                idUsuario,
+                CrearOutcome(
                     CarteraSolicitudCupoEstados.ErrorProveedor,
                     CarteraConsultaRiesgoResultados.ResultadoIncierto,
-                    HttpStatusObservado: null,
-                    ContentStatusObservado: null,
-                    EsResultadoUtil: false,
-                    FechaFinUtc: timeProvider.GetUtcNow().UtcDateTime),
+                    httpStatus: null,
+                    contentStatus: null,
+                    util: false),
                 CancellationToken.None).ConfigureAwait(false);
 
             logger.LogWarning(
@@ -105,35 +125,46 @@ public sealed class CarteraConsultaRiesgoService(
             falla = ex;
         }
         // Cualquier otra excepción (DbUpdateException, etc.) se propaga: TX-B no
-        // se ejecuta y la solicitud queda CONSULTANDO_RIESGO para reconciliación.
+        // se ejecuta y la solicitud queda CONSULTANDO_RIESGO / intento
+        // ENVIO_INCIERTO para reconciliación.
 
         var elapsedMs = timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
 
-        var (estadoFinal, resultadoTecnico, util, httpStatus, contentStatus) =
-            resultado is not null
-                ? ClasificarExito(resultado)
-                : ClasificarFalla(falla!);
+        var outcome = resultado is not null
+            ? ClasificarExito(resultado)
+            : ClasificarFalla(falla!);
 
-        // ── TX-B: persistir el resultado durable ─────────────────────────
-        await store.CompletarIntentoAsync(
-            idSolicitud,
-            new ResultadoIntentoDurable(
-                estadoFinal, resultadoTecnico, httpStatus, contentStatus, util,
-                timeProvider.GetUtcNow().UtcDateTime),
-            cancellationToken).ConfigureAwait(false);
+        // ── TX-B: persistir el resultado durable (transición única) ──────
+        await store.FinalizarIntentoAsync(idSolicitud, idUsuario, outcome, cancellationToken).ConfigureAwait(false);
 
         logger.LogInformation(
             "midecisor.orq: consulta completada (idSolicitud={IdSolicitud} estado={Estado} resultado={Resultado} util={Util} {Elapsed:F0}ms).",
-            idSolicitud, estadoFinal, resultadoTecnico, util, elapsedMs);
+            idSolicitud, outcome.EstadoSolicitudFinal, outcome.ResultadoTecnico, outcome.EsResultadoUtil, elapsedMs);
 
-        return new ConsultaRiesgoResultado(estadoFinal, resultadoTecnico, util);
+        return new ConsultaRiesgoResultado(outcome.EstadoSolicitudFinal, outcome.ResultadoTecnico, outcome.EsResultadoUtil);
     }
 
     // Clasificación de un resultado 200/ACCEPTED usando SÓLO la semántica
-    // estructurada (ConInformacion). NUNCA inspecciona ScoreRaw / MontoSugeridoRaw.
-    private (string estado, string resultado, bool util, int? httpStatus, string? contentStatus) ClasificarExito(
-        MiDecisorResultado r)
+    // estructurada (ConInformacion). NUNCA convierte ni interpreta los crudos:
+    // sólo verifica que quepan en su columna. Si alguno se desborda, TODA la
+    // invocación es ERROR_PROTOCOLO y NINGÚN crudo se persiste.
+    private ResultadoIntentoDurable ClasificarExito(MiDecisorResultado r)
     {
+        if (Desborda(r.ScoreRaw, MaxScoreRaw)
+            || Desborda(r.Viabilidad, MaxViabilidadRaw)
+            || Desborda(r.RatingRecaudos, MaxRatingRecaudosRaw)
+            || Desborda(r.MontoSugeridoRaw, MaxMontoSugeridoRaw))
+        {
+            logger.LogWarning(
+                "midecisor.orq: un campo normalizado del proveedor excede la longitud de su columna — se clasifica ERROR_PROTOCOLO sin persistir crudos.");
+            return CrearOutcome(
+                CarteraSolicitudCupoEstados.ErrorProveedor,
+                CarteraConsultaRiesgoResultados.ErrorProtocolo,
+                httpStatus: null,
+                contentStatus: null,
+                util: false);
+        }
+
         var resultadoTecnico = r.ConInformacion == true
             ? CarteraConsultaRiesgoResultados.Aceptada
             : CarteraConsultaRiesgoResultados.SinInformacion;
@@ -147,14 +178,27 @@ public sealed class CarteraConsultaRiesgoService(
             contentStatus = null;
         }
 
-        return (CarteraSolicitudCupoEstados.EnEvaluacion, resultadoTecnico, true, 200, contentStatus);
+        return new ResultadoIntentoDurable(
+            CarteraSolicitudCupoEstados.EnEvaluacion,
+            resultadoTecnico,
+            HttpStatusObservado: 200,
+            ContentStatusObservado: contentStatus,
+            EsResultadoUtil: true,
+            FechaFinUtc: timeProvider.GetUtcNow().UtcDateTime,
+            // Crudos VERBATIM — sin trim, sin normalizar, sin convertir.
+            ConInformacion: r.ConInformacion,
+            ScoreRaw: r.ScoreRaw,
+            ViabilidadRaw: r.Viabilidad,
+            RatingRecaudosRaw: r.RatingRecaudos,
+            MontoSugeridoRaw: r.MontoSugeridoRaw,
+            AlertasCount: r.AlertasCount);
     }
 
     // Clasificación por tipo de excepción de dominio. Un error local /
     // configuración NO afirma que el proveedor haya sido consultado por red;
-    // sólo describe por qué esta ejecución no obtuvo un resultado útil.
-    private static (string estado, string resultado, bool util, int? httpStatus, string? contentStatus) ClasificarFalla(
-        MiDecisorException ex)
+    // sólo describe por qué esta ejecución no obtuvo un resultado útil. Ningún
+    // crudo se persiste (no se recibió MiDecisorResultado).
+    private ResultadoIntentoDurable ClasificarFalla(MiDecisorException ex)
     {
         var resultadoTecnico = ex switch
         {
@@ -167,6 +211,18 @@ public sealed class CarteraConsultaRiesgoService(
             _                                   => CarteraConsultaRiesgoResultados.ResultadoIncierto,
         };
 
-        return (CarteraSolicitudCupoEstados.ErrorProveedor, resultadoTecnico, false, null, null);
+        return CrearOutcome(
+            CarteraSolicitudCupoEstados.ErrorProveedor, resultadoTecnico,
+            httpStatus: null, contentStatus: null, util: false);
     }
+
+    // Outcome SIN crudos (todos NULL) — para fallas, cancelación y desbordamiento.
+    private ResultadoIntentoDurable CrearOutcome(
+        string estadoFinal, string resultadoTecnico, int? httpStatus, string? contentStatus, bool util) =>
+        new(estadoFinal, resultadoTecnico, httpStatus, contentStatus, util,
+            timeProvider.GetUtcNow().UtcDateTime,
+            ConInformacion: null, ScoreRaw: null, ViabilidadRaw: null,
+            RatingRecaudosRaw: null, MontoSugeridoRaw: null, AlertasCount: null);
+
+    private static bool Desborda(string? valor, int maxLen) => valor is not null && valor.Length > maxLen;
 }

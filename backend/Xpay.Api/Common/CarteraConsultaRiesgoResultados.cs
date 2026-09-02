@@ -30,9 +30,26 @@ public static class CarteraConsultaRiesgoResultados
 }
 
 // Resultado NORMALIZADO que devuelve el orquestador a su llamador (tests /
-// futuro flujo). NO expone score/monto crudos — M2.3a no los persiste ni los
+// futuro flujo). NO expone score/monto crudos — el orquestador no los
 // interpreta.
 public sealed record ConsultaRiesgoResultado(
     string EstadoSolicitud,
     string ResultadoTecnico,
     bool   EsResultadoUtil);
+
+// M2.3b1 — fases durables del intento (columna `fase_intento VARCHAR(20)` de
+// `cartera_solicitud_cupo_intentos`, migración 036; CHECK enumera estos 3).
+public static class CarteraIntentoFases
+{
+    // Intento insertado PRE-CALL por solicitar-cupo; aún nada enviado.
+    public const string PreCall = "PRE_CALL";
+
+    // XPAY cruzó la frontera después de la cual NO puede hacer retry
+    // automático porque el proveedor PUEDE O NO haber sido contactado.
+    // NO significa "request enviado" — un crash entre el commit de esta
+    // fase y SendAsync deja el intento aquí sin que la llamada saliera.
+    public const string EnvioIncierto = "ENVIO_INCIERTO";
+
+    // El intento se completó (resultado_tecnico + fecha_fin persistidos).
+    public const string Finalizado = "FINALIZADO";
+}
