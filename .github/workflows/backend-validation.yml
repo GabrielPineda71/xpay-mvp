@@ -120,6 +120,13 @@ jobs:
         run: |
           dotnet test backend/Xpay.Api.Tests/Xpay.Api.Tests.csproj \
             --configuration Release
+        env:
+          # M2.3b2 — habilita las pruebas de integración de concurrencia SQL
+          # (CarteraConsultaRiesgoConcurrencyTests) contra la BD efímera ya
+          # migrada arriba. Sin esta variable esos dos tests hacen early-return
+          # (PASS) en local; con ella corren de verdad. Mismo valor exacto que
+          # el step "Iniciar backend en background".
+          ConnectionStrings__XpayConnection: "Server=localhost,1433;Database=XPAY_MVP;User Id=sa;Password=XpayCI@2024!;TrustServerCertificate=True;"
 
       - name: Iniciar backend en background
         run: |
