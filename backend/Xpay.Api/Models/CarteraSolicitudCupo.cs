@@ -45,6 +45,11 @@ public class CarteraSolicitudCupo
     public string?   ConsultaDiaRaw                        { get; set; }
     public string?   ComportamientoVectorJson              { get; set; }
     public int?      ComportamientoVectorCount             { get; set; } // NULL = bloque ausente ; 0 = presente vacío
+    // M2.4b — señal operacional separada (migración 040). NO es motivo crediticio,
+    // NO es fraude probado. NULL = no evaluada/no disponible ; false = evaluada,
+    // señal ausente ; true = señal presente (estadoDocumento = "Cancelada por
+    // muerte o fallecido").
+    public bool?     SenalPosibleSuplantacion             { get; set; }
     public int       NumeroIntento                     { get; set; } = 1;
     public long?     IdCupoOrdinario                   { get; set; }
     public string    CorrelationId                     { get; set; } = string.Empty;
