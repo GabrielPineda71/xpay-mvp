@@ -70,7 +70,15 @@ public sealed record ResultadoIntentoDurable(
     string?  ViabilidadRaw,
     string?  RatingRecaudosRaw,
     string?  MontoSugeridoRaw,
-    int?     AlertasCount);
+    int?     AlertasCount)
+{
+    // M2.4a (captura P0, diseño 175/176/177) — "durable semantic raw
+    // projection" de los valores P0 (CarteraP0ProviderRawProjector). NULL
+    // cuando no se recibió un MiDecisorResultado (mismos casos que los crudos
+    // de arriba). Propiedad no posicional (default null): no rompe las
+    // construcciones existentes de este record.
+    public string? P0ProviderRawJson { get; init; }
+}
 
 // M2.3b3 — resultado de un intento de purga de los campos crudos.
 public enum ResultadoPurgaIntento

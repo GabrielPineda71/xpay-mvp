@@ -208,6 +208,22 @@ public sealed class MiDecisorClient : IMiDecisorClient
             "midecisor.query: OK envelope={Estado} content={ContentStatus} conInformacion={ConInfo} alertas={Alertas}.",
             estado, content.Status, riesgo?.ConInformacion, alertasCount);
 
+        // ── M2.4a (captura P0) — valores RAW adicionales, verbatim, sin normalizar.
+        var validacion    = content.Respuesta.Validacion;
+        var datosBasicos  = validacion?.DatosBasicos;
+        var infoDemo      = validacion?.InformacionDemografica;
+        var infoTx        = content.InfoTransaccion;
+        var compPago      = content.Respuesta.ComportamientoCrediticio?.ComportamientoPago;
+        var bloquePresente = compPago is not null;
+
+        IReadOnlyList<MiDecisorVectorComportamientoItemRaw>? vectorRaw = null;
+        if (bloquePresente)
+        {
+            vectorRaw = (compPago!.VectorComportamiento ?? new List<MiDecisorVectorComportamientoItem>())
+                .Select(v => new MiDecisorVectorComportamientoItemRaw(v?.AnioMes, v?.Comportamiento))
+                .ToList();
+        }
+
         return new MiDecisorResultado(
             EstadoEnvelope:   estado,
             ContentStatus:    content.Status,
@@ -216,7 +232,19 @@ public sealed class MiDecisorClient : IMiDecisorClient
             Viabilidad:       riesgo?.Viabilidad,
             RatingRecaudos:   riesgo?.RatingRecaudos,
             MontoSugeridoRaw: riesgo?.MontoSugerido,
-            AlertasCount:     alertasCount);
+            AlertasCount:     alertasCount)
+        {
+            TipoDocumentoRaw                   = datosBasicos?.TipoDocumento,
+            EstadoDocumentoDatosBasicosRaw     = datosBasicos?.EstadoDocumento,
+            EstadoDocumentoInfoDemograficaRaw  = infoDemo?.EstadoDocumento,
+            RangoEdadDatosBasicosRaw           = datosBasicos?.RangoEdad,
+            RangoEdadInfoDemograficaRaw        = infoDemo?.RangoEdad,
+            AnioConsultaRaw                    = infoTx?.AnioConsulta,
+            MesConsultaRaw                     = infoTx?.MesConsulta,
+            DiaConsultaRaw                     = infoTx?.DiaConsulta,
+            VectorComportamientoRaw            = vectorRaw,
+            VectorComportamientoBloquePresente = bloquePresente,
+        };
     }
 
     private static string CombineBaseAndPath(string baseUrl, string path)

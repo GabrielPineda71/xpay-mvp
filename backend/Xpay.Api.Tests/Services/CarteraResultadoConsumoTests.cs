@@ -578,6 +578,108 @@ public sealed class CarteraResultadoConsumoSqlTests
         Assert.Null(sol.RatingRecaudosObservado);
         Assert.Null(sol.MontoSugeridoObservado);
         Assert.Null(sol.AlertasCountObservado);
+        // M2.4a (captura P0) — ninguna de las 12 columnas se materializó.
+        Assert.Null(sol.TipoDocumentoObservado);
+        Assert.Null(sol.EstadoDocumentoDatosBasicosRaw);
+        Assert.Null(sol.EstadoDocumentoInfoDemograficaRaw);
+        Assert.Null(sol.EstadoDocumentoCaptura);
+        Assert.Null(sol.RangoEdadDatosBasicosRaw);
+        Assert.Null(sol.RangoEdadInfoDemograficaRaw);
+        Assert.Null(sol.RangoEdadCaptura);
+        Assert.Null(sol.ConsultaAnioRaw);
+        Assert.Null(sol.ConsultaMesRaw);
+        Assert.Null(sol.ConsultaDiaRaw);
+        Assert.Null(sol.ComportamientoVectorJson);
+        Assert.Null(sol.ComportamientoVectorCount);
+    }
+
+    // ── TEST P0-1 — staging P0 válido → materializa las 12 columnas ──────
+    [Fact]
+    public async Task Elegible_ConStagingP0_MaterializaLas12ColumnasPurgaSeguras()
+    {
+        if (!TryConnString(out var cs)) return;
+
+        var idUnidad = await LeerIdUnidadAsync(cs);
+        var idPolitica = await LeerIdPoliticaActivaAsync(cs);
+        var creados = new Sembrados();
+        try
+        {
+            var staging = Xpay.Api.Common.CarteraP0ProviderRawProjector.Proyectar(
+                tipoDocumento: "CC",
+                estadoDocDatosBasicos: null,
+                estadoDocInfoDemografica: "Vigente",
+                rangoEdadDatosBasicos: "46-55",
+                rangoEdadInfoDemografica: " 46-55 ",
+                anioConsulta: "2025", mesConsulta: "11", diaConsulta: "5",
+                comportamientoVectorPresente: true,
+                comportamientoVector: new[]
+                {
+                    new Xpay.Api.Common.CarteraComportamientoVectorItemRaw("2024-11", "N"),
+                    new Xpay.Api.Common.CarteraComportamientoVectorItemRaw("2024-11", "N"),
+                    new Xpay.Api.Common.CarteraComportamientoVectorItemRaw("2025-1", "-"),
+                });
+
+            var (idSolicitud, numeroIntento) = await SembrarAsync(
+                cs, idUnidad, idPolitica, new SiembraOpts { P0ProviderRawJson = staging }, creados);
+
+            await using (var c = NuevoContexto(cs))
+                Assert.Equal(ResultadoConsumoRiesgo.Consumido,
+                    await new CarteraConsultaRiesgoStore(c).ConsumirResultadoRiesgoAsync(idSolicitud, numeroIntento, default));
+
+            await using var v = NuevoContexto(cs);
+            var sol = await v.CarteraSolicitudesCupo.AsNoTracking().SingleAsync(s => s.IdSolicitud == idSolicitud);
+
+            Assert.Equal("CC", sol.TipoDocumentoObservado);
+            Assert.Null(sol.EstadoDocumentoDatosBasicosRaw);
+            Assert.Equal("Vigente", sol.EstadoDocumentoInfoDemograficaRaw);
+            Assert.Equal("PRESENTE", sol.EstadoDocumentoCaptura);
+            Assert.Equal("46-55", sol.RangoEdadDatosBasicosRaw);
+            Assert.Equal(" 46-55 ", sol.RangoEdadInfoDemograficaRaw);   // raw sin trim
+            Assert.Equal("PRESENTE", sol.RangoEdadCaptura);              // iguales tras trim
+            Assert.Equal("2025", sol.ConsultaAnioRaw);
+            Assert.Equal("11", sol.ConsultaMesRaw);
+            Assert.Equal("5", sol.ConsultaDiaRaw);
+            Assert.Equal(3, sol.ComportamientoVectorCount);
+            Assert.Contains("2024-11", sol.ComportamientoVectorJson);
+
+            // Purga anula el staging del intento; las 12 columnas de la solicitud sobreviven.
+            await using (var cp = NuevoContexto(cs))
+                Assert.Equal(ResultadoPurgaIntento.Purgado,
+                    await new CarteraConsultaRiesgoStore(cp)
+                        .PurgarResultadoIntentoAsync(idSolicitud, numeroIntento, DateTime.UtcNow.AddDays(1), default));
+
+            await using var v2 = NuevoContexto(cs);
+            var it2 = await v2.CarteraSolicitudCupoIntentos.AsNoTracking()
+                .SingleAsync(i => i.IdSolicitud == idSolicitud && i.NumeroIntento == numeroIntento);
+            var sol2 = await v2.CarteraSolicitudesCupo.AsNoTracking().SingleAsync(s => s.IdSolicitud == idSolicitud);
+            Assert.Null(it2.P0ProviderRawJson);
+            Assert.Equal("CC", sol2.TipoDocumentoObservado);
+            Assert.Equal(3, sol2.ComportamientoVectorCount);
+        }
+        finally { await LimpiarAsync(cs, creados); }
+    }
+
+    // ── TEST P0-2 — staging estructuralmente corrupto → invariante, nada consumido ──
+    [Fact]
+    public async Task StagingP0Corrupto_LanzaInvariante_NadaConsumido()
+    {
+        if (!TryConnString(out var cs)) return;
+
+        var idUnidad = await LeerIdUnidadAsync(cs);
+        var idPolitica = await LeerIdPoliticaActivaAsync(cs);
+        var creados = new Sembrados();
+        try
+        {
+            var (idSolicitud, numeroIntento) = await SembrarAsync(
+                cs, idUnidad, idPolitica, new SiembraOpts { P0ProviderRawJson = "{ esto no es json valido " }, creados);
+
+            await using var ctx = NuevoContexto(cs);
+            await Assert.ThrowsAsync<CarteraConsumoResultadoInvarianteException>(() =>
+                new CarteraConsultaRiesgoStore(ctx).ConsumirResultadoRiesgoAsync(idSolicitud, numeroIntento, default));
+
+            await AssertNadaConsumidoAsync(cs, idSolicitud, numeroIntento);
+        }
+        finally { await LimpiarAsync(cs, creados); }
     }
 
     private sealed class SiembraOpts
@@ -593,6 +695,9 @@ public sealed class CarteraResultadoConsumoSqlTests
         public string? MontoRaw { get; set; } = "13809492";
         public int? AlertasCount { get; set; } = 2;
         public DateTime? ResultadoPurgadoUtc { get; set; }
+        // M2.4a (captura P0) — staging semantic raw projection; null = intento
+        // sin la extensión (las 12 columnas P0 quedan NULL, snapshot válido).
+        public string? P0ProviderRawJson { get; set; }
     }
 
     private sealed class Sembrados
@@ -681,6 +786,7 @@ public sealed class CarteraResultadoConsumoSqlTests
             MontoSugeridoRaw          = o.MontoRaw,
             AlertasCount              = o.AlertasCount,
             ResultadoPurgadoUtc       = o.ResultadoPurgadoUtc,
+            P0ProviderRawJson         = o.P0ProviderRawJson,
         });
         await ctx.SaveChangesAsync();
 

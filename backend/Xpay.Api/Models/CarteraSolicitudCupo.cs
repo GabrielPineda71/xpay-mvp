@@ -29,6 +29,22 @@ public class CarteraSolicitudCupo
     public string?   RatingRecaudosObservado           { get; set; }
     public decimal?  MontoSugeridoObservado            { get; set; }
     public int?      AlertasCountObservado             { get; set; }
+    // M2.4a — extensión de captura P0 (migración 039). RAW del proveedor, sin
+    // normalizar, sin política crediticia. Purga-seguras (la purga de M2.3b3
+    // no toca esta tabla). Las materializa ConsumirResultadoRiesgoAsync en la
+    // MISMA transacción y AppLock que los 7 observados de arriba.
+    public string?   TipoDocumentoObservado                { get; set; }
+    public string?   EstadoDocumentoDatosBasicosRaw        { get; set; }
+    public string?   EstadoDocumentoInfoDemograficaRaw     { get; set; }
+    public string?   EstadoDocumentoCaptura                { get; set; } // PRESENTE / AUSENTE / CONFLICTO
+    public string?   RangoEdadDatosBasicosRaw              { get; set; }
+    public string?   RangoEdadInfoDemograficaRaw           { get; set; }
+    public string?   RangoEdadCaptura                      { get; set; } // PRESENTE / AUSENTE / CONFLICTO
+    public string?   ConsultaAnioRaw                       { get; set; }
+    public string?   ConsultaMesRaw                        { get; set; }
+    public string?   ConsultaDiaRaw                        { get; set; }
+    public string?   ComportamientoVectorJson              { get; set; }
+    public int?      ComportamientoVectorCount             { get; set; } // NULL = bloque ausente ; 0 = presente vacío
     public int       NumeroIntento                     { get; set; } = 1;
     public long?     IdCupoOrdinario                   { get; set; }
     public string    CorrelationId                     { get; set; } = string.Empty;

@@ -30,4 +30,39 @@ public sealed record MiDecisorResultado(
     // `informacionRiesgo.montoSugerido` sin convertir ("0" = sin sugerencia).
     string? MontoSugeridoRaw,
     // Cantidad de alertas recibidas (0 si vino `[]` o ausente).
-    int     AlertasCount);
+    int     AlertasCount)
+{
+    // M2.4a (captura P0, diseño 175/176/177) — valores RAW adicionales del
+    // envelope necesarios para el futuro motor M2.4b. Verbatim de STJ: sin
+    // trim, sin normalizar, sin política crediticia. Propiedades no
+    // posicionales (default null) para no romper las construcciones existentes.
+
+    // `validacion.datosBasicos.tipoDocumento` (path único PN).
+    public string? TipoDocumentoRaw { get; init; }
+
+    // Dual-path estadoDocumento — ruta datosBasicos / informacionDemografica.
+    public string? EstadoDocumentoDatosBasicosRaw { get; init; }
+    public string? EstadoDocumentoInfoDemograficaRaw { get; init; }
+
+    // Dual-path rangoEdad — ruta datosBasicos / informacionDemografica.
+    public string? RangoEdadDatosBasicosRaw { get; init; }
+    public string? RangoEdadInfoDemograficaRaw { get; init; }
+
+    // `infoTransaccion.{anio,mes,dia}Consulta` — autoridad temporal del proveedor.
+    public string? AnioConsultaRaw { get; init; }
+    public string? MesConsultaRaw { get; init; }
+    public string? DiaConsultaRaw { get; init; }
+
+    // `comportamientoCrediticio.comportamientoPago.vectorComportamiento[]`.
+    // Null cuando el bloque comportamientoPago no vino (ver
+    // VectorComportamientoBloquePresente). Orden y duplicados preservados.
+    public IReadOnlyList<MiDecisorVectorComportamientoItemRaw>? VectorComportamientoRaw { get; init; }
+
+    // Distingue "bloque comportamientoPago ausente" de "vector presente vacío".
+    public bool VectorComportamientoBloquePresente { get; init; }
+}
+
+// Elemento RAW del vector, verbatim de STJ.
+public sealed record MiDecisorVectorComportamientoItemRaw(
+    string? AnioMes,
+    string? Comportamiento);

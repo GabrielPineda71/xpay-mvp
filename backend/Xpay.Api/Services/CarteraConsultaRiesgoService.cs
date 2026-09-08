@@ -191,7 +191,23 @@ public sealed class CarteraConsultaRiesgoService(
             ViabilidadRaw: r.Viabilidad,
             RatingRecaudosRaw: r.RatingRecaudos,
             MontoSugeridoRaw: r.MontoSugeridoRaw,
-            AlertasCount: r.AlertasCount);
+            AlertasCount: r.AlertasCount)
+        {
+            // M2.4a (captura P0) — semantic raw projection de los P0, verbatim.
+            P0ProviderRawJson = CarteraP0ProviderRawProjector.Proyectar(
+                tipoDocumento:                  r.TipoDocumentoRaw,
+                estadoDocDatosBasicos:          r.EstadoDocumentoDatosBasicosRaw,
+                estadoDocInfoDemografica:       r.EstadoDocumentoInfoDemograficaRaw,
+                rangoEdadDatosBasicos:          r.RangoEdadDatosBasicosRaw,
+                rangoEdadInfoDemografica:       r.RangoEdadInfoDemograficaRaw,
+                anioConsulta:                   r.AnioConsultaRaw,
+                mesConsulta:                    r.MesConsultaRaw,
+                diaConsulta:                    r.DiaConsultaRaw,
+                comportamientoVectorPresente:   r.VectorComportamientoBloquePresente,
+                comportamientoVector:           r.VectorComportamientoRaw?
+                    .Select(v => new CarteraComportamientoVectorItemRaw(v.AnioMes, v.Comportamiento))
+                    .ToList()),
+        };
     }
 
     // Clasificación por tipo de excepción de dominio. Un error local /
