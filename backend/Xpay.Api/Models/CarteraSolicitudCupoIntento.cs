@@ -48,4 +48,13 @@ public class CarteraSolicitudCupoIntento
     // fecha_decision (no hay veredicto), NO inicia el reloj de retención, NO
     // autoriza la purga por sí sola.
     public DateTime? ResultadoConsumidoUtc         { get; set; }
+
+    // M2.4a (extensión de captura P0, migración 039) — "durable semantic raw
+    // projection" de los valores P0 de MiDecisor (tipoDocumento; estadoDocumento
+    // y rangoEdad por cada ruta; consulta {anio,mes,dia}; vectorComportamiento
+    // con orden y duplicados). Staging: la escribe FinalizarIntentoAsync junto
+    // al resultado durable; la anula PurgarResultadoIntentoAsync en la misma
+    // operación que los 6 crudos de arriba. NO es el JSON original del
+    // proveedor. NULL cuando no se recibió un MiDecisorResultado.
+    public string?   P0ProviderRawJson             { get; set; }
 }

@@ -76,6 +76,17 @@ public sealed class MiDecisorInfoTransaccion
     // Pares { clave, valor } por módulo (ej. CC=00, HC=13, TX=02).
     [JsonPropertyName("codigosRespuesta")]
     public List<MiDecisorCodigoRespuesta>? CodigosRespuesta { get; set; }
+
+    // M2.4a (captura P0) — autoridad temporal de la consulta (mes de consulta
+    // del proveedor). STRING crudo tal cual, sin validar gramática.
+    [JsonPropertyName("anioConsulta")]
+    public string? AnioConsulta { get; set; }
+
+    [JsonPropertyName("mesConsulta")]
+    public string? MesConsulta { get; set; }
+
+    [JsonPropertyName("diaConsulta")]
+    public string? DiaConsulta { get; set; }
 }
 
 public sealed class MiDecisorCodigoRespuesta
@@ -91,6 +102,74 @@ public sealed class MiDecisorRespuestaPN
 {
     [JsonPropertyName("informacionRiesgo")]
     public MiDecisorInformacionRiesgoPN? InformacionRiesgo { get; set; }
+
+    // M2.4a (captura P0) — proyección MÍNIMA: sólo los sub-bloques con campos
+    // P0 (tipoDocumento / estadoDocumento / rangoEdad / vectorComportamiento).
+    // NO se modelan número de documento, nombres, fecha de nacimiento, género,
+    // dirección, ni ningún otro campo del envelope.
+    [JsonPropertyName("validacion")]
+    public MiDecisorValidacionPN? Validacion { get; set; }
+
+    [JsonPropertyName("comportamientoCrediticio")]
+    public MiDecisorComportamientoCrediticioPN? ComportamientoCrediticio { get; set; }
+}
+
+// M2.4a (captura P0) — sub-estructuras PN mínimas.
+public sealed class MiDecisorValidacionPN
+{
+    [JsonPropertyName("datosBasicos")]
+    public MiDecisorDatosBasicosPN? DatosBasicos { get; set; }
+
+    [JsonPropertyName("informacionDemografica")]
+    public MiDecisorInformacionDemograficaPN? InformacionDemografica { get; set; }
+}
+
+public sealed class MiDecisorDatosBasicosPN
+{
+    // Path único PN. STRING crudo — NO normalizar a "CC".
+    [JsonPropertyName("tipoDocumento")]
+    public string? TipoDocumento { get; set; }
+
+    // Ruta dual-path (candidata A). STRING crudo.
+    [JsonPropertyName("estadoDocumento")]
+    public string? EstadoDocumento { get; set; }
+
+    // Ruta dual-path (candidata A). STRING crudo.
+    [JsonPropertyName("rangoEdad")]
+    public string? RangoEdad { get; set; }
+}
+
+public sealed class MiDecisorInformacionDemograficaPN
+{
+    // Ruta dual-path (candidata B). STRING crudo.
+    [JsonPropertyName("estadoDocumento")]
+    public string? EstadoDocumento { get; set; }
+
+    // Ruta dual-path (candidata B). STRING crudo.
+    [JsonPropertyName("rangoEdad")]
+    public string? RangoEdad { get; set; }
+}
+
+public sealed class MiDecisorComportamientoCrediticioPN
+{
+    [JsonPropertyName("comportamientoPago")]
+    public MiDecisorComportamientoPagoPN? ComportamientoPago { get; set; }
+}
+
+public sealed class MiDecisorComportamientoPagoPN
+{
+    // Array crudo. Se preserva orden y duplicados; NO se normaliza.
+    [JsonPropertyName("vectorComportamiento")]
+    public List<MiDecisorVectorComportamientoItem>? VectorComportamiento { get; set; }
+}
+
+public sealed class MiDecisorVectorComportamientoItem
+{
+    [JsonPropertyName("anioMes")]
+    public string? AnioMes { get; set; }
+
+    [JsonPropertyName("comportamiento")]
+    public string? Comportamiento { get; set; }
 }
 
 public sealed class MiDecisorInformacionRiesgoPN

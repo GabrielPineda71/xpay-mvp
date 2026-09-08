@@ -140,6 +140,8 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
             intento.RatingRecaudosRaw          = outcome.RatingRecaudosRaw;
             intento.MontoSugeridoRaw           = outcome.MontoSugeridoRaw;
             intento.AlertasCount               = outcome.AlertasCount;
+            // M2.4a (captura P0) — staging de la semantic raw projection.
+            intento.P0ProviderRawJson          = outcome.P0ProviderRawJson;
             intento.FaseIntento                = CarteraIntentoFases.Finalizado;
 
             solicitud!.EstadoSolicitud    = outcome.EstadoSolicitudFinal;
@@ -209,7 +211,10 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
                 || intento.ViabilidadRaw is not null
                 || intento.RatingRecaudosRaw is not null
                 || intento.MontoSugeridoRaw is not null
-                || intento.AlertasCount is not null;
+                || intento.AlertasCount is not null
+                // M2.4a (captura P0) — el staging de la semantic raw projection
+                // también es un crudo del proveedor de sensibilidad equivalente.
+                || intento.P0ProviderRawJson is not null;
 
             if (!tieneCrudo)
                 return await NoPurgarAsync(tx, ResultadoPurgaIntento.NoElegible).ConfigureAwait(false);
@@ -220,11 +225,13 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
             intento.RatingRecaudosRaw   = null;
             intento.MontoSugeridoRaw    = null;
             intento.AlertasCount        = null;
+            intento.P0ProviderRawJson   = null;
             intento.ResultadoPurgadoUtc = DateTime.UtcNow;
             // NO se toca resultado_tecnico / es_intento_con_resultado_util /
             // http_status_observado / content_status_observado / fase_intento /
             // fecha_inicio / fecha_fin / numero_intento / idempotency_key /
-            // correlation_id, ni ninguna columna de cartera_solicitudes_cupo.
+            // correlation_id, ni ninguna columna de cartera_solicitudes_cupo
+            // (las 12 columnas P0 de la solicitud SOBREVIVEN a la purga).
 
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -316,6 +323,14 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
             solicitud.MontoSugeridoObservado  = norm.MontoSugerido;
             solicitud.AlertasCountObservado   = norm.AlertasCount;
             solicitud.FechaActualizacion      = nowUtc;
+
+            // M2.4a (extensión de captura P0, diseño 175/176/177) — materializa
+            // las 12 columnas RAW purga-seguras desde el staging del intento, en
+            // ESTA MISMA transacción/AppLock/SaveChanges. Fail-closed ante
+            // corrupción estructural del staging; ABSENT de un dato del
+            // proveedor NO es corrupción y produce un snapshot válido.
+            MaterializarP0(solicitud, intento.P0ProviderRawJson);
+
             // NO se toca estado_solicitud / decision_crediticia / monto_aprobado
             // / codigo_motivo_decision / fecha_decision / id_cupo_ordinario /
             // fecha_materializacion_cupo / edad_calculada_al_momento / los
@@ -340,6 +355,63 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
     {
         await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
         return resultado;
+    }
+
+    // ── M2.4a (extensión de captura P0, diseño 175/176/177) ──────────────
+    // Longitud máxima de cada columna RAW de snapshot (migración 039). Un
+    // valor del proveedor más largo => fail-closed (invariante), NUNCA se
+    // trunca. Se aplica DENTRO de la transacción de consumo → rollback total,
+    // resultado_consumido_utc permanece NULL.
+    private const int MaxTipoDocumentoRaw   = 60;
+    private const int MaxEstadoDocumentoRaw = 60;
+    private const int MaxRangoEdadRaw       = 20;
+    private const int MaxConsultaAnioRaw    = 8;
+    private const int MaxConsultaMesRaw     = 4;
+    private const int MaxConsultaDiaRaw     = 4;
+
+    private static void MaterializarP0(Models.CarteraSolicitudCupo solicitud, string? p0Json)
+    {
+        // Sin MiDecisorResultado (staging NULL) → las 12 columnas P0 quedan
+        // NULL. Es un snapshot válido, NO corrupción.
+        if (p0Json is null)
+            return;
+
+        // Fail-closed: staging estructuralmente corrupto → invariante.
+        var proj = CarteraP0ProviderRawProjector.Deserializar(p0Json);
+
+        solicitud.TipoDocumentoObservado =
+            ExigirCabe(proj.TipoDocumento, MaxTipoDocumentoRaw, "tipo_documento_observado");
+
+        solicitud.EstadoDocumentoDatosBasicosRaw =
+            ExigirCabe(proj.EstadoDocumentoDatosBasicos, MaxEstadoDocumentoRaw, "estado_documento_datos_basicos_raw");
+        solicitud.EstadoDocumentoInfoDemograficaRaw =
+            ExigirCabe(proj.EstadoDocumentoInfoDemografica, MaxEstadoDocumentoRaw, "estado_documento_info_demografica_raw");
+        solicitud.EstadoDocumentoCaptura =
+            CarteraDualPathResolver.ResolverTexto(proj.EstadoDocumentoDatosBasicos, proj.EstadoDocumentoInfoDemografica);
+
+        solicitud.RangoEdadDatosBasicosRaw =
+            ExigirCabe(proj.RangoEdadDatosBasicos, MaxRangoEdadRaw, "rango_edad_datos_basicos_raw");
+        solicitud.RangoEdadInfoDemograficaRaw =
+            ExigirCabe(proj.RangoEdadInfoDemografica, MaxRangoEdadRaw, "rango_edad_info_demografica_raw");
+        solicitud.RangoEdadCaptura =
+            CarteraDualPathResolver.ResolverTexto(proj.RangoEdadDatosBasicos, proj.RangoEdadInfoDemografica);
+
+        solicitud.ConsultaAnioRaw = ExigirCabe(proj.AnioConsulta, MaxConsultaAnioRaw, "consulta_anio_raw");
+        solicitud.ConsultaMesRaw  = ExigirCabe(proj.MesConsulta, MaxConsultaMesRaw, "consulta_mes_raw");
+        solicitud.ConsultaDiaRaw  = ExigirCabe(proj.DiaConsulta, MaxConsultaDiaRaw, "consulta_dia_raw");
+
+        var (vectorJson, vectorCount) = CarteraComportamientoVectorProjector.Proyectar(
+            proj.ComportamientoVectorPresente, proj.ComportamientoVector);
+        solicitud.ComportamientoVectorJson  = vectorJson;
+        solicitud.ComportamientoVectorCount = vectorCount;
+    }
+
+    private static string? ExigirCabe(string? valor, int maxLen, string columna)
+    {
+        if (valor is not null && valor.Length > maxLen)
+            throw new CarteraConsumoResultadoInvarianteException(
+                $"El valor RAW del proveedor para {columna} excede {maxLen} caracteres ({valor.Length}); no se trunca (fail-closed).");
+        return valor;
     }
 
     private async Task<(Models.CarteraSolicitudCupo? solicitud, Models.CarteraSolicitudCupoIntento? intento)>
