@@ -235,17 +235,71 @@ public sealed class CarteraDecisionEngineTests
     // ── Edad ────────────────────────────────────────────────────────────
     [Theory]
     [InlineData("18-21")]
+    [InlineData("22-28")]
+    [InlineData("29-35")]
+    [InlineData("36-45")]
     [InlineData("46-55")]
     [InlineData("56-65")]
     public void Edad_BandaElegible_Continua(string banda)
         => Assert.Equal(CarteraDecisionCrediticia.Aprobada, Eval(new Snap { RangoEdadId = banda }).Decision);
 
+    // XPAY-190 / ACTA 001 — CASE 1 + CASE 7: edad 66+ sola → NO_DECIDIBLE /
+    // EDAD_REQUIERE_REVISION_MANUAL, monto NULL ; el motor ya NO emite
+    // EDAD_FUERA_POLITICA como causal por edad 66+.
     [Fact]
-    public void Edad_66_Rechazo()
+    public void Edad_66_NoDecidible_RevisionManual()
     {
         var r = Eval(new Snap { RangoEdadId = "66" });
-        Assert.Equal(CarteraDecisionCrediticia.Rechazada, r.Decision);
-        Assert.Equal(CarteraMotivoDecision.EdadFueraPolitica, r.MotivoPrimario);
+        Assert.Equal(CarteraDecisionCrediticia.NoDecidible, r.Decision);
+        Assert.Equal(CarteraMotivoDecision.EdadRequiereRevisionManual, r.MotivoPrimario);
+        Assert.Null(r.MontoAprobado);
+        Assert.DoesNotContain(CarteraMotivoDecision.EdadFueraPolitica, r.MotivosOrdenados);
+    }
+
+    // XPAY-190 — CASE 2: edad 66+ + score en banda S1 (rechazo determinable) →
+    // NO_DECIDIBLE domina ; EDAD_REQUIERE_REVISION_MANUAL primario ;
+    // SCORE_INSUFICIENTE conservado como evidencia.
+    [Fact]
+    public void Edad_66_con_ScoreInsuficiente_NoDecidible_ConservaRechazo()
+    {
+        var r = Eval(new Snap { RangoEdadId = "66", Score = 300 });
+        Assert.Equal(CarteraDecisionCrediticia.NoDecidible, r.Decision);
+        Assert.Equal(CarteraMotivoDecision.EdadRequiereRevisionManual, r.MotivoPrimario);
+        Assert.Equal(CarteraMotivoDecision.EdadRequiereRevisionManual, r.MotivosOrdenados[0]);
+        Assert.Contains(CarteraMotivoDecision.ScoreInsuficiente, r.MotivosOrdenados);
+        Assert.Null(r.MontoAprobado);
+    }
+
+    // XPAY-190 — CASE 3: edad 66+ + comportamiento de pago en mora →
+    // NO_DECIDIBLE domina ; causal de edad primaria ; causales de
+    // comportamiento conservadas según la precedencia existente.
+    [Fact]
+    public void Edad_66_con_ComportamientoMalo_NoDecidible_ConservaRechazo()
+    {
+        var v = VectorJson(("2026-3", "N"), ("2026-4", "N"), ("2026-5", "N"),
+                           ("2026-6", "N"), ("2026-7", "N"), ("2026-8", "3"));
+        var r = Eval(new Snap { RangoEdadId = "66", VectorJson = v, VectorCount = 6 });
+        Assert.Equal(CarteraDecisionCrediticia.NoDecidible, r.Decision);
+        Assert.Equal(CarteraMotivoDecision.EdadRequiereRevisionManual, r.MotivosOrdenados[0]);
+        Assert.Contains(CarteraMotivoDecision.ComportamientoPagoUltimoMesNoAlDia, r.MotivosOrdenados);
+        Assert.Contains(CarteraMotivoDecision.ComportamientoPagoInsuficiente, r.MotivosOrdenados);
+        Assert.Null(r.MontoAprobado);
+    }
+
+    // XPAY-190 — CASE 6: EDAD_REQUIERE_REVISION_MANUAL nunca conduce a RECHAZADA
+    // ni a APROBADA ; siempre que aparece, la decisión es NO_DECIDIBLE.
+    [Theory]
+    [InlineData("66", "ALTA", "A")]
+    [InlineData("66", "BAJA", "A")]
+    [InlineData("66", "ALTA", "N")]
+    [InlineData("66", "MEDIA", "B")]
+    public void Edad_66_causal_edad_solo_NoDecidible(string edad, string viab, string rating)
+    {
+        var r = Eval(new Snap { RangoEdadId = edad, Viabilidad = viab, Rating = rating });
+        Assert.Contains(CarteraMotivoDecision.EdadRequiereRevisionManual, r.MotivosOrdenados);
+        Assert.Equal(CarteraDecisionCrediticia.NoDecidible, r.Decision);
+        Assert.NotEqual(CarteraDecisionCrediticia.Rechazada, r.Decision);
+        Assert.NotEqual(CarteraDecisionCrediticia.Aprobada, r.Decision);
     }
 
     [Theory]
@@ -479,16 +533,16 @@ public sealed class CarteraDecisionEngineTests
     [Fact]
     public void MultiRechazo_ordenPrecedencia_H()
     {
-        // rango edad 66 (grupo 3) + viabilidad BAJA (grupo 6) + rating N (grupo 7)
-        var r = Eval(new Snap { RangoEdadId = "66", Viabilidad = "BAJA", Rating = "N" });
+        // tipoDocumento no aceptado (grupo 2) + viabilidad BAJA (grupo 6) + rating N (grupo 7)
+        var r = Eval(new Snap { TipoDoc = "CE", Viabilidad = "BAJA", Rating = "N" });
         Assert.Equal(CarteraDecisionCrediticia.Rechazada, r.Decision);
         Assert.Equal(new[]
         {
-            CarteraMotivoDecision.EdadFueraPolitica,
+            CarteraMotivoDecision.TipoDocNoAceptado,
             CarteraMotivoDecision.ViabilidadBaja,
             CarteraMotivoDecision.RatingRecaudosInsuficiente,
         }, r.MotivosOrdenados);
-        Assert.Equal(CarteraMotivoDecision.EdadFueraPolitica, r.MotivoPrimario);
+        Assert.Equal(CarteraMotivoDecision.TipoDocNoAceptado, r.MotivoPrimario);
     }
 
     [Fact]

@@ -13,7 +13,9 @@ namespace Xpay.Api.Common;
 // SIN DbContext, SIN HTTP, SIN DateTime.UtcNow, SIN random, SIN side effects.
 // NO persiste. NO llama a MiDecisor. NO usa timestamps XPAY como fallback para
 // el mes de consulta. NO introduce reglas crediticias nuevas: aplica las ya
-// cerradas en la política working copy (§A–§P) y en XPAY-172/173/174/182.
+// cerradas en la política working copy (§A–§P) y en XPAY-172/173/174/182 y la
+// corrección de edad 66+ de XPAY-190 / ACTA 001 (gate 3: 66+ → NO_DECIDIBLE /
+// EDAD_REQUIERE_REVISION_MANUAL, ya no rechazo determinable).
 //
 // Contradicción "conservadora" (XPAY-182): si existe AL MENOS UNA causa
 // NO_DECIDIBLE, la Decision final es NO_DECIDIBLE aunque existan rechazos
@@ -205,7 +207,12 @@ public static class CarteraDecisionEngine
         else
             nd.Add(CarteraMotivoDecision.ValorFueraPolitica);
 
-        // ── Gate 3 — rangoEdad (§H grupo 3) ──────────────────────────────
+        // ── Gate 3 — rangoEdad ──────────────────────────────────────────
+        // 18–65 → elegible. 66+ → NO_DECIDIBLE / EDAD_REQUIERE_REVISION_MANUAL
+        // (XPAY-190 / ACTA 001): NO es rechazo automático por edad. Ya NO
+        // participa en la precedencia §H de rechazos determinables (grupo 3
+        // queda vacío). La política de <18 sigue ABIERTA — un valor por debajo
+        // del mínimo cae en `default` (VALOR_FUERA_POLITICA), sin cambio.
         var edadCaptura = snapshot.RangoEdadCaptura;
         if (!string.Equals(edadCaptura, CarteraDualPathResolver.Presente, StringComparison.Ordinal))
         {
@@ -225,7 +232,7 @@ public static class CarteraDecisionEngine
                     fEdad = p.FactorEdadElegible;
                     break;
                 case "66":
-                    rej.Add((3, CarteraMotivoDecision.EdadFueraPolitica));
+                    nd.Add(CarteraMotivoDecision.EdadRequiereRevisionManual);
                     break;
                 case "-":
                 case "":

@@ -155,8 +155,8 @@ public sealed class CarteraDecisionCrediticiaStoreTests
         var (pe, us, so) = (new List<long>(), new List<long>(), new List<long>());
         try
         {
-            // edad 66 (grupo 3) + viabilidad BAJA (grupo 6)
-            var (idSol, _) = await SembrarAsync(cs, new SeedOpts { RangoEdadId = "66", Viabilidad = "BAJA" }, pe, us, so);
+            // viabilidad BAJA (grupo 6) + rating N (grupo 7) — rechazo puro (sin edad)
+            var (idSol, _) = await SembrarAsync(cs, new SeedOpts { Viabilidad = "BAJA", Rating = "N" }, pe, us, so);
             await using (var c = NuevoContexto(cs))
                 Assert.Equal(ResultadoAplicacionDecision.Aplicada,
                     await new CarteraDecisionCrediticiaStore(c).AplicarDecisionAsync(idSol, default));
@@ -166,14 +166,44 @@ public sealed class CarteraDecisionCrediticiaStoreTests
             Assert.Equal(CarteraDecisionCrediticia.Rechazada, sol.DecisionCrediticia);
             Assert.Equal(CarteraSolicitudCupoEstados.Rechazada, sol.EstadoSolicitud);
             Assert.Equal(0m, sol.MontoAprobado);
-            Assert.Equal(CarteraMotivoDecision.EdadFueraPolitica, sol.CodigoMotivoDecision);
+            Assert.Equal(CarteraMotivoDecision.ViabilidadBaja, sol.CodigoMotivoDecision);
 
             var motivos = await v.CarteraSolicitudCupoMotivosDecision.AsNoTracking()
                 .Where(m => m.IdSolicitud == idSol).OrderBy(m => m.Orden).ToListAsync();
             Assert.Equal(new short[] { 1, 2 }, motivos.Select(m => m.Orden).ToArray());
-            Assert.Equal(CarteraMotivoDecision.EdadFueraPolitica, motivos[0].CodigoMotivo);
-            Assert.Equal(CarteraMotivoDecision.ViabilidadBaja, motivos[1].CodigoMotivo);
+            Assert.Equal(CarteraMotivoDecision.ViabilidadBaja, motivos[0].CodigoMotivo);
+            Assert.Equal(CarteraMotivoDecision.RatingRecaudosInsuficiente, motivos[1].CodigoMotivo);
             Assert.Equal(sol.CodigoMotivoDecision, motivos[0].CodigoMotivo); // invariante padre/hija
+        }
+        finally { await LimpiarAsync(cs, pe, us, so); }
+    }
+
+    // ── TEST 2b — XPAY-190 / ACTA 001 · CASE 5 — edad 66+ → NO_DECIDIBLE /
+    //    EDAD_REQUIERE_REVISION_MANUAL → PENDIENTE_REVISION_MANUAL / monto NULL ──
+    [Fact]
+    public async Task NoDecidible_Edad66_EdadRequiereRevisionManual()
+    {
+        if (!TryConnString(out var cs)) return;
+        var (pe, us, so) = (new List<long>(), new List<long>(), new List<long>());
+        try
+        {
+            var (idSol, _) = await SembrarAsync(cs, new SeedOpts { RangoEdadId = "66" }, pe, us, so);
+            await using (var c = NuevoContexto(cs))
+                Assert.Equal(ResultadoAplicacionDecision.Aplicada,
+                    await new CarteraDecisionCrediticiaStore(c).AplicarDecisionAsync(idSol, default));
+
+            await using var v = NuevoContexto(cs);
+            var sol = await v.CarteraSolicitudesCupo.AsNoTracking().SingleAsync(s => s.IdSolicitud == idSol);
+            Assert.Equal(CarteraDecisionCrediticia.NoDecidible, sol.DecisionCrediticia);
+            Assert.Equal(CarteraSolicitudCupoEstados.PendienteRevisionManual, sol.EstadoSolicitud);
+            Assert.Null(sol.MontoAprobado);
+            Assert.Equal(CarteraMotivoDecision.EdadRequiereRevisionManual, sol.CodigoMotivoDecision);
+
+            var motivos = await v.CarteraSolicitudCupoMotivosDecision.AsNoTracking()
+                .Where(m => m.IdSolicitud == idSol).OrderBy(m => m.Orden).ToListAsync();
+            Assert.Equal(CarteraMotivoDecision.EdadRequiereRevisionManual, motivos[0].CodigoMotivo);
+            Assert.Equal(sol.CodigoMotivoDecision, motivos[0].CodigoMotivo); // invariante padre/hija
+            Assert.DoesNotContain(motivos, m => m.CodigoMotivo == CarteraMotivoDecision.EdadFueraPolitica);
         }
         finally { await LimpiarAsync(cs, pe, us, so); }
     }
