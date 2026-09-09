@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
+using Xpay.Api.Data;
 using Xpay.Api.DTOs;
 using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
@@ -9,7 +11,7 @@ namespace Xpay.Api.Controllers;
 [ApiController]
 [Route("api/cartera-ordinaria")]
 [Authorize]
-public class CarteraOrdinariaController(CarteraOrdinariaService svc) : ControllerBase
+public class CarteraOrdinariaController(CarteraOrdinariaService svc, XpayDbContext db) : ControllerBase
 {
     private long IdUsuarioActual => long.Parse(User.FindFirst("idUsuario")?.Value ?? "0");
 
@@ -177,6 +179,47 @@ public class CarteraOrdinariaController(CarteraOrdinariaService svc) : Controlle
         // Otras InvalidOperationException (config ausente / inconsistencia
         // interna) y cualquier excepción no prevista se propagan a
         // ErrorHandlingMiddleware → 500 genérico sin detalle.
+    }
+
+    // ── USUARIO: Autorización de consulta en centrales de riesgo (V1) ─────
+    // ACTA 001 §3 · XPAY-195/196/197. Evidencia durable de aceptación. NO llama
+    // a MiDecisor. NO avanza la solicitud. Regla V1 estricta: la aceptación
+    // autoriza EXCLUSIVAMENTE la consulta de esta misma solicitud.
+
+    // Texto vigente — única fuente de verdad = recurso backend. Autenticado
+    // (hereda [Authorize] de la clase) ; el texto no es secreto.
+    [HttpGet("autorizacion-consulta-riesgo/texto-vigente")]
+    public IActionResult GetTextoAutorizacionConsultaRiesgo()
+        => Ok(new AutorizacionConsultaRiesgoTextoResponse(
+            CarteraAutorizacionConsultaRiesgoTextos.V1_Version,
+            CarteraAutorizacionConsultaRiesgoTextos.V1_Texto,
+            CarteraAutorizacionConsultaRiesgoTextos.V1_HashSha256));
+
+    [Authorize(Policy = "KycAprobado")]
+    [HttpPost("solicitudes/{idSolicitud:long}/autorizar-consulta-riesgo")]
+    public async Task<IActionResult> AutorizarConsultaRiesgo(
+        long idSolicitud, [FromBody] RegistrarAutorizacionConsultaRiesgoRequest req)
+    {
+        if (req is null || string.IsNullOrWhiteSpace(req.Version))
+            return BadRequest(new { error = "Falta la versión del texto de autorización." });
+
+        // correlationId controlado por el servidor (mismo patrón que SolicitarCupo).
+        var correlationId = HttpContext.Items["CorrelationId"]?.ToString() ?? HttpContext.TraceIdentifier;
+
+        // El store se instancia con el XpayDbContext scoped (mismo patrón que las
+        // primitivas dormidas M2.4b/M2.4c en sus tests). NO se registra en DI.
+        var store = new CarteraAutorizacionConsultaRiesgoStore(db);
+        var resultado = await store.RegistrarAceptacionAsync(
+            idSolicitud, IdUsuarioActual, req.Version, correlationId, HttpContext.RequestAborted);
+
+        return resultado switch
+        {
+            ResultadoRegistroAutorizacion.Registrada => Ok(new RegistrarAutorizacionConsultaRiesgoResponse(
+                idSolicitud, CarteraAutorizacionConsultaRiesgoTextos.V1_Version, "registrada")),
+            ResultadoRegistroAutorizacion.YaRegistrada => Ok(new RegistrarAutorizacionConsultaRiesgoResponse(
+                idSolicitud, CarteraAutorizacionConsultaRiesgoTextos.V1_Version, "ya_registrada")),
+            _ => BadRequest(new { error = "La solicitud no admite el registro de autorización en este momento." }),
+        };
     }
 
     // ── USUARIO: Simulador ────────────────────────────────────────────
