@@ -155,6 +155,10 @@ public sealed class CarteraDecisionCrediticiaStore(XpayDbContext db)
                     throw new CarteraDecisionInvarianteException("RECHAZADA sin motivos.");
                 if (!string.Equals(r.MotivoPrimario, r.MotivosOrdenados[0], StringComparison.Ordinal))
                     throw new CarteraDecisionInvarianteException("Motivo primario no coincide con orden 1.");
+                // EDAD_REQUIERE_REVISION_MANUAL es exclusivamente causa NO_DECIDIBLE
+                // (XPAY-190 / ACTA 001) — nunca un motivo de RECHAZADA.
+                if (r.MotivosOrdenados.Contains(CarteraMotivoDecision.EdadRequiereRevisionManual, StringComparer.Ordinal))
+                    throw new CarteraDecisionInvarianteException("EDAD_REQUIERE_REVISION_MANUAL no es una causal de RECHAZADA.");
                 break;
 
             case CarteraDecisionCrediticia.NoDecidible:
@@ -164,7 +168,9 @@ public sealed class CarteraDecisionCrediticiaStore(XpayDbContext db)
                     throw new CarteraDecisionInvarianteException("NO_DECIDIBLE sin motivos.");
                 if (!string.Equals(r.MotivoPrimario, r.MotivosOrdenados[0], StringComparison.Ordinal))
                     throw new CarteraDecisionInvarianteException("Motivo primario no coincide con orden 1.");
-                if (r.MotivosOrdenados[0] is not (CarteraMotivoDecision.InformacionInsuficiente or CarteraMotivoDecision.ValorFueraPolitica))
+                if (r.MotivosOrdenados[0] is not (CarteraMotivoDecision.InformacionInsuficiente
+                        or CarteraMotivoDecision.ValorFueraPolitica
+                        or CarteraMotivoDecision.EdadRequiereRevisionManual))
                     throw new CarteraDecisionInvarianteException("NO_DECIDIBLE cuyo motivo primario no es una causa NO_DECIDIBLE.");
                 break;
 
