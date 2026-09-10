@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Xpay.Api.Authorization;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.Middleware;
 using Xpay.Api.Services;
@@ -65,16 +66,12 @@ builder.Services.AddSingleton<
 builder.Services.AddSingleton<
     Xpay.Api.Integrations.MiDecisor.IMiDecisorClient,
     Xpay.Api.Integrations.MiDecisor.MiDecisorClient>();
-// M2.3a — orquestación estructural Cartera ↔ MiDecisor. Ningún endpoint /
-// scheduler la invoca, y el consentimiento runtime devuelve SIEMPRE false:
-// dos barreras independientes contra una consulta real.
-builder.Services.AddScoped<Xpay.Api.Services.CarteraConsultaRiesgoService>();
-builder.Services.AddScoped<
-    Xpay.Api.Services.ICarteraConsultaRiesgoStore,
-    Xpay.Api.Services.CarteraConsultaRiesgoStore>();
-builder.Services.AddScoped<
-    Xpay.Api.Integrations.MiDecisor.IConsultaRiesgoAutorizacion,
-    Xpay.Api.Integrations.MiDecisor.AutorizacionConsultaRiesgoNoDisponible>();
+// M2.3a / M2.4d — pipeline de riesgo/decisión de Cartera Ordinaria (orquestador
+// + consumo M2.4a + decisión M2.4b + materialización M2.4c + reconciliación
+// fail-closed). IConsultaRiesgoAutorizacion permanece ligada al stub
+// AutorizacionConsultaRiesgoNoDisponible (fail-closed): con él ningún endpoint
+// puede alcanzar una llamada real a MiDecisor. Ver CarteraRiesgoRuntimeWiring.
+builder.Services.AddCarteraRiesgoRuntime();
 
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.

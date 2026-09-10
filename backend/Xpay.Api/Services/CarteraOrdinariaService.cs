@@ -20,9 +20,12 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
     private const long IdUnidadNegocio = 1;
 
     // Estados "activos" de una solicitud de cupo — copia exacta del filtro del
-    // índice UNIQUE ux_cartera_solicitudes_cupo_usuario_activa de la migración
-    // 035 (una solicitud activa por usuario). No se declara en
-    // CarteraSolicitudCupoEstados (ETAPA 2, fuera de alcance de esta etapa).
+    // índice UNIQUE ux_cartera_solicitudes_cupo_usuario_activa. La migración 040
+    // lo recreó con 6 estados: añadió PENDIENTE_REVISION_MANUAL (una solicitud
+    // NO_DECIDIBLE de M2.4b sigue bloqueando una segunda solicitud paralela del
+    // mismo usuario). Este array debe reflejar EXACTAMENTE ese filtro para que el
+    // pre-check C# rechace la 2ª solicitud con un 409 limpio antes de chocar con
+    // el UNIQUE de SQL (XPAY-204).
     private static readonly string[] EstadosSolicitudActivos =
     {
         CarteraSolicitudCupoEstados.Recibida,
@@ -30,6 +33,7 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
         CarteraSolicitudCupoEstados.ConsultandoRiesgo,
         CarteraSolicitudCupoEstados.EnEvaluacion,
         CarteraSolicitudCupoEstados.AprobadaPendienteCupo,
+        CarteraSolicitudCupoEstados.PendienteRevisionManual,
     };
 
     // ── Parámetros de utilización ──────────────────────────────────────
