@@ -40,6 +40,16 @@ public static class CarteraRiesgoRuntimeWiring
         services.AddScoped<ICarteraDecisionCrediticiaOrchestrator, CarteraDecisionCrediticiaOrchestrator>();
         services.AddScoped<ICarteraConsultaRiesgoReconciliacion, CarteraConsultaRiesgoReconciliacionStore>();
 
+        // XPAY-213/214 — purge B4 (política de retención, XPAY-212 §Q.8): sólo
+        // el store de purga + el batch runner reutilizable, para que el
+        // endpoint admin manual pueda resolverse. NO se registra ningún
+        // scheduler/IHostedService — la ejecución periódica es una fase
+        // posterior separada, no autorizada aquí. Esto NO activa ninguna
+        // purga real: el batch runner y el endpoint quedan implementados pero
+        // sin invocarse en este prompt.
+        services.AddScoped<ICarteraResultadoRiesgoPurga, CarteraConsultaRiesgoStore>();
+        services.AddScoped<ICarteraConsultaRiesgoPurgaBatchRunner, CarteraConsultaRiesgoPurgaBatchRunner>();
+
         return services;
     }
 }

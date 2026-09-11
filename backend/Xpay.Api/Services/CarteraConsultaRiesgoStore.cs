@@ -252,6 +252,151 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
         return resultado;
     }
 
+    // ── XPAY-213/214 — ICarteraResultadoRiesgoPurga.PurgarConsultaRiesgoCompletaAsync
+    // (política B4, infraestructura DORMIDA) ─────────────────────────────────
+    // Ver el doc del contrato: purga ATÓMICA de intento + snapshot P0 bajo la
+    // misma política. NO modifica PurgarResultadoIntentoAsync ni sus tests. Sin
+    // caller de runtime, sin registro de scheduler.
+    public async Task<ResultadoPurgaConsultaCompleta> PurgarConsultaRiesgoCompletaAsync(
+        long idSolicitud, DateTime cutoffUtc, CancellationToken cancellationToken)
+    {
+        if (cutoffUtc.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("cutoffUtc debe tener DateTimeKind.Utc.", nameof(cutoffUtc));
+
+        await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ValidarResultadoLock(await AppLockHelper
+                .AdquirirAsync(db, $"XPAY:CARTERA_RIESGO:{idSolicitud}", cancellationToken)
+                .ConfigureAwait(false));
+
+            var solicitud = await db.CarteraSolicitudesCupo
+                .FirstOrDefaultAsync(s => s.IdSolicitud == idSolicitud, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (solicitud is null)
+                return await NoPurgarCompletaAsync(tx, ResultadoPurgaConsultaCompleta.NoElegible).ConfigureAwait(false);
+
+            // Correlación XPAY-213 §5: el intento gobernante del snapshot P0 es
+            // EXCLUSIVAMENTE (idSolicitud, solicitud.NumeroIntento) — nunca un
+            // numeroIntento provisto por el llamador.
+            var intento = await db.CarteraSolicitudCupoIntentos
+                .FirstOrDefaultAsync(
+                    i => i.IdSolicitud == idSolicitud && i.NumeroIntento == solicitud.NumeroIntento, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (intento is null
+                || !string.Equals(intento.FaseIntento, CarteraIntentoFases.Finalizado, StringComparison.Ordinal))
+                return await NoPurgarCompletaAsync(tx, ResultadoPurgaConsultaCompleta.NoElegible).ConfigureAwait(false);
+
+            // ── Invariante estructural — fail-closed, NUNCA auto-heal ────────
+            var intentoPurgado = intento.ResultadoPurgadoUtc is not null;
+            var p0Purgado      = solicitud.P0RawPurgadoUtc is not null;
+
+            if (intentoPurgado != p0Purgado)
+                throw new CarteraPurgaB4InvarianteException(
+                    "Estado de purga B4 inconsistente: la marca resultado_purgado_utc del intento y p0_raw_purgado_utc de la solicitud no coinciden (una presente, la otra no).");
+
+            var intentoTieneCrudo = TieneCrudoIntento(intento);
+            if (intentoPurgado && intentoTieneCrudo)
+                throw new CarteraPurgaB4InvarianteException(
+                    "Estado de purga B4 inconsistente: el intento tiene resultado_purgado_utc pero conserva campos crudos no purgados.");
+
+            var p0TieneCrudo = TieneCrudoP0(solicitud);
+            if (p0Purgado && p0TieneCrudo)
+                throw new CarteraPurgaB4InvarianteException(
+                    "Estado de purga B4 inconsistente: la solicitud tiene p0_raw_purgado_utc pero conserva campos P0 crudos no purgados.");
+
+            if (intentoPurgado)
+                return await NoPurgarCompletaAsync(tx, ResultadoPurgaConsultaCompleta.YaPurgado).ConfigureAwait(false);
+
+            // Gate de consumo (M2.4a) — mismo criterio que PurgarResultadoIntentoAsync.
+            if (intento.ResultadoConsumidoUtc is null)
+                return await NoPurgarCompletaAsync(tx, ResultadoPurgaConsultaCompleta.NoElegible).ConfigureAwait(false);
+
+            // Boundary estricto — IDÉNTICO al motor existente: elegible ⟺ FechaFin < cutoffUtc.
+            if (intento.FechaFin is null || intento.FechaFin >= cutoffUtc)
+                return await NoPurgarCompletaAsync(tx, ResultadoPurgaConsultaCompleta.NoElegible).ConfigureAwait(false);
+
+            // MANUAL_REVIEW_HOLD (XPAY-212 §Q.8) — fail-safe AUTORITATIVO: se
+            // evalúa aquí sin importar que el invocador ya haya prefiltrado.
+            // NO modifica FechaFin; al resolverse la revisión, vuelve a
+            // evaluarse normalmente en la siguiente ejecución.
+            if (string.Equals(solicitud.EstadoSolicitud, CarteraSolicitudCupoEstados.PendienteRevisionManual, StringComparison.Ordinal))
+                return await NoPurgarCompletaAsync(tx, ResultadoPurgaConsultaCompleta.RetenidoPorRevisionManual).ConfigureAwait(false);
+
+            if (!intentoTieneCrudo && !p0TieneCrudo)
+                return await NoPurgarCompletaAsync(tx, ResultadoPurgaConsultaCompleta.NoElegible).ConfigureAwait(false);
+
+            var nowUtc = DateTime.UtcNow;
+
+            // A. Raw del intento (7 campos) — mismos campos que PurgarResultadoIntentoAsync.
+            intento.ConInformacion      = null;
+            intento.ScoreRaw            = null;
+            intento.ViabilidadRaw       = null;
+            intento.RatingRecaudosRaw   = null;
+            intento.MontoSugeridoRaw    = null;
+            intento.AlertasCount        = null;
+            intento.P0ProviderRawJson   = null;
+            intento.ResultadoPurgadoUtc = nowUtc;
+
+            // B. Raw P0 de la solicitud — únicamente los 9 campos RAW/VERBATIM_PROVIDER
+            // (SCOPE_OPTION_C, XPAY-212 §Q.8). NUNCA: estado_documento_captura,
+            // rango_edad_captura, comportamiento_vector_count (metadato de XPAY,
+            // no dato del proveedor), decisión, motivos, monto, cupo, ledger,
+            // consentimiento, auditoría operativa. NO se toca fecha_actualizacion:
+            // la purga es retención de datos, no una actividad de negocio sobre
+            // la solicitud.
+            solicitud.TipoDocumentoObservado           = null;
+            solicitud.EstadoDocumentoDatosBasicosRaw    = null;
+            solicitud.EstadoDocumentoInfoDemograficaRaw = null;
+            solicitud.RangoEdadDatosBasicosRaw          = null;
+            solicitud.RangoEdadInfoDemograficaRaw       = null;
+            solicitud.ConsultaAnioRaw                   = null;
+            solicitud.ConsultaMesRaw                    = null;
+            solicitud.ConsultaDiaRaw                    = null;
+            solicitud.ComportamientoVectorJson          = null;
+            solicitud.P0RawPurgadoUtc                   = nowUtc;
+
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return ResultadoPurgaConsultaCompleta.Purgado;
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private static async Task<ResultadoPurgaConsultaCompleta> NoPurgarCompletaAsync(
+        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx, ResultadoPurgaConsultaCompleta resultado)
+    {
+        await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        return resultado;
+    }
+
+    private static bool TieneCrudoIntento(Models.CarteraSolicitudCupoIntento intento) =>
+        intento.ConInformacion is not null
+        || intento.ScoreRaw is not null
+        || intento.ViabilidadRaw is not null
+        || intento.RatingRecaudosRaw is not null
+        || intento.MontoSugeridoRaw is not null
+        || intento.AlertasCount is not null
+        || intento.P0ProviderRawJson is not null;
+
+    private static bool TieneCrudoP0(Models.CarteraSolicitudCupo solicitud) =>
+        solicitud.TipoDocumentoObservado is not null
+        || solicitud.EstadoDocumentoDatosBasicosRaw is not null
+        || solicitud.EstadoDocumentoInfoDemograficaRaw is not null
+        || solicitud.RangoEdadDatosBasicosRaw is not null
+        || solicitud.RangoEdadInfoDemograficaRaw is not null
+        || solicitud.ConsultaAnioRaw is not null
+        || solicitud.ConsultaMesRaw is not null
+        || solicitud.ConsultaDiaRaw is not null
+        || solicitud.ComportamientoVectorJson is not null;
+
     // ── M2.4a — ICarteraResultadoRiesgoConsumo (infraestructura DORMIDA) ──
     // Ver el doc del contrato: NO emite veredicto, NO está registrada en DI,
     // sin caller de runtime. Convierte un intento MiDecisor FINALIZADO con

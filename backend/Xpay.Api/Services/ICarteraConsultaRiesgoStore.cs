@@ -128,7 +128,96 @@ public interface ICarteraResultadoRiesgoPurga
     // Idempotente. Sin retry automático. `cutoffUtc` debe ser UTC.
     Task<ResultadoPurgaIntento> PurgarResultadoIntentoAsync(
         long idSolicitud, int numeroIntento, DateTime cutoffUtc, CancellationToken cancellationToken);
+
+    // XPAY-213/214 — política de retención B4 (XPAY-212 §Q.8): purga ATÓMICA y
+    // COMPLETA de una consulta de riesgo — los 7 crudos del intento (los 6
+    // originales + p0_provider_raw_json) MÁS los 9 campos RAW/VERBATIM_PROVIDER
+    // del snapshot P0 ya materializado en cartera_solicitudes_cupo
+    // (SCOPE_OPTION_C). Contrato SEPARADO de PurgarResultadoIntentoAsync: NO lo
+    // modifica, NO lo reemplaza, NO se apoya en él (evita reabrir su
+    // implementación/tests ya cerrados) — reimplementa los mismos guards más
+    // los nuevos, en una única transacción que cubre ambas tablas.
+    //
+    // Transacción única bajo AppLock XPAY:CARTERA_RIESGO:{idSolicitud}
+    // (owner=Transaction). El intento gobernante se determina INTERNAMENTE vía
+    // (idSolicitud, solicitud.NumeroIntento) — el llamador NO indica
+    // numeroIntento (evita pasar un valor obsoleto que no corresponda al
+    // intento realmente vigente sobre esa solicitud).
+    //
+    // Guards en orden: solicitud existe → intento gobernante existe y
+    // FaseIntento == FINALIZADO (si no → NoElegible) → invariante estructural
+    // (ver abajo) → ambas marcas ya presentes → YaPurgado → resultado_consumido_utc
+    // != NULL (si no → NoElegible, gate de consumo) → FechaFin != NULL y
+    // FechaFin < cutoffUtc, MISMO boundary estricto que PurgarResultadoIntentoAsync
+    // (si no → NoElegible) → MANUAL_REVIEW_HOLD: EstadoSolicitud ==
+    // PENDIENTE_REVISION_MANUAL → RetenidoPorRevisionManual, SIN modificar nada
+    // (fail-safe autoritativo: una llamada directa al store, aunque el
+    // invocador ya haya prefiltrado, NO puede violar la política) → al menos
+    // un crudo (intento o P0) != NULL (si no → NoElegible).
+    //
+    // Invariante estructural (fail-closed, NUNCA auto-heal): si la marca del
+    // intento (resultado_purgado_utc) y la marca del snapshot P0
+    // (p0_raw_purgado_utc) no coinciden entre sí (una presente y la otra no),
+    // o si una marca está presente pero sus campos crudos correspondientes
+    // AÚN tienen algún valor no-NULL, se lanza
+    // CarteraPurgaB4InvarianteException — nunca se "repara" silenciosamente.
+    //
+    // Si todos los guards pasan: NULL de los 7 crudos del intento + NULL de
+    // los 9 campos RAW/VERBATIM_PROVIDER del snapshot P0 + un único nowUtc
+    // capturado para AMBAS marcas (resultado_purgado_utc del intento y
+    // p0_raw_purgado_utc de la solicitud) → Purgado, en la MISMA
+    // transacción/SaveChanges. NUNCA toca: estado_documento_captura,
+    // rango_edad_captura, comportamiento_vector_count (metadato de captura de
+    // XPAY, no dato del proveedor — XPAY-211/212), decision_crediticia,
+    // monto_aprobado, codigo_motivo_decision, fecha_decision,
+    // id_cupo_ordinario, fecha_materializacion_cupo, fecha_actualizacion de la
+    // solicitud (la purga es retención de datos, no una actividad de negocio
+    // sobre la solicitud), ni ninguna columna de consentimiento/ledger/cupo.
+    //
+    // Correlación intento↔snapshot (XPAY-213 §5): usa EXCLUSIVAMENTE
+    // solicitud.NumeroIntento ↔ intento.NumeroIntento — la única columna que
+    // hoy identifica de forma durable e inequívoca cuál intento gobierna el
+    // snapshot materializado, porque el sistema actual crea EXACTAMENTE un
+    // intento por solicitud y NumeroIntento nunca se modifica tras la
+    // creación. NO se crea ninguna columna de correlación nueva. Si en el
+    // futuro se implementa reconsulta multi-intento (NO diseñada aquí), ese
+    // trabajo deberá mantener solicitud.NumeroIntento apuntando siempre al
+    // intento cuyo resultado esté vigente en el snapshot P0.
+    //
+    // Idempotente. Sin retry automático. Sin llamada al proveedor.
+    // `cutoffUtc` debe ser UTC (misma validación que el método existente).
+    Task<ResultadoPurgaConsultaCompleta> PurgarConsultaRiesgoCompletaAsync(
+        long idSolicitud, DateTime cutoffUtc, CancellationToken cancellationToken);
 }
+
+// XPAY-213/214 — resultado de un intento de purga COMPLETA (B4: intento + snapshot P0).
+public enum ResultadoPurgaConsultaCompleta
+{
+    // Se pusieron NULL los 7 crudos del intento + los 9 crudos del snapshot P0,
+    // y se marcaron resultado_purgado_utc + p0_raw_purgado_utc (mismo nowUtc).
+    Purgado,
+    // Ambas marcas (resultado_purgado_utc y p0_raw_purgado_utc) ya estaban
+    // presentes y coherentes — no-op idempotente.
+    YaPurgado,
+    // La solicitud está PENDIENTE_REVISION_MANUAL sin resolución definitiva:
+    // el plazo ya venció (boundary superado) pero la purga NO procede
+    // (MANUAL_REVIEW_HOLD = YES, XPAY-212 §Q.8). NO se modifica nada. Al
+    // resolverse la revisión, FechaFin NO se reinicia — vuelve a evaluarse
+    // normalmente en la siguiente ejecución.
+    RetenidoPorRevisionManual,
+    // No cumple las precondiciones técnicas (no existe, intento no
+    // FINALIZADO, no consumido, no vencido respecto a cutoffUtc, o no tiene
+    // ningún crudo que purgar).
+    NoElegible,
+}
+
+// XPAY-213/214 — corrupción durable detectada por PurgarConsultaRiesgoCompletaAsync:
+// un estado que esa operación (al purgar siempre intento+P0 juntos, atómicamente)
+// no puede haber producido — las marcas de purga del intento y del snapshot P0
+// en desacuerdo entre sí, o una marca presente con crudos correspondientes aún
+// no-NULL. Fail-closed: se lanza, NO se persiste ningún cambio, NO se repara
+// automáticamente, sin retry.
+public sealed class CarteraPurgaB4InvarianteException(string message) : Exception(message);
 
 // M2.4a — resultado de un intento de CONSUMO durable del resultado MiDecisor.
 public enum ResultadoConsumoRiesgo
