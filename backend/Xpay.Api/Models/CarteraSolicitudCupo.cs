@@ -45,6 +45,15 @@ public class CarteraSolicitudCupo
     public string?   ConsultaDiaRaw                        { get; set; }
     public string?   ComportamientoVectorJson              { get; set; }
     public int?      ComportamientoVectorCount             { get; set; } // NULL = bloque ausente ; 0 = presente vacío
+    // XPAY-213/214 — marca de purga B4 DORMIDA (migración 042) de los 9 campos
+    // RAW/VERBATIM_PROVIDER de arriba (SCOPE_OPTION_C, XPAY-212 §Q.8). NULL = no
+    // purgados formalmente (puede ser porque nunca hubo P0 o porque el plazo de
+    // 5 años aún no venció — los 9 campos, no esta marca, distinguen eso).
+    // NOT NULL = purga aplicada en ese instante UTC; marca AUTORITATIVA de
+    // idempotencia, igual criterio que ResultadoPurgadoUtc del intento — nunca se
+    // infiere de la nulidad de los 9 campos. Escrita únicamente por la extensión
+    // B4 del purge (dormida: sin scheduler, sin invocación automática).
+    public DateTime? P0RawPurgadoUtc                      { get; set; }
     // M2.4b — señal operacional separada (migración 040). NO es motivo crediticio,
     // NO es fraude probado. NULL = no evaluada/no disponible ; false = evaluada,
     // señal ausente ; true = señal presente (estadoDocumento = "Cancelada por

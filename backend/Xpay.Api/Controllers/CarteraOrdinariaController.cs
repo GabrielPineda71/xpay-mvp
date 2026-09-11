@@ -17,6 +17,7 @@ public class CarteraOrdinariaController(
     ICarteraDecisionCrediticiaOrchestrator orchestrator,
     ICarteraSolicitudEvaluacionReader evaluacionReader,
     ICarteraConsultaRiesgoReconciliacion reconciliacion,
+    ICarteraConsultaRiesgoPurgaBatchRunner purgaB4BatchRunner,
     AuditLogService audit) : ControllerBase
 {
     private long IdUsuarioActual => long.Parse(User.FindFirst("idUsuario")?.Value ?? "0");
@@ -337,6 +338,64 @@ public class CarteraOrdinariaController(
                 idSolicitud, CarteraSolicitudCupoEstados.ErrorProveedor, "solicitud_ya_cerrada")),
             _ => Conflict(new { error = "La solicitud no está en un estado reconciliable." }),
         };
+    }
+
+    // ── ADMIN: Ejecutar UN lote controlado del purge B4 (XPAY-213/214) ────
+    // Política de retención XPAY-212 §Q.8: 5 años desde fecha_fin de cada
+    // consulta, SCOPE_OPTION_C, MANUAL_REVIEW_HOLD=YES. El cutoff SIEMPRE se
+    // deriva internamente (UTC now - 5 años calendario) — este endpoint NO
+    // acepta ningún parámetro del cliente: no hay body, no se puede cambiar
+    // duración/clock, no se puede saltar el hold, no se puede indicar
+    // idSolicitud para evitar la selección de candidatos. Respuesta
+    // EXCLUSIVAMENTE agregada — nunca expone idSolicitud/raw/score/documento/
+    // comportamiento/dato del proveedor. IMPORTANTE (XPAY-214): este endpoint
+    // queda implementado pero NO se invoca en este prompt.
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    [HttpPost("admin/purge-b4/ejecutar-lote")]
+    public async Task<IActionResult> EjecutarLotePurgaB4()
+    {
+        var correlationId = HttpContext.Items["CorrelationId"]?.ToString() ?? HttpContext.TraceIdentifier;
+        var adminId       = IdUsuarioActual;
+
+        audit.LogSensitiveAction(HttpContext, "CARTERA_PURGE_B4_LOTE_ATTEMPT", new { adminId, correlationId });
+
+        var resultado = await purgaB4BatchRunner.EjecutarLoteAsync(cancellationToken: HttpContext.RequestAborted);
+
+        // XPAY-216 (P1-1) — el gate del batch runner ya bloqueó cualquier
+        // lectura/escritura antes de este punto. 503 (no 200) para que el
+        // caller nunca confunda "deshabilitado" con "se ejecutó y purgó 0
+        // filas" — ambos tendrían Candidatos=0 en el cuerpo si se usara 200.
+        if (resultado.Estado == CarteraPurgaB4EstadoEjecucion.Deshabilitado)
+        {
+            audit.LogSensitiveAction(HttpContext, "CARTERA_PURGE_B4_LOTE_DESHABILITADO", new { adminId, correlationId });
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                error   = "PURGE_B4_DISABLED",
+                mensaje = "El purge B4 está deshabilitado (gate de configuración ausente o distinto de \"true\"). No se ejecutó ninguna lectura ni escritura.",
+            });
+        }
+
+        audit.LogSensitiveAction(HttpContext, "CARTERA_PURGE_B4_LOTE_RESULTADO", new
+        {
+            adminId,
+            correlationId,
+            candidatos  = resultado.Candidatos,
+            purgados    = resultado.Purgados,
+            retenidos   = resultado.RetenidosPorRevisionManual,
+            yaPurgados  = resultado.YaPurgados,
+            noElegibles = resultado.NoElegibles,
+            errores     = resultado.Errores,
+            duracionMs  = resultado.Duracion.TotalMilliseconds,
+        });
+
+        return Ok(new PurgaB4LoteResponse(
+            resultado.Candidatos,
+            resultado.Purgados,
+            resultado.RetenidosPorRevisionManual,
+            resultado.YaPurgados,
+            resultado.NoElegibles,
+            resultado.Errores,
+            resultado.Duracion.TotalMilliseconds));
     }
 
     // ── USUARIO: Simulador ────────────────────────────────────────────
