@@ -44,8 +44,10 @@ public sealed class MiDecisorOptions
     public const string DefaultAuthPath                 = "/spla/oauth2/v1/token";
     // STRUCTURAL_DEFAULT — el endpoint unificado `/client` aparece en las dos
     // fuentes Swagger y acepta el body PN de 3 campos. NO implica que `/client`
-    // (ni `/pn`) esté autorizado para UAT: la elección de endpoint queda por
-    // confirmar con el proveedor (bloqueador 066 UAT_GATE_C).
+    // (ni `/pn`) esté autorizado para UAT: la elección de endpoint queda sin
+    // confirmación autoritativa del proveedor — ver
+    // docs/GOVERNANCE_BLOCKERS_AND_DECISIONS_REGISTER.md, XGOV-B-0003
+    // (BLOQUEADO_EXTERNO).
     public const string DefaultQueryPath                = "/co/cs/midecisor/v1/client";
     public const int    DefaultTimeoutSeconds           = 30;
     public const int    DefaultTokenSafetyMarginSeconds = 30;
