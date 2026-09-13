@@ -10,14 +10,17 @@ namespace Xpay.Api.Integrations.MiDecisor;
 //
 //   MIDECISOR_BASE_URL       — URL base del ambiente asignado a XPAY
 //                              (dev/qa/test/demo/prod -api.datacredito.com.co).
-//                              Ambiente y URL quedan por confirmar (bloqueador 037).
+//                              Ambiente y URL asignados a XPAY sin confirmación
+//                              autoritativa — ver docs/GOVERNANCE_BLOCKERS_AND_DECISIONS_REGISTER.md,
+//                              XGOV-B-0002 (BLOQUEADO_EXTERNO).
 //   MIDECISOR_CLIENT_ID      — header Client_id del endpoint de token OAuth2.
 //   MIDECISOR_CLIENT_SECRET  — header Client_secret del endpoint de token OAuth2.
 //   MIDECISOR_USERNAME       — campo "username" del body del token.
 //   MIDECISOR_PASSWORD       — campo "password" del body del token.
 //
-// Titularidad de las credenciales (XPAY vs. DAFIN/Xelecredit): UNRESOLVED
-// (bloqueador 037). No reutilizar credenciales históricas de otro proyecto.
+// Titularidad de las credenciales (XPAY vs. DAFIN/Xelecredit) sin resolver —
+// ver docs/GOVERNANCE_BLOCKERS_AND_DECISIONS_REGISTER.md, XGOV-B-0001
+// (DECISION_PENDIENTE). No reutilizar credenciales históricas de otro proyecto.
 //
 // M2.1 añade config NO secreta del token provider (auth path, timeout,
 // safety margin). Sólo el auth path tiene default (es la ruta del contrato

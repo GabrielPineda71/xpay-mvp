@@ -8,10 +8,13 @@ namespace Xpay.Api.Integrations.MiDecisor;
 // - Los campos "Raw" se conservan tal cual llegan (string) — la conversión a
 //   int/decimal y su interpretación son responsabilidad de XPAY, no de esta
 //   capa de integración.
-// - NO define APROBADA / RECHAZADA / MontoAprobado / umbrales de score.
-//   Convertir score/viabilidad/rating/montoSugerido en una decisión de
-//   crédito requiere una regla de producto autorizada (bloqueador 037), que
-//   NO forma parte de la integración.
+// - NO define APROBADA / RECHAZADA / MontoAprobado / umbrales de score. Esta
+//   clase representa el resultado del proveedor; no decide por sí sola.
+//   La regla de producto autorizada que convierte score/viabilidad/rating/
+//   montoSugerido en una decisión de crédito está implementada en
+//   CarteraDecisionEngine (M2.4b) — ver
+//   docs/GOVERNANCE_BLOCKERS_AND_DECISIONS_REGISTER.md, XGOV-D-0001
+//   (RESUELTO_CERRADO). NO forma parte de esta capa de integración.
 // - `AlertasCount` en vez del texto de las alertas: las alertas son señales
 //   de compliance; su detalle se decidirá al persistir (M3), no aquí.
 public sealed record MiDecisorResultado(
