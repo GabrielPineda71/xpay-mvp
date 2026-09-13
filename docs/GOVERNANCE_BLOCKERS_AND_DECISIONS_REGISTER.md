@@ -317,6 +317,91 @@ inferir ni reutilizar ningún ambiente/host histórico de otro proyecto.
 
 ---
 
+### XGOV-B-0003 — Ruta del endpoint de consulta MiDecisor: /client vs /pn (MIDECISOR_QUERY_PATH)
+
+| Campo | Valor |
+|---|---|
+| **ID** | XGOV-B-0003 |
+| **Tipo** | BLOCKER |
+| **Estado** | BLOQUEADO_EXTERNO |
+| **Fecha de apertura** | 2026-09-12 |
+| **Owner/Responsable** | SIN_ASIGNAR |
+
+**Descripción:** XPAY no cuenta todavía con evidencia autoritativa que
+confirme cuál ruta de consulta de MiDecisor/DataCrédito corresponde usar:
+`/client`, `/pn`, u otra que el proveedor autorice. `MIDECISOR_QUERY_PATH`
+controla esa ruta específica dentro del host ya definido por
+`MIDECISOR_BASE_URL` (ver `XGOV-B-0002`). El default actual del código,
+`/co/cs/midecisor/v1/client`, está explícitamente etiquetado en el propio
+comentario fuente como `STRUCTURAL_DEFAULT` — **no constituye autorización
+contractual ni de UAT**. El soporte técnico para configurar un override a
+`/pn` (probado en `MiDecisorClientTests.cs`) tampoco constituye evidencia de
+que `/pn` sea la ruta correcta.
+
+**Impacto:** Mientras esta entrada permanezca abierta: no debe configurarse
+`MIDECISOR_QUERY_PATH` por inferencia en ningún ambiente ; no debe
+considerarse listo el acceso real al proveedor MiDecisor ; no debe iniciarse
+UAT real contra MiDecisor ; el runtime provider debe permanecer bloqueado/no
+habilitado. Esta entrada, por sí sola, **no constituye autorización** para
+App Settings, credenciales, llamadas al proveedor, UAT, ni producción.
+
+**Relación con XGOV-B-0001:** `SEPARATE_INDEPENDENT_ISSUE`. La ruta del
+endpoint (qué capacidad de la API se invoca) y la titularidad de credenciales
+(de quién son las credenciales de autenticación) son preguntas conceptualmente
+distintas, sin acoplamiento en código. Refuerza esta conclusión que el propio
+código histórico ya asignaba números de blocker **distintos** a estos dos
+asuntos ("066" vs "037" — ver §7), evidencia de que ya se trataban por
+separado antes incluso de este registro.
+
+**Relación con XGOV-B-0002:** `SEPARATE_INDEPENDENT_ISSUE` (confirmado en
+ambas direcciones — ver también la entrada `XGOV-B-0002`). `BaseUrl` (host/
+ambiente) y `QueryPath` (ruta de la API) son propiedades independientes de
+`MiDecisorOptions`, cada una con su propia variable de entorno, que sólo se
+combinan al formar la URL absoluta final.
+
+**Evidencia:**
+- `backend/Xpay.Api/Integrations/MiDecisor/MiDecisorOptions.cs` — comentario
+  original que documentaba esto como "bloqueador 066 UAT_GATE_C" (número
+  histórico, no oficial — ver §7) ; `DefaultQueryPath` marcado explícitamente
+  como `STRUCTURAL_DEFAULT` en el propio código.
+- `backend/Xpay.Api/Integrations/MiDecisor/MiDecisorClient.cs` — combina
+  `BaseUrl` con `QueryPath` para formar la URL de consulta ; falla cerrado
+  (`MiDecisorConfigurationException`) si la combinación no es una URL
+  absoluta válida.
+- `backend/Xpay.Api.Tests/Integrations/MiDecisor/MiDecisorClientTests.cs`
+  (`Query_RespectsConfiguredQueryPathOverride`) — demuestra únicamente que el
+  override técnico a `/pn` funciona ; no demuestra ni afirma que `/pn` sea la
+  ruta contractualmente correcta.
+- XPAY-260 — primera auditoría que distinguió `MIDECISOR_QUERY_PATH` de
+  `MIDECISOR_BASE_URL` como asuntos técnicamente separados.
+- XPAY-265 — auditoría dedicada de este asunto: confirmó ausencia de
+  evidencia autoritativa para `/client` o `/pn`, y clasificó el default como
+  `STRUCTURAL_DEFAULT_ONLY`.
+
+**Dependencias:** Ninguna dependencia de cierre confirmada con `XGOV-B-0001`
+ni `XGOV-B-0002` (ver relaciones arriba).
+
+**Criterio de cierre:** Confirmación explícita y documentada, por
+DataCrédito/MiDecisor o mediante evidencia contractual/técnica oficial
+aplicable a XPAY, de cuál es la ruta autorizada para consultas de riesgo en
+el ambiente objetivo — `/client`, `/pn`, u otra. No puede cerrarse por:
+default estructural del código, un test que sólo demuestre soporte técnico
+de override, inferencia, una URL de ejemplo, documentación de otro proyecto,
+ni una fuente Swagger que no constituya autorización aplicable a XPAY.
+
+**Decisión/Resolución:** _(pendiente)_
+
+**Fecha de cierre:** _(pendiente)_
+
+**Referencias relacionadas:** XPAY-260 (primera distinción técnica de este
+asunto), XPAY-265 (auditoría dedicada de cierre de clasificación), XPAY-266
+(formalización de esta entrada).
+
+**Notas de seguridad:** Ninguna — esta entrada no involucra credenciales ni
+valores sensibles.
+
+---
+
 ## 7. Referencias históricas ambiguas y mapeo oficial
 
 Antes de la creación de este registro, el número **"bloqueador 037"** se usó
@@ -351,11 +436,23 @@ coincidencia para tres asuntos distintos. Los IDs oficiales que reemplazan
 cada uso son `XGOV-B-0002` (A), `XGOV-B-0001` (B), y `XGOV-D-0001` (C),
 respectivamente.
 
+Adicionalmente, en el mismo archivo `MiDecisorOptions.cs` aparecía un
+**segundo número histórico distinto**, **"bloqueador 066 UAT_GATE_C"**, para
+un cuarto asunto separado — la ruta del endpoint de consulta MiDecisor
+(`/client` vs `/pn`). Tampoco fue nunca un ID oficial de este registro:
+
+- **D.** `backend/Xpay.Api/Integrations/MiDecisor/MiDecisorOptions.cs` —
+  ruta del endpoint de consulta, `/client` vs `/pn` (`MIDECISOR_QUERY_PATH`).
+  **Ya reclasificado formalmente como [`XGOV-B-0003`](#xgov-b-0003--ruta-del-endpoint-de-consulta-midecisor-client-vs-pn-midecisor_query_path)**
+  (ver §6, arriba). Detectado y auditado en XPAY-260/265, formalizado en
+  XPAY-266.
+
 **Ningún comentario de código se ha modificado como parte de la creación ni
 edición de este registro.** La actualización de los comentarios en
 `MiDecisorOptions.cs` y `MiDecisorResultado.cs` para que referencien los IDs
-oficiales de este documento es un paso posterior y separado, no autorizado
-en la creación/edición de este archivo.
+oficiales de este documento es un paso posterior y separado — para los usos
+A, B y C ("037") ya se realizó en XPAY-263/264 ; para el uso D ("066") sigue
+sin realizarse, no autorizado en la creación/edición de este archivo.
 
 ---
 
@@ -369,3 +466,7 @@ en la creación/edición de este archivo.
 - **2026-09-12** — Alta de `XGOV-B-0002` (`BLOQUEADO_EXTERNO`) tras auditoría
   XPAY-260 del tercer uso histórico de "bloqueador 037". Actualización de §7
   para reflejar el mapeo de los tres usos históricos (XPAY-261).
+- **2026-09-12** — Alta de `XGOV-B-0003` (`BLOQUEADO_EXTERNO`) tras auditoría
+  XPAY-265 del blocker histórico 066 UAT_GATE_C (`/client` vs `/pn`).
+  Actualización de §7 para incluir el mapeo del cuarto uso histórico
+  ambiguo (XPAY-266).
