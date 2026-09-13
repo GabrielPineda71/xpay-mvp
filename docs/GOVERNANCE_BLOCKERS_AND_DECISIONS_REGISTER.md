@@ -226,32 +226,130 @@ valores sensibles.
 
 ---
 
+### XGOV-B-0002 — Ambiente/URL base de MiDecisor asignado a XPAY (MIDECISOR_BASE_URL)
+
+| Campo | Valor |
+|---|---|
+| **ID** | XGOV-B-0002 |
+| **Tipo** | BLOCKER |
+| **Estado** | BLOQUEADO_EXTERNO |
+| **Fecha de apertura** | 2026-09-12 |
+| **Owner/Responsable** | SIN_ASIGNAR |
+
+**Descripción:** XPAY no cuenta actualmente con evidencia autoritativa que
+confirme qué ambiente/host Base URL de MiDecisor/DataCrédito debe usar.
+`MIDECISOR_BASE_URL` identifica el host/base del proveedor (p. ej.
+dev/qa/test/demo/prod) sobre el que se construyen las URLs absolutas de
+autenticación y de consulta de riesgo. Este valor **no debe inferirse** de
+defaults de código, ejemplos del comentario original, o ambientes históricos
+de otro proyecto. No existe actualmente ninguna configuración QA válida de
+esta clave (`xpay-api-qa` no tiene ninguna variable `MIDECISOR_*`, confirmado
+en XPAY-250).
+
+**Impacto:** Mientras esta entrada permanezca abierta: no debe configurarse
+`MIDECISOR_BASE_URL` por inferencia en ningún ambiente ; no puede
+considerarse listo el acceso real al proveedor MiDecisor ; no debe iniciarse
+UAT real contra el proveedor. Esta entrada, por sí sola, **no constituye
+autorización** para activar runtime, credenciales, ni cambiar App Settings.
+
+**Relación con XGOV-B-0001:** `INSUFFICIENT_EVIDENCE`. No se sabe todavía si
+DataCrédito/MiDecisor entrega ambiente/Base URL y credenciales a XPAY como un
+único paquete de onboarding, o como decisiones separadas. Por tanto: **no**
+se fusiona con `XGOV-B-0001` ; **no** se declara que sean independientes
+contractual o comercialmente ; ambas entradas permanecen separadas hasta
+obtener evidencia externa. Si en el futuro una fuente autoritativa demuestra
+que constituyen una sola decisión del proveedor, la duplicidad se resuelve
+mediante referencia cruzada y cierre documentado — nunca borrando IDs
+históricos (§5, regla 2 — "los IDs nunca se reutilizan").
+
+**Relación con el endpoint `/client` vs `/pn`:** `SEPARATE_INDEPENDENT_ISSUE`
+(XPAY-260). `MIDECISOR_BASE_URL` (host/ambiente) y `MIDECISOR_QUERY_PATH`
+(ruta de la API, `/client` vs `/pn`) son técnicamente distintos — propiedades
+independientes de `MiDecisorOptions`, cada una con su propia variable de
+entorno, que sólo se combinan al formar la URL final. El blocker del
+endpoint `/client` vs `/pn` no tiene todavía una entrada XGOV propia; no se
+crea en esta edición.
+
+**Evidencia:**
+- `backend/Xpay.Api/Integrations/MiDecisor/MiDecisorOptions.cs` — comentario
+  original que documentaba esto como "bloqueador 037" (número histórico, no
+  oficial — ver §7) ; `BaseUrl` sin default estructural, a diferencia de
+  `AuthPath`/`QueryPath`.
+- `backend/Xpay.Api/Integrations/MiDecisor/MiDecisorTokenProvider.cs` — falla
+  cerrado (`MiDecisorConfigurationException`) si `BaseUrl` está ausente o no
+  forma una URL absoluta válida junto con `AuthPath`.
+- `backend/Xpay.Api/Integrations/MiDecisor/MiDecisorClient.cs` — mismo
+  comportamiento fail-closed combinando `BaseUrl` con `QueryPath`.
+- XPAY-250 — confirmó ausencia de toda clave `MIDECISOR_*` en QA (sólo
+  presencia de nombre verificada, nunca ningún valor).
+- XPAY-259 — detectó este tercer uso histórico ambiguo de "bloqueador 037"
+  y detuvo la actualización de comentarios hasta esta auditoría.
+- XPAY-260 — auditoría dedicada de este asunto: confirmó ausencia de
+  evidencia autoritativa de ambiente/URL, y la separación técnica respecto
+  al endpoint `/client` vs `/pn`.
+
+**Dependencias:** Ninguna dependencia de cierre confirmada con
+`XGOV-B-0001` (ver "Relación con XGOV-B-0001" arriba — la posible
+dependencia es, ella misma, el objeto de la incertidumbre).
+
+**Criterio de cierre:** Confirmación explícita y documentada, por una parte
+con autoridad para definirlo, del ambiente y host/Base URL que
+MiDecisor/DataCrédito asigna a XPAY para el ambiente objetivo. La evidencia
+debe permitir identificar inequívocamente el valor/configuración autorizada
+de `MIDECISOR_BASE_URL` sin inferirlo de código, defaults, URLs de ejemplo,
+documentación genérica, Xelecredit/DAFIN, ni de otro proyecto.
+Adicionalmente, al cierre debe documentarse explícitamente si esta
+asignación forma parte o no del mismo paquete contractual/provisional que
+`XGOV-B-0001`.
+
+**Decisión/Resolución:** _(pendiente)_
+
+**Fecha de cierre:** _(pendiente)_
+
+**Referencias relacionadas:** XPAY-250 (confirmó ausencia de configuración
+QA), XPAY-259 (detectó el tercer uso histórico ambiguo), XPAY-260 (auditoría
+dedicada de cierre de clasificación), XPAY-261 (formalización de esta
+entrada).
+
+**Notas de seguridad:** No se debe usar, solicitar, ni imprimir ningún valor
+de `MIDECISOR_BASE_URL` real mientras este blocker permanezca abierto. No
+inferir ni reutilizar ningún ambiente/host histórico de otro proyecto.
+
+---
+
 ## 7. Referencias históricas ambiguas y mapeo oficial
 
 Antes de la creación de este registro, el número **"bloqueador 037"** se usó
-de forma informal en comentarios de código, en **dos lugares distintos, para
-dos asuntos completamente distintos**. Ninguno de esos usos es, ni ha sido
+de forma informal en comentarios de código, en **tres lugares distintos, para
+tres asuntos completamente distintos**. Ninguno de esos usos es, ni ha sido
 nunca, un ID oficial de gobernanza — es un número interno de comentario, sin
-ningún sistema de tracking detrás. Se documentan aquí ambos usos para dejar
-constancia de la ambigüedad y evitar que se siga interpretando "037" como un
-identificador único:
+ningún sistema de tracking detrás. Se documentan aquí los tres usos para
+dejar constancia de la ambigüedad y evitar que se siga interpretando "037"
+como un identificador único:
 
 - **A.** `backend/Xpay.Api/Integrations/MiDecisor/MiDecisorOptions.cs` —
+  ambiente/host Base URL asignado a XPAY (`MIDECISOR_BASE_URL`). **Ya
+  reclasificado formalmente como [`XGOV-B-0002`](#xgov-b-0002--ambienteurl-base-de-midecisor-asignado-a-xpay-midecisor_base_url)**
+  (ver §6, arriba). Detectado en XPAY-259, auditado y formalizado en
+  XPAY-260/261.
+
+- **B.** `backend/Xpay.Api/Integrations/MiDecisor/MiDecisorOptions.cs` —
   titularidad de credenciales XPAY vs. DAFIN/Xelecredit. **Ya reclasificado
   formalmente como [`XGOV-B-0001`](#xgov-b-0001--titularidad-de-credenciales-midecisor-xpay-vs-dafinxelecredit)**
   (ver §6, arriba).
 
-- **B.** `backend/Xpay.Api/Integrations/MiDecisor/MiDecisorResultado.cs` —
+- **C.** `backend/Xpay.Api/Integrations/MiDecisor/MiDecisorResultado.cs` —
   "convertir score/viabilidad/rating/montoSugerido en una decisión de crédito
   requiere una regla de producto autorizada (bloqueador 037)". **Ya
   reclasificado formalmente como [`XGOV-D-0001`](#xgov-d-0001--regla-de-producto-para-convertir-resultados-midecisor-en-decisión-crediticia-xpay),
   en estado `RESUELTO_CERRADO`**, tras la auditoría dedicada de XPAY-254 (ver
   §6, arriba).
 
-En ambos casos, "037" **nunca fue, ni es, un ID oficial de este registro** —
-era únicamente un número de comentario interno, reutilizado por coincidencia
-para dos asuntos distintos. Los IDs oficiales que reemplazan cada uso son
-`XGOV-B-0001` (A) y `XGOV-D-0001` (B), respectivamente.
+En los tres casos, "037" **nunca fue, ni es, un ID oficial de este
+registro** — era únicamente un número de comentario interno, reutilizado por
+coincidencia para tres asuntos distintos. Los IDs oficiales que reemplazan
+cada uso son `XGOV-B-0002` (A), `XGOV-B-0001` (B), y `XGOV-D-0001` (C),
+respectivamente.
 
 **Ningún comentario de código se ha modificado como parte de la creación ni
 edición de este registro.** La actualización de los comentarios en
@@ -268,3 +366,6 @@ en la creación/edición de este archivo.
 - **2026-09-12** — Alta de `XGOV-D-0001` (`RESUELTO_CERRADO`), tras auditoría
   dedicada XPAY-254. Actualización de §7 para reflejar el mapeo sin
   ambigüedad de los dos usos históricos de "bloqueador 037" (XPAY-255).
+- **2026-09-12** — Alta de `XGOV-B-0002` (`BLOQUEADO_EXTERNO`) tras auditoría
+  XPAY-260 del tercer uso histórico de "bloqueador 037". Actualización de §7
+  para reflejar el mapeo de los tres usos históricos (XPAY-261).
