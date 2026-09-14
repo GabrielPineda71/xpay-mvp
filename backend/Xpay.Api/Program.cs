@@ -73,6 +73,23 @@ builder.Services.AddSingleton<
 // puede alcanzar una llamada real a MiDecisor. Ver CarteraRiesgoRuntimeWiring.
 builder.Services.AddCarteraRiesgoRuntime();
 
+// Passport / Bre-B como Servicio — XPAY-272: sólo infraestructura base
+// reutilizable (token provider OAuth2 client_credentials + cliente HTTP
+// autenticado genérico). NO se registra ni implementa todavía ningún
+// endpoint de negocio (resolve-key, payments/breb, customers/accounts,
+// Bre-B keys, QR) — eso queda para fases posteriores sobre esta base.
+// BrebService/BrebController (retiro simulado, Fase 64) permanecen sin
+// cambios funcionales y NO consumen esta infraestructura todavía.
+// Fail-closed: sin PASSPORT_BASE_URL/PASSPORT_API_KEY/PASSPORT_API_SECRET
+// configurados, cualquier intento de uso lanza PassportConfigurationException
+// ANTES de cualquier llamada HTTP. El arranque NUNCA resuelve estos valores.
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.Passport.IPassportTokenProvider,
+    Xpay.Api.Integrations.Passport.PassportTokenProvider>();
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.Passport.IPassportHttpClient,
+    Xpay.Api.Integrations.Passport.PassportHttpClient>();
+
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.
 var configuredOrigins = builder.Configuration
