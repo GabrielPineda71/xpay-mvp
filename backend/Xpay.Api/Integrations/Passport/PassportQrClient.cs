@@ -27,6 +27,7 @@ namespace Xpay.Api.Integrations.Passport;
 public sealed class PassportQrClient : IPassportQrClient
 {
     private const string CreateQrCodePath = "/v1/qrcodes";
+    private const string DecodeQrCodePath = "/v1/qrcodes/decode";
 
     // Confirmado en XPAY-297/298: "00" Compras, "02" Anulaciones,
     // "03" Transferencias, "04" Retiro, "05" Recaudo, "06" Recargas,
@@ -54,6 +55,47 @@ public sealed class PassportQrClient : IPassportQrClient
             .ConfigureAwait(false);
 
         return RequireQrId(response);
+    }
+
+    // XPAY-305 — Decode QR Code (POST /v1/qrcodes/decode), contrato
+    // confirmado en XPAY-304. Reutiliza IPassportHttpClient.PostAsync sin
+    // ningún cambio a la base HTTP/OAuth. Sin guard de protocolo tipo
+    // RequireXxxId: XPAY-304 confirmó que Decode no documenta ningún campo
+    // `id` a nivel raíz ni ningún otro campo como requerido de forma
+    // exhaustiva en la respuesta — inventar un guard aquí violaría el
+    // criterio evidence-first ya aplicado en el resto de la integración.
+    public async Task<PassportDecodeQrCodeResponse> DecodeQrCodeAsync(
+        PassportDecodeQrCodeRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateDecodeRequest(request);
+
+        var response = await _http
+            .PostAsync<PassportDecodeQrCodeRequest, PassportDecodeQrCodeResponse>(
+                DecodeQrCodePath, request, cancellationToken)
+            .ConfigureAwait(false);
+
+        // Transporte defensivo puro: a diferencia de CreateQrCodeAsync, no
+        // hay un `id` remoto (ni ningún otro campo) documentado como
+        // requerido de forma exhaustiva (XPAY-304) — un 2xx con body vacío
+        // ("{}") es una respuesta válida a nivel de protocolo, no un error.
+        // Sólo se rechaza null (fallo de deserialización total).
+        if (response is null)
+            throw new PassportProtocolException("Respuesta de Passport vacía (Decode QR Code).");
+
+        return response;
+    }
+
+    // XPAY-305 — validación de presencia únicamente, sin inventar reglas no
+    // documentadas: ni formato UUID para customer_id, ni longitud/regex
+    // EMVCo para qr_code_data (XPAY-304 confirmó que la documentación no
+    // exige ninguna de las dos).
+    private static void ValidateDecodeRequest(PassportDecodeQrCodeRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.CustomerId))
+            throw new ArgumentException("customer_id es requerido.", nameof(request));
+        if (string.IsNullOrWhiteSpace(request.QrCodeData))
+            throw new ArgumentException("qr_code_data es requerido.", nameof(request));
     }
 
     private static void Validate(PassportCreateQrCodeRequest request)

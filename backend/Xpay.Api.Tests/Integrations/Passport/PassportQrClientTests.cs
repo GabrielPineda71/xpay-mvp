@@ -562,4 +562,227 @@ public class PassportQrClientTests
 
         await Assert.ThrowsAsync<PassportAuthenticationException>(() => client.CreateQrCodeAsync(SyntheticDynamicRequest()));
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-305 — DecodeQrCodeAsync (POST /v1/qrcodes/decode)
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static PassportDecodeQrCodeRequest SyntheticDecodeRequest(
+        string customerId = "synthetic-customer-id-001",
+        string qrCodeData = "00020101...synthetic-emv-payload...6304ABCD") =>
+        new(CustomerId: customerId, QrCodeData: qrCodeData);
+
+    // Ejemplo sintético construido con exactamente el shape confirmado en
+    // XPAY-304 (docs.passportfintech.com/EN/decode-qr-code): todos los
+    // campos root documentados presentes, ningún valor real (ningún
+    // teléfono/cédula/QR de un cliente real, ningún key_id/customer_id real).
+    private const string FullDecodeResponseBody = """
+        {
+          "amount": { "currency": "COP", "value": "80000.57" },
+          "additional_info": { "transaction_purpose": "PURCHASE" },
+          "inc": { "inc_type": "FIXED", "inc_value": "10.00" },
+          "key": { "key_value": "synthetic-key-value-001", "key_type": "PHONE" },
+          "qr_code_data": "00020101...synthetic-emv-payload...6304ABCD",
+          "status": "ACTIVE",
+          "acquirer_network_identifier": "SYNTH-NETWORK",
+          "merchant": {
+            "merchant_category_code": "0412",
+            "merchant_country": "CO",
+            "merchant_name": "Synthetic Merchant",
+            "merchant_city": "Synthetic City",
+            "merchant_post_code": "000000"
+          },
+          "channel": "MPOS",
+          "vat": { "vat_type": "FIXED", "vat_value": "0.00", "vat_base_value": "0.00" },
+          "qr_code_reference": "SYNTH12345",
+          "type": "DYNAMIC"
+        }
+        """;
+
+    // ── Fase 12: request happy path ─────────────────────────────────────
+
+    [Fact]
+    public async Task DecodeQrCodeAsync_HappyPath_PostsExactContractShape()
+    {
+        var tokenProvider = new FakePassportTokenProvider("synthetic-bearer-token");
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullDecodeResponseBody));
+        var client = CreateClient(handler, tokenProvider);
+
+        await client.DecodeQrCodeAsync(SyntheticDecodeRequest());
+
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Equal("/v1/qrcodes/decode", handler.LastRequest.RequestUri!.AbsolutePath);
+        Assert.Equal(BaseUrl, handler.LastRequest.RequestUri.GetLeftPart(UriPartial.Authority));
+        Assert.Equal("Bearer", handler.LastRequest.Headers.Authorization!.Scheme);
+        Assert.Equal("synthetic-bearer-token", handler.LastRequest.Headers.Authorization!.Parameter);
+
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        var root = doc.RootElement;
+
+        Assert.Equal("synthetic-customer-id-001", root.GetProperty("customer_id").GetString());
+        Assert.Equal(JsonValueKind.String, root.GetProperty("qr_code_data").ValueKind);
+        Assert.Equal("00020101...synthetic-emv-payload...6304ABCD", root.GetProperty("qr_code_data").GetString());
+
+        // Sin campos inventados: exactamente 2 propiedades top-level.
+        var topLevelNames = new List<string>();
+        foreach (var prop in root.EnumerateObject())
+            topLevelNames.Add(prop.Name);
+        Assert.Equal(new[] { "customer_id", "qr_code_data" }, topLevelNames);
+    }
+
+    // ── Fase 13: input guards ───────────────────────────────────────────
+
+    [Fact]
+    public async Task DecodeQrCodeAsync_NullRequest_ThrowsBeforeHttp()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullDecodeResponseBody));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => client.DecodeQrCodeAsync(null!));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task DecodeQrCodeAsync_MissingCustomerId_ThrowsBeforeHttp(string? customerId)
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullDecodeResponseBody));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.DecodeQrCodeAsync(SyntheticDecodeRequest(customerId: customerId!)));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task DecodeQrCodeAsync_MissingQrCodeData_ThrowsBeforeHttp(string? qrCodeData)
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullDecodeResponseBody));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.DecodeQrCodeAsync(SyntheticDecodeRequest(qrCodeData: qrCodeData!)));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    // ── Fase 14: response deserialization ───────────────────────────────
+
+    [Fact]
+    public async Task DecodeQrCodeAsync_Http200_DeserializesFullShapeDefensively()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullDecodeResponseBody));
+        var client = CreateClient(handler);
+
+        var result = await client.DecodeQrCodeAsync(SyntheticDecodeRequest());
+
+        Assert.Equal(1, handler.CallCount);
+
+        // amount.value se conserva como String (NO decimal).
+        Assert.NotNull(result.Amount);
+        Assert.Equal("80000.57", result.Amount!.Value);
+        Assert.Equal("COP", result.Amount.Currency);
+
+        // additional_info.transaction_purpose = "PURCHASE" se conserva tal
+        // cual, como string defensivo — NO validado contra
+        // ValidTransactionPurposes (ese conjunto sólo aplica al request de
+        // Create QR), NO traducido.
+        Assert.NotNull(result.AdditionalInfo);
+        Assert.Equal("PURCHASE", result.AdditionalInfo!.TransactionPurpose);
+        Assert.Null(result.AdditionalInfo.TerminalLabel);
+
+        // inc — nuevo DTO de respuesta, ambos subcampos string.
+        Assert.NotNull(result.Inc);
+        Assert.Equal("FIXED", result.Inc!.IncType);
+        Assert.Equal("10.00", result.Inc.IncValue);
+
+        // key — reutiliza PassportKeyResponseDetail (exact match confirmado XPAY-304/305).
+        Assert.NotNull(result.Key);
+        Assert.Equal("PHONE", result.Key!.KeyType);
+        Assert.Equal("synthetic-key-value-001", result.Key.KeyValue);
+
+        Assert.Equal("00020101...synthetic-emv-payload...6304ABCD", result.QrCodeData);
+        Assert.Equal("ACTIVE", result.Status);
+        Assert.Equal("SYNTH-NETWORK", result.AcquirerNetworkIdentifier);
+
+        Assert.NotNull(result.Merchant);
+        Assert.Equal("0412", result.Merchant!.MerchantCategoryCode);
+        Assert.Equal("CO", result.Merchant.MerchantCountry);
+        Assert.Equal("Synthetic Merchant", result.Merchant.MerchantName);
+        Assert.Equal("Synthetic City", result.Merchant.MerchantCity);
+        Assert.Equal("000000", result.Merchant.MerchantPostCode);
+
+        // type/channel/status nunca intentan un enum estricto — string plano.
+        Assert.Equal("MPOS", result.Channel);
+        Assert.Equal("DYNAMIC", result.Type);
+
+        Assert.NotNull(result.Vat);
+        Assert.Equal("FIXED", result.Vat!.VatType);
+        Assert.Equal("0.00", result.Vat.VatValue);
+        Assert.Equal("0.00", result.Vat.VatBaseValue);
+
+        Assert.Equal("SYNTH12345", result.QrCodeReference);
+    }
+
+    // ── Fase 15: respuesta defensiva / parcial ──────────────────────────
+
+    [Fact]
+    public async Task DecodeQrCodeAsync_Http200_EmptyBody_DeserializesWithoutException()
+    {
+        // "{}" NO se declara aquí como respuesta contractual real del
+        // proveedor — sólo demuestra que este DTO, a diferencia de
+        // PassportQrCodeResponse (que exige `id` vía RequireQrId), no exige
+        // ningún campo que Passport no documente como requerido de forma
+        // exhaustiva en Decode (XPAY-304 FASE 11).
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{}"));
+        var client = CreateClient(handler);
+
+        var result = await client.DecodeQrCodeAsync(SyntheticDecodeRequest());
+
+        Assert.Equal(1, handler.CallCount);
+        Assert.NotNull(result);
+        Assert.Null(result.Amount);
+        Assert.Null(result.AdditionalInfo);
+        Assert.Null(result.Inc);
+        Assert.Null(result.Key);
+        Assert.Null(result.QrCodeData);
+        Assert.Null(result.Status);
+        Assert.Null(result.AcquirerNetworkIdentifier);
+        Assert.Null(result.Merchant);
+        Assert.Null(result.Channel);
+        Assert.Null(result.Vat);
+        Assert.Null(result.QrCodeReference);
+        Assert.Null(result.Type);
+    }
+
+    // ── Fase 16: error route — reutiliza el manejo genérico existente ────
+
+    [Fact]
+    public async Task DecodeQrCodeAsync_Http400_ThrowsTransportException()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.BadRequest, "{\"error\":\"bad_request\"}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportTransportException>(() => client.DecodeQrCodeAsync(SyntheticDecodeRequest()));
+    }
+
+    [Fact]
+    public async Task DecodeQrCodeAsync_Http401_ThrowsAuthenticationException()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized\"}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportAuthenticationException>(() => client.DecodeQrCodeAsync(SyntheticDecodeRequest()));
+    }
 }
