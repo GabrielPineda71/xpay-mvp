@@ -126,4 +126,81 @@ public class PassportHttpClientTests
             () => client.PostAsync<SyntheticRequest, SyntheticResponse>(
                 "/v1/x", new SyntheticRequest("x"), cts.Token));
     }
+
+    // ── XPAY-293 — PATCH genérico ────────────────────────────────────────
+
+    [Fact]
+    public async Task PatchAsync_SendsPatchWithBearerAndNoBody()
+    {
+        var tokenProvider = new FakePassportTokenProvider("obtained-token");
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"echo\":\"patched\"}"));
+        var client = CreateClient(handler, ValidConfig(), tokenProvider);
+
+        var result = await client.PatchAsync<SyntheticResponse>("/v1/some-future-endpoint/patch");
+
+        Assert.NotNull(result);
+        Assert.Equal("patched", result!.Echo);
+        Assert.Equal(HttpMethod.Patch, handler.LastRequest!.Method);
+        Assert.Equal("/v1/some-future-endpoint/patch", handler.LastRequest.RequestUri!.AbsolutePath);
+        Assert.Null(handler.LastRequestBody);
+        Assert.Equal("Bearer", handler.LastRequest.Headers.Authorization!.Scheme);
+        Assert.Equal("obtained-token", handler.LastRequest.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task PatchAsync_NonSuccessStatus_FollowsExistingErrorPattern()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.BadRequest, "{\"error\":\"bad_request\"}"));
+        var client = CreateClient(handler, ValidConfig());
+
+        await Assert.ThrowsAsync<PassportTransportException>(
+            () => client.PatchAsync<SyntheticResponse>("/v1/x/patch"));
+    }
+
+    // ── XPAY-293 — DELETE genérico ───────────────────────────────────────
+
+    [Fact]
+    public async Task DeleteAsync_SendsDeleteWithBearerToCorrectPath()
+    {
+        var tokenProvider = new FakePassportTokenProvider("obtained-token");
+        var handler = new FakeHttpMessageHandler(
+            () => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var client = CreateClient(handler, ValidConfig(), tokenProvider);
+
+        await client.DeleteAsync("/v1/some-future-endpoint/123");
+
+        Assert.Equal(HttpMethod.Delete, handler.LastRequest!.Method);
+        Assert.Equal("/v1/some-future-endpoint/123", handler.LastRequest.RequestUri!.AbsolutePath);
+        Assert.Null(handler.LastRequestBody);
+        Assert.Equal("Bearer", handler.LastRequest.Headers.Authorization!.Scheme);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_204NoContent_CompletesWithoutAttemptingDeserialization()
+    {
+        // Respuesta 204 SIN ningún HttpContent asignado (a diferencia de
+        // FakeHttpMessageHandler.Json, que siempre asigna StringContent) —
+        // el escenario real más fiel a "sin body en absoluto". Si DeleteAsync
+        // intentara deserializar, esto fallaría con una excepción de
+        // protocolo; el hecho de que complete sin lanzar prueba que no lo hace.
+        var handler = new FakeHttpMessageHandler(
+            () => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var client = CreateClient(handler, ValidConfig());
+
+        await client.DeleteAsync("/v1/x");
+
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_NonSuccessStatus_FollowsExistingErrorPattern()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.Forbidden, "{\"error\":\"forbidden\"}"));
+        var client = CreateClient(handler, ValidConfig());
+
+        await Assert.ThrowsAsync<PassportAuthenticationException>(() => client.DeleteAsync("/v1/x"));
+    }
 }

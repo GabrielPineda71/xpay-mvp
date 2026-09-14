@@ -16,4 +16,18 @@ public interface IPassportHttpClient
 
     Task<TResponse?> GetAsync<TResponse>(
         string relativePath, CancellationToken cancellationToken = default);
+
+    // XPAY-293 — PATCH sin body: los primeros consumidores confirmados
+    // (Suspend/Activate Bre-B Key) no tienen request body documentado. Si un
+    // futuro endpoint PATCH sí lo requiere, se agregará un overload con body
+    // en su momento — no se anticipa aquí sin evidencia.
+    Task<TResponse?> PatchAsync<TResponse>(
+        string relativePath, CancellationToken cancellationToken = default);
+
+    // XPAY-293 — DELETE genérico. No genérico en TResponse: el primer
+    // consumidor confirmado (Delete Bre-B Key) responde 204 No Content sin
+    // body, y esta operación NUNCA intenta deserializar una respuesta —
+    // no es un caso particular de Bre-B Key, es la semántica correcta para
+    // cualquier DELETE sin cuerpo de respuesta.
+    Task DeleteAsync(string relativePath, CancellationToken cancellationToken = default);
 }

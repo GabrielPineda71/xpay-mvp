@@ -54,8 +54,27 @@ public sealed class PassportHttpClient : IPassportHttpClient
         string relativePath, CancellationToken cancellationToken = default)
         => SendAsync<object?, TResponse>(HttpMethod.Get, relativePath, null, cancellationToken);
 
+    // XPAY-293 — PATCH sin body (primer consumidor confirmado: Suspend/Activate
+    // Bre-B Key, ninguno de los dos documenta request body).
+    public Task<TResponse?> PatchAsync<TResponse>(
+        string relativePath, CancellationToken cancellationToken = default)
+        => SendAsync<object?, TResponse>(HttpMethod.Patch, relativePath, null, cancellationToken);
+
+    // XPAY-293 — DELETE que NUNCA intenta deserializar una respuesta
+    // (expectResponseBody: false), independientemente del ContentLength que
+    // reporte el servidor. Delete Bre-B Key confirma 204 No Content sin
+    // body; en vez de depender únicamente de que ContentLength sea
+    // exactamente 0 (podría venir ausente/null en vez de 0 en algún
+    // servidor), se le indica explícitamente a SendAsync que no debe leer
+    // el cuerpo — comportamiento genérico, no específico de Bre-B Key.
+    public async Task DeleteAsync(string relativePath, CancellationToken cancellationToken = default)
+        => await SendAsync<object?, object?>(
+                HttpMethod.Delete, relativePath, null, cancellationToken, expectResponseBody: false)
+            .ConfigureAwait(false);
+
     private async Task<TResponse?> SendAsync<TRequest, TResponse>(
-        HttpMethod method, string relativePath, TRequest? body, CancellationToken cancellationToken)
+        HttpMethod method, string relativePath, TRequest? body, CancellationToken cancellationToken,
+        bool expectResponseBody = true)
     {
         var options = PassportOptions.FromConfiguration(_configuration, out _);
 
@@ -120,7 +139,7 @@ public sealed class PassportHttpClient : IPassportHttpClient
                 throw new PassportTransportException($"Passport respondió con error HTTP {status}.");
             }
 
-            if (response.Content.Headers.ContentLength is 0)
+            if (!expectResponseBody || response.Content.Headers.ContentLength is 0)
                 return default;
 
             try

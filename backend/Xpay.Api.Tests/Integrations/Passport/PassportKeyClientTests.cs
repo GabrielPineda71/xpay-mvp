@@ -323,4 +323,213 @@ public class PassportKeyClientTests
         Assert.Equal("synthetic-key-id", result.Id);
         Assert.Equal(1, handler.CallCount);
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    // XPAY-293 — Suspend / Activate / Delete Key (contrato confirmado XPAY-292)
+    // ════════════════════════════════════════════════════════════════════
+
+    // ── SuspendKeyAsync ──────────────────────────────────────────────────
+
+    // 1/2/3 — PATCH exacto a /v1/keys/{id}/suspend, sin body.
+    [Fact]
+    public async Task SuspendKeyAsync_UsesPatchToExactPathWithoutBody()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"id\":\"synthetic-key-id-001\",\"status\":\"SUSPENDED\"}"));
+        var client = CreateClient(handler);
+
+        await client.SuspendKeyAsync("synthetic-key-id-001");
+
+        Assert.Equal(HttpMethod.Patch, handler.LastRequest!.Method);
+        Assert.Equal("/v1/keys/synthetic-key-id-001/suspend", handler.LastRequest.RequestUri!.AbsolutePath);
+        Assert.Null(handler.LastRequestBody);
+    }
+
+    // 4/5 — response 200 se deserializa; id remoto se devuelve.
+    [Fact]
+    public async Task SuspendKeyAsync_Http200_DeserializesAndReturnsId()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, """
+                {
+                  "id": "synthetic-key-id-001",
+                  "status": "SUSPENDED",
+                  "account_id": "synthetic-account-id-001",
+                  "key": { "key_type": "BCODE", "key_value": "0000000000" },
+                  "created_at": "2026-01-01T00:00:00.00000Z",
+                  "updated_at": "2026-01-02T00:00:00.00000Z"
+                }
+                """));
+        var client = CreateClient(handler);
+
+        var result = await client.SuspendKeyAsync("synthetic-key-id-001");
+
+        Assert.Equal("synthetic-key-id-001", result.Id);
+        Assert.Equal("SUSPENDED", result.Status);
+    }
+
+    // 6/7/8 — id remoto ausente/vacío/whitespace en la respuesta → guard.
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"id\":\"\"}")]
+    [InlineData("{\"id\":\"   \"}")]
+    public async Task SuspendKeyAsync_MissingOrBlankResponseId_ThrowsProtocolException(string body)
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, body));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportProtocolException>(() => client.SuspendKeyAsync("synthetic-key-id-001"));
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    // 9 — keyId de input vacío falla ANTES de HTTP.
+    [Fact]
+    public async Task SuspendKeyAsync_BlankKeyIdInput_ThrowsBeforeHttp()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"id\":\"x\"}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.SuspendKeyAsync("   "));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    // 21 — path safety: un keyId sintético con un carácter que debe
+    // escaparse ('/') no puede alterar la ruta lógica.
+    [Fact]
+    public async Task SuspendKeyAsync_KeyIdWithSlash_IsEscapedAndDoesNotAlterPath()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"id\":\"whatever\"}"));
+        var client = CreateClient(handler);
+
+        await client.SuspendKeyAsync("synthetic/../evil-id");
+
+        // El '/' debe llegar percent-encoded (%2F): la ruta NO debe
+        // interpretarse como múltiples segmentos ni alterar /suspend.
+        Assert.EndsWith("/suspend", handler.LastRequest!.RequestUri!.AbsolutePath);
+        Assert.Contains("%2F", handler.LastRequest.RequestUri.AbsoluteUri);
+        Assert.DoesNotContain("/v1/keys/synthetic/../evil-id/suspend", handler.LastRequest.RequestUri.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task SuspendKeyAsync_Http404_ThrowsTransportException()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.NotFound, "{\"error\":\"not_found\"}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportTransportException>(() => client.SuspendKeyAsync("synthetic-key-id-001"));
+    }
+
+    // ── ActivateKeyAsync ─────────────────────────────────────────────────
+
+    // 10/11/12 — PATCH exacto a /v1/keys/{id}/activate, sin body.
+    [Fact]
+    public async Task ActivateKeyAsync_UsesPatchToExactPathWithoutBody()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"id\":\"synthetic-key-id-001\",\"status\":\"ACTIVE\"}"));
+        var client = CreateClient(handler);
+
+        await client.ActivateKeyAsync("synthetic-key-id-001");
+
+        Assert.Equal(HttpMethod.Patch, handler.LastRequest!.Method);
+        Assert.Equal("/v1/keys/synthetic-key-id-001/activate", handler.LastRequest.RequestUri!.AbsolutePath);
+        Assert.Null(handler.LastRequestBody);
+    }
+
+    // 13 — response 200 se deserializa.
+    [Fact]
+    public async Task ActivateKeyAsync_Http200_DeserializesAndReturnsId()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"id\":\"synthetic-key-id-001\",\"status\":\"ACTIVE\"}"));
+        var client = CreateClient(handler);
+
+        var result = await client.ActivateKeyAsync("synthetic-key-id-001");
+
+        Assert.Equal("synthetic-key-id-001", result.Id);
+        Assert.Equal("ACTIVE", result.Status);
+    }
+
+    // 14 — remote-id guard equivalente al de Suspend/Create.
+    [Fact]
+    public async Task ActivateKeyAsync_MissingResponseId_ThrowsProtocolException()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportProtocolException>(() => client.ActivateKeyAsync("synthetic-key-id-001"));
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    // 15 — keyId inválido falla antes de HTTP.
+    [Fact]
+    public async Task ActivateKeyAsync_BlankKeyIdInput_ThrowsBeforeHttp()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{\"id\":\"x\"}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.ActivateKeyAsync(""));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task ActivateKeyAsync_Http401_ThrowsAuthenticationException()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized\"}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportAuthenticationException>(() => client.ActivateKeyAsync("synthetic-key-id-001"));
+    }
+
+    // ── DeleteKeyAsync ───────────────────────────────────────────────────
+
+    // 16/17 — DELETE exacto a /v1/keys/{id}.
+    [Fact]
+    public async Task DeleteKeyAsync_UsesDeleteToExactPath()
+    {
+        var handler = new FakeHttpMessageHandler(() => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var client = CreateClient(handler);
+
+        await client.DeleteKeyAsync("synthetic-key-id-001");
+
+        Assert.Equal(HttpMethod.Delete, handler.LastRequest!.Method);
+        Assert.Equal("/v1/keys/synthetic-key-id-001", handler.LastRequest.RequestUri!.AbsolutePath);
+        Assert.Null(handler.LastRequestBody);
+    }
+
+    // 18/19 — 204 completa exitosamente sin requerir/leer response body.
+    [Fact]
+    public async Task DeleteKeyAsync_204NoContent_CompletesWithoutResponseBody()
+    {
+        var handler = new FakeHttpMessageHandler(() => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var client = CreateClient(handler);
+
+        await client.DeleteKeyAsync("synthetic-key-id-001");
+
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    // 20 — keyId inválido falla antes de HTTP.
+    [Fact]
+    public async Task DeleteKeyAsync_BlankKeyIdInput_ThrowsBeforeHttp()
+    {
+        var handler = new FakeHttpMessageHandler(() => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.DeleteKeyAsync(null!));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task DeleteKeyAsync_Http500_ThrowsTransportException()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.InternalServerError, "boom"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportTransportException>(() => client.DeleteKeyAsync("synthetic-key-id-001"));
+    }
 }

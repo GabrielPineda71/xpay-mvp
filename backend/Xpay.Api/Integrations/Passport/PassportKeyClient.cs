@@ -61,16 +61,73 @@ public sealed class PassportKeyClient : IPassportKeyClient
         return RequireKeyId(response);
     }
 
-    // XPAY-287 — mismo patrón que RequireCustomerId/RequireAccountId
+    // XPAY-293 — PATCH /v1/keys/{key_id}/suspend, sin request body (contrato
+    // confirmado en XPAY-292). Reutiliza PassportKeyResponse: el shape
+    // confirmado (created_at, updated_at, account_id, id, status,
+    // key{key_type,key_value}) es un subconjunto exacto de las propiedades
+    // ya modeladas — DisplayName simplemente queda null si el proveedor no
+    // lo incluye en esta respuesta, sin romper nada (transporte defensivo
+    // ya establecido para este DTO).
+    public async Task<PassportKeyResponse> SuspendKeyAsync(
+        string keyId, CancellationToken cancellationToken = default)
+    {
+        ValidateKeyId(keyId);
+        var path = $"/v1/keys/{Uri.EscapeDataString(keyId)}/suspend";
+
+        var response = await _http
+            .PatchAsync<PassportKeyResponse>(path, cancellationToken)
+            .ConfigureAwait(false);
+
+        return RequireKeyId(response, "Suspend Key");
+    }
+
+    // XPAY-293 — PATCH /v1/keys/{key_id}/activate, sin request body.
+    // Passport nombra esta operación "Activate Key" (no "Reactivate").
+    public async Task<PassportKeyResponse> ActivateKeyAsync(
+        string keyId, CancellationToken cancellationToken = default)
+    {
+        ValidateKeyId(keyId);
+        var path = $"/v1/keys/{Uri.EscapeDataString(keyId)}/activate";
+
+        var response = await _http
+            .PatchAsync<PassportKeyResponse>(path, cancellationToken)
+            .ConfigureAwait(false);
+
+        return RequireKeyId(response, "Activate Key");
+    }
+
+    // XPAY-293 — DELETE /v1/keys/{key_id}. Éxito documentado = 204 No
+    // Content sin body — IPassportHttpClient.DeleteAsync nunca intenta
+    // deserializar nada, así que no hay `id` que exigir aquí: la ausencia de
+    // excepción ES la confirmación de éxito.
+    public async Task DeleteKeyAsync(
+        string keyId, CancellationToken cancellationToken = default)
+    {
+        ValidateKeyId(keyId);
+        var path = $"/v1/keys/{Uri.EscapeDataString(keyId)}";
+
+        await _http.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
+    }
+
+    // XPAY-293 — guard de protocolo compartido por Suspend/Activate/Delete:
+    // mismo criterio ya usado para account_id/key/key_value en CreateKeyAsync
+    // (ArgumentException, mensaje corto y saneado, sin PII).
+    private static void ValidateKeyId(string keyId)
+    {
+        if (string.IsNullOrWhiteSpace(keyId))
+            throw new ArgumentException("key_id es requerido.", nameof(keyId));
+    }
+
+    // XPAY-287/293 — mismo patrón que RequireCustomerId/RequireAccountId
     // (PassportCustomerAccountClient, XPAY-281): una respuesta 2xx
     // correctamente deserializada puede aun así carecer del `id` remoto
     // (ausente, "" o whitespace). Se reutiliza PassportProtocolException —
     // no se crea una familia nueva. Mensaje estático y saneado: nunca
     // incluye body, token, Authorization, account_id, key_value ni PII.
-    private static PassportKeyResponse RequireKeyId(PassportKeyResponse? response)
+    private static PassportKeyResponse RequireKeyId(PassportKeyResponse? response, string operationName = "Create Key")
     {
         if (response is null || string.IsNullOrWhiteSpace(response.Id))
-            throw new PassportProtocolException("Respuesta de Passport sin key id (Create Key).");
+            throw new PassportProtocolException($"Respuesta de Passport sin key id ({operationName}).");
         return response;
     }
 }
