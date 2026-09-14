@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    XPAY-312 — harness LOCAL, manual, para ejecutar en una fase POSTERIOR
+    únicamente M2-T1 (Create Customer) contra Passport Sandbox, reutilizando
+    EXACTAMENTE el stack productivo real de backend/Xpay.Api
+    (PassportOptions/PassportTokenProvider/PassportHttpClient/
+    PassportCustomerAccountClient) vía ProjectReference — NO un segundo
+    stack HTTP/OAuth, NO un controller, NO un endpoint temporal.
+
+    NO se registra en ningún .sln (no existe uno en este repo) ni se
+    referencia desde Xpay.Api/Xpay.Api.Tests — es un proyecto hoja,
+    construido/ejecutado sólo manualmente vía `dotnet run` desde este
+    directorio. Nunca se ejecuta como parte de la suite de tests ni de CI.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Xpay.PassportSandboxHarness</RootNamespace>
+    <!-- Nunca se empaqueta/publica: es tooling local, no un artefacto de release. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Sólo lo estrictamente necesario para construir IConfiguration (desde
+      variables de entorno del proceso, NUNCA parseando ~/.passport-sandbox.env
+      directamente) y un IHttpClientFactory/ILogger reales para el stack
+      productivo real. No se usa Microsoft.Extensions.Hosting completo para
+      mantener el scope mínimo.
+    -->
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Única forma de reutilizar el stack Passport real: referencia de proyecto,
+         no copiar/pegar código, no duplicar HTTP/OAuth. -->
+    <ProjectReference Include="../../backend/Xpay.Api/Xpay.Api.csproj" />
+  </ItemGroup>
+
+</Project>

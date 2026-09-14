@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    XPAY-312 — tests OFFLINE del harness (HarnessDecision/SandboxHostGuard/
+    HarnessConfigStatus/HarnessOrchestrator/SyntheticCustomerRequestFactory/
+    RedactedOutput). Proyecto separado de backend/Xpay.Api.Tests
+    deliberadamente: es tooling, no forma parte de la suite de tests
+    productiva de Xpay.Api ni de su CI. Ningún test aquí realiza I/O de red.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Xpay.PassportSandboxHarness/Xpay.PassportSandboxHarness.csproj" />
+  </ItemGroup>
+
+</Project>
