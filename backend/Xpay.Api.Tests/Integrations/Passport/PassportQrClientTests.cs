@@ -39,28 +39,33 @@ public class PassportQrClientTests
     private static PassportQrVatRequest SyntheticVat(PassportQrVatType vatType = PassportQrVatType.FIXED) =>
         new(VatType: vatType, VatValue: "0.00", VatBaseValue: "0.00");
 
-    // STATIC happy path: sin amount, sin inc.
+    // STATIC happy path: sin amount, sin inc, sin vat (XPAY-357 — vat es
+    // opcional a nivel de DTO; este fixture ya NO lo incluye por defecto
+    // porque el ejemplo oficial STATIC vigente no lo muestra. Los tests que
+    // necesiten ejercitar STATIC+vat presente lo agregan explícitamente vía
+    // `with { Vat = SyntheticVat() }`).
     private static PassportCreateQrCodeRequest SyntheticStaticRequest(string? qrCodeReference = null) => new(
         KeyId: "synthetic-key-id-001",
         CustomerId: "synthetic-customer-id-001",
         Type: PassportQrType.STATIC,
         Channel: PassportQrChannel.POS,
-        AdditionalInfo: SyntheticAdditionalInfo(),
-        Vat: SyntheticVat())
+        AdditionalInfo: SyntheticAdditionalInfo())
     {
         QrCodeReference = qrCodeReference,
     };
 
     // DYNAMIC happy path: incluye amount + inc (inc condicionalmente
-    // requerido por Passport cuando amount está presente).
+    // requerido por Passport cuando amount está presente) + vat (SIGUE
+    // SIENDO REQUERIDO para DYNAMIC tras XPAY-357 — sin cambios de
+    // comportamiento respecto a antes).
     private static PassportCreateQrCodeRequest SyntheticDynamicRequest(string? qrCodeReference = "SYNTH12345") => new(
         KeyId: "synthetic-key-id-001",
         CustomerId: "synthetic-customer-id-001",
         Type: PassportQrType.DYNAMIC,
         Channel: PassportQrChannel.ECOMM,
-        AdditionalInfo: SyntheticAdditionalInfo("06"),
-        Vat: SyntheticVat())
+        AdditionalInfo: SyntheticAdditionalInfo("06"))
     {
+        Vat = SyntheticVat(),
         QrCodeReference = qrCodeReference,
         Amount = new PassportQrAmountRequest("80000.57"),
         Inc = new PassportQrIncRequest(PassportQrVatType.FIXED, "10.00"),
@@ -100,21 +105,19 @@ public class PassportQrClientTests
         Assert.Equal("00", additionalInfo.GetProperty("transaction_purpose").GetString());
         Assert.Equal("SYNTH-TERM-01", additionalInfo.GetProperty("terminal_label").GetString());
 
-        var vat = root.GetProperty("vat");
-        Assert.Equal("FIXED", vat.GetProperty("vat_type").GetString());
-        Assert.Equal("0.00", vat.GetProperty("vat_value").GetString());
-        Assert.Equal("0.00", vat.GetProperty("vat_base_value").GetString());
-
-        // STATIC no debe enviar amount ni inc ni qr_code_reference (null en este caso).
+        // XPAY-357 — STATIC ya NO envía vat por defecto (el ejemplo oficial
+        // STATIC vigente no lo muestra); tampoco amount, inc ni
+        // qr_code_reference (null en este caso).
+        Assert.False(root.TryGetProperty("vat", out _));
         Assert.False(root.TryGetProperty("amount", out _));
         Assert.False(root.TryGetProperty("inc", out _));
         Assert.False(root.TryGetProperty("qr_code_reference", out _));
 
-        // Sin campos inventados: exactamente 6 propiedades top-level.
+        // Sin campos inventados: exactamente 5 propiedades top-level.
         var topLevelNames = new List<string>();
         foreach (var prop in root.EnumerateObject())
             topLevelNames.Add(prop.Name);
-        Assert.Equal(new[] { "key_id", "customer_id", "type", "channel", "additional_info", "vat" },
+        Assert.Equal(new[] { "key_id", "customer_id", "type", "channel", "additional_info" },
             topLevelNames);
     }
 
@@ -356,15 +359,58 @@ public class PassportQrClientTests
         Assert.Equal(0, handler.CallCount);
     }
 
+    // XPAY-357 — vat SIGUE siendo requerido para DYNAMIC (comportamiento
+    // preservado sin cambios respecto a antes de XPAY-357). Renombrado desde
+    // "CreateQrCodeAsync_NullVat_ThrowsBeforeHttp" (que usaba STATIC, cuya
+    // semántica cambió — ver el nuevo test STATIC a continuación).
     [Fact]
-    public async Task CreateQrCodeAsync_NullVat_ThrowsBeforeHttp()
+    public async Task CreateQrCodeAsync_DynamicNullVat_ThrowsBeforeHttp()
     {
         var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, MinimalOkBody));
         var client = CreateClient(handler);
-        var request = SyntheticStaticRequest() with { Vat = null! };
+        var request = SyntheticDynamicRequest() with { Vat = null! };
 
         await Assert.ThrowsAsync<ArgumentException>(() => client.CreateQrCodeAsync(request));
         Assert.Equal(0, handler.CallCount);
+    }
+
+    // XPAY-357 — regla contractual deliberada: STATIC ya NO requiere vat.
+    // Llega hasta el happy path con una respuesta fake válida, y el body
+    // real enviado no debe contener "vat" en absoluto (serialización
+    // condicional ya existente vía JsonIgnore(WhenWritingNull)).
+    [Fact]
+    public async Task CreateQrCodeAsync_StaticWithoutVat_IsAllowed()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, MinimalOkBody));
+        var client = CreateClient(handler);
+        var request = SyntheticStaticRequest(); // Vat ya ausente por defecto tras XPAY-357.
+
+        var result = await client.CreateQrCodeAsync(request);
+
+        Assert.Equal("synthetic-qr-id-001", result.Id);
+        Assert.Equal(1, handler.CallCount);
+
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.False(doc.RootElement.TryGetProperty("vat", out _));
+    }
+
+    // Regresión explícita: STATIC SÍ puede seguir incluyendo vat si el
+    // caller lo agrega explícitamente (vat es OPCIONAL, no PROHIBIDO, para
+    // STATIC) — y sus subcampos se siguen validando cuando está presente.
+    [Fact]
+    public async Task CreateQrCodeAsync_StaticWithVatExplicitlyIncluded_IsAllowed()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, MinimalOkBody));
+        var client = CreateClient(handler);
+        var request = SyntheticStaticRequest() with { Vat = SyntheticVat() };
+
+        var result = await client.CreateQrCodeAsync(request);
+
+        Assert.Equal("synthetic-qr-id-001", result.Id);
+        Assert.Equal(1, handler.CallCount);
+
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.True(doc.RootElement.TryGetProperty("vat", out _));
     }
 
     [Fact]

@@ -21,11 +21,10 @@ namespace Xpay.PassportSandboxHarness;
 // KeyOperationResult.cs).
 public static class CreateQrStaticExecutor
 {
-    // XPAY-351 — vat_type/vat_value/vat_base_value, channel,
-    // transaction_purpose y terminal_label son campos ESTRUCTURALES
-    // requeridos por el contrato productivo de Create QR Code (ver
-    // PassportQrClient.Validate) — NO son datos sensibles ni específicos de
-    // un recurso privado de Sandbox concreto (a diferencia de
+    // XPAY-351 — channel, transaction_purpose y terminal_label son campos
+    // ESTRUCTURALES requeridos por el contrato productivo de Create QR Code
+    // (ver PassportQrClient.Validate) — NO son datos sensibles ni
+    // específicos de un recurso privado de Sandbox concreto (a diferencia de
     // key_id/customer_id, que sí identifican un recurso real y viven en
     // ~/.passport-sandbox.env). Se fijan aquí como constantes de
     // certificación, mismo criterio ya aplicado a
@@ -34,15 +33,17 @@ public static class CreateQrStaticExecutor
     // recurso privado, sólo satisfacen el contrato de protocolo.
     //
     // transaction_purpose="00" (Compras) — valor documentado más genérico
-    // del conjunto confirmado (XPAY-297/298).
-    // vat_type=FIXED con vat_value/vat_base_value="0.00" — QR de
-    // certificación SIN monto asociado (M4-T1 es QR ESTÁTICO, sin amount);
-    // se usa un valor fijo en cero como base neutral, no una tarifa/monto
-    // real — nunca se inventa un monto de transacción para este caso.
+    // del conjunto confirmado (XPAY-297/298). XPAY-357 §8 investigó cambiar
+    // este valor al semántico "PURCHASE" (visto en ejemplos oficiales
+    // vigentes) — GATE DOCUMENTAL BLOQUEADO: la única aparición local de
+    // "PURCHASE" en todo el repositorio es en el ejemplo de la RESPUESTA de
+    // Decode QR Code (PassportDecodeQrCodeResponse.cs, endpoint y dirección
+    // distintos), nunca como valor confirmado del REQUEST de Create QR ni
+    // en ValidTransactionPurposes. No existe soporte contractual local
+    // suficiente para incorporarlo sin ampliar una regla productiva
+    // incierta — se mantiene "00" (TRANSACTION_PURPOSE_CHANGE_BLOCKED=YES).
     private const string CertificationTerminalLabel      = "XPAY-M4-T1-CERT";
     private const string CertificationTransactionPurpose = "00";
-    private const string CertificationVatValue           = "0.00";
-    private const string CertificationVatBaseValue       = "0.00";
 
     public static async Task<KeyOperationResult> ExecuteAsync(
         IConfiguration configuration,
@@ -100,6 +101,12 @@ public static class CreateQrStaticExecutor
         // diagnóstico documentado en XPAY-355) — es una corrección de
         // contrato basada en el valor STATIC ya confirmado localmente,
         // no una conclusión causal definitiva.
+        //
+        // XPAY-357 — vat deliberadamente AUSENTE (no se construye
+        // PassportQrVatRequest en absoluto): el ejemplo oficial STATIC
+        // vigente revisado por el director no lo muestra. PassportQrClient
+        // ya no lo exige incondicionalmente (sólo sigue siendo requerido
+        // para DYNAMIC, sin cambios) — ver PassportQrClient.Validate.
         var request = new PassportCreateQrCodeRequest(
             KeyId: keyId,
             CustomerId: customerId,
@@ -107,11 +114,7 @@ public static class CreateQrStaticExecutor
             Channel: PassportQrChannel.POS,
             AdditionalInfo: new PassportQrAdditionalInfoRequest(
                 TransactionPurpose: CertificationTransactionPurpose,
-                TerminalLabel: CertificationTerminalLabel),
-            Vat: new PassportQrVatRequest(
-                VatType: PassportQrVatType.FIXED,
-                VatValue: CertificationVatValue,
-                VatBaseValue: CertificationVatBaseValue));
+                TerminalLabel: CertificationTerminalLabel));
 
         try
         {

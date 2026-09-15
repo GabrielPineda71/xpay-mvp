@@ -124,14 +124,26 @@ public sealed class PassportQrClient : IPassportQrClient
         if (request.AdditionalInfo.TerminalLabel.Length > 25)
             throw new ArgumentException("additional_info.terminal_label excede 25 caracteres.", nameof(request));
 
-        if (request.Vat is null)
-            throw new ArgumentException("vat es requerido.", nameof(request));
-        if (!Enum.IsDefined(request.Vat.VatType))
-            throw new ArgumentException("vat.vat_type no es un valor válido.", nameof(request));
-        if (string.IsNullOrWhiteSpace(request.Vat.VatValue))
-            throw new ArgumentException("vat.vat_value es requerido.", nameof(request));
-        if (string.IsNullOrWhiteSpace(request.Vat.VatBaseValue))
-            throw new ArgumentException("vat.vat_base_value es requerido.", nameof(request));
+        // XPAY-357 — vat dejó de ser incondicionalmente requerido: la
+        // documentación oficial vigente revisada por el director muestra
+        // el ejemplo STATIC SIN vat. Se preserva sin cambios el
+        // comportamiento DYNAMIC previo (vat seguía siendo requerido para
+        // DYNAMIC) — sólo STATIC deja de exigirlo. Cuando vat SÍ está
+        // presente (en cualquiera de los dos tipos), sus subcampos se
+        // validan exactamente igual que antes — mismo criterio ya aplicado
+        // a amount/inc (validación condicional a la presencia, no al tipo).
+        if (request.Type == PassportQrType.DYNAMIC && request.Vat is null)
+            throw new ArgumentException("vat es requerido cuando type es DYNAMIC.", nameof(request));
+
+        if (request.Vat is not null)
+        {
+            if (!Enum.IsDefined(request.Vat.VatType))
+                throw new ArgumentException("vat.vat_type no es un valor válido.", nameof(request));
+            if (string.IsNullOrWhiteSpace(request.Vat.VatValue))
+                throw new ArgumentException("vat.vat_value es requerido.", nameof(request));
+            if (string.IsNullOrWhiteSpace(request.Vat.VatBaseValue))
+                throw new ArgumentException("vat.vat_base_value es requerido.", nameof(request));
+        }
 
         if (request.Amount is not null)
         {

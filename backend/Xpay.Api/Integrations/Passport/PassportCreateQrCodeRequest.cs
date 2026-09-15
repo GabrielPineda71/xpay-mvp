@@ -9,14 +9,18 @@ namespace Xpay.Api.Integrations.Passport;
 // Campos modelados en ESTA fase (evidence-first, sólo lo confirmado y
 // necesario para los dos happy paths de certificación M4-T1/M4-T4):
 // key_id, customer_id, type, channel, additional_info{transaction_purpose,
-// terminal_label}, vat{vat_type,vat_value,vat_base_value}, qr_code_reference
-// (opcional), amount{value,currency} (opcional), inc{inc_type,inc_value}
-// (opcional — condicionalmente requerido por Passport cuando amount está
-// presente en DYNAMIC, confirmado verbatim: "Required for Dynamic QR Codes
-// if an Amount is provided" — XPAY no fuerza esa condicionalidad aquí; el
-// caller es responsable de incluir Inc cuando incluye Amount, igual que
-// Passport documenta la regla como condicional al proveedor, no como un
-// guard local inventado).
+// terminal_label}, vat{vat_type,vat_value,vat_base_value} (opcional —
+// XPAY-357: la documentación oficial vigente revisada por el director NO
+// muestra vat en el ejemplo STATIC; vat pasó de requerido incondicional a
+// opcional a nivel de DTO — la obligatoriedad real por tipo vive en
+// PassportQrClient.Validate, no en el DTO), qr_code_reference (opcional),
+// amount{value,currency} (opcional), inc{inc_type,inc_value} (opcional —
+// condicionalmente requerido por Passport cuando amount está presente en
+// DYNAMIC, confirmado verbatim: "Required for Dynamic QR Codes if an Amount
+// is provided" — XPAY no fuerza esa condicionalidad aquí; el caller es
+// responsable de incluir Inc cuando incluye Amount, igual que Passport
+// documenta la regla como condicional al proveedor, no como un guard local
+// inventado).
 //
 // Otros campos opcionales documentados (invoice_number, mobile_phone_number,
 // store_label, loyalty_label, reference_label, customer_label, customer_info,
@@ -31,9 +35,18 @@ public sealed record PassportCreateQrCodeRequest(
     [property: JsonPropertyName("customer_id")]    string CustomerId,
     [property: JsonPropertyName("type")]           PassportQrType Type,
     [property: JsonPropertyName("channel")]        PassportQrChannel Channel,
-    [property: JsonPropertyName("additional_info")] PassportQrAdditionalInfoRequest AdditionalInfo,
-    [property: JsonPropertyName("vat")]            PassportQrVatRequest Vat)
+    [property: JsonPropertyName("additional_info")] PassportQrAdditionalInfoRequest AdditionalInfo)
 {
+    // XPAY-357 — Vat pasó de parámetro posicional REQUERIDO a propiedad
+    // opcional (mismo patrón ya usado por QrCodeReference/Amount/Inc):
+    // el ejemplo oficial STATIC vigente no incluye vat, y M4-T1 (STATIC) no
+    // debe enviarlo. La obligatoriedad para DYNAMIC (preservada sin cambios)
+    // se exige en PassportQrClient.Validate, no aquí — el DTO en sí no
+    // impone ninguna regla de negocio por tipo.
+    [JsonPropertyName("vat")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PassportQrVatRequest? Vat { get; init; }
+
     [JsonPropertyName("qr_code_reference")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? QrCodeReference { get; init; }
