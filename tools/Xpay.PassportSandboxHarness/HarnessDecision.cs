@@ -1,11 +1,11 @@
 namespace Xpay.PassportSandboxHarness;
 
-// XPAY-312/325 — decisión de acción del harness a partir de los argumentos
-// de línea de comandos ÚNICAMENTE (función pura, sin I/O, sin red —
-// testeable offline). El comportamiento por defecto es SIEMPRE seguro: sin
-// argumentos, comando desconocido, o sin AMBAS banderas de mutación
-// (--execute + la bandera de confirmación específica del comando), nunca se
-// llega a Execute.
+// XPAY-312/325/326 — decisión de acción del harness a partir de los
+// argumentos de línea de comandos ÚNICAMENTE (función pura, sin I/O, sin
+// red — testeable offline). El comportamiento por defecto es SIEMPRE
+// seguro: sin argumentos, comando desconocido, o sin AMBAS banderas de
+// mutación (--execute + la bandera de confirmación específica del
+// comando), nunca se llega a Execute.
 public enum HarnessAction
 {
     ShowHelp,
@@ -14,7 +14,7 @@ public enum HarnessAction
     Execute,
 }
 
-// XPAY-325 — comando reconocido por el harness. Se generaliza desde el
+// XPAY-325/326 — comando reconocido por el harness. Se generaliza desde el
 // único comando "create-customer" de XPAY-312 para soportar múltiples casos
 // de certificación sin duplicar la lógica de parsing/guards.
 public enum HarnessCommand
@@ -22,22 +22,24 @@ public enum HarnessCommand
     Unknown,
     CreateCustomer,
     CreateKey,
+    SuspendKey,
 }
 
 public static class HarnessDecision
 {
     public const string CommandCreateCustomer = "create-customer";
     public const string CommandCreateKey      = "create-key";
+    public const string CommandSuspendKey     = "suspend-key";
 
-    public const string FlagExecute               = "--execute";
-    public const string FlagConfirmCreateCustomer  = "--confirm-create-customer";
-    // XPAY-325 — bandera de confirmación PROPIA de create-key, deliberadamente
-    // distinta de --confirm-create-customer: create-key también crea un
-    // recurso remoto (mismo criterio de seguridad que create-customer,
-    // "una sola bandera genérica no es suficiente"), y una bandera de
-    // confirmación específica por comando evita que --confirm-create-customer
-    // autorice por error una mutación de un comando distinto.
-    public const string FlagConfirmCreateKey = "--confirm-create-key";
+    public const string FlagExecute              = "--execute";
+    public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
+    // XPAY-325/326 — cada comando mutante tiene su PROPIA bandera de
+    // confirmación, deliberadamente distinta de las demás: evita que la
+    // confirmación de un comando autorice por error la mutación de otro
+    // (p. ej. --confirm-create-key NUNCA debe autorizar suspend-key, y
+    // viceversa) — "una sola bandera genérica no es suficiente".
+    public const string FlagConfirmCreateKey  = "--confirm-create-key";
+    public const string FlagConfirmSuspendKey = "--confirm-suspend-key";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -45,20 +47,21 @@ public static class HarnessDecision
         {
             CommandCreateCustomer => HarnessCommand.CreateCustomer,
             CommandCreateKey       => HarnessCommand.CreateKey,
+            CommandSuspendKey      => HarnessCommand.SuspendKey,
             _                      => HarnessCommand.Unknown,
         };
 
-    // XPAY-312 FASE 3/6/8, extendido en XPAY-325 FASE 4:
+    // XPAY-312 FASE 3/6/8, extendido en XPAY-325/326:
     //  - comando no reconocido (incluyendo sin argumentos) => ShowHelp (nunca HTTP).
     //  - comando reconocido, sin --execute => DryRun (comportamiento por
     //    defecto, nunca HTTP).
     //  - --execute presente pero SIN la bandera de confirmación específica
     //    del comando => Aborted (una sola bandera genérica no basta para una
-    //    operación que crea un recurso remoto).
+    //    operación que muta un recurso remoto).
     //  - --execute AND <confirm-flag-del-comando> => Execute (única
-    //    combinación que Program.cs debe interpretar como autorización para
-    //    construir el stack real y llamar a Passport; XPAY-312/325 NUNCA
-    //    invocan esta combinación).
+    //    combinación que Program.cs/HarnessApp deben interpretar como
+    //    autorización para construir el stack real y llamar a Passport;
+    //    XPAY-312/325/326 NUNCA invocan esta combinación de forma automática).
     public static HarnessAction Decide(string[] args, out string? abortReason)
     {
         abortReason = null;
@@ -71,6 +74,7 @@ public static class HarnessDecision
         {
             HarnessCommand.CreateCustomer => FlagConfirmCreateCustomer,
             HarnessCommand.CreateKey      => FlagConfirmCreateKey,
+            HarnessCommand.SuspendKey     => FlagConfirmSuspendKey,
             _                             => null,
         };
 
@@ -83,7 +87,7 @@ public static class HarnessDecision
         if (execute && !confirm)
         {
             abortReason = $"{FlagExecute} requiere también {confirmFlag} " +
-                           "(esta operación crea un recurso remoto; una sola bandera no es suficiente).";
+                           "(esta operación muta un recurso remoto; una sola bandera no es suficiente).";
             return HarnessAction.Aborted;
         }
 

@@ -39,7 +39,7 @@ public static class HarnessOrchestrator
         // falta de confirmación) porque el harness debe reportar el estado de
         // config de forma redactada en cualquier salida no-ShowHelp.
         var configStatus = HarnessConfigStatus.FromConfiguration(configuration);
-        var targetConfig = command == HarnessCommand.CreateKey
+        var targetConfig = command is HarnessCommand.CreateKey or HarnessCommand.SuspendKey
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -57,6 +57,13 @@ public static class HarnessOrchestrator
         if (command == HarnessCommand.CreateKey && targetConfig is not null && !targetConfig.AllPresentForCreateKey)
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Targets de create-key incompletos — ver detalle AVAILABLE/MISSING por variable.");
+
+        // XPAY-326 — para suspend-key, debe estar presente el key_id REMOTO
+        // real de la llave de certificación (PASSPORT_TEST_NEW_KEY_ID) —
+        // nunca derivado del key_value ni de un fingerprint.
+        if (command == HarnessCommand.SuspendKey && targetConfig is not null && !targetConfig.AllPresentForSuspendKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de suspend-key incompleto — PASSPORT_TEST_NEW_KEY_ID ausente.");
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

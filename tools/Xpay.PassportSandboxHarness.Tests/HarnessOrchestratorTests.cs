@@ -193,4 +193,85 @@ public class HarnessOrchestratorTests
             new[] { "create-key", "--execute", "--confirm-create-key" }, ConfigWithTargets());
         Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-326 — suspend-key (M3-T3)
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string ValidTargetKeyId = "synthetic-remote-key-id-001";
+
+    private static IConfiguration ConfigWithSuspendTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? newKeyId = ValidTargetKeyId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // A. suspend-key dry-run: cero HTTP (Outcome nunca llega a Execute/ReadyToExecute).
+    [Fact]
+    public void Prepare_SuspendKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "suspend-key" }, ConfigWithSuspendTarget());
+        Assert.Equal(HarnessCommand.SuspendKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    // B. --execute solo (sin --confirm-suspend-key) => Aborted, nunca HTTP.
+    [Fact]
+    public void Prepare_SuspendKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-key", "--execute" }, ConfigWithSuspendTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // C. --confirm-suspend-key solo (sin --execute) => sigue en DryRun, nunca Execute.
+    [Fact]
+    public void Prepare_SuspendKey_ConfirmWithoutExecute_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-key", "--confirm-suspend-key" }, ConfigWithSuspendTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    // D. --confirm-create-key NUNCA autoriza suspend-key (banderas específicas por comando).
+    [Fact]
+    public void Prepare_SuspendKey_ConfirmCreateKeyDoesNotAuthorizeSuspendKey()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-key", "--execute", "--confirm-create-key" }, ConfigWithSuspendTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // E. PASSPORT_TEST_NEW_KEY_ID ausente => AbortedTargetMissing, nunca HTTP.
+    [Fact]
+    public void Prepare_SuspendKey_MissingKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-key" }, ConfigWithSuspendTarget(newKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // F. host no-Sandbox bloquea antes de HTTP (incluso con key_id presente).
+    [Fact]
+    public void Prepare_SuspendKey_NonSandboxHost_ReturnsAbortedNonSandboxHost()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-key" }, ConfigWithSuspendTarget(baseUrl: "https://evil.example.com"));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedNonSandboxHost, decision.Outcome);
+    }
+
+    // G. --execute + --confirm-suspend-key => ReadyToExecute (Program.cs/HarnessApp deciden qué hacer).
+    [Fact]
+    public void Prepare_SuspendKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-key", "--execute", "--confirm-suspend-key" }, ConfigWithSuspendTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
 }

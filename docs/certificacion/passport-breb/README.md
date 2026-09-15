@@ -58,7 +58,33 @@ sólo ocurre cuando Passport actualiza `review_status`.
   propio canal de revisión) que el caso es válido para certificación. No es
   un valor que XPAY escriba en `evidence.json`.
 
-**M3-T1 está hoy en estado `IMPLEMENTED`. No se marca `SANDBOX_PASS`.**
+**M3-T1 está en estado `SANDBOX_PASS`** — una ejecución real `--execute`
+produjo `M3-T1/evidence-2026-09-15T03-47-42Z.json` con `result=PASS`
+(`review_status=PENDING_PASSPORT_REVIEW`, aún no `PASSPORT_ACCEPTED`).
+
+**M3-T3 (Suspend Key) está hoy en estado `IMPLEMENTED`. No se marca
+`SANDBOX_PASS`** — el cliente productivo (`PassportKeyClient.SuspendKeyAsync`,
+`PATCH /v1/keys/{key_id}/suspend`) y el camino `--execute` del harness
+(`suspend-key`) existen y están cubiertos por tests offline (incluyendo un
+test end-to-end con handler HTTP fake y `key_id` sintético). **Ninguna
+llamada real ha ocurrido todavía.**
+
+### Nota operativa — el `key_id` real de M3-T1 no quedó persistido
+
+M3-T3 necesita, para ejecutarse realmente, el `key_id` **remoto** que
+Passport asignó a la llave creada en la ejecución real de M3-T1. Ese valor
+**nunca se guardó**: `CreateKeyEvidenceBuilder.BuildSuccess` sólo computa su
+`Fingerprint.Compute` (SHA-256, no reversible) para `evidence.json`, y el
+valor real se descartó al terminar el proceso del harness de M3-T1.
+
+Por diseño, XPAY **no** reconstruye este valor a partir de su fingerprint,
+**no** lo deriva del `key_value`/BCODE enviado (son conceptos distintos:
+uno es el dato que XPAY envió, el otro es el ID que Passport devolvió), y
+**no** llama a Passport (p. ej. vía Resolve Key) para intentar recuperarlo.
+**`CERTIFICATION_KEY_ID=MISSING`.** Se requiere recuperar de forma segura y
+determinística el remote key_id correspondiente a la llave ya creada en
+M3-T1. El mecanismo de recuperación será definido antes de cualquier nueva
+llamada real.
 
 ## Política de redacción
 
