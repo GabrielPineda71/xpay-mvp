@@ -24,6 +24,14 @@
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <!-- XPAY-330 — necesarios para HarnessLoggingTests: ejercitar el mismo
+         IHttpClientFactory real (AddHttpClient/ConfigurePrimaryHttpMessageHandler)
+         y el mismo pipeline de logging (AddLogging/ILoggerProvider) que
+         Program.cs, contra un HttpMessageHandler fake. Versiones alineadas
+         con las ya pinneadas en Xpay.PassportSandboxHarness.csproj. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
   </ItemGroup>
 
   <ItemGroup>

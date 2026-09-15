@@ -115,6 +115,42 @@ XPAY-328 no realizó ninguna llamada real a `GET /v1/keys`, no leyó
 propia autorización explícita, ejecute la recuperación real y capture el
 key_id resultante.
 
+### XPAY-330 — incidente de logging sensible en la ejecución real de M3-T3, y su corrección
+
+Durante la primera ejecución real de M3-T3 (Suspend Key), el `evidence.json`
+generado quedó correctamente saneado (sólo fingerprints, nunca el key_id
+crudo) — pero el **console output de esa misma ejecución sí expuso el
+key_id remoto real**, dos veces, en texto plano. La causa: los *logging
+handlers* automáticos que `Microsoft.Extensions.Http`
+(`services.AddHttpClient()`) adjunta a todo `HttpClient` registran a nivel
+`Information` la línea `"Start/Sending/Received/End processing HTTP
+request {Method} {Uri}"` — la URI **completa**, incluyendo cualquier
+segmento de path o query string sensible. Esta capa es completamente
+distinta de los `_logger.LogWarning(...)` explícitos de
+`PassportHttpClient`/`PassportTokenProvider` (que sí estaban, y siguen
+estando, saneados) — nunca había sido auditada como parte de "no logging
+sensible". Con Create Key (M3-T1) el mismo riesgo no se había manifestado
+porque `account_id`/`key_value` viajan en el body JSON, no en la URL;
+Suspend Key fue el primer caso con un identificador sensible en el path.
+
+**Corrección (XPAY-330)**: `HarnessLogging.Configure` fija un nivel mínimo
+de logging **`Warning` global** en `Program.cs` — preserva los
+`LogWarning` explícitos ya saneados y suprime, en el origen, cualquier log
+`Information`/`Debug`/`Trace` del pipeline de `HttpClient` (incluida la
+URI completa) para **todas** las operaciones del harness (OAuth, Create/
+List/Suspend/Activate/Delete/Resolve Key), no sólo Suspend. Cubierto por
+`HarnessLoggingTests` con cánarios 100% sintéticos (nunca el key_id real)
+tanto para un identificador sensible en el path como en el query string.
+
+**Esto NO reinterpreta retroactivamente el resultado de esa ejecución**:
+`SECURITY_GATE_DURING_M3_T3=FAIL` (hubo exposición real en consola en su
+momento) permanece como hecho histórico; `HARNESS_LOGGING_FIX=PASS` sólo
+certifica que el defecto está corregido para ejecuciones **futuras**. El
+`evidence.json` de esa ejecución sigue siendo técnicamente válido (saneado,
+`result=PASS`, operación real exitosa en Sandbox) — su aceptación final
+para envío a Passport es una decisión posterior del director técnico, no
+automática por esta corrección.
+
 ## Política de redacción
 
 **Nunca se escribe en `evidence.json`:**

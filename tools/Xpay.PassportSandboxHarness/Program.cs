@@ -34,7 +34,14 @@ IConfiguration configuration = new ConfigurationBuilder()
 
 var services = new ServiceCollection();
 services.AddHttpClient();
-services.AddLogging(b => b.AddConsole());
+// XPAY-330 — nivel mínimo Warning GLOBAL: previene que los logging
+// handlers automáticos de Microsoft.Extensions.Http (adjuntados por
+// AddHttpClient() a nivel Information) impriman la URI completa de
+// cualquier request (que puede contener un key_id/id sensible en el path
+// o en el query string) — ver HarnessLogging.cs para el detalle del
+// incidente y la corrección. Preserva los _logger.LogWarning(...)
+// explícitos y ya saneados del stack Passport.
+services.AddLogging(HarnessLogging.Configure);
 services.AddSingleton(configuration);
 services.AddSingleton(TimeProvider.System);
 services.AddSingleton<IPassportTokenProvider, PassportTokenProvider>();

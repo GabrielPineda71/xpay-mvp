@@ -1,0 +1,19 @@
+{
+  "case_id": "M3-T3",
+  "executed_at_utc": "2026-09-15T12:48:22Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "70c7dc7985ca3e686e0fc681b589fd3bee120da8",
+  "operation": "PATCH /v1/keys/{key_id}/suspend",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "key_id_fingerprint": "9654CF47D144"
+  },
+  "response_sanitized": {
+    "status": "SUSPENDED",
+    "id_fingerprint": "9654CF47D144"
+  },
+  "automated_test_reference": null,
+  "notes": null,
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
