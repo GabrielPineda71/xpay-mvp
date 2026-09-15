@@ -1,0 +1,19 @@
+{
+  "case_id": "M3-T4",
+  "executed_at_utc": "2026-09-15T15:00:12Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "32a2eff1319d4557f8720c07b75a69a231f24538",
+  "operation": "PATCH /v1/keys/{key_id}/activate",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "key_id_fingerprint": "9654CF47D144"
+  },
+  "response_sanitized": {
+    "status": "ACTIVE",
+    "id_fingerprint": "9654CF47D144"
+  },
+  "automated_test_reference": null,
+  "notes": null,
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
