@@ -1,0 +1,14 @@
+{
+  "case_id": "M3-T7",
+  "executed_at_utc": "2026-09-15T16:33:17Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "57ca1820e200a8cc81b737d854b89ae1c5e03b86",
+  "operation": "DELETE /v1/keys/{key_id}",
+  "http_status": null,
+  "result": "FAIL",
+  "request_sanitized": {},
+  "response_sanitized": {},
+  "automated_test_reference": null,
+  "notes": "PASSPORT_HTTP_FAILURE: Passport respondi\u00F3 con error HTTP 404. \u2014 M3-T7 (delete already-deleted key): resultado a nivel transporte \u00FAnicamente \u2014 la interpretaci\u00F3n de certificaci\u00F3n (\u00BFcomportamiento esperado o inesperado de Passport ante un segundo Delete?) requiere revisi\u00F3n contractual expl\u00EDcita antes de aceptar/rechazar este caso. No se asume aqu\u00ED ning\u00FAn HTTP status como \u0027correcto\u0027.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
