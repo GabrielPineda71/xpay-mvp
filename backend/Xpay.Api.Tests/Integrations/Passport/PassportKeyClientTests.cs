@@ -784,4 +784,237 @@ public class PassportKeyClientTests
         Assert.DoesNotContain("synthetic-bearer-token", ex.Message);
         Assert.DoesNotContain("test-client-secret", ex.Message);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-328 — ListKeysAsync (GET /v1/keys), contrato confirmado XPAY-327
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string SyntheticListAccountId = "synthetic-account-id-001";
+    private const string SyntheticListKeyValue   = "0000000000";
+
+    private static string SyntheticSingleKeyResponseBody(
+        string id = "synthetic-key-id-001",
+        string accountId = SyntheticListAccountId,
+        string keyType = "BCODE",
+        string keyValue = SyntheticListKeyValue) => $$"""
+        {
+          "keys": [
+            {
+              "id": "{{id}}",
+              "status": "ACTIVE",
+              "key": { "key_type": "{{keyType}}", "key_value": "{{keyValue}}" },
+              "account_id": "{{accountId}}",
+              "created_at": "2026-01-01T00:00:00.000Z",
+              "updated_at": "2026-01-01T00:00:00.000Z"
+            }
+          ],
+          "pagination_info": {
+            "first_request_timestamp": "2026-01-01T00:00:00.000Z",
+            "current_page": 1,
+            "total_pages": 1,
+            "total_elements": 1
+          }
+        }
+        """;
+
+    // A — GET exacto a /v1/keys, con account_id/key_type/key_value en el query.
+    [Fact]
+    public async Task ListKeysAsync_GetsExactPathWithFiltersInQuery()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, SyntheticSingleKeyResponseBody()));
+        var client = CreateClient(handler);
+
+        await client.ListKeysAsync(SyntheticListAccountId, PassportKeyType.BCODE, SyntheticListKeyValue);
+
+        Assert.Equal(1, handler.CallCount);
+        Assert.Equal(HttpMethod.Get, handler.LastRequest!.Method);
+        Assert.Equal("/v1/keys", handler.LastRequest.RequestUri!.AbsolutePath);
+        Assert.Equal(BaseUrl, handler.LastRequest.RequestUri.GetLeftPart(UriPartial.Authority));
+
+        var query = handler.LastRequest.RequestUri.Query;
+        Assert.Contains($"account_id={SyntheticListAccountId}", query);
+        Assert.Contains("key_type=BCODE", query);
+        Assert.Contains($"key_value={SyntheticListKeyValue}", query);
+        Assert.Null(handler.LastRequestBody);
+    }
+
+    // B — URL encoding: valores sintéticos con caracteres reservados quedan
+    // correctamente codificados (nunca concatenación insegura).
+    [Fact]
+    public async Task ListKeysAsync_EncodesReservedCharactersInQueryValues()
+    {
+        const string accountIdWithReserved = "synthetic account&id=002";
+        const string keyValueWithReserved   = "synthetic+value@example.test";
+
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, SyntheticSingleKeyResponseBody()));
+        var client = CreateClient(handler);
+
+        await client.ListKeysAsync(accountIdWithReserved, PassportKeyType.EMAIL, keyValueWithReserved);
+
+        var uri = handler.LastRequest!.RequestUri!;
+        // El espacio/'&'/'='/'+'/'@' NUNCA deben llegar crudos partiendo el
+        // query string en parámetros no intencionados.
+        Assert.Contains(Uri.EscapeDataString(accountIdWithReserved), uri.Query);
+        Assert.Contains(Uri.EscapeDataString(keyValueWithReserved), uri.Query);
+        Assert.DoesNotContain("synthetic account&id=002", uri.Query);
+
+        // El servidor (fake) recibe exactamente 3 parámetros — el '&'/'='
+        // embebidos y escapados no crean un cuarto parámetro espurio.
+        var pairs = uri.Query.TrimStart('?').Split('&');
+        Assert.Equal(3, pairs.Length);
+    }
+
+    // C — response con exactamente 1 key: se conservan todos los campos ya
+    // soportados por PassportKeyResponse.
+    [Fact]
+    public async Task ListKeysAsync_Http200_DeserializesSingleKeyWithAllFields()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, SyntheticSingleKeyResponseBody()));
+        var client = CreateClient(handler);
+
+        var result = await client.ListKeysAsync(SyntheticListAccountId, PassportKeyType.BCODE, SyntheticListKeyValue);
+
+        Assert.Single(result.Keys);
+        var key = result.Keys[0];
+        Assert.Equal("synthetic-key-id-001", key.Id);
+        Assert.Equal("ACTIVE", key.Status);
+        Assert.NotNull(key.Key);
+        Assert.Equal("BCODE", key.Key!.KeyType);
+        Assert.Equal(SyntheticListKeyValue, key.Key.KeyValue);
+        Assert.Equal(SyntheticListAccountId, key.AccountId);
+
+        Assert.NotNull(result.PaginationInfo);
+        Assert.Equal(1, result.PaginationInfo!.TotalElements);
+    }
+
+    // D — keys=[] se acepta correctamente: NO es un fallo de protocolo (a
+    // diferencia de Create/Suspend/Resolve, donde `id` ausente sí lo es).
+    [Fact]
+    public async Task ListKeysAsync_EmptyKeysArray_ReturnsEmptyListWithoutThrowing()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, """{ "keys": [] }"""));
+        var client = CreateClient(handler);
+
+        var result = await client.ListKeysAsync(SyntheticListAccountId, PassportKeyType.BCODE, SyntheticListKeyValue);
+
+        Assert.Empty(result.Keys);
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    // E — account_id vacío falla ANTES de HTTP.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ListKeysAsync_BlankAccountId_ThrowsBeforeHttp(string? accountId)
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, SyntheticSingleKeyResponseBody()));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.ListKeysAsync(accountId!, PassportKeyType.BCODE, SyntheticListKeyValue));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    // F — key_value vacío falla ANTES de HTTP.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ListKeysAsync_BlankKeyValue_ThrowsBeforeHttp(string? keyValue)
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, SyntheticSingleKeyResponseBody()));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.ListKeysAsync(SyntheticListAccountId, PassportKeyType.BCODE, keyValue!));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    // G — key_type fuera de rango (cast explícito) falla ANTES de HTTP.
+    [Fact]
+    public async Task ListKeysAsync_OutOfRangeKeyType_ThrowsBeforeHttp()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, SyntheticSingleKeyResponseBody()));
+        var client = CreateClient(handler);
+        var invalidKeyType = (PassportKeyType)999;
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => client.ListKeysAsync(SyntheticListAccountId, invalidKeyType, SyntheticListKeyValue));
+
+        Assert.Equal(0, handler.CallCount);
+        Assert.DoesNotContain(SyntheticListAccountId, ex.Message);
+        Assert.DoesNotContain(SyntheticListKeyValue, ex.Message);
+    }
+
+    // H — "MOBILE" no es un PassportKeyType válido en C#: no hay forma de
+    // invocar ListKeysAsync con un literal "MOBILE" (el compilador ya lo
+    // impide). Se reconfirma aquí, en el contexto de List Keys, que el enum
+    // sigue sin definir MOBILE — mismo hallazgo que CreateKeyAsync.
+    [Fact]
+    public void PassportKeyType_DoesNotDefineMobile_ForListKeys()
+    {
+        Assert.DoesNotContain("MOBILE", Enum.GetNames<PassportKeyType>());
+    }
+
+    // I — respuesta de error: mismo comportamiento genérico ya existente de
+    // PassportHttpClient (sin lógica especial para List Keys).
+    [Fact]
+    public async Task ListKeysAsync_Http401_ThrowsAuthenticationException()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized\"}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportAuthenticationException>(
+            () => client.ListKeysAsync(SyntheticListAccountId, PassportKeyType.BCODE, SyntheticListKeyValue));
+    }
+
+    [Fact]
+    public async Task ListKeysAsync_Http500_ThrowsTransportException()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.InternalServerError, "boom"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportTransportException>(
+            () => client.ListKeysAsync(SyntheticListAccountId, PassportKeyType.BCODE, SyntheticListKeyValue));
+    }
+
+    [Fact]
+    public async Task ListKeysAsync_MalformedJson_ThrowsProtocolException()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{ not valid json"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportProtocolException>(
+            () => client.ListKeysAsync(SyntheticListAccountId, PassportKeyType.BCODE, SyntheticListKeyValue));
+    }
+
+    // Confirma que ningún dato sintético ni el Bearer aparecen en un mensaje
+    // de excepción de error HTTP (mismo criterio de saneamiento ya aplicado
+    // en Create/Resolve Key).
+    [Fact]
+    public async Task ListKeysAsync_Http400_ExceptionMessageIsSanitized()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.BadRequest, "{\"error\":\"bad_request\"}"));
+        var client = CreateClient(handler);
+
+        var ex = await Assert.ThrowsAsync<PassportTransportException>(
+            () => client.ListKeysAsync(SyntheticListAccountId, PassportKeyType.BCODE, SyntheticListKeyValue));
+
+        Assert.DoesNotContain(SyntheticListAccountId, ex.Message);
+        Assert.DoesNotContain(SyntheticListKeyValue, ex.Message);
+        Assert.DoesNotContain("synthetic-bearer-token", ex.Message);
+        Assert.DoesNotContain("test-client-secret", ex.Message);
+    }
 }

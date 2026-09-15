@@ -24,6 +24,11 @@ public sealed class PassportKeyClient : IPassportKeyClient
 {
     private const string CreateKeyPath = "/v1/keys";
     private const string ResolveKeyPath = "/v1/resolve-key";
+    // XPAY-328 — misma ruta base que CreateKeyPath ("/v1/keys"): es la
+    // colección del mismo recurso, GET en vez de POST. Se declara como
+    // constante separada para que el nombre en el sitio de la llamada
+    // (ListKeysAsync) sea auto-explicativo, sin renombrar CreateKeyPath.
+    private const string ListKeysPath = "/v1/keys";
 
     private readonly IPassportHttpClient _http;
 
@@ -145,6 +150,50 @@ public sealed class PassportKeyClient : IPassportKeyClient
             .ConfigureAwait(false);
 
         return RequireResolutionId(response);
+    }
+
+    // XPAY-328 — List Keys (GET /v1/keys), contrato confirmado en XPAY-327.
+    // Read-only: no muta ningún recurso, no requiere confirm-flag alguna a
+    // nivel de negocio. Filtro EXACTO por account_id+key_type+key_value —
+    // los tres simultáneamente, construidos en el query string con
+    // Uri.EscapeDataString en cada valor (nunca concatenación insegura;
+    // relevante incluso hoy con BCODE numérico, porque otros key_type
+    // futuros como EMAIL/ALPHA pueden contener '@', '+' u otros caracteres
+    // reservados de URL).
+    //
+    // A diferencia de CreateKeyAsync/SuspendKeyAsync/ResolveKeyAsync, una
+    // respuesta con `keys: []` NO es un fallo de protocolo — es un
+    // resultado legítimo ("ninguna llave coincide con el filtro"), por lo
+    // que aquí NO se aplica el patrón RequireKeyId/RequireResolutionId.
+    public async Task<PassportListKeysResponse> ListKeysAsync(
+        string accountId, PassportKeyType keyType, string keyValue, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(accountId))
+            throw new ArgumentException("account_id es requerido.", nameof(accountId));
+        // XPAY-289/324/328 — mismo hallazgo recurrente: un PassportKeyType
+        // construido fuera de rango (cast explícito) no es rechazado por el
+        // compilador. Enum.IsDefined cierra ese hueco ANTES de construir el
+        // query string / hacer HTTP.
+        if (!Enum.IsDefined(keyType))
+            throw new ArgumentException("key_type no es un valor válido.", nameof(keyType));
+        if (string.IsNullOrWhiteSpace(keyValue))
+            throw new ArgumentException("key_value es requerido.", nameof(keyValue));
+
+        var query = string.Join('&',
+            $"account_id={Uri.EscapeDataString(accountId)}",
+            $"key_type={Uri.EscapeDataString(keyType.ToString())}",
+            $"key_value={Uri.EscapeDataString(keyValue)}");
+        var path = $"{ListKeysPath}?{query}";
+
+        var response = await _http
+            .GetAsync<PassportListKeysResponse>(path, cancellationToken)
+            .ConfigureAwait(false);
+
+        // GetAsync devuelve default (null) cuando el body está vacío
+        // (ContentLength=0) — se normaliza a una lista vacía en vez de
+        // propagar null, para que el llamador nunca tenga que null-check
+        // dos formas distintas de "cero resultados".
+        return response ?? new PassportListKeysResponse();
     }
 
     // XPAY-324 — mismo patrón que RequireKeyId/RequireCustomerId/

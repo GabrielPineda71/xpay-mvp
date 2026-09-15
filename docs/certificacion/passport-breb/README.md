@@ -86,6 +86,35 @@ determinística el remote key_id correspondiente a la llave ya creada en
 M3-T1. El mecanismo de recuperación será definido antes de cualquier nueva
 llamada real.
 
+### XPAY-328 — mecanismo de recuperación implementado OFFLINE (List Keys)
+
+XPAY-327 identificó `GET /v1/keys` (List Keys, contrato oficial
+`docs.passportfintech.com/EN/list-keys`) como mecanismo read-only capaz de
+identificar inequívocamente la llave de M3-T1 filtrando simultáneamente por
+`account_id`+`key_type`+`key_value` — los tres únicos datos que XPAY ya
+conserva privadamente de esa llave, sin necesitar su key_id.
+
+XPAY-328 implementó y probó OFFLINE ese mecanismo, sin ninguna llamada real:
+
+- `IPassportKeyClient.ListKeysAsync(accountId, keyType, keyValue)` /
+  `PassportKeyClient` (`GET /v1/keys?account_id=&key_type=&key_value=`,
+  cada valor codificado con `Uri.EscapeDataString`) — reutiliza
+  `PassportKeyResponse` para cada elemento (mismo shape que Create/Suspend/
+  Activate Key); `PassportListKeysResponse`/`PassportListKeysPaginationInfo`
+  son los únicos DTOs nuevos.
+- `KeySelector.SelectExactMatch` (`tools/Xpay.PassportSandboxHarness/`) —
+  función pura que clasifica el resultado como `ExactlyOneMatch`/`NoMatch`/
+  `Ambiguous` exigiendo los tres criterios simultáneamente; nunca elige "el
+  primero" ante una lista con más de una coincidencia.
+
+**`CERTIFICATION_KEY_ID` continúa `MISSING`.** `REAL_RECOVERY_EXECUTED=NO` —
+XPAY-328 no realizó ninguna llamada real a `GET /v1/keys`, no leyó
+`PASSPORT_TEST_NEW_KEY_VALUE` para HTTP, y no escribió
+`PASSPORT_TEST_NEW_KEY_ID`. **M3-T3 continúa bloqueado** (estado
+`IMPLEMENTED`, no `SANDBOX_PASS`) hasta que una fase posterior, con su
+propia autorización explícita, ejecute la recuperación real y capture el
+key_id resultante.
+
 ## Política de redacción
 
 **Nunca se escribe en `evidence.json`:**
