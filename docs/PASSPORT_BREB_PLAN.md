@@ -242,7 +242,7 @@ La cuenta 110102 existe en el modelo contable de XPAY para documentar los asient
 
 ## 16. Pendientes para Fase 65
 
-1. **Resolver llave en Passport**: `POST /v1/keys/resolve` con key_type + key_value → obtener `owner_name`, `account_number` (masked), `participant_name`.
+1. **Resolver llave en Passport**: `POST /v1/resolve-key` (endpoint corregido en XPAY-324; el path histórico `POST /v1/keys/resolve` estaba desactualizado) con `customer_id` + `key{key_type, key_value}` → respuesta anidada real: `owner{first_name, second_name, first_last_name, second_last_name, business_name, identification_type, identification_number, type}`, `key{key_type, key_value}`, `participant{name, identification_number}`, `account{account_number, account_type}`, además de `id` (resolution_id, reutilizable como idempotency key en el retry de un payment), `resolved_at`, `expires_at` (vigencia ~30 min) y `receptor_node` a nivel raíz — no los campos planos `owner_name`/`account_number` (masked)/`participant_name` descritos anteriormente en este documento. Implementado offline en `PassportKeyClient.ResolveKeyAsync` (XPAY-324); pendiente de certificación/uso real.
 2. **Verificar que la llave pertenece al usuario**: comparar identificación del propietario en Passport con la del usuario registrado en XPAY.
 3. **Iniciar pago Bre-B en Passport**: `POST /v1/payments` con payment details → obtener `passport_payment_id`.
 4. **Mover saldo al crear retiro**: deducir `saldo_disponible` + incrementar `saldo_retenido` transaccionalmente.

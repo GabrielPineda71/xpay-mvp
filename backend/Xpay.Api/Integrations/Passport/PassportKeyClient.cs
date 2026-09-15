@@ -23,6 +23,7 @@ namespace Xpay.Api.Integrations.Passport;
 public sealed class PassportKeyClient : IPassportKeyClient
 {
     private const string CreateKeyPath = "/v1/keys";
+    private const string ResolveKeyPath = "/v1/resolve-key";
 
     private readonly IPassportHttpClient _http;
 
@@ -116,6 +117,50 @@ public sealed class PassportKeyClient : IPassportKeyClient
     {
         if (string.IsNullOrWhiteSpace(keyId))
             throw new ArgumentException("key_id es requerido.", nameof(keyId));
+    }
+
+    // XPAY-324 — Resolve Key (POST /v1/resolve-key), contrato confirmado en
+    // XPAY-310. Reutiliza IPassportHttpClient.PostAsync sin ningún cambio a
+    // la base HTTP/OAuth.
+    public async Task<PassportResolveKeyResponse> ResolveKeyAsync(
+        PassportResolveKeyRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.CustomerId))
+            throw new ArgumentException("customer_id es requerido.", nameof(request));
+        if (request.Key is null)
+            throw new ArgumentException("key es requerido.", nameof(request));
+        // XPAY-289/324 — mismo hallazgo corregido en Create Key: un enum
+        // construido fuera de rango no es rechazado por el compilador ni por
+        // JsonStringEnumConverter al serializar. Enum.IsDefined cierra ese
+        // hueco ANTES de HTTP.
+        if (!Enum.IsDefined(request.Key.KeyType))
+            throw new ArgumentException("key_type no es un valor válido.", nameof(request));
+        if (string.IsNullOrWhiteSpace(request.Key.KeyValue))
+            throw new ArgumentException("key_value es requerido.", nameof(request));
+
+        var response = await _http
+            .PostAsync<PassportResolveKeyRequest, PassportResolveKeyResponse>(
+                ResolveKeyPath, request, cancellationToken)
+            .ConfigureAwait(false);
+
+        return RequireResolutionId(response);
+    }
+
+    // XPAY-324 — mismo patrón que RequireKeyId/RequireCustomerId/
+    // RequireAccountId: una respuesta 2xx correctamente deserializada puede
+    // aun así carecer del `id` remoto (ausente, "" o whitespace). Aquí `id`
+    // es el resolution_id, que debe reutilizarse en el retry de un payment
+    // como idempotency key (XPAY-310) — una respuesta sin él es inutilizable
+    // para su propósito, por lo que se trata como fallo de protocolo
+    // explícito. Mensaje estático y saneado: nunca incluye body, token,
+    // Authorization, customer_id, key_value ni datos de owner/participant/
+    // account.
+    private static PassportResolveKeyResponse RequireResolutionId(PassportResolveKeyResponse? response)
+    {
+        if (response is null || string.IsNullOrWhiteSpace(response.Id))
+            throw new PassportProtocolException("Respuesta de Passport sin resolution id (Resolve Key).");
+        return response;
     }
 
     // XPAY-287/293 — mismo patrón que RequireCustomerId/RequireAccountId

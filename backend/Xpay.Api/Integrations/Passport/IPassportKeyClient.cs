@@ -4,14 +4,20 @@ namespace Xpay.Api.Integrations.Passport;
 // documentalmente en XPAY-286. Construido SOBRE IPassportHttpClient
 // (XPAY-272) — no introduce un segundo stack de HTTP/OAuth.
 //
-// NO implementa: resolve-key, QR, payments/breb, webhooks — eso queda para
-// fases posteriores sobre esta misma base.
+// NO implementa: QR, payments/breb, webhooks — eso queda para fases
+// posteriores sobre esta misma base.
 //
 // NO persiste el key_id remoto ni ningún status remoto — cada método
 // devuelve el DTO de respuesta completo (cuando aplica); dónde y cómo
 // persistirlo queda diferido (mismo criterio ya aplicado a customer_id/
 // account_id en XPAY-277/278, y explícitamente NO resuelto para el status
 // remoto de la llave en XPAY-292/293 — ver PassportKeyClient.cs).
+//
+// XPAY-324 — agrega Resolve Key (POST /v1/resolve-key), contrato confirmado
+// en XPAY-310 y en el diagnóstico previo. NO persiste el resolution_id
+// remoto — el método devuelve el DTO de respuesta completo; su reutilización
+// futura (p.ej. como idempotency key de un Payment) queda diferida a una
+// fase posterior, mismo criterio que el resto de esta integración.
 public interface IPassportKeyClient
 {
     // POST /v1/keys
@@ -33,4 +39,8 @@ public interface IPassportKeyClient
     // documentación (XPAY-292); 204 No Content, sin response body.
     Task DeleteKeyAsync(
         string keyId, CancellationToken cancellationToken = default);
+
+    // POST /v1/resolve-key — contrato confirmado en XPAY-310.
+    Task<PassportResolveKeyResponse> ResolveKeyAsync(
+        PassportResolveKeyRequest request, CancellationToken cancellationToken = default);
 }

@@ -532,4 +532,256 @@ public class PassportKeyClientTests
 
         await Assert.ThrowsAsync<PassportTransportException>(() => client.DeleteKeyAsync("synthetic-key-id-001"));
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-324 — ResolveKeyAsync (POST /v1/resolve-key)
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static PassportResolveKeyRequest SyntheticResolveRequest(
+        string customerId = "synthetic-customer-id-001",
+        PassportKeyType keyType = PassportKeyType.BCODE,
+        string keyValue = "0000000000") =>
+        new(CustomerId: customerId, Key: new PassportKeyRequest(keyType, keyValue));
+
+    // Ejemplo sintético construido con exactamente el shape confirmado en el
+    // diagnóstico previo (estructura real observada en Sandbox): ningún
+    // valor real de un customer/cuenta/BCODE, ningún dato de un titular real.
+    private const string FullResolveKeyResponseBody = """
+        {
+          "id": "synthetic-resolution-id-001",
+          "receptor_node": "SYNTH-NODE",
+          "resolved_at": "2026-01-01T00:00:00.000000Z",
+          "expires_at": "2026-01-01T00:30:00.000000Z",
+          "customer_id": "synthetic-customer-id-001",
+          "owner": {
+            "first_name": "Synthetic",
+            "second_name": "Test",
+            "first_last_name": "Owner",
+            "second_last_name": "Fixture",
+            "business_name": null,
+            "identification_type": "CC",
+            "identification_number": "0000000000",
+            "type": "PERSON"
+          },
+          "key": { "key_type": "BCODE", "key_value": "0000000000" },
+          "participant": { "name": "Synthetic Participant", "identification_number": "1111111111" },
+          "account": { "account_number": "2222222222", "account_type": "SAVINGS" }
+        }
+        """;
+
+    // ── Request happy path ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task ResolveKeyAsync_PostsToExactContractPath()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullResolveKeyResponseBody));
+        var client = CreateClient(handler);
+
+        await client.ResolveKeyAsync(SyntheticResolveRequest());
+
+        Assert.Equal(1, handler.CallCount);
+        Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+        Assert.Equal("/v1/resolve-key", handler.LastRequest.RequestUri!.AbsolutePath);
+        Assert.Equal(BaseUrl, handler.LastRequest.RequestUri.GetLeftPart(UriPartial.Authority));
+    }
+
+    [Fact]
+    public async Task ResolveKeyAsync_SendsBearerFromExistingInfrastructure()
+    {
+        var tokenProvider = new FakePassportTokenProvider("synthetic-bearer-token");
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullResolveKeyResponseBody));
+        var client = CreateClient(handler, tokenProvider);
+
+        await client.ResolveKeyAsync(SyntheticResolveRequest());
+
+        Assert.Equal("Bearer", handler.LastRequest!.Headers.Authorization!.Scheme);
+        Assert.Equal("synthetic-bearer-token", handler.LastRequest.Headers.Authorization!.Parameter);
+    }
+
+    [Fact]
+    public async Task ResolveKeyAsync_SerializesRequestWithExactContractShape()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullResolveKeyResponseBody));
+        var client = CreateClient(handler);
+
+        await client.ResolveKeyAsync(SyntheticResolveRequest());
+
+        using var doc = System.Text.Json.JsonDocument.Parse(handler.LastRequestBody!);
+        var root = doc.RootElement;
+
+        Assert.Equal("synthetic-customer-id-001", root.GetProperty("customer_id").GetString());
+        var key = root.GetProperty("key");
+        Assert.Equal("BCODE", key.GetProperty("key_type").GetString());
+        Assert.Equal("0000000000", key.GetProperty("key_value").GetString());
+
+        // Sin campos inventados: exactamente 2 propiedades top-level.
+        var topLevelNames = new List<string>();
+        foreach (var prop in root.EnumerateObject())
+            topLevelNames.Add(prop.Name);
+        Assert.Equal(new[] { "customer_id", "key" }, topLevelNames);
+    }
+
+    // ── Input guards — ninguno debe llegar a HTTP ───────────────────────
+
+    [Fact]
+    public async Task ResolveKeyAsync_NullRequest_ThrowsBeforeHttp()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullResolveKeyResponseBody));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => client.ResolveKeyAsync(null!));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ResolveKeyAsync_MissingCustomerId_ThrowsBeforeHttp(string? customerId)
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullResolveKeyResponseBody));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.ResolveKeyAsync(SyntheticResolveRequest(customerId: customerId!)));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task ResolveKeyAsync_NullKey_ThrowsBeforeHttp()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullResolveKeyResponseBody));
+        var client = CreateClient(handler);
+
+        var request = new PassportResolveKeyRequest(CustomerId: "synthetic-customer-id-001", Key: null!);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.ResolveKeyAsync(request));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task ResolveKeyAsync_OutOfRangeKeyType_ThrowsBeforeHttp()
+    {
+        // XPAY-289/324 — mismo hallazgo de Create Key: un cast fuera de
+        // rango no es rechazado por el compilador ni por
+        // JsonStringEnumConverter al serializar; Enum.IsDefined debe
+        // rechazarlo ANTES de HTTP.
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullResolveKeyResponseBody));
+        var client = CreateClient(handler);
+
+        var request = SyntheticResolveRequest(keyType: (PassportKeyType)999);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.ResolveKeyAsync(request));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task ResolveKeyAsync_MissingKeyValue_ThrowsBeforeHttp(string? keyValue)
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullResolveKeyResponseBody));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => client.ResolveKeyAsync(SyntheticResolveRequest(keyValue: keyValue!)));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    // ── Response deserialization — shape anidado completo ───────────────
+
+    [Fact]
+    public async Task ResolveKeyAsync_Http200_DeserializesFullNestedShape()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullResolveKeyResponseBody));
+        var client = CreateClient(handler);
+
+        var result = await client.ResolveKeyAsync(SyntheticResolveRequest());
+
+        Assert.Equal(1, handler.CallCount);
+        Assert.Equal("synthetic-resolution-id-001", result.Id);
+        Assert.Equal("SYNTH-NODE", result.ReceptorNode);
+        Assert.Equal("2026-01-01T00:00:00.000000Z", result.ResolvedAt);
+        Assert.Equal("2026-01-01T00:30:00.000000Z", result.ExpiresAt);
+        Assert.Equal("synthetic-customer-id-001", result.CustomerId);
+
+        Assert.NotNull(result.Owner);
+        Assert.Equal("Synthetic", result.Owner!.FirstName);
+        Assert.Equal("Test", result.Owner.SecondName);
+        Assert.Equal("Owner", result.Owner.FirstLastName);
+        Assert.Equal("Fixture", result.Owner.SecondLastName);
+        Assert.Null(result.Owner.BusinessName);
+        Assert.Equal("CC", result.Owner.IdentificationType);
+        Assert.Equal("0000000000", result.Owner.IdentificationNumber);
+        Assert.Equal("PERSON", result.Owner.Type);
+
+        // key reutiliza PassportKeyResponseDetail (exact match confirmado).
+        Assert.NotNull(result.Key);
+        Assert.Equal("BCODE", result.Key!.KeyType);
+        Assert.Equal("0000000000", result.Key.KeyValue);
+
+        Assert.NotNull(result.Participant);
+        Assert.Equal("Synthetic Participant", result.Participant!.Name);
+        Assert.Equal("1111111111", result.Participant.IdentificationNumber);
+
+        Assert.NotNull(result.Account);
+        Assert.Equal("2222222222", result.Account!.AccountNumber);
+        Assert.Equal("SAVINGS", result.Account.AccountType);
+    }
+
+    [Fact]
+    public async Task ResolveKeyAsync_MissingId_ThrowsProtocolException()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportProtocolException>(() => client.ResolveKeyAsync(SyntheticResolveRequest()));
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    // ── Error route — reutiliza el manejo genérico existente ────────────
+
+    [Fact]
+    public async Task ResolveKeyAsync_Http400_ThrowsTransportException()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.BadRequest, "{\"error\":\"bad_request\"}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportTransportException>(() => client.ResolveKeyAsync(SyntheticResolveRequest()));
+    }
+
+    [Fact]
+    public async Task ResolveKeyAsync_Http401_ThrowsAuthenticationException()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.Unauthorized, "{\"error\":\"unauthorized\"}"));
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<PassportAuthenticationException>(() => client.ResolveKeyAsync(SyntheticResolveRequest()));
+    }
+
+    [Fact]
+    public async Task ResolveKeyAsync_MissingId_ExceptionMessageIsSanitized()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, "{}"));
+        var client = CreateClient(handler);
+
+        var ex = await Assert.ThrowsAsync<PassportProtocolException>(
+            () => client.ResolveKeyAsync(SyntheticResolveRequest()));
+
+        Assert.DoesNotContain("synthetic-customer-id-001", ex.Message);
+        Assert.DoesNotContain("synthetic-bearer-token", ex.Message);
+        Assert.DoesNotContain("test-client-secret", ex.Message);
+    }
 }
