@@ -151,24 +151,47 @@ certifica que el defecto está corregido para ejecuciones **futuras**. El
 para envío a Passport es una decisión posterior del director técnico, no
 automática por esta corrección.
 
-### XPAY-332 — M3-T4 (Activate Key) implementado OFFLINE
+### XPAY-332/333 — M3-T4 (Activate Key)
 
-`M3-T4` está hoy en estado `IMPLEMENTED`. **No se afirma `SANDBOX_PASS`** —
-`ActivateKeyExecutor`/`ActivateKeyEvidenceBuilder`/el camino `activate-key`
-del harness (`--execute --confirm-activate-key`) existen y están cubiertos
-por tests offline (incluyendo un test end-to-end con handler HTTP fake y
-`key_id` sintético, y tests dedicados que prueban que Activate invoca
-ÚNICAMENTE `IPassportKeyClient.ActivateKeyAsync` — nunca Suspend/Delete/
-Create/Resolve/List Keys). **Ninguna llamada real ha ocurrido todavía.**
+`M3-T4` está en estado **`SANDBOX_PASS`** — una ejecución real `--execute`
+(XPAY-333) produjo evidencia con `result=PASS`
+(`review_status=PENDING_PASSPORT_REVIEW`, aún no `PASSPORT_ACCEPTED`). El
+harness offline (`ActivateKeyExecutor`/`ActivateKeyEvidenceBuilder`/
+`activate-key --execute --confirm-activate-key`) fue implementado y
+probado offline en XPAY-332 (test end-to-end con handler HTTP fake, y
+tests dedicados que prueban que Activate invoca ÚNICAMENTE
+`IPassportKeyClient.ActivateKeyAsync` — nunca Suspend/Delete/Create/
+Resolve/List Keys) antes de esa ejecución real.
 
-Activate opera sobre la **misma llave** creada en M3-T1 y suspendida en
-M3-T3 — identificada por el mismo `PASSPORT_TEST_NEW_KEY_ID` remoto ya
-recuperado (XPAY-329) y almacenado privadamente; nunca se imprime ni se
-persiste en el repositorio, y no se recupera de nuevo vía List Keys para
+Activate operó sobre la **misma llave** creada en M3-T1 y suspendida en
+M3-T3 — identificada por el mismo `PASSPORT_TEST_NEW_KEY_ID` remoto
+recuperado en XPAY-329 y almacenado privadamente; nunca se imprimió ni se
+persistió en el repositorio, y no se recuperó de nuevo vía List Keys para
 esta operación. El logging seguro de XPAY-330 (nivel mínimo `Warning`
-global vía `HarnessLogging.Configure`) aplica igual a Activate — no fue
-necesario ni se agregó ninguna configuración de logging específica para
-este caso.
+global vía `HarnessLogging.Configure`) se validó en esta primera ejecución
+real posterior al incidente de M3-T3 — sin ninguna fuga de URI/identificador
+sensible en consola.
+
+### XPAY-334 — M3-T5 (Delete Key) implementado OFFLINE
+
+`M3-T5` está hoy en estado `IMPLEMENTED`. **No se afirma `SANDBOX_PASS`** —
+`DeleteKeyExecutor`/`DeleteKeyEvidenceBuilder`/el camino `delete-key` del
+harness (`--execute --confirm-delete-key`) existen y están cubiertos por
+tests offline (incluyendo un test end-to-end con handler HTTP fake y
+`key_id` sintético, y tests dedicados que prueban que Delete invoca
+ÚNICAMENTE `IPassportKeyClient.DeleteKeyAsync` — nunca Create/Suspend/
+Activate/Resolve/List Keys). **Ninguna llamada real ha ocurrido todavía.**
+
+Delete Key exitoso responde `204 No Content` sin body (contrato XPAY-292/
+293) — a diferencia de Suspend/Activate, `DeleteKeyEvidenceBuilder` nunca
+fabrica `status`/`id`/`deleted_at`: `response_sanitized` queda
+deliberadamente vacío en el caso de éxito.
+
+Delete operará, cuando se autorice su ejecución real, sobre la **misma
+llave** del ciclo M3-T1 → M3-T3 → M3-T4, identificada por el mismo
+`PASSPORT_TEST_NEW_KEY_ID`. El logging seguro de XPAY-330 sigue aplicando
+sin cambios — el path de Delete (`DELETE /v1/keys/{key_id}`) contiene el
+mismo tipo de identificador sensible que ya protege la corrección global.
 
 ## Política de redacción
 

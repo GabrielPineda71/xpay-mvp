@@ -354,4 +354,93 @@ public class HarnessOrchestratorTests
             new[] { "activate-key", "--execute", "--confirm-activate-key" }, ConfigWithActivateTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-334 — delete-key (M3-T5) — mirror exacto de suspend-key/
+    // activate-key, misma variable target (PASSPORT_TEST_NEW_KEY_ID).
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration ConfigWithDeleteTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? newKeyId = ValidTargetKeyId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // A. delete-key dry-run: cero HTTP.
+    [Fact]
+    public void Prepare_DeleteKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "delete-key" }, ConfigWithDeleteTarget());
+        Assert.Equal(HarnessCommand.DeleteKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    // B. --execute solo (sin --confirm-delete-key) => Aborted, nunca HTTP.
+    [Fact]
+    public void Prepare_DeleteKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-key", "--execute" }, ConfigWithDeleteTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // C. --confirm-suspend-key NUNCA autoriza delete-key.
+    [Fact]
+    public void Prepare_DeleteKey_ConfirmSuspendKeyDoesNotAuthorizeDeleteKey()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-key", "--execute", "--confirm-suspend-key" }, ConfigWithDeleteTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // D. --confirm-activate-key NUNCA autoriza delete-key.
+    [Fact]
+    public void Prepare_DeleteKey_ConfirmActivateKeyDoesNotAuthorizeDeleteKey()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-key", "--execute", "--confirm-activate-key" }, ConfigWithDeleteTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // E. --confirm-create-key NUNCA autoriza delete-key.
+    [Fact]
+    public void Prepare_DeleteKey_ConfirmCreateKeyDoesNotAuthorizeDeleteKey()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-key", "--execute", "--confirm-create-key" }, ConfigWithDeleteTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // F. PASSPORT_TEST_NEW_KEY_ID ausente => AbortedTargetMissing, nunca HTTP.
+    [Fact]
+    public void Prepare_DeleteKey_MissingKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-key" }, ConfigWithDeleteTarget(newKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // host no-Sandbox bloquea antes de HTTP (incluso con key_id presente).
+    [Fact]
+    public void Prepare_DeleteKey_NonSandboxHost_ReturnsAbortedNonSandboxHost()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-key" }, ConfigWithDeleteTarget(baseUrl: "https://evil.example.com"));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedNonSandboxHost, decision.Outcome);
+    }
+
+    // G. --execute + --confirm-delete-key => ReadyToExecute.
+    [Fact]
+    public void Prepare_DeleteKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-key", "--execute", "--confirm-delete-key" }, ConfigWithDeleteTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
 }

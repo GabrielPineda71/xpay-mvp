@@ -39,7 +39,8 @@ public static class HarnessOrchestrator
         // falta de confirmación) porque el harness debe reportar el estado de
         // config de forma redactada en cualquier salida no-ShowHelp.
         var configStatus = HarnessConfigStatus.FromConfiguration(configuration);
-        var targetConfig = command is HarnessCommand.CreateKey or HarnessCommand.SuspendKey or HarnessCommand.ActivateKey
+        var targetConfig = command is HarnessCommand.CreateKey or HarnessCommand.SuspendKey
+                                    or HarnessCommand.ActivateKey or HarnessCommand.DeleteKey
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -58,14 +59,23 @@ public static class HarnessOrchestrator
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Targets de create-key incompletos — ver detalle AVAILABLE/MISSING por variable.");
 
-        // XPAY-326/332 — para suspend-key/activate-key, debe estar presente
-        // el key_id REMOTO real de la llave de certificación
-        // (PASSPORT_TEST_NEW_KEY_ID) — nunca derivado del key_value ni de
-        // un fingerprint, y nunca recuperado de nuevo vía List Keys aquí.
-        if (command is HarnessCommand.SuspendKey or HarnessCommand.ActivateKey
+        // XPAY-326/332/334 — para suspend-key/activate-key/delete-key,
+        // debe estar presente el key_id REMOTO real de la llave de
+        // certificación (PASSPORT_TEST_NEW_KEY_ID) — nunca derivado del
+        // key_value ni de un fingerprint, y nunca recuperado de nuevo vía
+        // List Keys aquí.
+        if (command is HarnessCommand.SuspendKey or HarnessCommand.ActivateKey or HarnessCommand.DeleteKey
             && targetConfig is not null && !targetConfig.AllPresentForExistingKeyOperations)
+        {
+            var commandLabel = command switch
+            {
+                HarnessCommand.SuspendKey  => "suspend-key",
+                HarnessCommand.ActivateKey => "activate-key",
+                _                          => "delete-key",
+            };
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
-                $"Target de {(command == HarnessCommand.SuspendKey ? "suspend-key" : "activate-key")} incompleto — PASSPORT_TEST_NEW_KEY_ID ausente.");
+                $"Target de {commandLabel} incompleto — PASSPORT_TEST_NEW_KEY_ID ausente.");
+        }
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

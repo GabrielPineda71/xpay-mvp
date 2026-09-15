@@ -42,6 +42,7 @@ public static class HarnessApp
                 output.WriteLine("     create-key       [--execute --confirm-create-key]");
                 output.WriteLine("     suspend-key      [--execute --confirm-suspend-key]");
                 output.WriteLine("     activate-key     [--execute --confirm-activate-key]");
+                output.WriteLine("     delete-key       [--execute --confirm-delete-key]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -108,6 +109,20 @@ public static class HarnessApp
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 return;
 
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DeleteKey:
+                // XPAY-334 — mismo criterio que suspend-key/activate-key:
+                // NUNCA lee el valor real de PASSPORT_TEST_NEW_KEY_ID en
+                // este modo, sólo ya se confirmó su PRESENCIA (impreso
+                // arriba). No hay token, no hay HTTP, no hay evidencia.
+                output.WriteLine("case=M3-T5 (Delete Key)");
+                output.WriteLine("endpoint=DELETE /v1/keys/{key_id}");
+                output.WriteLine("mutating=YES");
+                output.WriteLine("requires=--execute --confirm-delete-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                return;
+
             case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateCustomer:
                 // XPAY-312 — wiring confirmado (RealStackWiringTests), pero
                 // la invocación real de LinkMerchantAsync queda diferida a
@@ -167,6 +182,27 @@ public static class HarnessApp
                 if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
                 {
                     // XPAY-332 — un bloqueo LOCAL (key_id ausente, commit SHA
+                    // no resoluble) NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var path = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={path}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.DeleteKey:
+            {
+                var execution = await DeleteKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-334 — un bloqueo LOCAL (key_id ausente, commit SHA
                     // no resoluble) NUNCA escribe evidence.json.
                     output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
                     return;
