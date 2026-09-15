@@ -1,0 +1,24 @@
+{
+  "case_id": "M3-T1",
+  "executed_at_utc": "2026-09-15T03:47:42Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "c76ab5feb21a9f258e37f6f50a205ce31cafd47b",
+  "operation": "POST /v1/keys",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "key_type": "BCODE",
+    "account_id_fingerprint": "22308566F22C",
+    "key_value": "REDACTED",
+    "display_name_present": true
+  },
+  "response_sanitized": {
+    "status": "ACTIVE",
+    "key_type": "BCODE",
+    "id_fingerprint": "9654CF47D144",
+    "account_id_fingerprint": "22308566F22C"
+  },
+  "automated_test_reference": null,
+  "notes": null,
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
