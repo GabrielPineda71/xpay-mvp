@@ -1,0 +1,26 @@
+{
+  "case_id": "M3-T6-INVALID",
+  "executed_at_utc": "2026-09-15T20:55:23Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "bf2e1980a5197aa39a1b08c24993604de94c3aba",
+  "operation": "POST /v1/keys",
+  "http_status": null,
+  "result": "FAIL",
+  "request_sanitized": {
+    "account_id_fingerprint": "22308566F22C",
+    "key_type": "BCODE",
+    "invalid_dimension": "key_value_format",
+    "invalid_value_present": true,
+    "expected_http_status": 400,
+    "expected_http_status_provenance": "PASSPORT_OFFICIAL_DOCS",
+    "expected_error_shape": "UNKNOWN"
+  },
+  "response_sanitized": {
+    "passport_http_attempted": true,
+    "transport_result": "FAILURE",
+    "certification_interpretation": "PENDING_DIRECTOR_REVIEW"
+  },
+  "automated_test_reference": null,
+  "notes": "PASSPORT_HTTP_FAILURE: Passport respondi\u00F3 con error HTTP 400. \u2014 interpretaci\u00F3n de certificaci\u00F3n pendiente: un rechazo aqu\u00ED puede ser exactamente el comportamiento CORRECTO esperado de Passport ante un key_value inv\u00E1lido.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
