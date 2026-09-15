@@ -2134,6 +2134,12 @@ public class HarnessAppEndToEndTests
             Assert.Contains("\"STATIC\"", handler.LastRequestBody);
             Assert.DoesNotContain("\"amount\"", handler.LastRequestBody);
 
+            // XPAY-356 — regresión channel: el body real de negocio debe
+            // llevar "channel":"POS" (corregido desde APP tras el HTTP 400
+            // observado en XPAY-354 / RCA de XPAY-355) y NUNCA "APP".
+            Assert.Contains("\"channel\":\"POS\"", handler.LastRequestBody);
+            Assert.DoesNotContain("\"channel\":\"APP\"", handler.LastRequestBody);
+
             var evidencePath = Path.Combine(dir, "M4-T1");
             var files = Directory.GetFiles(evidencePath, "evidence-*.json");
             Assert.Single(files);
@@ -2152,6 +2158,8 @@ public class HarnessAppEndToEndTests
 
             var requestSanitized = root.GetProperty("request_sanitized");
             Assert.Equal("STATIC", requestSanitized.GetProperty("type").GetString());
+            // XPAY-356 — la evidencia futura (result=PASS) debe reflejar POS.
+            Assert.Equal("POS", requestSanitized.GetProperty("channel").GetString());
             Assert.False(requestSanitized.GetProperty("amount_present").GetBoolean());
             Assert.False(requestSanitized.GetProperty("qr_code_reference_present").GetBoolean());
 

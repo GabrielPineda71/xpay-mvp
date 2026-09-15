@@ -67,8 +67,16 @@ public class CreateQrStaticExecutorTests
 
     // F/G/H/I/Q — exactamente 1 llamada lógica, type=STATIC, amount ausente,
     // usa IPassportQrClient (nunca IPassportKeyClient), sin reintentos.
+    //
+    // XPAY-356 §9 — CONTRACT SHAPE TEST: fortalecido para verificar
+    // SIMULTÁNEAMENTE la forma completa del request posterior a la
+    // corrección de channel (APP→POS), protegiendo contra una regresión
+    // silenciosa de CUALQUIER campo del contrato — no sólo channel. Esto no
+    // certifica que el contrato (en particular vat) sea correcto ante
+    // Passport (XPAY-355 dejó esa evidencia como contradictoria) — sólo
+    // protege que XPAY-356 no alteró nada más que channel.
     [Fact]
-    public async Task ExecuteAsync_Success_CallsOnlyCreateQrCodeAsync_ExactlyOnce_StaticWithoutAmount()
+    public async Task ExecuteAsync_Success_CallsOnlyCreateQrCodeAsync_ExactlyOnce_FullContractShape()
     {
         var client = new FakeQrClient();
         var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
@@ -79,13 +87,46 @@ public class CreateQrStaticExecutorTests
 
         Assert.Equal(1, client.CreateQrCodeCallCount);
         Assert.Equal(0, client.DecodeQrCodeCallCount);
-        Assert.Equal(SyntheticKeyId, client.LastRequest!.KeyId);
-        Assert.Equal(SyntheticCustomerId, client.LastRequest.CustomerId);
-        Assert.Equal(PassportQrType.STATIC, client.LastRequest.Type);
-        Assert.Null(client.LastRequest.Amount); // H — amount ausente/null.
+
+        var sent = client.LastRequest!;
+        Assert.Equal(SyntheticKeyId, sent.KeyId);
+        Assert.Equal(SyntheticCustomerId, sent.CustomerId);
+        Assert.Equal(PassportQrType.STATIC, sent.Type);
+
+        // XPAY-356 — corrección central: channel=POS (nunca APP).
+        Assert.Equal(PassportQrChannel.POS, sent.Channel);
+
+        Assert.Null(sent.Amount);                 // amount ausente.
+        Assert.Null(sent.Inc);                    // inc ausente.
+        Assert.Null(sent.QrCodeReference);         // qr_code_reference ausente.
+
+        Assert.Equal("00", sent.AdditionalInfo.TransactionPurpose);
+        Assert.Equal("XPAY-M4-T1-CERT", sent.AdditionalInfo.TerminalLabel);
+
+        Assert.NotNull(sent.Vat);
+        Assert.Equal(PassportQrVatType.FIXED, sent.Vat.VatType);
+        Assert.Equal("0.00", sent.Vat.VatValue);
+        Assert.Equal("0.00", sent.Vat.VatBaseValue);
 
         Assert.Equal(KeyOperationOutcome.Success, result.Outcome);
         Assert.NotNull(result.Evidence);
+    }
+
+    // XPAY-356 §7/§8 — regresión explícita: CreateQrStaticExecutor debe
+    // construir channel=POS y NUNCA channel=APP. Test dedicado, separado
+    // del contract-shape test anterior, para que una futura reversión
+    // accidental de sólo este campo falle con un mensaje inequívoco.
+    [Fact]
+    public async Task ExecuteAsync_Success_UsesPosChannel_NeverApp()
+    {
+        var client = new FakeQrClient();
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+
+        await CreateQrStaticExecutor.ExecuteAsync(
+            ConfigWithTarget(), client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal(PassportQrChannel.POS, client.LastRequest!.Channel);
+        Assert.NotEqual(PassportQrChannel.APP, client.LastRequest.Channel);
     }
 
     // J. evidence: case_id=M4-T1.

@@ -86,11 +86,25 @@ public static class CreateQrStaticExecutor
         // corregido aquí). §8 — qr_code_reference NO se usa: no es
         // necesario para Create QR (es opcional) y XPAY-351 prefiere
         // explícitamente no usarlo.
+        //
+        // XPAY-356 — Channel corregido de APP a POS: la ejecución real de
+        // XPAY-354 (evidence-2026-09-15T23-06-08Z.json) usó APP y recibió
+        // HTTP 400 de Passport. El RCA de XPAY-355 encontró que POS —no
+        // APP— es el valor ya confirmado y probado para STATIC desde la
+        // implementación histórica del cliente QR (ver
+        // PassportQrClientTests.SyntheticStaticRequest(), que usa
+        // Channel=POS desde XPAY-298), y coincide con el ejemplo oficial
+        // STATIC vigente revisado por el director. Esta corrección NO
+        // declara que APP haya sido la causa confirmada del HTTP 400 —
+        // Passport nunca reveló el campo específico rechazado (gap de
+        // diagnóstico documentado en XPAY-355) — es una corrección de
+        // contrato basada en el valor STATIC ya confirmado localmente,
+        // no una conclusión causal definitiva.
         var request = new PassportCreateQrCodeRequest(
             KeyId: keyId,
             CustomerId: customerId,
             Type: PassportQrType.STATIC,
-            Channel: PassportQrChannel.APP,
+            Channel: PassportQrChannel.POS,
             AdditionalInfo: new PassportQrAdditionalInfoRequest(
                 TransactionPurpose: CertificationTransactionPurpose,
                 TerminalLabel: CertificationTerminalLabel),
