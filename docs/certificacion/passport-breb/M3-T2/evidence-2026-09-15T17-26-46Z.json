@@ -1,0 +1,23 @@
+{
+  "case_id": "M3-T2",
+  "executed_at_utc": "2026-09-15T17:26:46Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "90f6f964170b9a058173a3d71233df2077ebd642",
+  "operation": "POST /v1/resolve-key",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "customer_id_fingerprint": "99A710894D3B",
+    "key_type": "BCODE",
+    "key_value_fingerprint": "74C5BD33149D"
+  },
+  "response_sanitized": {
+    "resolution_id_fingerprint": "271470CD9035",
+    "owner_present": true,
+    "participant_present": true,
+    "account_present": true
+  },
+  "automated_test_reference": null,
+  "notes": null,
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
