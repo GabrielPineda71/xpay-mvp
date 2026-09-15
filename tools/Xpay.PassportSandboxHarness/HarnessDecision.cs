@@ -28,6 +28,14 @@ public enum HarnessCommand
     DeleteKey,
     DeleteAlreadyDeletedKey,
     ResolveKey,
+    // XPAY-344 — M3-T6 (negative testing de Create Key): MISSING nunca
+    // llega a Passport (bloqueo LOCAL garantizado por diseño — ver
+    // CreateKeyMissingExecutor); INVALID sí realiza una llamada HTTP real
+    // futura (no en XPAY-344), con un key_value sintéticamente inválido
+    // generado internamente. DUPLICATE permanece BLOCKED_PENDING_CONTRACT_
+    // CONFIRMATION — deliberadamente SIN comando ejecutable en el harness.
+    CreateKeyMissing,
+    CreateKeyInvalid,
 }
 
 public static class HarnessDecision
@@ -49,6 +57,11 @@ public static class HarnessDecision
     // PASSPORT_TEST_NEW_KEY_ID (ese es exclusivo de Suspend/Activate/
     // Delete/DeleteAlreadyDeleted, un target completamente distinto).
     public const string CommandResolveKey              = "resolve-key";
+    // XPAY-344 — M3-T6 MISSING/INVALID (Create Key negativo). Comandos
+    // INDEPENDIENTES entre sí y de create-key — cada uno con su propia
+    // bandera de confirmación exclusiva.
+    public const string CommandCreateKeyMissing = "create-key-missing";
+    public const string CommandCreateKeyInvalid = "create-key-invalid";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -67,6 +80,8 @@ public static class HarnessDecision
     public const string FlagConfirmDeleteKey               = "--confirm-delete-key";
     public const string FlagConfirmDeleteAlreadyDeletedKey = "--confirm-delete-already-deleted-key";
     public const string FlagConfirmResolveKey              = "--confirm-resolve-key";
+    public const string FlagConfirmCreateKeyMissing = "--confirm-create-key-missing";
+    public const string FlagConfirmCreateKeyInvalid = "--confirm-create-key-invalid";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -79,6 +94,8 @@ public static class HarnessDecision
             CommandDeleteKey               => HarnessCommand.DeleteKey,
             CommandDeleteAlreadyDeletedKey => HarnessCommand.DeleteAlreadyDeletedKey,
             CommandResolveKey              => HarnessCommand.ResolveKey,
+            CommandCreateKeyMissing        => HarnessCommand.CreateKeyMissing,
+            CommandCreateKeyInvalid        => HarnessCommand.CreateKeyInvalid,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -110,6 +127,8 @@ public static class HarnessDecision
             HarnessCommand.DeleteKey               => FlagConfirmDeleteKey,
             HarnessCommand.DeleteAlreadyDeletedKey => FlagConfirmDeleteAlreadyDeletedKey,
             HarnessCommand.ResolveKey              => FlagConfirmResolveKey,
+            HarnessCommand.CreateKeyMissing        => FlagConfirmCreateKeyMissing,
+            HarnessCommand.CreateKeyInvalid        => FlagConfirmCreateKeyInvalid,
             _                                      => null,
         };
 

@@ -1695,4 +1695,344 @@ public class HarnessAppEndToEndTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-344 — create-key-missing / create-key-invalid (M3-T6), 100%
+    // offline. account_id/key_type SIEMPRE sintéticos.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string SyntheticMissingInvalidAccountId = "SYNTH-E2E-M3T6-ACCOUNT-ID";
+
+    private static IConfiguration MissingInvalidConfig(
+        string? accountId = SyntheticMissingInvalidAccountId, string? newKeyType = "BCODE") => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvAccountId] = accountId,
+            [HarnessTargetConfig.EnvNewKeyType] = newKeyType,
+        })
+        .Build();
+
+    private static HarnessApp.Dependencies BuildMissingInvalidDependencies(
+        HttpMessageHandler handler, string evidenceDir, IConfiguration config)
+    {
+        IPassportHttpClient httpClient = new PassportHttpClient(
+            new LocalFakeHttpClientFactory(handler), new LocalFakeTokenProvider(), config,
+            NullLogger<PassportHttpClient>.Instance);
+
+        return new HarnessApp.Dependencies(
+            CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
+            KeyClient: new PassportKeyClient(httpClient),
+            CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
+            EvidenceBaseDirectory: evidenceDir);
+    }
+
+    // ── create-key-missing ──────────────────────────────────────────────
+
+    // Test obligatorio: ejecución fake demuestra bloqueo LOCAL — cero
+    // llamadas HTTP (incluso con un IPassportHttpClient/handler REAL
+    // conectado), evidencia M3-T6-MISSING sanitizada, sin raw key_value ni
+    // credenciales.
+    [Fact]
+    public async Task CreateKeyMissingExecute_FullPath_ProducesZeroHttpCalls_AndPassEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeMissingInvalidHandler(); // nunca debería ser invocado.
+            var config = MissingInvalidConfig();
+            var dependencies = BuildMissingInvalidDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-key-missing", "--execute", "--confirm-create-key-missing" }, config, dependencies, output);
+
+            // CreateKey HTTP count=0 — el guard productivo de
+            // CreateKeyAsync rechaza key_value vacío ANTES de cualquier
+            // HTTP, incluso usando el stack productivo real.
+            Assert.Equal(0, handler.CallCount);
+
+            var caseDir = Path.Combine(dir, "M3-T6-MISSING");
+            var files = Directory.GetFiles(caseDir, "evidence-*.json");
+            Assert.Single(files);
+
+            var json = File.ReadAllText(files[0]);
+            using var evDoc = JsonDocument.Parse(json);
+            var root = evDoc.RootElement;
+            Assert.Equal("M3-T6-MISSING", root.GetProperty("case_id").GetString());
+            Assert.Equal("sandbox", root.GetProperty("environment").GetString());
+            Assert.Equal("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000",
+                root.GetProperty("backend_commit_sha").GetString());
+            Assert.Equal("POST /v1/keys — blocked before transport", root.GetProperty("operation").GetString());
+            // Result=PASS: el bloqueo local ES el resultado deseado.
+            Assert.Equal("PASS", root.GetProperty("result").GetString());
+            Assert.Equal("PENDING_PASSPORT_REVIEW", root.GetProperty("review_status").GetString());
+
+            var requestSanitized = root.GetProperty("request_sanitized");
+            Assert.Equal("key_value", requestSanitized.GetProperty("missing_field").GetString());
+            Assert.Equal("LOCAL", requestSanitized.GetProperty("validation_layer").GetString());
+            Assert.Equal("BCODE", requestSanitized.GetProperty("key_type").GetString());
+
+            var responseSanitized = root.GetProperty("response_sanitized");
+            Assert.False(responseSanitized.GetProperty("passport_http_attempted").GetBoolean());
+            Assert.Equal("NOT_ATTEMPTED", responseSanitized.GetProperty("transport_result").GetString());
+            Assert.Equal("PASS", responseSanitized.GetProperty("certification_case_result").GetString());
+
+            // Sin raw account_id, sin credenciales, sin Bearer.
+            Assert.DoesNotContain(SyntheticMissingInvalidAccountId, json);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", json);
+            Assert.DoesNotContain("synthetic-secret", json);
+
+            var consoleOutput = output.ToString();
+            Assert.DoesNotContain(SyntheticMissingInvalidAccountId, consoleOutput);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", consoleOutput);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateKeyMissingDryRun_NoFlags_ProducesZeroHttpZeroEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeMissingInvalidHandler();
+            var config = MissingInvalidConfig();
+            var dependencies = BuildMissingInvalidDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-key-missing" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T6-MISSING")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateKeyMissingExecute_WithoutConfirm_StaysBlocked_ZeroHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeMissingInvalidHandler();
+            var config = MissingInvalidConfig();
+            var dependencies = BuildMissingInvalidDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-key-missing", "--execute" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T6-MISSING")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateKeyMissingExecute_MissingTarget_IsAborted_NoEvidenceNoHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeMissingInvalidHandler();
+            var config = MissingInvalidConfig(accountId: null);
+            var dependencies = BuildMissingInvalidDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-key-missing", "--execute", "--confirm-create-key-missing" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T6-MISSING")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ── create-key-invalid ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateKeyInvalidDryRun_NoFlags_ProducesZeroHttpZeroEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeMissingInvalidHandler();
+            var config = MissingInvalidConfig();
+            var dependencies = BuildMissingInvalidDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-key-invalid" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T6-INVALID")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateKeyInvalidExecute_WithoutConfirm_StaysBlocked_ZeroHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeMissingInvalidHandler();
+            var config = MissingInvalidConfig();
+            var dependencies = BuildMissingInvalidDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-key-invalid", "--execute" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T6-INVALID")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateKeyInvalidExecute_UnsupportedKeyType_IsLocalBlocked_NoEvidenceNoHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeMissingInvalidHandler();
+            var config = MissingInvalidConfig(newKeyType: "PHONE"); // sin contrato de formato confirmado.
+            var dependencies = BuildMissingInvalidDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-key-invalid", "--execute", "--confirm-create-key-invalid" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T6-INVALID")));
+            Assert.Contains("LOCAL_BLOCKED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Test obligatorio §12: "fake de Passport recibe exactamente UNA
+    // intención CreateKey cuando ejecución fake autorizada" — 100% offline,
+    // handler completamente fake, NUNCA red real ni Sandbox real. Simula
+    // HTTP 400 (el rechazo documentalmente esperado de Passport).
+    [Fact]
+    public async Task CreateKeyInvalidExecute_FakePassportRejects400_ProducesExactlyOneCall_AndFailEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeMissingInvalidHandler(
+                () => LocalFakeMissingInvalidHandler.Json(HttpStatusCode.BadRequest, """{ "message": "invalid key_value format" }"""));
+            var config = MissingInvalidConfig();
+            var dependencies = BuildMissingInvalidDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-key-invalid", "--execute", "--confirm-create-key-invalid" }, config, dependencies, output);
+
+            // Exactamente 1 intento — sin retry.
+            Assert.Equal(1, handler.CallCount);
+            Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+            Assert.Equal("/v1/keys", handler.LastRequest.RequestUri!.AbsolutePath);
+
+            var caseDir = Path.Combine(dir, "M3-T6-INVALID");
+            var files = Directory.GetFiles(caseDir, "evidence-*.json");
+            Assert.Single(files);
+
+            var json = File.ReadAllText(files[0]);
+            using var evDoc = JsonDocument.Parse(json);
+            var root = evDoc.RootElement;
+            Assert.Equal("M3-T6-INVALID", root.GetProperty("case_id").GetString());
+            Assert.Equal("POST /v1/keys", root.GetProperty("operation").GetString());
+            Assert.Equal("FAIL", root.GetProperty("result").GetString());
+
+            var requestSanitized = root.GetProperty("request_sanitized");
+            Assert.Equal("BCODE", requestSanitized.GetProperty("key_type").GetString());
+            Assert.Equal("key_value_format", requestSanitized.GetProperty("invalid_dimension").GetString());
+            Assert.True(requestSanitized.GetProperty("invalid_value_present").GetBoolean());
+            Assert.Equal(400, requestSanitized.GetProperty("expected_http_status").GetInt32());
+            Assert.Equal("PASSPORT_OFFICIAL_DOCS", requestSanitized.GetProperty("expected_http_status_provenance").GetString());
+
+            var responseSanitized = root.GetProperty("response_sanitized");
+            Assert.True(responseSanitized.GetProperty("passport_http_attempted").GetBoolean());
+            Assert.Equal("FAILURE", responseSanitized.GetProperty("transport_result").GetString());
+            Assert.Equal("PENDING_DIRECTOR_REVIEW", responseSanitized.GetProperty("certification_interpretation").GetString());
+
+            // error body sensible ("invalid key_value format" es genérico,
+            // pero el body crudo de Passport NUNCA se persiste íntegro).
+            Assert.DoesNotContain("message", json);
+
+            // Nunca raw account_id/credenciales/Bearer.
+            Assert.DoesNotContain(SyntheticMissingInvalidAccountId, json);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", json);
+            Assert.DoesNotContain("synthetic-secret", json);
+
+            var consoleOutput = output.ToString();
+            Assert.DoesNotContain(SyntheticMissingInvalidAccountId, consoleOutput);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", consoleOutput);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-343/344 — regresión: todos los casos M3 previos permanecen
+    // intactos y publicables (sanity check estructural, sin llamada real).
+    // ══════════════════════════════════════════════════════════════════════
+
+    private sealed class LocalFakeMissingInvalidHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpResponseMessage> _responseFactory;
+
+        public LocalFakeMissingInvalidHandler(Func<HttpResponseMessage>? responseFactory = null) =>
+            _responseFactory = responseFactory ?? (() => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{ "id": "synthetic-id", "status": "ACTIVE" }""",
+                    System.Text.Encoding.UTF8, "application/json"),
+            });
+
+        public int CallCount { get; private set; }
+        public HttpRequestMessage? LastRequest { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            LastRequest = request;
+            return Task.FromResult(_responseFactory());
+        }
+
+        public static HttpResponseMessage Json(HttpStatusCode status, string body) => new(status)
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+        };
+    }
 }

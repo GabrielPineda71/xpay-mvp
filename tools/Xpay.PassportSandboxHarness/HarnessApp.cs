@@ -45,6 +45,8 @@ public static class HarnessApp
                 output.WriteLine("     delete-key       [--execute --confirm-delete-key]");
                 output.WriteLine("     delete-already-deleted-key [--execute --confirm-delete-already-deleted-key]");
                 output.WriteLine("     resolve-key      [--execute --confirm-resolve-key]");
+                output.WriteLine("     create-key-missing [--execute --confirm-create-key-missing]");
+                output.WriteLine("     create-key-invalid [--execute --confirm-create-key-invalid]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -151,6 +153,34 @@ public static class HarnessApp
                 output.WriteLine("endpoint=POST /v1/resolve-key");
                 output.WriteLine("mutating=NO (read-only, resuelve una llave existente)");
                 output.WriteLine("requires=--execute --confirm-resolve-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateKeyMissing:
+                // XPAY-344 — NUNCA lee PASSPORT_TEST_ACCOUNT_ID/
+                // PASSPORT_TEST_NEW_KEY_TYPE en este modo, sólo ya se
+                // confirmó su PRESENCIA (impreso arriba). No hay token, no
+                // hay HTTP, no hay evidencia.
+                output.WriteLine("case=M3-T6-MISSING (Create Key sin key_value)");
+                output.WriteLine("endpoint=POST /v1/keys — blocked before transport (esperado)");
+                output.WriteLine("mutating=NO (bloqueo local esperado, nunca llega a Passport)");
+                output.WriteLine("requires=--execute --confirm-create-key-missing");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateKeyInvalid:
+                // XPAY-344 — NUNCA lee PASSPORT_TEST_ACCOUNT_ID/
+                // PASSPORT_TEST_NEW_KEY_TYPE en este modo. El key_value
+                // inválido se genera internamente sólo en ReadyToExecute —
+                // nunca aquí, nunca desde el env.
+                output.WriteLine("case=M3-T6-INVALID (Create Key con key_value de formato inválido)");
+                output.WriteLine("endpoint=POST /v1/keys");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-344)");
+                output.WriteLine("requires=--execute --confirm-create-key-invalid");
                 output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
                 output.WriteLine("result=DRY_RUN");
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
@@ -289,6 +319,56 @@ public static class HarnessApp
                 output.WriteLine($"result={execution.Evidence!.Result}");
                 output.WriteLine($"evidence_path={path}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateKeyMissing:
+            {
+                var execution = await CreateKeyMissingExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-344 — bloqueo operativo GENUINO (target
+                    // ausente, commit SHA no resoluble, o el guard
+                    // productivo no disparó como se esperaba) — NUNCA
+                    // escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                // Outcome.Success aquí significa: el guard productivo de
+                // CreateKeyAsync SÍ rechazó el request por key_value
+                // ausente, ANTES de HTTP — éxito del subcaso M3-T6-MISSING.
+                var path = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={path}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=M3-T6-MISSING: bloqueo LOCAL confirmado antes de cualquier HTTP a Passport");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateKeyInvalid:
+            {
+                var execution = await CreateKeyInvalidExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-344 — bloqueo LOCAL (target ausente, key_type no
+                    // soportado para generación de valor inválido, commit
+                    // SHA no resoluble) NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var path = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={path}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=M3-T6-INVALID: transporte PASS/FAIL != juicio de certificación (ver evidencia)");
                 return;
             }
         }

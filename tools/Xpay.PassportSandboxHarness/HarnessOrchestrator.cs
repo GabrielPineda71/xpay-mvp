@@ -42,6 +42,7 @@ public static class HarnessOrchestrator
         var targetConfig = command is HarnessCommand.CreateKey or HarnessCommand.SuspendKey
                                     or HarnessCommand.ActivateKey or HarnessCommand.DeleteKey
                                     or HarnessCommand.DeleteAlreadyDeletedKey or HarnessCommand.ResolveKey
+                                    or HarnessCommand.CreateKeyMissing or HarnessCommand.CreateKeyInvalid
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -89,6 +90,17 @@ public static class HarnessOrchestrator
         if (command == HarnessCommand.ResolveKey && targetConfig is not null && !targetConfig.AllPresentForResolveKey)
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Target de resolve-key incompleto — PASSPORT_TEST_CUSTOMER_ID/PASSPORT_TEST_BREB_KEY_TYPE/PASSPORT_TEST_BREB_KEY ausente(s).");
+
+        // XPAY-344 — create-key-missing/create-key-invalid (M3-T6): sólo
+        // requieren account_id + key_type (PASSPORT_TEST_NEW_KEY_VALUE
+        // NUNCA se exige ni se lee para ninguno de los dos).
+        if (command is HarnessCommand.CreateKeyMissing or HarnessCommand.CreateKeyInvalid
+            && targetConfig is not null && !targetConfig.AllPresentForAccountAndKeyType)
+        {
+            var commandLabel = command == HarnessCommand.CreateKeyMissing ? "create-key-missing" : "create-key-invalid";
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                $"Target de {commandLabel} incompleto — PASSPORT_TEST_ACCOUNT_ID/PASSPORT_TEST_NEW_KEY_TYPE ausente(s).");
+        }
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

@@ -648,4 +648,154 @@ public class HarnessOrchestratorTests
             new[] { "resolve-key", "--execute", "--confirm-resolve-key" }, ConfigWithResolveTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-344 — create-key-missing / create-key-invalid (M3-T6) — target
+    // COMPARTIDO (account_id + key_type), deliberadamente SIN exigir
+    // PASSPORT_TEST_NEW_KEY_VALUE (ninguno de los dos lo lee).
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration ConfigWithMissingInvalidTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? accountId = ValidTargetAccountId, string? newKeyType = ValidTargetKeyType)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (accountId is not null) dict[HarnessTargetConfig.EnvAccountId] = accountId;
+        if (newKeyType is not null) dict[HarnessTargetConfig.EnvNewKeyType] = newKeyType;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // ── create-key-missing ──────────────────────────────────────────────
+
+    [Fact]
+    public void Prepare_CreateKeyMissingNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "create-key-missing" }, ConfigWithMissingInvalidTarget());
+        Assert.Equal(HarnessCommand.CreateKeyMissing, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateKeyMissing_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-missing", "--execute" }, ConfigWithMissingInvalidTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-key")]
+    [InlineData("--confirm-create-key-invalid")]
+    [InlineData("--confirm-suspend-key")]
+    public void Prepare_CreateKeyMissing_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-missing", "--execute", wrongConfirmFlag }, ConfigWithMissingInvalidTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // Viceversa: --confirm-create-key-missing NUNCA autoriza create-key.
+    [Fact]
+    public void Prepare_CreateKey_ConfirmCreateKeyMissingDoesNotAuthorizeCreateKey()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key", "--execute", "--confirm-create-key-missing" }, ConfigWithTargets());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateKeyMissing_MissingAccountId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-missing" }, ConfigWithMissingInvalidTarget(accountId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateKeyMissing_MissingKeyType_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-missing" }, ConfigWithMissingInvalidTarget(newKeyType: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateKeyMissing_NonSandboxHost_ReturnsAbortedNonSandboxHost()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-missing" }, ConfigWithMissingInvalidTarget(baseUrl: "https://evil.example.com"));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedNonSandboxHost, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateKeyMissing_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-missing", "--execute", "--confirm-create-key-missing" }, ConfigWithMissingInvalidTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // ── create-key-invalid ──────────────────────────────────────────────
+
+    [Fact]
+    public void Prepare_CreateKeyInvalidNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "create-key-invalid" }, ConfigWithMissingInvalidTarget());
+        Assert.Equal(HarnessCommand.CreateKeyInvalid, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateKeyInvalid_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-invalid", "--execute" }, ConfigWithMissingInvalidTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-key")]
+    [InlineData("--confirm-create-key-missing")]
+    [InlineData("--confirm-suspend-key")]
+    public void Prepare_CreateKeyInvalid_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-invalid", "--execute", wrongConfirmFlag }, ConfigWithMissingInvalidTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateKeyInvalid_MissingAccountId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-invalid" }, ConfigWithMissingInvalidTarget(accountId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateKeyInvalid_MissingKeyType_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-invalid" }, ConfigWithMissingInvalidTarget(newKeyType: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateKeyInvalid_NonSandboxHost_ReturnsAbortedNonSandboxHost()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-invalid" }, ConfigWithMissingInvalidTarget(baseUrl: "https://evil.example.com"));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedNonSandboxHost, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateKeyInvalid_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key-invalid", "--execute", "--confirm-create-key-invalid" }, ConfigWithMissingInvalidTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
 }

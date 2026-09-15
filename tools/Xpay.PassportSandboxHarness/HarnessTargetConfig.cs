@@ -80,6 +80,16 @@ public sealed record HarnessTargetConfig(
     // certificación).
     public bool AllPresentForResolveKey => CustomerIdPresent && BrebKeyTypePresent && BrebKeyValuePresent;
 
+    // XPAY-344 — target compartido por create-key-missing y
+    // create-key-invalid (M3-T6): ambos reutilizan account_id + key_type
+    // YA existentes de Create Key (PASSPORT_TEST_ACCOUNT_ID/
+    // PASSPORT_TEST_NEW_KEY_TYPE) — deliberadamente SIN exigir
+    // PASSPORT_TEST_NEW_KEY_VALUE, porque ninguno de los dos comandos lee
+    // esa variable: MISSING omite key_value a propósito (es el campo bajo
+    // prueba); INVALID genera su propio key_value sintéticamente inválido
+    // dentro del executor, nunca desde el env.
+    public bool AllPresentForAccountAndKeyType => AccountIdPresent && NewKeyTypePresent;
+
     public static HarnessTargetConfig FromConfiguration(IConfiguration configuration) => new(
         AccountIdPresent:    !string.IsNullOrWhiteSpace(configuration[EnvAccountId]),
         NewKeyTypePresent:   !string.IsNullOrWhiteSpace(configuration[EnvNewKeyType]),
