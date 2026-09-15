@@ -19,7 +19,13 @@ public static class HarnessApp
         IPassportCustomerAccountClient CustomerAccountClient,
         IPassportKeyClient KeyClient,
         ICommitShaProvider CommitShaProvider,
-        string EvidenceBaseDirectory);
+        string EvidenceBaseDirectory,
+        // XPAY-351 — M4-T1: mismo stack HTTP/OAuth subyacente
+        // (IPassportHttpClient), cliente tipado distinto. Nullable NO se usa
+        // deliberadamente: todo llamador (Program.cs real, y cada test que
+        // construye Dependencies) debe proveerlo explícitamente, igual que
+        // los demás clientes.
+        IPassportQrClient QrClient);
 
     public static async Task RunAsync(
         string[] args, IConfiguration configuration, Dependencies dependencies, TextWriter output)
@@ -47,6 +53,7 @@ public static class HarnessApp
                 output.WriteLine("     resolve-key      [--execute --confirm-resolve-key]");
                 output.WriteLine("     create-key-missing [--execute --confirm-create-key-missing]");
                 output.WriteLine("     create-key-invalid [--execute --confirm-create-key-invalid]");
+                output.WriteLine("     create-qr-static [--execute --confirm-create-qr-static]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -184,6 +191,22 @@ public static class HarnessApp
                 output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
                 output.WriteLine("result=DRY_RUN");
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrStatic:
+                // XPAY-351 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_NEW_KEY_ID/PASSPORT_TEST_CUSTOMER_ID en este
+                // modo: sólo ya se confirmó su PRESENCIA (impreso arriba).
+                // No se construye ningún PassportCreateQrCodeRequest, no se
+                // obtiene token, no hay HTTP, no hay evidencia.
+                output.WriteLine("case=M4-T1 (Create QR Code — STATIC)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-351)");
+                output.WriteLine("requires=--execute --confirm-create-qr-static");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T1: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-351)");
                 return;
 
             case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateCustomer:
@@ -369,6 +392,27 @@ public static class HarnessApp
                 output.WriteLine($"evidence_path={path}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 output.WriteLine("note=M3-T6-INVALID: transporte PASS/FAIL != juicio de certificación (ver evidencia)");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrStatic:
+            {
+                var execution = await CreateQrStaticExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-351 — un bloqueo LOCAL (target ausente, commit
+                    // SHA no resoluble) NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var path = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={path}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 return;
             }
         }

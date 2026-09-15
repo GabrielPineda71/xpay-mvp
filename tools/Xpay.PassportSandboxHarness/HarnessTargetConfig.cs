@@ -90,6 +90,26 @@ public sealed record HarnessTargetConfig(
     // dentro del executor, nunca desde el env.
     public bool AllPresentForAccountAndKeyType => AccountIdPresent && NewKeyTypePresent;
 
+    // XPAY-351 — target de create-qr-static (M4-T1): reutiliza
+    // EXCLUSIVAMENTE dos variables YA existentes, ninguna nueva —
+    // PASSPORT_TEST_NEW_KEY_ID (mismo target que Suspend/Activate/Delete/
+    // DeleteAlreadyDeleted: el key_id REMOTO real de la llave de
+    // certificación) como key_id del QR, y PASSPORT_TEST_CUSTOMER_ID (mismo
+    // recurso ya usado por resolve-key) como customer_id del QR. Los demás
+    // campos requeridos por el contrato (type/channel/additional_info/vat)
+    // son constantes de protocolo NO sensibles, fijadas en
+    // CreateQrStaticExecutor — no son "targets" porque no identifican un
+    // recurso privado de Sandbox.
+    //
+    // ADVERTENCIA (no bloqueante para XPAY-351, que es offline-only): al
+    // momento de este ticket, la llave identificada por
+    // PASSPORT_TEST_NEW_KEY_ID está en estado DELETED (eliminada en M3-T5 y
+    // confirmada eliminada otra vez en M3-T7) — una ejecución REAL futura de
+    // create-qr-static probablemente sea rechazada por Passport mientras esa
+    // llave no sea reemplazada por una llave ACTIVE. XPAY-351 no resuelve
+    // esto (implementación offline únicamente).
+    public bool AllPresentForCreateQrStatic => NewKeyIdPresent && CustomerIdPresent;
+
     public static HarnessTargetConfig FromConfiguration(IConfiguration configuration) => new(
         AccountIdPresent:    !string.IsNullOrWhiteSpace(configuration[EnvAccountId]),
         NewKeyTypePresent:   !string.IsNullOrWhiteSpace(configuration[EnvNewKeyType]),

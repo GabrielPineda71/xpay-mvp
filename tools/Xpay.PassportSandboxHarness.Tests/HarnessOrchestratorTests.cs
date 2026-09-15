@@ -798,4 +798,140 @@ public class HarnessOrchestratorTests
             new[] { "create-key-invalid", "--execute", "--confirm-create-key-invalid" }, ConfigWithMissingInvalidTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-351 — create-qr-static (M4-T1) — target propio: key_id REMOTO
+    // real de la llave de certificación (PASSPORT_TEST_NEW_KEY_ID, mismo
+    // target que suspend/activate/delete-key) + PASSPORT_TEST_CUSTOMER_ID
+    // (mismo recurso ya usado por resolve-key). Ninguna variable nueva.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration ConfigWithCreateQrStaticTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? newKeyId = ValidTargetKeyId, string? customerId = ValidCustomerId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // A. create-qr-static dry-run: cero HTTP.
+    [Fact]
+    public void Prepare_CreateQrStaticNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "create-qr-static" }, ConfigWithCreateQrStaticTarget());
+        Assert.Equal(HarnessCommand.CreateQrStatic, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    // C. --execute solo (sin confirmación) => Aborted, nunca HTTP.
+    [Fact]
+    public void Prepare_CreateQrStatic_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static", "--execute" }, ConfigWithCreateQrStaticTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // E. confirmación sin --execute => no ejecuta (permanece DryRun).
+    [Fact]
+    public void Prepare_CreateQrStatic_ConfirmWithoutExecute_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static", "--confirm-create-qr-static" }, ConfigWithCreateQrStaticTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    // D/S. Ninguna confirmación de M3 autoriza create-qr-static.
+    [Theory]
+    [InlineData("--confirm-create-key")]
+    [InlineData("--confirm-suspend-key")]
+    [InlineData("--confirm-activate-key")]
+    [InlineData("--confirm-delete-key")]
+    [InlineData("--confirm-delete-already-deleted-key")]
+    [InlineData("--confirm-resolve-key")]
+    [InlineData("--confirm-create-key-missing")]
+    [InlineData("--confirm-create-key-invalid")]
+    public void Prepare_CreateQrStatic_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static", "--execute", wrongConfirmFlag }, ConfigWithCreateQrStaticTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // R. --confirm-create-qr-static NUNCA autoriza ningún comando de M3.
+    [Theory]
+    [InlineData("create-key")]
+    [InlineData("suspend-key")]
+    [InlineData("activate-key")]
+    [InlineData("delete-key")]
+    [InlineData("delete-already-deleted-key")]
+    [InlineData("resolve-key")]
+    [InlineData("create-key-missing")]
+    [InlineData("create-key-invalid")]
+    public void Prepare_M3Commands_ConfirmCreateQrStaticDoesNotAuthorizeThem(string m3Command)
+    {
+        // Config que satisface TODOS los targets posibles simultáneamente,
+        // para que el único motivo de rechazo posible sea la confirmación
+        // incorrecta (nunca un AbortedTargetMissing/AbortedConfigMissing
+        // enmascarando el resultado real que se quiere probar).
+        var dict = new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = ValidSandboxUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvAccountId] = ValidTargetAccountId,
+            [HarnessTargetConfig.EnvNewKeyType] = ValidTargetKeyType,
+            [HarnessTargetConfig.EnvNewKeyValue] = ValidTargetKeyValue,
+            [HarnessTargetConfig.EnvNewKeyId] = ValidTargetKeyId,
+            [HarnessTargetConfig.EnvCustomerId] = ValidCustomerId,
+            [HarnessTargetConfig.EnvBrebKeyType] = ValidBrebKeyType,
+            [HarnessTargetConfig.EnvBrebKeyValue] = ValidBrebKeyValue,
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { m3Command, "--execute", "--confirm-create-qr-static" }, config);
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // G. PASSPORT_TEST_NEW_KEY_ID ausente => AbortedTargetMissing.
+    [Fact]
+    public void Prepare_CreateQrStatic_MissingNewKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static" }, ConfigWithCreateQrStaticTarget(newKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // H. PASSPORT_TEST_CUSTOMER_ID ausente => AbortedTargetMissing.
+    [Fact]
+    public void Prepare_CreateQrStatic_MissingCustomerId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static" }, ConfigWithCreateQrStaticTarget(customerId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // host no-Sandbox bloquea antes de HTTP.
+    [Fact]
+    public void Prepare_CreateQrStatic_NonSandboxHost_ReturnsAbortedNonSandboxHost()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static" }, ConfigWithCreateQrStaticTarget(baseUrl: "https://evil.example.com"));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedNonSandboxHost, decision.Outcome);
+    }
+
+    // --execute + --confirm-create-qr-static => ReadyToExecute.
+    [Fact]
+    public void Prepare_CreateQrStatic_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static", "--execute", "--confirm-create-qr-static" }, ConfigWithCreateQrStaticTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
 }

@@ -1,0 +1,222 @@
+using Microsoft.Extensions.Configuration;
+using Xpay.Api.Integrations.Passport;
+using Xpay.PassportSandboxHarness;
+using Xunit;
+
+namespace Xpay.PassportSandboxHarness.Tests;
+
+// XPAY-351 — prueba, a nivel de CreateQrStaticExecutor (sin red), que M4-T1
+// invoca ÚNICAMENTE IPassportQrClient.CreateQrCodeAsync exactamente una vez
+// (nunca DecodeQrCodeAsync ni ningún método de IPassportKeyClient), que el
+// request construido es type=STATIC sin amount, y que ningún identificador
+// crudo (key_id/customer_id/qr_code_data/qr_code_image) sale jamás hacia la
+// evidencia.
+public class CreateQrStaticExecutorTests
+{
+    private sealed class FakeQrClient : IPassportQrClient
+    {
+        private readonly bool _throwOnCreate;
+        private readonly PassportQrCodeResponse? _response;
+        public int CreateQrCodeCallCount { get; private set; }
+        public int DecodeQrCodeCallCount { get; private set; }
+        public PassportCreateQrCodeRequest? LastRequest { get; private set; }
+
+        public FakeQrClient(bool throwOnCreate = false, PassportQrCodeResponse? response = null)
+        {
+            _throwOnCreate = throwOnCreate;
+            _response = response;
+        }
+
+        public Task<PassportQrCodeResponse> CreateQrCodeAsync(
+            PassportCreateQrCodeRequest request, CancellationToken cancellationToken = default)
+        {
+            CreateQrCodeCallCount++;
+            LastRequest = request;
+            if (_throwOnCreate)
+                throw new PassportTransportException("Passport respondió con error HTTP 400 (sintético).");
+            return Task.FromResult(_response ?? new PassportQrCodeResponse
+            {
+                Id = "synthetic-qr-id",
+                Status = "ACTIVE",
+                Type = "STATIC",
+                QrCodeData = "00020101...synthetic-emv-payload...6304ABCD",
+                QrCodeImage = "data:image/png;base64,synthetic-qr-image-payload",
+                KeyId = "synthetic-key-id-echoed-back",
+                CustomerId = "synthetic-customer-id-echoed-back",
+            });
+        }
+
+        public Task<PassportDecodeQrCodeResponse> DecodeQrCodeAsync(
+            PassportDecodeQrCodeRequest request, CancellationToken cancellationToken = default)
+        {
+            DecodeQrCodeCallCount++;
+            throw new InvalidOperationException("DecodeQrCodeAsync NUNCA debe invocarse desde create-qr-static.");
+        }
+    }
+
+    private const string SyntheticKeyId      = "synthetic-executor-key-id-001";
+    private const string SyntheticCustomerId = "synthetic-executor-customer-id-001";
+
+    private static IConfiguration ConfigWithTarget(string? keyId = SyntheticKeyId, string? customerId = SyntheticCustomerId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (keyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = keyId;
+        if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // F/G/H/I/Q — exactamente 1 llamada lógica, type=STATIC, amount ausente,
+    // usa IPassportQrClient (nunca IPassportKeyClient), sin reintentos.
+    [Fact]
+    public async Task ExecuteAsync_Success_CallsOnlyCreateQrCodeAsync_ExactlyOnce_StaticWithoutAmount()
+    {
+        var client = new FakeQrClient();
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+        var config = ConfigWithTarget();
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            config, client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal(1, client.CreateQrCodeCallCount);
+        Assert.Equal(0, client.DecodeQrCodeCallCount);
+        Assert.Equal(SyntheticKeyId, client.LastRequest!.KeyId);
+        Assert.Equal(SyntheticCustomerId, client.LastRequest.CustomerId);
+        Assert.Equal(PassportQrType.STATIC, client.LastRequest.Type);
+        Assert.Null(client.LastRequest.Amount); // H — amount ausente/null.
+
+        Assert.Equal(KeyOperationOutcome.Success, result.Outcome);
+        Assert.NotNull(result.Evidence);
+    }
+
+    // J. evidence: case_id=M4-T1.
+    [Fact]
+    public async Task ExecuteAsync_Success_EvidenceHasCorrectCaseId()
+    {
+        var client = new FakeQrClient();
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            ConfigWithTarget(), client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal("M4-T1", result.Evidence!.CaseId);
+    }
+
+    // K. evidence: operation=POST /v1/qrcodes.
+    [Fact]
+    public async Task ExecuteAsync_Success_EvidenceHasCorrectOperation()
+    {
+        var client = new FakeQrClient();
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            ConfigWithTarget(), client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal("POST /v1/qrcodes", result.Evidence!.Operation);
+    }
+
+    // L/M/N/O/P — evidencia nunca contiene identificadores crudos; sólo
+    // fingerprints/presencia. Se verifica serializando el EvidenceRecord
+    // completo a JSON y confirmando la AUSENCIA total de cada valor crudo.
+    [Fact]
+    public async Task ExecuteAsync_Success_EvidenceNeverContainsRawIdentifiers()
+    {
+        const string realKeyId      = "REAL-KEY-ID-must-never-appear-in-evidence-0000001";
+        const string realCustomerId = "REAL-CUSTOMER-ID-must-never-appear-in-evidence-0000002";
+        const string realQrCodeData = "00020101REAL-EMV-PAYLOAD-must-never-appear-0000003";
+        const string realQrCodeImage = "data:image/png;base64,REAL-IMAGE-PAYLOAD-must-never-appear-0000004";
+
+        var client = new FakeQrClient(response: new PassportQrCodeResponse
+        {
+            Id = "synthetic-qr-id-002",
+            Status = "ACTIVE",
+            Type = "STATIC",
+            QrCodeData = realQrCodeData,
+            QrCodeImage = realQrCodeImage,
+            KeyId = realKeyId,
+            CustomerId = realCustomerId,
+        });
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+        var config = ConfigWithTarget(keyId: realKeyId, customerId: realCustomerId);
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            config, client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var evidenceJson = System.Text.Json.JsonSerializer.Serialize(result.Evidence);
+
+        Assert.DoesNotContain(realKeyId, evidenceJson);
+        Assert.DoesNotContain(realCustomerId, evidenceJson);
+        Assert.DoesNotContain(realQrCodeData, evidenceJson);
+        Assert.DoesNotContain(realQrCodeImage, evidenceJson);
+
+        // P — fingerprint/presencia suficiente: los campos saneados SÍ
+        // están presentes (no simplemente omitidos).
+        Assert.Contains("key_id_fingerprint", evidenceJson);
+        Assert.Contains("customer_id_fingerprint", evidenceJson);
+        Assert.Contains("qr_code_data_fingerprint", evidenceJson);
+        Assert.Contains("qr_code_data_present", evidenceJson);
+        Assert.Contains("qr_code_image_fingerprint", evidenceJson);
+        Assert.Contains("qr_code_image_present", evidenceJson);
+        Assert.Contains("qr_id_fingerprint", evidenceJson);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PassportRejects_CallsOnlyCreateQrCodeAsync_ExactlyOnce_ProducesFailEvidence()
+    {
+        var client = new FakeQrClient(throwOnCreate: true);
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            ConfigWithTarget(), client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal(1, client.CreateQrCodeCallCount);
+        Assert.Equal(KeyOperationOutcome.PassportFailure, result.Outcome);
+        Assert.NotNull(result.Evidence);
+        Assert.Equal("M4-T1", result.Evidence!.CaseId);
+        Assert.Equal(EvidenceRecord.ResultFail, result.Evidence.Result);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MissingKeyId_IsLocalBlocked_NeverCallsClient()
+    {
+        var client = new FakeQrClient();
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            ConfigWithTarget(keyId: null), client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.CreateQrCodeCallCount);
+        Assert.Null(result.Evidence);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MissingCustomerId_IsLocalBlocked_NeverCallsClient()
+    {
+        var client = new FakeQrClient();
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            ConfigWithTarget(customerId: null), client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.CreateQrCodeCallCount);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CommitShaUnresolvable_IsLocalBlocked_NeverCallsClient()
+    {
+        var client = new FakeQrClient();
+        var throwingCommitShaProvider = new ThrowingCommitShaProvider();
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            ConfigWithTarget(), client, throwingCommitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.CreateQrCodeCallCount);
+    }
+
+    private sealed class ThrowingCommitShaProvider : ICommitShaProvider
+    {
+        public string GetCommitSha() => throw new InvalidOperationException("synthetic: commit SHA no resoluble.");
+    }
+}

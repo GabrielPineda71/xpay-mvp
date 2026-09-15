@@ -48,6 +48,11 @@ services.AddSingleton<IPassportTokenProvider, PassportTokenProvider>();
 services.AddSingleton<IPassportHttpClient, PassportHttpClient>();
 services.AddSingleton<IPassportCustomerAccountClient, PassportCustomerAccountClient>();
 services.AddSingleton<IPassportKeyClient, PassportKeyClient>();
+// XPAY-351 — registro MÍNIMO necesario para el harness: reutiliza el mismo
+// IPassportHttpClient/IPassportTokenProvider ya registrados arriba, sin
+// tocar Xpay.Api/Program.cs (donde PassportQrClient sigue sin registrarse,
+// XPAY-350 FINDING_12 — fuera de alcance de XPAY-351).
+services.AddSingleton<IPassportQrClient, PassportQrClient>();
 services.AddSingleton<ICommitShaProvider, GitCommitShaProvider>();
 
 using var provider = services.BuildServiceProvider();
@@ -56,6 +61,7 @@ var dependencies = new HarnessApp.Dependencies(
     CustomerAccountClient: provider.GetRequiredService<IPassportCustomerAccountClient>(),
     KeyClient: provider.GetRequiredService<IPassportKeyClient>(),
     CommitShaProvider: provider.GetRequiredService<ICommitShaProvider>(),
-    EvidenceBaseDirectory: Path.Combine("docs", "certificacion", "passport-breb"));
+    EvidenceBaseDirectory: Path.Combine("docs", "certificacion", "passport-breb"),
+    QrClient: provider.GetRequiredService<IPassportQrClient>());
 
 await HarnessApp.RunAsync(args, configuration, dependencies, Console.Out);

@@ -43,6 +43,7 @@ public static class HarnessOrchestrator
                                     or HarnessCommand.ActivateKey or HarnessCommand.DeleteKey
                                     or HarnessCommand.DeleteAlreadyDeletedKey or HarnessCommand.ResolveKey
                                     or HarnessCommand.CreateKeyMissing or HarnessCommand.CreateKeyInvalid
+                                    or HarnessCommand.CreateQrStatic
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -101,6 +102,13 @@ public static class HarnessOrchestrator
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 $"Target de {commandLabel} incompleto — PASSPORT_TEST_ACCOUNT_ID/PASSPORT_TEST_NEW_KEY_TYPE ausente(s).");
         }
+
+        // XPAY-351 — create-qr-static (M4-T1): target propio (key_id REMOTO
+        // real + customer_id), ambos reutilizados de variables YA
+        // existentes — ver HarnessTargetConfig.AllPresentForCreateQrStatic.
+        if (command == HarnessCommand.CreateQrStatic && targetConfig is not null && !targetConfig.AllPresentForCreateQrStatic)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-static incompleto — PASSPORT_TEST_NEW_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

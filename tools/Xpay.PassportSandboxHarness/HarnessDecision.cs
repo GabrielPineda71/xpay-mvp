@@ -36,6 +36,13 @@ public enum HarnessCommand
     // CONFIRMATION — deliberadamente SIN comando ejecutable en el harness.
     CreateKeyMissing,
     CreateKeyInvalid,
+    // XPAY-351 — M4-T1 (QR estático): construido sobre IPassportQrClient
+    // (stack productivo distinto de IPassportKeyClient, pero mismo
+    // IPassportHttpClient/IPassportTokenProvider subyacente — sin segundo
+    // stack HTTP). Comando y bandera de confirmación EXCLUSIVOS de este
+    // caso: ninguna confirmación de M3 lo autoriza, y su propia
+    // confirmación no autoriza ningún comando de M3.
+    CreateQrStatic,
 }
 
 public static class HarnessDecision
@@ -62,6 +69,10 @@ public static class HarnessDecision
     // bandera de confirmación exclusiva.
     public const string CommandCreateKeyMissing = "create-key-missing";
     public const string CommandCreateKeyInvalid = "create-key-invalid";
+    // XPAY-351 — M4-T1: comando inequívoco, independiente de todos los
+    // comandos de M3 (create-key incluido) aunque ambos sean "creación" de
+    // un recurso distinto (Key vs. QR Code).
+    public const string CommandCreateQrStatic = "create-qr-static";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -82,6 +93,10 @@ public static class HarnessDecision
     public const string FlagConfirmResolveKey              = "--confirm-resolve-key";
     public const string FlagConfirmCreateKeyMissing = "--confirm-create-key-missing";
     public const string FlagConfirmCreateKeyInvalid = "--confirm-create-key-invalid";
+    // XPAY-351 — exclusiva de create-qr-static; ninguna bandera de
+    // confirmación de M3 autoriza este comando, y ésta no autoriza ningún
+    // comando de M3 (mismo criterio ya aplicado a todas las anteriores).
+    public const string FlagConfirmCreateQrStatic = "--confirm-create-qr-static";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -96,6 +111,7 @@ public static class HarnessDecision
             CommandResolveKey              => HarnessCommand.ResolveKey,
             CommandCreateKeyMissing        => HarnessCommand.CreateKeyMissing,
             CommandCreateKeyInvalid        => HarnessCommand.CreateKeyInvalid,
+            CommandCreateQrStatic          => HarnessCommand.CreateQrStatic,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -129,6 +145,7 @@ public static class HarnessDecision
             HarnessCommand.ResolveKey              => FlagConfirmResolveKey,
             HarnessCommand.CreateKeyMissing        => FlagConfirmCreateKeyMissing,
             HarnessCommand.CreateKeyInvalid        => FlagConfirmCreateKeyInvalid,
+            HarnessCommand.CreateQrStatic          => FlagConfirmCreateQrStatic,
             _                                      => null,
         };
 

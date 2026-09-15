@@ -81,7 +81,8 @@ public class HarnessAppEndToEndTests
             CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
-            EvidenceBaseDirectory: evidenceDir);
+            EvidenceBaseDirectory: evidenceDir,
+            QrClient: new PassportQrClient(httpClient));
     }
 
     private static string NewTempDir()
@@ -360,7 +361,8 @@ public class HarnessAppEndToEndTests
             CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
-            EvidenceBaseDirectory: evidenceDir);
+            EvidenceBaseDirectory: evidenceDir,
+            QrClient: new PassportQrClient(httpClient));
     }
 
     // Test end-to-end obligatorio (XPAY-326 §9): exactamente 1 llamada HTTP
@@ -620,7 +622,8 @@ public class HarnessAppEndToEndTests
             CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
-            EvidenceBaseDirectory: evidenceDir);
+            EvidenceBaseDirectory: evidenceDir,
+            QrClient: new PassportQrClient(httpClient));
     }
 
     // Test end-to-end obligatorio (XPAY-332 §11.H/I/J): exactamente 1
@@ -885,7 +888,8 @@ public class HarnessAppEndToEndTests
             CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
-            EvidenceBaseDirectory: evidenceDir);
+            EvidenceBaseDirectory: evidenceDir,
+            QrClient: new PassportQrClient(httpClient));
     }
 
     // Test end-to-end obligatorio (XPAY-334 §11.H/I/J/L/M/N): exactamente 1
@@ -1446,7 +1450,8 @@ public class HarnessAppEndToEndTests
             CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
-            EvidenceBaseDirectory: evidenceDir);
+            EvidenceBaseDirectory: evidenceDir,
+            QrClient: new PassportQrClient(httpClient));
     }
 
     // Tests K/L/N/O/P/Q/R/S — end-to-end obligatorio: exactamente 1 POST
@@ -1726,7 +1731,8 @@ public class HarnessAppEndToEndTests
             CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
-            EvidenceBaseDirectory: evidenceDir);
+            EvidenceBaseDirectory: evidenceDir,
+            QrClient: new PassportQrClient(httpClient));
     }
 
     // ── create-key-missing ──────────────────────────────────────────────
@@ -2034,5 +2040,245 @@ public class HarnessAppEndToEndTests
         {
             Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
         };
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-351 — create-qr-static (M4-T1) — camino COMPLETO end-to-end,
+    // dependencias 100% fake (nunca red real). Confirma: exactamente 1
+    // llamada HTTP de negocio POST /v1/qrcodes con type=STATIC y SIN
+    // "amount" en el body; evidencia M4-T1 con result=PASS,
+    // backend_commit_sha sintético, key_id/customer_id/qr_code_data/
+    // qr_code_image reales AUSENTES de evidence.json y de la consola;
+    // dry-run/aborted nunca generan HTTP ni evidencia; ninguna confirmación
+    // de M3 autoriza este comando a nivel de flujo completo.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string RealQrKeyId      = "SYNTH-E2E-QR-KEY-ID-should-be-fingerprinted-only";
+    private const string RealQrCustomerId = "SYNTH-E2E-QR-CUSTOMER-ID-should-be-fingerprinted-only";
+    private const string RealQrCodeData   = "00020101SYNTH-E2E-QR-DATA-must-never-appear-in-evidence6304WXYZ";
+    private const string RealQrCodeImage  = "data:image/png;base64,SYNTH-E2E-QR-IMAGE-must-never-appear-in-evidence";
+
+    private sealed class LocalFakeQrHandler : HttpMessageHandler
+    {
+        public int CallCount { get; private set; }
+        public HttpRequestMessage? LastRequest { get; private set; }
+        public string? LastRequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            LastRequest = request;
+            LastRequestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    $$"""
+                    { "id": "synthetic-qr-id-e2e", "status": "ACTIVE", "type": "STATIC",
+                      "qr_code_data": "{{RealQrCodeData}}",
+                      "qr_code_image": "{{RealQrCodeImage}}",
+                      "key_id": "{{RealQrKeyId}}",
+                      "customer_id": "{{RealQrCustomerId}}" }
+                    """,
+                    System.Text.Encoding.UTF8, "application/json"),
+            };
+        }
+    }
+
+    private static IConfiguration FullQrConfig() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvNewKeyId] = RealQrKeyId,
+            [HarnessTargetConfig.EnvCustomerId] = RealQrCustomerId,
+        })
+        .Build();
+
+    private static HarnessApp.Dependencies BuildQrDependencies(
+        LocalFakeQrHandler handler, string evidenceDir, IConfiguration config)
+    {
+        IPassportHttpClient httpClient = new PassportHttpClient(
+            new LocalFakeHttpClientFactory(handler), new LocalFakeTokenProvider(), config,
+            NullLogger<PassportHttpClient>.Instance);
+
+        return new HarnessApp.Dependencies(
+            CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
+            KeyClient: new PassportKeyClient(httpClient),
+            CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
+            EvidenceBaseDirectory: evidenceDir,
+            QrClient: new PassportQrClient(httpClient));
+    }
+
+    [Fact]
+    public async Task CreateQrStaticExecute_FullPath_ProducesExactlyOneHttpCall_AndPassEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static", "--execute", "--confirm-create-qr-static" }, config, dependencies, output);
+
+            // F/G/H — exactamente 1 llamada HTTP, POST /v1/qrcodes,
+            // type=STATIC, SIN "amount" en el body.
+            Assert.Equal(1, handler.CallCount);
+            Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+            Assert.Equal("/v1/qrcodes", handler.LastRequest.RequestUri!.AbsolutePath);
+            Assert.Contains("\"STATIC\"", handler.LastRequestBody);
+            Assert.DoesNotContain("\"amount\"", handler.LastRequestBody);
+
+            var evidencePath = Path.Combine(dir, "M4-T1");
+            var files = Directory.GetFiles(evidencePath, "evidence-*.json");
+            Assert.Single(files);
+
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            Assert.Equal("M4-T1", root.GetProperty("case_id").GetString());
+            Assert.Equal("POST /v1/qrcodes", root.GetProperty("operation").GetString());
+            Assert.Equal("PASS", root.GetProperty("result").GetString());
+            Assert.Equal(
+                "synthetic-e2e-commit-sha-0000000000000000000000000000000000000000",
+                root.GetProperty("backend_commit_sha").GetString());
+            Assert.Equal("PENDING_PASSPORT_REVIEW", root.GetProperty("review_status").GetString());
+
+            var requestSanitized = root.GetProperty("request_sanitized");
+            Assert.Equal("STATIC", requestSanitized.GetProperty("type").GetString());
+            Assert.False(requestSanitized.GetProperty("amount_present").GetBoolean());
+            Assert.False(requestSanitized.GetProperty("qr_code_reference_present").GetBoolean());
+
+            var responseSanitized = root.GetProperty("response_sanitized");
+            Assert.True(responseSanitized.GetProperty("qr_code_data_present").GetBoolean());
+            Assert.True(responseSanitized.GetProperty("qr_code_image_present").GetBoolean());
+
+            // L/M/N/O — nunca key_id/customer_id/qr_code_data/qr_code_image
+            // reales, ni en evidence.json ni en la salida por consola.
+            Assert.DoesNotContain(RealQrKeyId, json);
+            Assert.DoesNotContain(RealQrCustomerId, json);
+            Assert.DoesNotContain(RealQrCodeData, json);
+            Assert.DoesNotContain(RealQrCodeImage, json);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", json);
+
+            var consoleOutput = output.ToString();
+            Assert.DoesNotContain(RealQrKeyId, consoleOutput);
+            Assert.DoesNotContain(RealQrCustomerId, consoleOutput);
+            Assert.DoesNotContain(RealQrCodeData, consoleOutput);
+            Assert.DoesNotContain(RealQrCodeImage, consoleOutput);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", consoleOutput);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // B. dry-run: HTTP=0, OAuth (implícito: sin token pedido, ningún
+    // handler invocado), evidence=0.
+    [Fact]
+    public async Task CreateQrStaticDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-qr-static" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T1")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // C. --execute sin confirmación => Aborted, cero HTTP, cero evidencia.
+    [Fact]
+    public async Task CreateQrStaticExecuteWithoutConfirm_Aborted_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-qr-static", "--execute" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T1")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // D/S. confirmación de un comando M3 NO autoriza create-qr-static a
+    // nivel de flujo completo => Aborted, cero HTTP, cero evidencia.
+    [Theory]
+    [InlineData("--confirm-create-key")]
+    [InlineData("--confirm-resolve-key")]
+    public async Task CreateQrStaticExecute_WithM3Confirmation_Aborted_NoHttpCall(string wrongConfirmFlag)
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static", "--execute", wrongConfirmFlag }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T1")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // R. --confirm-create-qr-static NUNCA autoriza create-key, a nivel de
+    // flujo completo (reutiliza el stack fake ya existente de create-key).
+    [Fact]
+    public async Task CreateKeyExecute_WithConfirmCreateQrStatic_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeHandler();
+            var config = FullConfig();
+            var dependencies = BuildDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-key", "--execute", "--confirm-create-qr-static" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
     }
 }
