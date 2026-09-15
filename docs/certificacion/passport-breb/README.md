@@ -172,26 +172,66 @@ global vía `HarnessLogging.Configure`) se validó en esta primera ejecución
 real posterior al incidente de M3-T3 — sin ninguna fuga de URI/identificador
 sensible en consola.
 
-### XPAY-334 — M3-T5 (Delete Key) implementado OFFLINE
+### XPAY-334/335 — M3-T5 (Delete Key)
 
-`M3-T5` está hoy en estado `IMPLEMENTED`. **No se afirma `SANDBOX_PASS`** —
-`DeleteKeyExecutor`/`DeleteKeyEvidenceBuilder`/el camino `delete-key` del
-harness (`--execute --confirm-delete-key`) existen y están cubiertos por
-tests offline (incluyendo un test end-to-end con handler HTTP fake y
-`key_id` sintético, y tests dedicados que prueban que Delete invoca
-ÚNICAMENTE `IPassportKeyClient.DeleteKeyAsync` — nunca Create/Suspend/
-Activate/Resolve/List Keys). **Ninguna llamada real ha ocurrido todavía.**
+`M3-T5` está en estado **`SANDBOX_PASS`** — una ejecución real `--execute`
+(XPAY-335) produjo evidencia con `result=PASS`
+(`review_status=PENDING_PASSPORT_REVIEW`, aún no `PASSPORT_ACCEPTED`). El
+harness offline (`DeleteKeyExecutor`/`DeleteKeyEvidenceBuilder`/
+`delete-key --execute --confirm-delete-key`) fue implementado y probado
+offline en XPAY-334 (test end-to-end con handler HTTP fake, y tests
+dedicados que prueban que Delete invoca ÚNICAMENTE
+`IPassportKeyClient.DeleteKeyAsync` — nunca Create/Suspend/Activate/
+Resolve/List Keys) antes de esa ejecución real.
 
-Delete Key exitoso responde `204 No Content` sin body (contrato XPAY-292/
+Delete Key exitoso respondió `204 No Content` sin body (contrato XPAY-292/
 293) — a diferencia de Suspend/Activate, `DeleteKeyEvidenceBuilder` nunca
-fabrica `status`/`id`/`deleted_at`: `response_sanitized` queda
-deliberadamente vacío en el caso de éxito.
+fabrica `status`/`id`/`deleted_at`: `response_sanitized` quedó
+deliberadamente vacío. Delete operó sobre la **misma llave** del ciclo
+M3-T1 → M3-T3 → M3-T4, identificada por `PASSPORT_TEST_NEW_KEY_ID` — que
+se **conserva intencionalmente** en el entorno privado pese al Delete
+exitoso, porque M3-T7 lo necesita para probar el comportamiento de un
+segundo intento sobre la misma llave ya eliminada. El logging seguro de
+XPAY-330 se validó de nuevo en esta ejecución real, sin ninguna fuga de
+URI/identificador sensible en consola.
 
-Delete operará, cuando se autorice su ejecución real, sobre la **misma
-llave** del ciclo M3-T1 → M3-T3 → M3-T4, identificada por el mismo
-`PASSPORT_TEST_NEW_KEY_ID`. El logging seguro de XPAY-330 sigue aplicando
-sin cambios — el path de Delete (`DELETE /v1/keys/{key_id}`) contiene el
-mismo tipo de identificador sensible que ya protege la corrección global.
+### XPAY-336 — M3-T7 (Delete Already-Deleted Key) implementado OFFLINE
+
+`M3-T7` está hoy en estado `IMPLEMENTED`. **No se afirma `SANDBOX_PASS`** —
+`DeleteAlreadyDeletedKeyExecutor`/`DeleteAlreadyDeletedKeyEvidenceBuilder`/
+el camino `delete-already-deleted-key` del harness (`--execute
+--confirm-delete-already-deleted-key`) existen y están cubiertos por
+tests offline. **Ninguna llamada real ha ocurrido todavía.**
+
+M3-T7 reutiliza intencionalmente el `key_id` ya eliminado por M3-T5 — el
+mismo `PASSPORT_TEST_NEW_KEY_ID`, sin recuperarlo de nuevo ni crear una
+llave nueva — para comprobar cómo responde Passport a un segundo intento
+de eliminación sobre la misma llave.
+
+**M3-T7 es una prueba negativa** y su diseño evita deliberadamente una
+trampa: `M3_T7_EXPECTED_HTTP_CONTRACT=UNKNOWN` (no existe en este
+repositorio, ni en la documentación local disponible, un contrato
+explícito de qué HTTP status "correcto" debe devolver Passport ante un
+segundo Delete). Por tanto, `DeleteAlreadyDeletedKeyEvidenceBuilder`
+NUNCA convierte un resultado de transporte en un veredicto de
+certificación:
+
+- `result=PASS` en la evidencia significa ÚNICAMENTE "la llamada HTTP
+  completó sin excepción" — **no** afirma que Passport se comportó
+  correctamente al permitir un segundo Delete (podría ser precisamente el
+  comportamiento inesperado que M3-T7 busca detectar).
+- `result=FAIL` significa ÚNICAMENTE "la llamada HTTP falló" — **no**
+  afirma que el caso de certificación falló (podría ser exactamente el
+  rechazo correctamente esperado).
+
+Ambos casos incluyen una nota explícita señalando que la interpretación
+de certificación requiere revisión contractual separada, nunca codificada
+por el harness. Aunque M3-T5 y M3-T7 invocan exactamente el mismo
+`IPassportKeyClient.DeleteKeyAsync`, generan `case_id` y archivos de
+evidencia completamente separados — nunca se conflatan (verificado por
+test dedicado). El logging seguro de XPAY-330 sigue aplicando sin
+cambios — el path de M3-T7 (`DELETE /v1/keys/{key_id}`) contiene el mismo
+tipo de identificador sensible que ya protege la corrección global.
 
 ## Política de redacción
 

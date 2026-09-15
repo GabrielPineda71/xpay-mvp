@@ -1092,4 +1092,278 @@ public class HarnessAppEndToEndTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-336 — delete-already-deleted-key (M3-T7), 100% offline.
+    // Reutiliza el MISMO IPassportKeyClient.DeleteKeyAsync que delete-key
+    // (M3-T5), pero genera evidencia con case_id COMPLETAMENTE distinto —
+    // nunca se confunden. key_id SIEMPRE sintético.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string SyntheticAlreadyDeletedRemoteKeyId = "SYNTH-E2E-ALREADY-DELETED-REMOTE-KEY-ID-must-never-appear-in-evidence-or-console";
+
+    private static IConfiguration DeleteAlreadyDeletedKeyConfig(string? newKeyId = SyntheticAlreadyDeletedRemoteKeyId) => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvNewKeyId] = newKeyId,
+        })
+        .Build();
+
+    // Test end-to-end obligatorio (XPAY-336 §11.F/G/H/I/J/K/L): exactamente
+    // 1 llamada HTTP de negocio, DELETE /v1/keys/{syntheticKeyId}, sin
+    // body, evidencia M3-T7 (NO M3-T5) con result=PASS a nivel transporte,
+    // key_id real ABSENTE de evidence.json y de la consola, sin otro
+    // método Passport invocado (el mismo LocalFakeDeleteHandler/
+    // PassportKeyClient real ya garantiza que sólo pudo pasar por
+    // DeleteKeyAsync — DeleteKeyClient no tiene otra ruta hacia DELETE
+    // /v1/keys/{id}).
+    [Fact]
+    public async Task DeleteAlreadyDeletedKeyExecute_FullPath_ProducesExactlyOneHttpCall_AndTransportPassEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeDeleteHandler(); // 204 No Content por defecto.
+            var config = DeleteAlreadyDeletedKeyConfig();
+            var dependencies = BuildDeleteDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "delete-already-deleted-key", "--execute", "--confirm-delete-already-deleted-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            Assert.Equal(HttpMethod.Delete, handler.LastRequest!.Method);
+            Assert.Equal($"/v1/keys/{SyntheticAlreadyDeletedRemoteKeyId}", handler.LastRequest.RequestUri!.AbsolutePath);
+            Assert.Null(handler.LastRequestBody);
+
+            // Evidencia bajo M3-T7 — NUNCA bajo M3-T5.
+            var caseDir = Path.Combine(dir, "M3-T7");
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T5")));
+            var files = Directory.GetFiles(caseDir, "evidence-*.json");
+            Assert.Single(files);
+
+            var json = File.ReadAllText(files[0]);
+            using var evDoc = JsonDocument.Parse(json);
+            var root = evDoc.RootElement;
+            Assert.Equal("M3-T7", root.GetProperty("case_id").GetString());
+            Assert.Equal("DELETE /v1/keys/{key_id}", root.GetProperty("operation").GetString());
+            Assert.Equal("PASS", root.GetProperty("result").GetString());
+            Assert.Equal("PENDING_PASSPORT_REVIEW", root.GetProperty("review_status").GetString());
+
+            // La nota explícita de revisión contractual está presente —
+            // nunca se afirma que "PASS" aquí sea un juicio de certificación.
+            Assert.Contains("revisión contractual", root.GetProperty("notes").GetString()!);
+
+            Assert.DoesNotContain(SyntheticAlreadyDeletedRemoteKeyId, json);
+            Assert.True(root.GetProperty("request_sanitized").TryGetProperty("key_id_fingerprint", out _));
+            Assert.Empty(root.GetProperty("response_sanitized").EnumerateObject());
+
+            var consoleOutput = output.ToString();
+            Assert.DoesNotContain(SyntheticAlreadyDeletedRemoteKeyId, consoleOutput);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // PASSPORT_TEST_NEW_KEY_ID ausente => bloqueado ANTES de HTTP, cero
+    // HTTP, cero evidencia.
+    [Fact]
+    public async Task DeleteAlreadyDeletedKeyExecute_MissingKeyId_IsAborted_NoEvidenceNoHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeDeleteHandler();
+            var config = DeleteAlreadyDeletedKeyConfig(newKeyId: null);
+            var dependencies = BuildDeleteDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "delete-already-deleted-key", "--execute", "--confirm-delete-already-deleted-key" },
+                config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T7")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Fallo remoto simulado (HTTP no-2xx) — test M: la evidencia conserva
+    // la semántica M3-T7 sin filtrar información Y sin afirmar que este
+    // FAIL a nivel transporte es un veredicto de certificación (podría ser
+    // precisamente el rechazo correctamente esperado).
+    [Fact]
+    public async Task DeleteAlreadyDeletedKeyExecute_PassportHttpFailure_ProducesExactlyOneHttpCall_AndTransportFailEvidenceWithoutCertificationJudgment()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeDeleteHandler(
+                HttpStatusCode.BadRequest, errorBody: """{ "message": "key already deleted" }""");
+            var config = DeleteAlreadyDeletedKeyConfig();
+            var dependencies = BuildDeleteDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "delete-already-deleted-key", "--execute", "--confirm-delete-already-deleted-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount); // sin reintentos.
+
+            var caseDir = Path.Combine(dir, "M3-T7");
+            var files = Directory.GetFiles(caseDir, "evidence-*.json");
+            Assert.Single(files);
+
+            var json = File.ReadAllText(files[0]);
+            using var evDoc = JsonDocument.Parse(json);
+            var root = evDoc.RootElement;
+            Assert.Equal("M3-T7", root.GetProperty("case_id").GetString());
+            Assert.Equal("FAIL", root.GetProperty("result").GetString());
+
+            var notes = root.GetProperty("notes").GetString()!;
+            Assert.StartsWith("PASSPORT_HTTP_FAILURE:", notes);
+            // La nota debe dejar explícito que este FAIL no es, por sí
+            // solo, un veredicto de certificación.
+            Assert.Contains("revisión contractual", notes);
+            Assert.DoesNotContain(SyntheticAlreadyDeletedRemoteKeyId, json);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Regresión — dry-run: cero HTTP, cero evidencia.
+    [Fact]
+    public async Task DeleteAlreadyDeletedKeyDryRun_NoFlags_ProducesZeroHttpZeroEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeDeleteHandler();
+            var config = DeleteAlreadyDeletedKeyConfig();
+            var dependencies = BuildDeleteDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "delete-already-deleted-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T7")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Regresión — --execute solo, sin confirmación: cero HTTP.
+    [Fact]
+    public async Task DeleteAlreadyDeletedKeyExecute_WithoutConfirm_StaysBlocked_ZeroHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeDeleteHandler();
+            var config = DeleteAlreadyDeletedKeyConfig();
+            var dependencies = BuildDeleteDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "delete-already-deleted-key", "--execute" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T7")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Regresión — ninguna otra confirmación (incluida --confirm-delete-key
+    // de M3-T5) autoriza M3-T7: cero HTTP.
+    [Theory]
+    [InlineData("--confirm-delete-key")]
+    [InlineData("--confirm-suspend-key")]
+    [InlineData("--confirm-activate-key")]
+    [InlineData("--confirm-create-key")]
+    public async Task DeleteAlreadyDeletedKeyExecute_WithWrongConfirmFlag_DoesNotAuthorize_ZeroHttp(string wrongConfirmFlag)
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeDeleteHandler();
+            var config = DeleteAlreadyDeletedKeyConfig();
+            var dependencies = BuildDeleteDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "delete-already-deleted-key", "--execute", wrongConfirmFlag }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T7")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Test N — M3-T5 y M3-T7 generan case_id (y evidencia) DIFERENTES aunque
+    // ambos reutilicen exactamente el mismo IPassportKeyClient.DeleteKeyAsync
+    // y el mismo PassportKeyClient/handler subyacente.
+    [Fact]
+    public async Task DeleteKeyAndDeleteAlreadyDeletedKey_ShareUnderlyingCall_ButProduceSeparateCaseIds()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handlerM3T5 = new LocalFakeDeleteHandler();
+            var configM3T5 = DeleteKeyConfig();
+            var depsM3T5 = BuildDeleteDependencies(handlerM3T5, dir, configM3T5);
+            await HarnessApp.RunAsync(
+                new[] { "delete-key", "--execute", "--confirm-delete-key" }, configM3T5, depsM3T5, TextWriter.Null);
+
+            var handlerM3T7 = new LocalFakeDeleteHandler();
+            var configM3T7 = DeleteAlreadyDeletedKeyConfig();
+            var depsM3T7 = BuildDeleteDependencies(handlerM3T7, dir, configM3T7);
+            await HarnessApp.RunAsync(
+                new[] { "delete-already-deleted-key", "--execute", "--confirm-delete-already-deleted-key" },
+                configM3T7, depsM3T7, TextWriter.Null);
+
+            // Ambos ejecutaron exactamente 1 DELETE — mismo tipo de
+            // operación productiva subyacente.
+            Assert.Equal(1, handlerM3T5.CallCount);
+            Assert.Equal(1, handlerM3T7.CallCount);
+
+            // Pero produjeron carpetas/case_id de evidencia completamente
+            // separados — nunca se conflatan.
+            var m3t5Files = Directory.GetFiles(Path.Combine(dir, "M3-T5"), "evidence-*.json");
+            var m3t7Files = Directory.GetFiles(Path.Combine(dir, "M3-T7"), "evidence-*.json");
+            Assert.Single(m3t5Files);
+            Assert.Single(m3t7Files);
+
+            using var docM3T5 = JsonDocument.Parse(File.ReadAllText(m3t5Files[0]));
+            using var docM3T7 = JsonDocument.Parse(File.ReadAllText(m3t7Files[0]));
+            Assert.Equal("M3-T5", docM3T5.RootElement.GetProperty("case_id").GetString());
+            Assert.Equal("M3-T7", docM3T7.RootElement.GetProperty("case_id").GetString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

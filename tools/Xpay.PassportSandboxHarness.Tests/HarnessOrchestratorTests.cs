@@ -443,4 +443,93 @@ public class HarnessOrchestratorTests
             new[] { "delete-key", "--execute", "--confirm-delete-key" }, ConfigWithDeleteTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-336 — delete-already-deleted-key (M3-T7) — comando INDEPENDIENTE
+    // de delete-key (M3-T5), aunque reutilice el mismo target
+    // (PASSPORT_TEST_NEW_KEY_ID, ahora intencionalmente apuntando a una
+    // llave ya eliminada).
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration ConfigWithDeleteAlreadyDeletedTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? newKeyId = ValidTargetKeyId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // A. delete-already-deleted-key dry-run: cero HTTP.
+    [Fact]
+    public void Prepare_DeleteAlreadyDeletedKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-already-deleted-key" }, ConfigWithDeleteAlreadyDeletedTarget());
+        Assert.Equal(HarnessCommand.DeleteAlreadyDeletedKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    // B. --execute solo (sin confirmación específica) => Aborted, nunca HTTP.
+    [Fact]
+    public void Prepare_DeleteAlreadyDeletedKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-already-deleted-key", "--execute" }, ConfigWithDeleteAlreadyDeletedTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // C/D. Ninguna otra confirmación (incluyendo --confirm-delete-key)
+    // autoriza M3-T7.
+    [Theory]
+    [InlineData("--confirm-delete-key")]
+    [InlineData("--confirm-suspend-key")]
+    [InlineData("--confirm-activate-key")]
+    [InlineData("--confirm-create-key")]
+    public void Prepare_DeleteAlreadyDeletedKey_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-already-deleted-key", "--execute", wrongConfirmFlag }, ConfigWithDeleteAlreadyDeletedTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // Y viceversa: --confirm-delete-already-deleted-key NUNCA autoriza delete-key (M3-T5).
+    [Fact]
+    public void Prepare_DeleteKey_ConfirmDeleteAlreadyDeletedKeyDoesNotAuthorizeDeleteKey()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-key", "--execute", "--confirm-delete-already-deleted-key" }, ConfigWithDeleteTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // E. PASSPORT_TEST_NEW_KEY_ID ausente => AbortedTargetMissing, nunca HTTP.
+    [Fact]
+    public void Prepare_DeleteAlreadyDeletedKey_MissingKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-already-deleted-key" }, ConfigWithDeleteAlreadyDeletedTarget(newKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // host no-Sandbox bloquea antes de HTTP (incluso con key_id presente).
+    [Fact]
+    public void Prepare_DeleteAlreadyDeletedKey_NonSandboxHost_ReturnsAbortedNonSandboxHost()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-already-deleted-key" }, ConfigWithDeleteAlreadyDeletedTarget(baseUrl: "https://evil.example.com"));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedNonSandboxHost, decision.Outcome);
+    }
+
+    // --execute + --confirm-delete-already-deleted-key => ReadyToExecute.
+    [Fact]
+    public void Prepare_DeleteAlreadyDeletedKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-already-deleted-key", "--execute", "--confirm-delete-already-deleted-key" },
+            ConfigWithDeleteAlreadyDeletedTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
 }

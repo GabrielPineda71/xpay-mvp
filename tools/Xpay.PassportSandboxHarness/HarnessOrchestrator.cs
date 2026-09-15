@@ -41,6 +41,7 @@ public static class HarnessOrchestrator
         var configStatus = HarnessConfigStatus.FromConfiguration(configuration);
         var targetConfig = command is HarnessCommand.CreateKey or HarnessCommand.SuspendKey
                                     or HarnessCommand.ActivateKey or HarnessCommand.DeleteKey
+                                    or HarnessCommand.DeleteAlreadyDeletedKey
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -59,19 +60,23 @@ public static class HarnessOrchestrator
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Targets de create-key incompletos — ver detalle AVAILABLE/MISSING por variable.");
 
-        // XPAY-326/332/334 — para suspend-key/activate-key/delete-key,
-        // debe estar presente el key_id REMOTO real de la llave de
-        // certificación (PASSPORT_TEST_NEW_KEY_ID) — nunca derivado del
-        // key_value ni de un fingerprint, y nunca recuperado de nuevo vía
-        // List Keys aquí.
-        if (command is HarnessCommand.SuspendKey or HarnessCommand.ActivateKey or HarnessCommand.DeleteKey
+        // XPAY-326/332/334/336 — para suspend-key/activate-key/delete-key/
+        // delete-already-deleted-key, debe estar presente el key_id
+        // REMOTO real de la llave de certificación
+        // (PASSPORT_TEST_NEW_KEY_ID) — nunca derivado del key_value ni de
+        // un fingerprint, y nunca recuperado de nuevo vía List Keys aquí.
+        // Para M3-T7 es intencional que ese key_id apunte a una llave YA
+        // eliminada (XPAY-336) — no se sustituye ni se recupera otro.
+        if (command is HarnessCommand.SuspendKey or HarnessCommand.ActivateKey
+                     or HarnessCommand.DeleteKey or HarnessCommand.DeleteAlreadyDeletedKey
             && targetConfig is not null && !targetConfig.AllPresentForExistingKeyOperations)
         {
             var commandLabel = command switch
             {
                 HarnessCommand.SuspendKey  => "suspend-key",
                 HarnessCommand.ActivateKey => "activate-key",
-                _                          => "delete-key",
+                HarnessCommand.DeleteKey   => "delete-key",
+                _                          => "delete-already-deleted-key",
             };
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 $"Target de {commandLabel} incompleto — PASSPORT_TEST_NEW_KEY_ID ausente.");
