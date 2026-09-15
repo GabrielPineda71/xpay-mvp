@@ -19,8 +19,8 @@ namespace Xpay.PassportSandboxHarness;
 //                                con éxito) — esa BCODE NO debe mutarse/
 //                                eliminarse por certificación.
 //
-// Para suspend-key (M3-T3), y su futura reutilización en activate-key/
-// delete-key (M3-T4/T5/T7):
+// Para suspend-key (M3-T3) y activate-key (M3-T4) — y su futura
+// reutilización en delete-key (M3-T5/T7):
 //   PASSPORT_TEST_NEW_KEY_ID  — el key_id REMOTO real que Passport asignó
 //                               al crear la llave de certificación en
 //                               M3-T1. XPAY-326 confirmó que este valor NO
@@ -29,7 +29,9 @@ namespace Xpay.PassportSandboxHarness;
 //                               su fingerprint en evidence.json y descartó
 //                               el valor real al terminar el proceso) — por
 //                               tanto esta variable, en el momento de
-//                               XPAY-326, está ausente. NUNCA se deriva de
+//                               XPAY-326, estaba ausente; XPAY-329 la
+//                               recuperó realmente vía List Keys y la
+//                               persistió privadamente. NUNCA se deriva de
 //                               PASSPORT_TEST_NEW_KEY_VALUE (son conceptos
 //                               distintos: uno es el dato que XPAY envió,
 //                               el otro es el ID que Passport devolvió) ni
@@ -51,7 +53,12 @@ public sealed record HarnessTargetConfig(
     public const string EnvNewKeyId    = "PASSPORT_TEST_NEW_KEY_ID";
 
     public bool AllPresentForCreateKey  => AccountIdPresent && NewKeyTypePresent && NewKeyValuePresent;
-    public bool AllPresentForSuspendKey => NewKeyIdPresent;
+
+    // XPAY-326/332 — compartido por suspend-key y activate-key (y por
+    // delete-key en el futuro): las tres operan sobre una llave EXISTENTE
+    // identificada únicamente por su key_id remoto — ninguna necesita
+    // account_id/key_type/key_value.
+    public bool AllPresentForExistingKeyOperations => NewKeyIdPresent;
 
     public static HarnessTargetConfig FromConfiguration(IConfiguration configuration) => new(
         AccountIdPresent:   !string.IsNullOrWhiteSpace(configuration[EnvAccountId]),

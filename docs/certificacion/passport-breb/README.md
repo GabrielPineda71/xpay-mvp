@@ -151,6 +151,25 @@ certifica que el defecto está corregido para ejecuciones **futuras**. El
 para envío a Passport es una decisión posterior del director técnico, no
 automática por esta corrección.
 
+### XPAY-332 — M3-T4 (Activate Key) implementado OFFLINE
+
+`M3-T4` está hoy en estado `IMPLEMENTED`. **No se afirma `SANDBOX_PASS`** —
+`ActivateKeyExecutor`/`ActivateKeyEvidenceBuilder`/el camino `activate-key`
+del harness (`--execute --confirm-activate-key`) existen y están cubiertos
+por tests offline (incluyendo un test end-to-end con handler HTTP fake y
+`key_id` sintético, y tests dedicados que prueban que Activate invoca
+ÚNICAMENTE `IPassportKeyClient.ActivateKeyAsync` — nunca Suspend/Delete/
+Create/Resolve/List Keys). **Ninguna llamada real ha ocurrido todavía.**
+
+Activate opera sobre la **misma llave** creada en M3-T1 y suspendida en
+M3-T3 — identificada por el mismo `PASSPORT_TEST_NEW_KEY_ID` remoto ya
+recuperado (XPAY-329) y almacenado privadamente; nunca se imprime ni se
+persiste en el repositorio, y no se recupera de nuevo vía List Keys para
+esta operación. El logging seguro de XPAY-330 (nivel mínimo `Warning`
+global vía `HarnessLogging.Configure`) aplica igual a Activate — no fue
+necesario ni se agregó ninguna configuración de logging específica para
+este caso.
+
 ## Política de redacción
 
 **Nunca se escribe en `evidence.json`:**

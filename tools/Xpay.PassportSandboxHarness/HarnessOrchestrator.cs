@@ -39,7 +39,7 @@ public static class HarnessOrchestrator
         // falta de confirmación) porque el harness debe reportar el estado de
         // config de forma redactada en cualquier salida no-ShowHelp.
         var configStatus = HarnessConfigStatus.FromConfiguration(configuration);
-        var targetConfig = command is HarnessCommand.CreateKey or HarnessCommand.SuspendKey
+        var targetConfig = command is HarnessCommand.CreateKey or HarnessCommand.SuspendKey or HarnessCommand.ActivateKey
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -58,12 +58,14 @@ public static class HarnessOrchestrator
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Targets de create-key incompletos — ver detalle AVAILABLE/MISSING por variable.");
 
-        // XPAY-326 — para suspend-key, debe estar presente el key_id REMOTO
-        // real de la llave de certificación (PASSPORT_TEST_NEW_KEY_ID) —
-        // nunca derivado del key_value ni de un fingerprint.
-        if (command == HarnessCommand.SuspendKey && targetConfig is not null && !targetConfig.AllPresentForSuspendKey)
+        // XPAY-326/332 — para suspend-key/activate-key, debe estar presente
+        // el key_id REMOTO real de la llave de certificación
+        // (PASSPORT_TEST_NEW_KEY_ID) — nunca derivado del key_value ni de
+        // un fingerprint, y nunca recuperado de nuevo vía List Keys aquí.
+        if (command is HarnessCommand.SuspendKey or HarnessCommand.ActivateKey
+            && targetConfig is not null && !targetConfig.AllPresentForExistingKeyOperations)
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
-                "Target de suspend-key incompleto — PASSPORT_TEST_NEW_KEY_ID ausente.");
+                $"Target de {(command == HarnessCommand.SuspendKey ? "suspend-key" : "activate-key")} incompleto — PASSPORT_TEST_NEW_KEY_ID ausente.");
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

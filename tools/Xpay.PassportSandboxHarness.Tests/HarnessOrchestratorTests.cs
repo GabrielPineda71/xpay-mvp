@@ -274,4 +274,84 @@ public class HarnessOrchestratorTests
             new[] { "suspend-key", "--execute", "--confirm-suspend-key" }, ConfigWithSuspendTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-332 — activate-key (M3-T4) — mirror exacto de suspend-key (M3-T3),
+    // misma variable target (PASSPORT_TEST_NEW_KEY_ID) reutilizada.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration ConfigWithActivateTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? newKeyId = ValidTargetKeyId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // A. activate-key dry-run: cero HTTP.
+    [Fact]
+    public void Prepare_ActivateKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "activate-key" }, ConfigWithActivateTarget());
+        Assert.Equal(HarnessCommand.ActivateKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    // B. --execute solo (sin --confirm-activate-key) => Aborted, nunca HTTP.
+    [Fact]
+    public void Prepare_ActivateKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "activate-key", "--execute" }, ConfigWithActivateTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // C. --confirm-activate-key solo (sin --execute) => sigue en DryRun.
+    [Fact]
+    public void Prepare_ActivateKey_ConfirmWithoutExecute_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "activate-key", "--confirm-activate-key" }, ConfigWithActivateTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    // D. --confirm-suspend-key NUNCA autoriza activate-key (banderas específicas por comando).
+    [Fact]
+    public void Prepare_ActivateKey_ConfirmSuspendKeyDoesNotAuthorizeActivateKey()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "activate-key", "--execute", "--confirm-suspend-key" }, ConfigWithActivateTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // E. PASSPORT_TEST_NEW_KEY_ID ausente => AbortedTargetMissing, nunca HTTP.
+    [Fact]
+    public void Prepare_ActivateKey_MissingKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "activate-key" }, ConfigWithActivateTarget(newKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // F. host no-Sandbox bloquea antes de HTTP (incluso con key_id presente).
+    [Fact]
+    public void Prepare_ActivateKey_NonSandboxHost_ReturnsAbortedNonSandboxHost()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "activate-key" }, ConfigWithActivateTarget(baseUrl: "https://evil.example.com"));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedNonSandboxHost, decision.Outcome);
+    }
+
+    // G. --execute + --confirm-activate-key => ReadyToExecute.
+    [Fact]
+    public void Prepare_ActivateKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "activate-key", "--execute", "--confirm-activate-key" }, ConfigWithActivateTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
 }

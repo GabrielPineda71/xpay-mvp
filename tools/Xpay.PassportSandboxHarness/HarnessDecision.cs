@@ -14,15 +14,16 @@ public enum HarnessAction
     Execute,
 }
 
-// XPAY-325/326 — comando reconocido por el harness. Se generaliza desde el
-// único comando "create-customer" de XPAY-312 para soportar múltiples casos
-// de certificación sin duplicar la lógica de parsing/guards.
+// XPAY-325/326/332 — comando reconocido por el harness. Se generaliza desde
+// el único comando "create-customer" de XPAY-312 para soportar múltiples
+// casos de certificación sin duplicar la lógica de parsing/guards.
 public enum HarnessCommand
 {
     Unknown,
     CreateCustomer,
     CreateKey,
     SuspendKey,
+    ActivateKey,
 }
 
 public static class HarnessDecision
@@ -30,16 +31,19 @@ public static class HarnessDecision
     public const string CommandCreateCustomer = "create-customer";
     public const string CommandCreateKey      = "create-key";
     public const string CommandSuspendKey     = "suspend-key";
+    public const string CommandActivateKey    = "activate-key";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
-    // XPAY-325/326 — cada comando mutante tiene su PROPIA bandera de
+    // XPAY-325/326/332 — cada comando mutante tiene su PROPIA bandera de
     // confirmación, deliberadamente distinta de las demás: evita que la
     // confirmación de un comando autorice por error la mutación de otro
-    // (p. ej. --confirm-create-key NUNCA debe autorizar suspend-key, y
-    // viceversa) — "una sola bandera genérica no es suficiente".
-    public const string FlagConfirmCreateKey  = "--confirm-create-key";
-    public const string FlagConfirmSuspendKey = "--confirm-suspend-key";
+    // (p. ej. --confirm-create-key NUNCA debe autorizar suspend-key, ni
+    // --confirm-suspend-key autorizar activate-key, y viceversa) — "una
+    // sola bandera genérica no es suficiente".
+    public const string FlagConfirmCreateKey   = "--confirm-create-key";
+    public const string FlagConfirmSuspendKey  = "--confirm-suspend-key";
+    public const string FlagConfirmActivateKey = "--confirm-activate-key";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -48,6 +52,7 @@ public static class HarnessDecision
             CommandCreateCustomer => HarnessCommand.CreateCustomer,
             CommandCreateKey       => HarnessCommand.CreateKey,
             CommandSuspendKey      => HarnessCommand.SuspendKey,
+            CommandActivateKey     => HarnessCommand.ActivateKey,
             _                      => HarnessCommand.Unknown,
         };
 
@@ -75,6 +80,7 @@ public static class HarnessDecision
             HarnessCommand.CreateCustomer => FlagConfirmCreateCustomer,
             HarnessCommand.CreateKey      => FlagConfirmCreateKey,
             HarnessCommand.SuspendKey     => FlagConfirmSuspendKey,
+            HarnessCommand.ActivateKey    => FlagConfirmActivateKey,
             _                             => null,
         };
 

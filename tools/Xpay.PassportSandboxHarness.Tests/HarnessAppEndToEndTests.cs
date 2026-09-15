@@ -557,4 +557,265 @@ public class HarnessAppEndToEndTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-332 — activate-key (M3-T4), 100% offline, mirror exacto de
+    // suspend-key (M3-T3). key_id SIEMPRE sintético.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string SyntheticActivateRemoteKeyId = "SYNTH-E2E-ACTIVATE-REMOTE-KEY-ID-must-never-appear-in-evidence-or-console";
+
+    private sealed class LocalFakeActivateHandler : HttpMessageHandler
+    {
+        private readonly HttpStatusCode _status;
+        private readonly string? _errorBody;
+
+        public LocalFakeActivateHandler(HttpStatusCode status = HttpStatusCode.OK, string? errorBody = null)
+        {
+            _status = status;
+            _errorBody = errorBody;
+        }
+
+        public int CallCount { get; private set; }
+        public HttpRequestMessage? LastRequest { get; private set; }
+        public string? LastRequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            LastRequest = request;
+            LastRequestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+
+            var response = new HttpResponseMessage(_status)
+            {
+                Content = new StringContent(
+                    _errorBody ?? $$"""
+                    { "id": "{{SyntheticActivateRemoteKeyId}}", "status": "ACTIVE" }
+                    """,
+                    System.Text.Encoding.UTF8, "application/json"),
+            };
+            return response;
+        }
+    }
+
+    private static IConfiguration ActivateKeyConfig(string? newKeyId = SyntheticActivateRemoteKeyId) => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvNewKeyId] = newKeyId,
+        })
+        .Build();
+
+    private static HarnessApp.Dependencies BuildActivateDependencies(
+        HttpMessageHandler handler, string evidenceDir, IConfiguration config)
+    {
+        IPassportHttpClient httpClient = new PassportHttpClient(
+            new LocalFakeHttpClientFactory(handler), new LocalFakeTokenProvider(), config,
+            NullLogger<PassportHttpClient>.Instance);
+
+        return new HarnessApp.Dependencies(
+            CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
+            KeyClient: new PassportKeyClient(httpClient),
+            CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
+            EvidenceBaseDirectory: evidenceDir);
+    }
+
+    // Test end-to-end obligatorio (XPAY-332 §11.H/I/J): exactamente 1
+    // llamada HTTP de negocio, PATCH /v1/keys/{syntheticKeyId}/activate, sin
+    // body, evidencia M3-T4 con result=PASS, commit SHA sintético, el
+    // key_id real ABSENTE de evidence.json y de la salida por consola,
+    // key_id_fingerprint presente, cero secretos.
+    [Fact]
+    public async Task ActivateKeyExecute_FullPath_ProducesExactlyOneHttpCall_AndPassEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeActivateHandler();
+            var config = ActivateKeyConfig();
+            var dependencies = BuildActivateDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "activate-key", "--execute", "--confirm-activate-key" }, config, dependencies, output);
+
+            // Exactamente 1 llamada HTTP fake, PATCH /v1/keys/{key_id}/activate, sin body, sin segundo HTTP.
+            Assert.Equal(1, handler.CallCount);
+            Assert.Equal(HttpMethod.Patch, handler.LastRequest!.Method);
+            Assert.Equal($"/v1/keys/{SyntheticActivateRemoteKeyId}/activate", handler.LastRequest.RequestUri!.AbsolutePath);
+            Assert.Equal(BaseUrl, handler.LastRequest.RequestUri.GetLeftPart(UriPartial.Authority));
+            Assert.Null(handler.LastRequestBody);
+
+            var caseDir = Path.Combine(dir, "M3-T4");
+            var files = Directory.GetFiles(caseDir, "evidence-*.json");
+            Assert.Single(files);
+
+            var json = File.ReadAllText(files[0]);
+            using var evDoc = JsonDocument.Parse(json);
+            var root = evDoc.RootElement;
+            Assert.Equal("M3-T4", root.GetProperty("case_id").GetString());
+            Assert.Equal("sandbox", root.GetProperty("environment").GetString());
+            Assert.Equal("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000",
+                root.GetProperty("backend_commit_sha").GetString());
+            Assert.Equal("PATCH /v1/keys/{key_id}/activate", root.GetProperty("operation").GetString());
+            Assert.Equal("PASS", root.GetProperty("result").GetString());
+            Assert.Equal("PENDING_PASSPORT_REVIEW", root.GetProperty("review_status").GetString());
+
+            // key_id real AUSENTE de evidence.json; sólo su fingerprint presente.
+            Assert.DoesNotContain(SyntheticActivateRemoteKeyId, json);
+            Assert.True(root.GetProperty("request_sanitized").TryGetProperty("key_id_fingerprint", out _));
+            Assert.True(root.GetProperty("response_sanitized").TryGetProperty("id_fingerprint", out _));
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", json);
+            Assert.DoesNotContain("synthetic-secret", json);
+
+            // key_id real AUSENTE también de la salida por consola.
+            var consoleOutput = output.ToString();
+            Assert.DoesNotContain(SyntheticActivateRemoteKeyId, consoleOutput);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", consoleOutput);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // PASSPORT_TEST_NEW_KEY_ID ausente => bloqueado ANTES de HTTP
+    // (AbortedTargetMissing a nivel HarnessOrchestrator.Prepare), cero HTTP,
+    // cero evidencia.
+    [Fact]
+    public async Task ActivateKeyExecute_MissingKeyId_IsAborted_NoEvidenceNoHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeActivateHandler();
+            var config = ActivateKeyConfig(newKeyId: null);
+            var dependencies = BuildActivateDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "activate-key", "--execute", "--confirm-activate-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T4")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Fallo remoto simulado (HTTP no-2xx) => exactamente 1 llamada HTTP, y
+    // evidencia FAIL saneada.
+    [Fact]
+    public async Task ActivateKeyExecute_PassportHttpFailure_ProducesExactlyOneHttpCall_AndFailEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeActivateHandler(
+                HttpStatusCode.BadRequest, errorBody: """{ "message": "invalid state" }""");
+            var config = ActivateKeyConfig();
+            var dependencies = BuildActivateDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "activate-key", "--execute", "--confirm-activate-key" }, config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount); // sin reintentos, un solo intento real.
+
+            var caseDir = Path.Combine(dir, "M3-T4");
+            var files = Directory.GetFiles(caseDir, "evidence-*.json");
+            Assert.Single(files);
+
+            var json = File.ReadAllText(files[0]);
+            using var evDoc = JsonDocument.Parse(json);
+            var root = evDoc.RootElement;
+            Assert.Equal("M3-T4", root.GetProperty("case_id").GetString());
+            Assert.Equal("FAIL", root.GetProperty("result").GetString());
+            Assert.StartsWith("PASSPORT_HTTP_FAILURE:", root.GetProperty("notes").GetString());
+            Assert.DoesNotContain(SyntheticActivateRemoteKeyId, json);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Regresión — dry-run: cero HTTP, cero evidencia.
+    [Fact]
+    public async Task ActivateKeyDryRun_NoFlags_ProducesZeroHttpZeroEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeActivateHandler();
+            var config = ActivateKeyConfig();
+            var dependencies = BuildActivateDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "activate-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T4")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Regresión — --execute solo, sin confirmación: cero HTTP.
+    [Fact]
+    public async Task ActivateKeyExecute_WithoutConfirm_StaysBlocked_ZeroHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeActivateHandler();
+            var config = ActivateKeyConfig();
+            var dependencies = BuildActivateDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "activate-key", "--execute" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T4")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // Regresión — --confirm-suspend-key NUNCA autoriza activate-key: cero HTTP.
+    [Fact]
+    public async Task ActivateKeyExecute_WithConfirmSuspendKey_DoesNotAuthorize_ZeroHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeActivateHandler();
+            var config = ActivateKeyConfig();
+            var dependencies = BuildActivateDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "activate-key", "--execute", "--confirm-suspend-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T4")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }
