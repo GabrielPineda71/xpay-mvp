@@ -27,6 +27,7 @@ public enum HarnessCommand
     ActivateKey,
     DeleteKey,
     DeleteAlreadyDeletedKey,
+    ResolveKey,
 }
 
 public static class HarnessDecision
@@ -41,33 +42,44 @@ public static class HarnessDecision
     // IPassportKeyClient.DeleteKeyAsync — nunca se confunden entre sí (ver
     // DeleteAlreadyDeletedKeyEvidenceBuilder/-Executor).
     public const string CommandDeleteAlreadyDeletedKey = "delete-already-deleted-key";
+    // XPAY-340 — M3-T2: resuelve por key_type/key_value + customer_id (NO
+    // por remote key_id) — usa los recursos Bre-B de prueba YA
+    // provistos por Passport (PASSPORT_TEST_CUSTOMER_ID/
+    // PASSPORT_TEST_BREB_KEY_TYPE/PASSPORT_TEST_BREB_KEY), nunca
+    // PASSPORT_TEST_NEW_KEY_ID (ese es exclusivo de Suspend/Activate/
+    // Delete/DeleteAlreadyDeleted, un target completamente distinto).
+    public const string CommandResolveKey              = "resolve-key";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
-    // XPAY-325/326/332/334/336 — cada comando mutante tiene su PROPIA
-    // bandera de confirmación, deliberadamente distinta de las demás:
-    // evita que la confirmación de un comando autorice por error la
-    // mutación de otro (p. ej. --confirm-create-key NUNCA debe autorizar
-    // suspend-key, ni --confirm-suspend-key/--confirm-activate-key/
-    // --confirm-delete-key autorizar delete-already-deleted-key, y
-    // viceversa) — "una sola bandera genérica no es suficiente".
+    // XPAY-325/326/332/334/336/340 — cada comando mutante (o, en el caso
+    // de Resolve, cada comando que realiza una llamada real aunque sea
+    // read-only) tiene su PROPIA bandera de confirmación, deliberadamente
+    // distinta de las demás: evita que la confirmación de un comando
+    // autorice por error la operación de otro (p. ej. --confirm-create-key
+    // NUNCA debe autorizar suspend-key, ni --confirm-suspend-key/
+    // --confirm-activate-key/--confirm-delete-key autorizar
+    // delete-already-deleted-key o resolve-key, y viceversa) — "una sola
+    // bandera genérica no es suficiente".
     public const string FlagConfirmCreateKey               = "--confirm-create-key";
     public const string FlagConfirmSuspendKey              = "--confirm-suspend-key";
     public const string FlagConfirmActivateKey             = "--confirm-activate-key";
     public const string FlagConfirmDeleteKey               = "--confirm-delete-key";
     public const string FlagConfirmDeleteAlreadyDeletedKey = "--confirm-delete-already-deleted-key";
+    public const string FlagConfirmResolveKey              = "--confirm-resolve-key";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
         args[0] switch
         {
-            CommandCreateCustomer         => HarnessCommand.CreateCustomer,
-            CommandCreateKey              => HarnessCommand.CreateKey,
-            CommandSuspendKey             => HarnessCommand.SuspendKey,
-            CommandActivateKey            => HarnessCommand.ActivateKey,
-            CommandDeleteKey              => HarnessCommand.DeleteKey,
+            CommandCreateCustomer          => HarnessCommand.CreateCustomer,
+            CommandCreateKey               => HarnessCommand.CreateKey,
+            CommandSuspendKey              => HarnessCommand.SuspendKey,
+            CommandActivateKey             => HarnessCommand.ActivateKey,
+            CommandDeleteKey               => HarnessCommand.DeleteKey,
             CommandDeleteAlreadyDeletedKey => HarnessCommand.DeleteAlreadyDeletedKey,
-            _                             => HarnessCommand.Unknown,
+            CommandResolveKey              => HarnessCommand.ResolveKey,
+            _                              => HarnessCommand.Unknown,
         };
 
     // XPAY-312 FASE 3/6/8, extendido en XPAY-325/326:
@@ -91,12 +103,13 @@ public static class HarnessDecision
 
         var confirmFlag = command switch
         {
-            HarnessCommand.CreateCustomer         => FlagConfirmCreateCustomer,
-            HarnessCommand.CreateKey              => FlagConfirmCreateKey,
+            HarnessCommand.CreateCustomer          => FlagConfirmCreateCustomer,
+            HarnessCommand.CreateKey               => FlagConfirmCreateKey,
             HarnessCommand.SuspendKey              => FlagConfirmSuspendKey,
             HarnessCommand.ActivateKey             => FlagConfirmActivateKey,
             HarnessCommand.DeleteKey               => FlagConfirmDeleteKey,
             HarnessCommand.DeleteAlreadyDeletedKey => FlagConfirmDeleteAlreadyDeletedKey,
+            HarnessCommand.ResolveKey              => FlagConfirmResolveKey,
             _                                      => null,
         };
 

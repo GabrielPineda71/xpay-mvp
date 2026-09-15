@@ -33,7 +33,12 @@ public class HarnessOrchestratorTests
     [Fact]
     public void Prepare_UnknownCommand_ReturnsShowHelp()
     {
-        var decision = HarnessOrchestrator.Prepare(new[] { "resolve-key" }, ConfigWith());
+        // XPAY-340 — este literal usaba "resolve-key" como ejemplo de
+        // comando NO reconocido; ahora que XPAY-340 lo implementó como
+        // comando real, se usa un literal genuinamente desconocido para
+        // preservar la intención original del test sin tocar su
+        // comportamiento.
+        var decision = HarnessOrchestrator.Prepare(new[] { "totally-unknown-command" }, ConfigWith());
         Assert.Equal(HarnessOrchestrator.Outcome.ShowHelp, decision.Outcome);
     }
 
@@ -530,6 +535,117 @@ public class HarnessOrchestratorTests
         var decision = HarnessOrchestrator.Prepare(
             new[] { "delete-already-deleted-key", "--execute", "--confirm-delete-already-deleted-key" },
             ConfigWithDeleteAlreadyDeletedTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-340 — resolve-key (M3-T2) — target COMPLETAMENTE DISTINTO
+    // (recursos Bre-B ya provistos por Passport: PASSPORT_TEST_CUSTOMER_ID/
+    // PASSPORT_TEST_BREB_KEY_TYPE/PASSPORT_TEST_BREB_KEY — nunca
+    // PASSPORT_TEST_NEW_KEY_ID).
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string ValidCustomerId  = "synthetic-customer-id-001";
+    private const string ValidBrebKeyType = "BCODE";
+    private const string ValidBrebKeyValue = "0099999999";
+
+    private static IConfiguration ConfigWithResolveTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? customerId = ValidCustomerId, string? brebKeyType = ValidBrebKeyType, string? brebKeyValue = ValidBrebKeyValue)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
+        if (brebKeyType is not null) dict[HarnessTargetConfig.EnvBrebKeyType] = brebKeyType;
+        if (brebKeyValue is not null) dict[HarnessTargetConfig.EnvBrebKeyValue] = brebKeyValue;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // A. resolve-key dry-run: cero HTTP.
+    [Fact]
+    public void Prepare_ResolveKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "resolve-key" }, ConfigWithResolveTarget());
+        Assert.Equal(HarnessCommand.ResolveKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    // C. --execute solo (sin confirmación) => Aborted, nunca HTTP.
+    [Fact]
+    public void Prepare_ResolveKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "resolve-key", "--execute" }, ConfigWithResolveTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // D/F. Ninguna otra confirmación autoriza resolve-key.
+    [Theory]
+    [InlineData("--confirm-create-key")]
+    [InlineData("--confirm-suspend-key")]
+    [InlineData("--confirm-activate-key")]
+    [InlineData("--confirm-delete-key")]
+    [InlineData("--confirm-delete-already-deleted-key")]
+    public void Prepare_ResolveKey_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "resolve-key", "--execute", wrongConfirmFlag }, ConfigWithResolveTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // E. --confirm-resolve-key NUNCA autoriza otra operación (viceversa).
+    [Fact]
+    public void Prepare_SuspendKey_ConfirmResolveKeyDoesNotAuthorizeSuspendKey()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-key", "--execute", "--confirm-resolve-key" }, ConfigWithSuspendTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // G. PASSPORT_TEST_CUSTOMER_ID ausente => AbortedTargetMissing.
+    [Fact]
+    public void Prepare_ResolveKey_MissingCustomerId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "resolve-key" }, ConfigWithResolveTarget(customerId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // H. PASSPORT_TEST_BREB_KEY_TYPE ausente => AbortedTargetMissing.
+    [Fact]
+    public void Prepare_ResolveKey_MissingBrebKeyType_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "resolve-key" }, ConfigWithResolveTarget(brebKeyType: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // I. PASSPORT_TEST_BREB_KEY ausente => AbortedTargetMissing.
+    [Fact]
+    public void Prepare_ResolveKey_MissingBrebKeyValue_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "resolve-key" }, ConfigWithResolveTarget(brebKeyValue: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // host no-Sandbox bloquea antes de HTTP.
+    [Fact]
+    public void Prepare_ResolveKey_NonSandboxHost_ReturnsAbortedNonSandboxHost()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "resolve-key" }, ConfigWithResolveTarget(baseUrl: "https://evil.example.com"));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedNonSandboxHost, decision.Outcome);
+    }
+
+    // --execute + --confirm-resolve-key => ReadyToExecute.
+    [Fact]
+    public void Prepare_ResolveKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "resolve-key", "--execute", "--confirm-resolve-key" }, ConfigWithResolveTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
     }
 }

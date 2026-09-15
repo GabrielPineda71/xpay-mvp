@@ -41,7 +41,7 @@ public static class HarnessOrchestrator
         var configStatus = HarnessConfigStatus.FromConfiguration(configuration);
         var targetConfig = command is HarnessCommand.CreateKey or HarnessCommand.SuspendKey
                                     or HarnessCommand.ActivateKey or HarnessCommand.DeleteKey
-                                    or HarnessCommand.DeleteAlreadyDeletedKey
+                                    or HarnessCommand.DeleteAlreadyDeletedKey or HarnessCommand.ResolveKey
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -81,6 +81,14 @@ public static class HarnessOrchestrator
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 $"Target de {commandLabel} incompleto — PASSPORT_TEST_NEW_KEY_ID ausente.");
         }
+
+        // XPAY-340 — para resolve-key, target COMPLETAMENTE DISTINTO: los
+        // recursos Bre-B de prueba ya provistos por Passport
+        // (PASSPORT_TEST_CUSTOMER_ID/PASSPORT_TEST_BREB_KEY_TYPE/
+        // PASSPORT_TEST_BREB_KEY), nunca PASSPORT_TEST_NEW_KEY_ID.
+        if (command == HarnessCommand.ResolveKey && targetConfig is not null && !targetConfig.AllPresentForResolveKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de resolve-key incompleto — PASSPORT_TEST_CUSTOMER_ID/PASSPORT_TEST_BREB_KEY_TYPE/PASSPORT_TEST_BREB_KEY ausente(s).");
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

@@ -1366,4 +1366,333 @@ public class HarnessAppEndToEndTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-340 — resolve-key (M3-T2), 100% offline. Target COMPLETAMENTE
+    // DISTINTO de Suspend/Activate/Delete: customer_id + key_type/key_value
+    // del recurso Bre-B YA provisto por Passport — nunca
+    // PASSPORT_TEST_NEW_KEY_ID. customer_id/key_value SIEMPRE sintéticos.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string SyntheticCustomerId  = "SYNTH-E2E-CUSTOMER-ID-must-never-appear-in-evidence-or-console";
+    private const string SyntheticBrebKeyValue = "SYNTH-E2E-BREB-KEY-VALUE-must-never-appear-in-evidence-or-console";
+    private const string SyntheticResolutionId = "synthetic-resolution-id-e2e";
+
+    private sealed class LocalFakeResolveHandler : HttpMessageHandler
+    {
+        private readonly HttpStatusCode _status;
+        private readonly string? _errorBody;
+
+        public LocalFakeResolveHandler(HttpStatusCode status = HttpStatusCode.OK, string? errorBody = null)
+        {
+            _status = status;
+            _errorBody = errorBody;
+        }
+
+        public int CallCount { get; private set; }
+        public HttpRequestMessage? LastRequest { get; private set; }
+        public string? LastRequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            LastRequest = request;
+            LastRequestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+
+            var response = new HttpResponseMessage(_status)
+            {
+                Content = new StringContent(
+                    _errorBody ?? $$"""
+                    {
+                      "id": "{{SyntheticResolutionId}}",
+                      "receptor_node": "SYNTH-NODE",
+                      "resolved_at": "2026-01-01T00:00:00.000000Z",
+                      "expires_at": "2026-01-01T00:30:00.000000Z",
+                      "customer_id": "{{SyntheticCustomerId}}",
+                      "owner": { "first_name": "Synthetic", "identification_type": "CC", "identification_number": "0000000000", "type": "PERSON" },
+                      "key": { "key_type": "BCODE", "key_value": "{{SyntheticBrebKeyValue}}" },
+                      "participant": { "name": "Synthetic Participant", "identification_number": "1111111111" },
+                      "account": { "account_number": "2222222222", "account_type": "SAVINGS" }
+                    }
+                    """,
+                    System.Text.Encoding.UTF8, "application/json"),
+            };
+            return response;
+        }
+    }
+
+    private static IConfiguration ResolveKeyConfig(
+        string? customerId = SyntheticCustomerId, string? brebKeyType = "BCODE", string? brebKeyValue = SyntheticBrebKeyValue) => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvCustomerId] = customerId,
+            [HarnessTargetConfig.EnvBrebKeyType] = brebKeyType,
+            [HarnessTargetConfig.EnvBrebKeyValue] = brebKeyValue,
+        })
+        .Build();
+
+    private static HarnessApp.Dependencies BuildResolveDependencies(
+        HttpMessageHandler handler, string evidenceDir, IConfiguration config)
+    {
+        IPassportHttpClient httpClient = new PassportHttpClient(
+            new LocalFakeHttpClientFactory(handler), new LocalFakeTokenProvider(), config,
+            NullLogger<PassportHttpClient>.Instance);
+
+        return new HarnessApp.Dependencies(
+            CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
+            KeyClient: new PassportKeyClient(httpClient),
+            CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
+            EvidenceBaseDirectory: evidenceDir);
+    }
+
+    // Tests K/L/N/O/P/Q/R/S — end-to-end obligatorio: exactamente 1 POST
+    // /v1/resolve-key con el body exacto del contrato productivo,
+    // evidencia M3-T2 con result=PASS, resolution_id tratado como
+    // resolution_id (NUNCA key_id), customer_id/key_value real AUSENTES de
+    // evidencia y consola, cero secretos.
+    [Fact]
+    public async Task ResolveKeyExecute_FullPath_ProducesExactlyOnePostCall_AndPassEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeResolveHandler();
+            var config = ResolveKeyConfig();
+            var dependencies = BuildResolveDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "resolve-key", "--execute", "--confirm-resolve-key" }, config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+            Assert.Equal("/v1/resolve-key", handler.LastRequest.RequestUri!.AbsolutePath);
+            Assert.Equal(BaseUrl, handler.LastRequest.RequestUri.GetLeftPart(UriPartial.Authority));
+
+            // El request coincide con el contrato productivo: customer_id +
+            // key{key_type,key_value}.
+            using var reqDoc = JsonDocument.Parse(handler.LastRequestBody!);
+            Assert.Equal(SyntheticCustomerId, reqDoc.RootElement.GetProperty("customer_id").GetString());
+            Assert.Equal("BCODE", reqDoc.RootElement.GetProperty("key").GetProperty("key_type").GetString());
+            Assert.Equal(SyntheticBrebKeyValue, reqDoc.RootElement.GetProperty("key").GetProperty("key_value").GetString());
+
+            var caseDir = Path.Combine(dir, "M3-T2");
+            var files = Directory.GetFiles(caseDir, "evidence-*.json");
+            Assert.Single(files);
+
+            var json = File.ReadAllText(files[0]);
+            using var evDoc = JsonDocument.Parse(json);
+            var root = evDoc.RootElement;
+            Assert.Equal("M3-T2", root.GetProperty("case_id").GetString());
+            Assert.Equal("sandbox", root.GetProperty("environment").GetString());
+            Assert.Equal("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000",
+                root.GetProperty("backend_commit_sha").GetString());
+            Assert.Equal("POST /v1/resolve-key", root.GetProperty("operation").GetString());
+            Assert.Equal("PASS", root.GetProperty("result").GetString());
+            Assert.Equal("PENDING_PASSPORT_REVIEW", root.GetProperty("review_status").GetString());
+
+            // resolution_id tratado como resolution_id — NUNCA key_id.
+            var responseSanitized = root.GetProperty("response_sanitized");
+            Assert.True(responseSanitized.TryGetProperty("resolution_id_fingerprint", out _));
+            Assert.False(responseSanitized.TryGetProperty("key_id_fingerprint", out _));
+            Assert.False(responseSanitized.TryGetProperty("id_fingerprint", out _));
+
+            var requestSanitized = root.GetProperty("request_sanitized");
+            Assert.True(requestSanitized.TryGetProperty("customer_id_fingerprint", out _));
+            Assert.True(requestSanitized.TryGetProperty("key_value_fingerprint", out _));
+            Assert.Equal("BCODE", requestSanitized.GetProperty("key_type").GetString());
+
+            // customer_id/key_value reales AUSENTES de evidence.json y consola.
+            Assert.DoesNotContain(SyntheticCustomerId, json);
+            Assert.DoesNotContain(SyntheticBrebKeyValue, json);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", json);
+            Assert.DoesNotContain("synthetic-secret", json);
+
+            var consoleOutput = output.ToString();
+            Assert.DoesNotContain(SyntheticCustomerId, consoleOutput);
+            Assert.DoesNotContain(SyntheticBrebKeyValue, consoleOutput);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", consoleOutput);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // G/H/I — cualquier target ausente => bloqueado ANTES de HTTP, cero
+    // HTTP, cero evidencia.
+    [Theory]
+    [InlineData(null, "BCODE", SyntheticBrebKeyValue)]
+    [InlineData(SyntheticCustomerId, null, SyntheticBrebKeyValue)]
+    [InlineData(SyntheticCustomerId, "BCODE", null)]
+    public async Task ResolveKeyExecute_MissingTarget_IsAborted_NoEvidenceNoHttp(
+        string? customerId, string? brebKeyType, string? brebKeyValue)
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeResolveHandler();
+            var config = ResolveKeyConfig(customerId, brebKeyType, brebKeyValue);
+            var dependencies = BuildResolveDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "resolve-key", "--execute", "--confirm-resolve-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T2")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // J — key_type inválido: bloqueado a nivel LOCAL (dentro del executor,
+    // no en Prepare), cero HTTP, cero evidencia.
+    [Fact]
+    public async Task ResolveKeyExecute_InvalidKeyType_IsLocalBlocked_NoEvidenceNoHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeResolveHandler();
+            var config = ResolveKeyConfig(brebKeyType: "MOBILE"); // inválido — no se normaliza a PHONE
+            var dependencies = BuildResolveDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "resolve-key", "--execute", "--confirm-resolve-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T2")));
+            Assert.Contains("LOCAL_BLOCKED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // T — fallo remoto simulado: exactamente 1 llamada, sin retry, evidencia FAIL saneada.
+    [Fact]
+    public async Task ResolveKeyExecute_PassportHttpFailure_ProducesExactlyOneHttpCall_AndFailEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeResolveHandler(
+                HttpStatusCode.BadRequest, errorBody: """{ "message": "not found" }""");
+            var config = ResolveKeyConfig();
+            var dependencies = BuildResolveDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "resolve-key", "--execute", "--confirm-resolve-key" }, config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+
+            var caseDir = Path.Combine(dir, "M3-T2");
+            var files = Directory.GetFiles(caseDir, "evidence-*.json");
+            Assert.Single(files);
+
+            var json = File.ReadAllText(files[0]);
+            using var evDoc = JsonDocument.Parse(json);
+            var root = evDoc.RootElement;
+            Assert.Equal("M3-T2", root.GetProperty("case_id").GetString());
+            Assert.Equal("FAIL", root.GetProperty("result").GetString());
+            Assert.StartsWith("PASSPORT_HTTP_FAILURE:", root.GetProperty("notes").GetString());
+            Assert.DoesNotContain(SyntheticCustomerId, json);
+            Assert.DoesNotContain(SyntheticBrebKeyValue, json);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // B/U — dry-run: cero HTTP, cero evidencia, no lee/imprime secretos.
+    [Fact]
+    public async Task ResolveKeyDryRun_NoFlags_ProducesZeroHttpZeroEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeResolveHandler();
+            var config = ResolveKeyConfig();
+            var dependencies = BuildResolveDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "resolve-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T2")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+            Assert.DoesNotContain(SyntheticCustomerId, output.ToString());
+            Assert.DoesNotContain(SyntheticBrebKeyValue, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // C — --execute solo, sin confirmación: cero HTTP.
+    [Fact]
+    public async Task ResolveKeyExecute_WithoutConfirm_StaysBlocked_ZeroHttp()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeResolveHandler();
+            var config = ResolveKeyConfig();
+            var dependencies = BuildResolveDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "resolve-key", "--execute" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T2")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // D/F — ninguna otra confirmación autoriza resolve-key: cero HTTP.
+    [Theory]
+    [InlineData("--confirm-create-key")]
+    [InlineData("--confirm-suspend-key")]
+    [InlineData("--confirm-activate-key")]
+    [InlineData("--confirm-delete-key")]
+    [InlineData("--confirm-delete-already-deleted-key")]
+    public async Task ResolveKeyExecute_WithWrongConfirmFlag_DoesNotAuthorize_ZeroHttp(string wrongConfirmFlag)
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeResolveHandler();
+            var config = ResolveKeyConfig();
+            var dependencies = BuildResolveDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "resolve-key", "--execute", wrongConfirmFlag }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M3-T2")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

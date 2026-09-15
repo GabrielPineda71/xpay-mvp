@@ -44,6 +44,7 @@ public static class HarnessApp
                 output.WriteLine("     activate-key     [--execute --confirm-activate-key]");
                 output.WriteLine("     delete-key       [--execute --confirm-delete-key]");
                 output.WriteLine("     delete-already-deleted-key [--execute --confirm-delete-already-deleted-key]");
+                output.WriteLine("     resolve-key      [--execute --confirm-resolve-key]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -137,6 +138,22 @@ public static class HarnessApp
                 output.WriteLine("result=DRY_RUN");
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 output.WriteLine("note=M3-T7 es prueba negativa: transporte PASS/FAIL != juicio de certificación");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.ResolveKey:
+                // XPAY-340 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_CUSTOMER_ID/PASSPORT_TEST_BREB_KEY_TYPE/
+                // PASSPORT_TEST_BREB_KEY en este modo: sólo ya se confirmó
+                // su PRESENCIA (impreso arriba). No se construye ningún
+                // PassportResolveKeyRequest, no se obtiene token, no hay
+                // HTTP, no hay evidencia.
+                output.WriteLine("case=M3-T2 (Resolve Key)");
+                output.WriteLine("endpoint=POST /v1/resolve-key");
+                output.WriteLine("mutating=NO (read-only, resuelve una llave existente)");
+                output.WriteLine("requires=--execute --confirm-resolve-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 return;
 
             case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateCustomer:
@@ -250,6 +267,28 @@ public static class HarnessApp
                 output.WriteLine($"evidence_path={path}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 output.WriteLine("note=M3-T7 es prueba negativa: transporte PASS/FAIL != juicio de certificación (ver evidencia)");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.ResolveKey:
+            {
+                var execution = await ResolveKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-340 — un bloqueo LOCAL (target ausente, key_type
+                    // inválido, commit SHA no resoluble) NUNCA escribe
+                    // evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var path = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={path}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 return;
             }
         }
