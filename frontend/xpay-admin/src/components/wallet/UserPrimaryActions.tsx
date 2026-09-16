@@ -35,7 +35,12 @@ function IconBank(p: IconProps) {
   return <Svg {...p}><path d="M3.5 9.5 12 4l8.5 5.5" /><path d="M4.5 9.5v9.5h15V9.5" /><path d="M8 19v-6M12 19v-6M16 19v-6" /><path d="M3.5 19h17" /></Svg>;
 }
 
-export type WalletPrimaryAction = 'receive' | 'send' | 'pay-qr' | 'breb-key' | 'where-to-buy' | 'withdraw-bank';
+export type WalletPrimaryAction =
+  | 'receive' | 'send' | 'pay-qr' | 'breb-key' | 'where-to-buy' | 'withdraw-bank'
+  // XPAY-375 — retiro Bre-B REAL (dinero real), deliberadamente distinto de
+  // 'breb-key' (envío a llave de terceros, sin ruta/backend real todavía) y
+  // de 'withdraw-bank' (retiro simulado, tab 'banco').
+  | 'withdraw-breb-real';
 
 interface ActionDef {
   key: WalletPrimaryAction;
@@ -50,6 +55,8 @@ const ACTIONS: ActionDef[] = [
   { key: 'breb-key', label: 'Enviar a mi llave Bre-B', icon: IconKeySend },
   { key: 'where-to-buy', label: 'Dónde comprar', icon: IconStore },
   { key: 'withdraw-bank', label: 'Retirar a mi banco', icon: IconBank },
+  // XPAY-375 — botón dedicado, separado, para el retiro Bre-B REAL.
+  { key: 'withdraw-breb-real', label: 'Retirar a mi llave Bre-B', icon: IconBank },
 ];
 
 interface UserPrimaryActionsProps {

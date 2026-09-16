@@ -710,6 +710,59 @@ tr:hover td { background: #f7fafc; }
 .breb-retiros-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid #f0f0f0; color: #2d3748; }
 .breb-retiros-table tr:hover td { background: #f7fafc; }
 
+/* ── XPAY-375: retiro Bre-B REAL (dinero real) — deliberadamente separado
+   visualmente del flujo simulado (.breb-section) de arriba ────────────── */
+.breb-real-section { margin-top: 1.25rem; max-width: 480px; }
+.breb-real-badge {
+  display: inline-block;
+  background: #fff5f5;
+  color: #c53030;
+  border: 1px solid #feb2b2;
+  border-radius: 4px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+.breb-real-saldo-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 0.85rem; color: #4a5568; margin-bottom: 0.35rem;
+}
+.breb-real-saldo-row strong { font-size: 0.95rem; color: #2d3748; }
+.breb-real-verif-row { font-size: 0.78rem; }
+.breb-real-verif-pendiente { color: #92400e; font-weight: 600; }
+
+.breb-real-destino-card,
+.breb-real-confirm-card,
+.breb-real-result-card {
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  margin-top: 0.9rem;
+}
+.breb-real-destino-card h4,
+.breb-real-confirm-card h4,
+.breb-real-result-card h4 { margin: 0 0 0.6rem; font-size: 0.88rem; color: #2d3748; }
+.breb-real-destino-list { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; margin: 0; }
+.breb-real-destino-list dt { font-size: 0.76rem; color: #718096; font-weight: 500; }
+.breb-real-destino-list dd { margin: 0; font-size: 0.83rem; color: #2d3748; font-weight: 600; }
+
+.breb-real-confirm-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; flex-wrap: wrap; }
+.btn-breb--financial { background: #c53030; }
+.btn-breb--financial:hover:not(:disabled) { background: #9b2c2c; }
+
+.breb-real-result--transitorio { border-color: #90cdf4; background: #ebf8ff; }
+.breb-real-result--exitoso     { border-color: #9ae6b4; background: #f0fff4; }
+.breb-real-result--fallido     { border-color: #feb2b2; background: #fff5f5; }
+.breb-real-result--desconocido { border-color: #e2e8f0; background: #f7fafc; }
+
+.wallet-held-balance-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 0.85rem; color: #4a5568; margin-top: 0.5rem;
+}
+.wallet-held-balance-row strong { color: #2d3748; }
+
 /* ── USUARIOS-ADMIN-2: listado/detalle de usuarios ─────────────────────── */
 .filter-checkbox { flex-direction: row; align-items: center; gap: 0.4rem; }
 .filter-checkbox label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: #2d3748; white-space: nowrap; }

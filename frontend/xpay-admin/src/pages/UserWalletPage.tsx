@@ -59,6 +59,9 @@ interface EstadoCuenta {
   nombreWallet:    string;
   estado:          string;
   saldoDisponible: number;
+  // XPAY-375 — expuesto por primera vez por el backend (ReportesService).
+  // Fuente de verdad es SIEMPRE el backend — nunca se calcula localmente.
+  saldoRetenido:   number;
   movimientos:     Movimiento[];
 }
 
@@ -70,8 +73,8 @@ interface MiWallet {
 }
 
 type Msg = { ok: boolean; text: string };
-type Tab = 'saldo' | 'recibir' | 'enviar' | 'pagar' | 'movimientos' | 'banco';
-const VALID_TABS: Tab[] = ['saldo', 'recibir', 'enviar', 'pagar', 'movimientos', 'banco'];
+type Tab = 'saldo' | 'recibir' | 'enviar' | 'pagar' | 'movimientos' | 'banco' | 'retirar-breb';
+const VALID_TABS: Tab[] = ['saldo', 'recibir', 'enviar', 'pagar', 'movimientos', 'banco', 'retirar-breb'];
 
 interface BrebLlave {
   idBrebLlave:     number;
@@ -81,6 +84,11 @@ interface BrebLlave {
   estado:          string;
   fechaRegistro?:  string;
   fechaValidacion?: string;
+  // XPAY-375 — distingue una llave validada por Resolve real de Passport
+  // (XPAY-371) de una validada sólo por el botón admin QA de simulación.
+  // Ausente en respuestas de backends anteriores a XPAY-371 — por eso
+  // opcional, tratado como false si falta.
+  resolucionVerificadaPassport?: boolean;
 }
 
 interface BrebRetiro {
@@ -93,6 +101,63 @@ interface BrebRetiro {
   keyValueMasked:    string;
   fechaSolicitud:    string;
   motivoRechazo?:    string;
+}
+
+// XPAY-375 — flujo REAL (dinero real, cuenta operativa XPAY en Passport
+// Sandbox), distinto y separado del flujo simulado (BrebLlave/BrebRetiro
+// arriba). Formas exactas de MiLlaveResolveResponse/RetiroRealResponse
+// (backend, XPAY-371/373) — camelCase por serialización JSON default de
+// ASP.NET Core.
+interface LlaveResolveResult {
+  idBrebLlave:                  number;
+  keyType:                      string;
+  keyValueMasked:                string;
+  estado:                       string;
+  resolucionVerificadaPassport: boolean;
+  titularNombreMasked:          string;
+  titularIdentificacionTipo?:   string | null;
+  titularIdentificacionMasked?: string | null;
+  entidadFinanciera?:           string | null;
+  tipoCuenta?:                  string | null;
+  cuentaMasked?:                string | null;
+  vigenteHasta?:                string | null;
+}
+
+interface RetiroReal {
+  idBrebRetiro:            number;
+  valor:                   number;
+  moneda:                  string;
+  estado:                  string;
+  paymentIdFingerprint?:   string | null;
+  resolutionIdFingerprint?: string | null;
+  fechaSolicitud:          string;
+  fechaEnvioPassport?:     string | null;
+  motivoRechazo?:          string | null;
+}
+
+// XPAY-375 FASE 6 — clasificación de estados LOCALES del retiro real
+// (los mismos que persiste BrebPaymentService/BrebPaymentStateMachine,
+// XPAY-373) para decidir el mensaje mostrado — nunca se asume éxito sólo
+// porque el POST respondió 2xx.
+type RetiroRealEstadoClase = 'transitorio' | 'exitoso' | 'fallido' | 'desconocido';
+
+function clasificarRetiroRealEstado(estado: string): RetiroRealEstadoClase {
+  if (estado === 'LIQUIDADO') return 'exitoso';
+  if (estado === 'RECHAZADO' || estado === 'ERROR') return 'fallido';
+  if (estado === 'PENDIENTE_ENVIO_PASSPORT' || estado === 'ENVIADO_PASSPORT' || estado === 'CREADO') return 'transitorio';
+  return 'desconocido';
+}
+
+function retiroRealMensaje(estado: string, motivoRechazo?: string | null): string {
+  const clase = clasificarRetiroRealEstado(estado);
+  if (clase === 'exitoso') return 'Retiro completado.';
+  if (clase === 'fallido') {
+    return motivoRechazo
+      ? `El retiro fue rechazado y el dinero reservado volvió a estar disponible. Motivo: ${motivoRechazo}`
+      : 'El retiro fue rechazado y el dinero reservado volvió a estar disponible.';
+  }
+  // transitorio/desconocido: nunca afirmar éxito ni fallo sin confirmación.
+  return 'Tu retiro está siendo procesado.';
 }
 
 // PIN: format-only validation for QA/Demo phase
@@ -235,6 +300,20 @@ export function UserWalletPage() {
   const [brebRetValor,   setBrebRetValor]   = useState('');
   const [brebRetBusy,    setBrebRetBusy]    = useState(false);
   const [brebRetMsg,     setBrebRetMsg]     = useState<Msg | null>(null);
+
+  // ── XPAY-375 — Retirar a mi llave Bre-B (REAL, dinero real) ────────────
+  // Separado deliberadamente del estado del flujo simulado de arriba — un
+  // usuario nunca debe poder confundir ambos flujos.
+  const [realKeyValueInput, setRealKeyValueInput] = useState('');
+  const [realResolveBusy,   setRealResolveBusy]   = useState(false);
+  const [realResolveMsg,    setRealResolveMsg]    = useState<Msg | null>(null);
+  const [realResolveResult, setRealResolveResult] = useState<LlaveResolveResult | null>(null);
+  const [realMonto,         setRealMonto]         = useState('');
+  const [realMontoErr,      setRealMontoErr]      = useState<string | null>(null);
+  const [realStep,          setRealStep]          = useState<'monto' | 'confirmar'>('monto');
+  const [realConfirmBusy,   setRealConfirmBusy]   = useState(false);
+  const [realConfirmMsg,    setRealConfirmMsg]    = useState<Msg | null>(null);
+  const [realRetiroResult,  setRealRetiroResult]  = useState<RetiroReal | null>(null);
 
   // ── Pagar comercio QR ─────────────────────────────────────────────────────
   const [pagQrCode,       setPagQrCode]       = useState('');
@@ -689,6 +768,100 @@ export function UserWalletPage() {
     } finally { setBrebRetBusy(false); }
   }
 
+  // ── XPAY-375 — Retirar a mi llave Bre-B (REAL) ─────────────────────────
+  //
+  // "Verificar mi llave" — llama POST /api/breb/mi-llave/resolver. El
+  // backend NUNCA persiste el valor en claro de la llave (XPAY-371) — por
+  // eso este formulario pide reconfirmar el mismo valor ya registrado; el
+  // backend lo valida por hash contra la llave activa de la wallet del
+  // usuario ANTES de llamar a Passport, y rechaza cualquier valor que no
+  // coincida — esto NO es "una llave arbitraria", es la reconfirmación de
+  // la llave que el propio usuario ya registró.
+  async function handleVerificarLlaveReal(e: FormEvent) {
+    e.preventDefault();
+    if (!realKeyValueInput.trim()) {
+      setRealResolveMsg({ ok: false, text: 'Ingresa el valor de tu llave para confirmarla.' });
+      return;
+    }
+    setRealResolveBusy(true);
+    setRealResolveMsg(null);
+    try {
+      const r = await post<{ success: boolean; data?: LlaveResolveResult; message?: string }>(
+        '/api/breb/mi-llave/resolver',
+        { KeyValue: realKeyValueInput.trim() },
+      );
+      if (r.success && r.data) {
+        setRealResolveResult(r.data);
+        setRealKeyValueInput('');
+        setRealResolveMsg({ ok: true, text: 'Llave verificada con Passport.' });
+        await loadBreb();
+      } else {
+        setRealResolveMsg({ ok: false, text: r.message ?? 'No se pudo verificar la llave.' });
+      }
+    } catch (err) {
+      // XPAY-375 FASE 5 — un error aquí (resolución vencida, error de
+      // Passport, etc.) nunca debe intentar reintentar automáticamente ni
+      // avanzar al Payment. El usuario decide si vuelve a intentar.
+      setRealResolveMsg({ ok: false, text: (err as Error).message || 'No se pudo verificar la llave.' });
+    } finally {
+      setRealResolveBusy(false);
+    }
+  }
+
+  // "Continuar" — sólo valida el monto localmente y avanza a la pantalla
+  // de confirmación. NUNCA llama al backend — el Payment sólo puede
+  // dispararse desde "Confirmar retiro" (FASE 4: el clic financiero debe
+  // ser explícito y separado).
+  function handleContinuarRetiroReal(e: FormEvent) {
+    e.preventDefault();
+    const val = Number(realMonto);
+    if (!val || val <= 0) { setRealMontoErr('Ingresa un monto válido.'); return; }
+    if (cuenta && val > cuenta.saldoDisponible) {
+      setRealMontoErr(`El monto no puede superar tu saldo disponible (${fmtMoney(cuenta.saldoDisponible)}).`);
+      return;
+    }
+    setRealMontoErr(null);
+    setRealStep('confirmar');
+  }
+
+  // "Confirmar retiro" — ÚNICO punto del frontend que llama
+  // POST /api/breb/retiros/real. El body sólo lleva Monto — account_id,
+  // resolution_id, payment_id y la llave destino se resuelven 100%
+  // server-side (BrebPaymentService, XPAY-373); este formulario no tiene
+  // ningún campo para ninguno de ellos.
+  async function handleConfirmarRetiroReal() {
+    if (realConfirmBusy) return; // protección contra doble clic
+    const val = Number(realMonto);
+    if (!val || val <= 0) { setRealConfirmMsg({ ok: false, text: 'Monto inválido.' }); return; }
+    setRealConfirmBusy(true);
+    setRealConfirmMsg(null);
+    try {
+      const r = await post<{ success: boolean; data?: RetiroReal; message?: string; warning?: string }>(
+        '/api/breb/retiros/real',
+        { Monto: val },
+      );
+      if (r.success && r.data) {
+        setRealRetiroResult(r.data);
+        setRealConfirmMsg({ ok: true, text: r.warning ?? retiroRealMensaje(r.data.estado, r.data.motivoRechazo) });
+        await loadCuenta();
+      } else {
+        setRealConfirmMsg({ ok: false, text: r.message ?? 'No se pudo procesar el retiro.' });
+      }
+    } catch (err) {
+      setRealConfirmMsg({ ok: false, text: (err as Error).message || 'No se pudo procesar el retiro.' });
+    } finally {
+      setRealConfirmBusy(false);
+    }
+  }
+
+  function resetRetiroRealFlow() {
+    setRealStep('monto');
+    setRealMonto('');
+    setRealMontoErr(null);
+    setRealConfirmMsg(null);
+    setRealRetiroResult(null);
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
   function resetEnviar() {
     setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
@@ -820,6 +993,15 @@ export function UserWalletPage() {
               saldoFormateado={fmtMoney(cuenta.saldoDisponible)}
               estado={cuenta.estado}
             />
+            {/* XPAY-375 FASE 7 — saldo retenido, visible siempre que exista
+                cualquier reserva en curso (retiro Bre-B real en proceso).
+                Valor siempre del backend, nunca calculado localmente. */}
+            {cuenta.saldoRetenido > 0 && (
+              <div className="wallet-held-balance-row" data-testid="saldo-retenido">
+                <span>Saldo retenido (retiro en proceso)</span>
+                <strong>{fmtMoney(cuenta.saldoRetenido)}</strong>
+              </div>
+            )}
             {cuenta.movimientos.length > 0 && (
               <div style={{ marginTop: '1rem', fontSize: '0.82rem', color: '#718096' }}>
                 Último movimiento: {fmtDate(cuenta.movimientos[0].fecha)} — {cuenta.movimientos[0].tipoMovimiento}
@@ -1355,6 +1537,194 @@ export function UserWalletPage() {
                     </tbody>
                   </table>
                 </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── RETIRAR A MI LLAVE BRE-B (REAL — dinero real) ─────────────────── */}
+      {/* XPAY-375 — deliberadamente separado del tab 'banco' (simulado) de
+          arriba: el usuario nunca debe confundir ambos flujos. Nada aquí se
+          ejecuta salvo que el propio usuario dispare cada acción. */}
+      {tab === 'retirar-breb' && (
+        <div className="breb-real-section">
+          <span className="breb-real-badge">Bre-B real — este retiro mueve dinero real</span>
+
+          {brebLlaveLoad ? (
+            <div className="loading">Cargando llave Bre-B...</div>
+          ) : !brebLlave || brebLlave.keyType !== 'BCODE' ? (
+            <p className="breb-retiro-note">
+              No tienes una llave BCODE propia registrada. Registra tu llave en la pestaña
+              "Retirar a mi banco" antes de continuar.
+            </p>
+          ) : (
+            <>
+              {/* Saldo de referencia — siempre desde `cuenta` (backend), nunca calculado aquí */}
+              <div className="breb-real-saldo-row">
+                <span>Saldo disponible</span>
+                <strong>{cuenta ? fmtMoney(cuenta.saldoDisponible) : '—'}</strong>
+              </div>
+              {cuenta && cuenta.saldoRetenido > 0 && (
+                <div className="breb-real-saldo-row">
+                  <span>Saldo retenido</span>
+                  <strong>{fmtMoney(cuenta.saldoRetenido)}</strong>
+                </div>
+              )}
+
+              {/* Estado de la llave propia */}
+              <div className="breb-status-card">
+                <div className="breb-status-row">
+                  <span className="breb-status-label">Mi llave:</span>
+                  <span className="breb-key-masked">{brebLlave.keyType} · {brebLlave.keyValueMasked}</span>
+                  <span className={`breb-badge breb-badge-${brebLlave.estado.toLowerCase().replace(/_/g, '-')}`}>
+                    {brebLlave.estado.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <div className="breb-real-verif-row">
+                  {brebLlave.resolucionVerificadaPassport ? (
+                    <span className="breb-msg-ok">Verificada realmente con Passport.</span>
+                  ) : (
+                    <span className="breb-real-verif-pendiente">Aún no verificada con Passport (esta sesión).</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Verificar mi llave — única acción que llama a Passport real */}
+              <form className="breb-form" onSubmit={(e) => void handleVerificarLlaveReal(e)}>
+                <label>
+                  Confirma el valor de tu llave para verificarla
+                  <input
+                    type="text"
+                    value={realKeyValueInput}
+                    onChange={e => setRealKeyValueInput(e.target.value)}
+                    placeholder="Valor de tu llave BCODE"
+                    autoComplete="off"
+                  />
+                </label>
+                <button type="submit" className="btn-breb" disabled={realResolveBusy || !realKeyValueInput.trim()}>
+                  {realResolveBusy ? 'Verificando con Passport...' : 'Verificar mi llave'}
+                </button>
+                {realResolveMsg && (
+                  <span className={realResolveMsg.ok ? 'breb-msg-ok' : 'breb-msg-err'}>{realResolveMsg.text}</span>
+                )}
+              </form>
+
+              {/* Resultado sanitizado de la verificación — SOLO datos reales del backend */}
+              {realResolveResult && (
+                <div className="breb-real-destino-card" data-testid="breb-real-destino">
+                  <h4>Cuenta asociada a tu llave Bre-B</h4>
+                  <dl className="breb-real-destino-list">
+                    <dt>Titular</dt><dd>{realResolveResult.titularNombreMasked}</dd>
+                    {realResolveResult.entidadFinanciera && (
+                      <><dt>Institución</dt><dd>{realResolveResult.entidadFinanciera}</dd></>
+                    )}
+                    {realResolveResult.tipoCuenta && (
+                      <><dt>Tipo de cuenta</dt><dd>{realResolveResult.tipoCuenta}</dd></>
+                    )}
+                    {realResolveResult.cuentaMasked && (
+                      <><dt>Cuenta</dt><dd>{realResolveResult.cuentaMasked}</dd></>
+                    )}
+                    {realResolveResult.vigenteHasta && (
+                      <><dt>Verificación vigente hasta</dt><dd>{fmtDate(realResolveResult.vigenteHasta)}</dd></>
+                    )}
+                  </dl>
+                </div>
+              )}
+
+              {/* Monto — sólo visible una vez que hay una verificación de esta sesión */}
+              {realResolveResult && realStep === 'monto' && !realRetiroResult && (
+                <form className="breb-form" onSubmit={handleContinuarRetiroReal}>
+                  <label>
+                    Monto a retirar (COP)
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={realMonto}
+                      onChange={e => { setRealMonto(e.target.value); setRealMontoErr(null); }}
+                      placeholder="Ej: 5000"
+                    />
+                  </label>
+                  {realMontoErr && <span className="breb-msg-err">{realMontoErr}</span>}
+                  <button type="submit" className="btn-breb" disabled={!realMonto}>
+                    Continuar
+                  </button>
+                </form>
+              )}
+
+              {/* Confirmación explícita — separada del ingreso de monto (FASE 4) */}
+              {realResolveResult && realStep === 'confirmar' && !realRetiroResult && (
+                <div className="breb-real-confirm-card" data-testid="breb-real-confirm">
+                  <h4>Confirma tu retiro</h4>
+                  <dl className="breb-real-destino-list">
+                    <dt>Retiras</dt><dd>{fmtMoney(Number(realMonto))}</dd>
+                    <dt>Desde</dt><dd>Wallet XPAY</dd>
+                    <dt>Hacia</dt><dd>Mi llave Bre-B {brebLlave.keyValueMasked}</dd>
+                    {realResolveResult.cuentaMasked && (
+                      <><dt>Cuenta destino</dt><dd>{realResolveResult.cuentaMasked}</dd></>
+                    )}
+                    {realResolveResult.entidadFinanciera && (
+                      <><dt>Institución</dt><dd>{realResolveResult.entidadFinanciera}</dd></>
+                    )}
+                  </dl>
+                  <p className="breb-confirm-text">
+                    Esta acción moverá dinero real desde la cuenta operativa de XPAY hacia tu llave Bre-B.
+                  </p>
+                  <div className="breb-real-confirm-actions">
+                    <button
+                      type="button"
+                      className="btn-breb btn-breb--financial"
+                      disabled={realConfirmBusy}
+                      onClick={() => void handleConfirmarRetiroReal()}
+                    >
+                      {realConfirmBusy ? 'Procesando...' : 'Confirmar retiro'}
+                    </button>
+                    <button
+                      type="button"
+                      className="wallet-send-link-btn"
+                      disabled={realConfirmBusy}
+                      onClick={() => setRealStep('monto')}
+                    >
+                      ← Cambiar monto
+                    </button>
+                  </div>
+                  {realConfirmMsg && !realConfirmMsg.ok && (
+                    <span className="breb-msg-err">
+                      {realConfirmMsg.text}
+                      {realConfirmMsg.text.includes('vencida') || realConfirmMsg.text.includes('resolver la llave nuevamente') ? (
+                        <>
+                          {' '}
+                          <br />
+                          Necesitamos verificar nuevamente tu llave antes de continuar.
+                        </>
+                      ) : null}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Resultado del retiro — SIEMPRE según el estado real devuelto por backend */}
+              {realRetiroResult && (
+                <div
+                  className={`breb-real-result-card breb-real-result--${clasificarRetiroRealEstado(realRetiroResult.estado)}`}
+                  data-testid="breb-real-result"
+                >
+                  <h4>{retiroRealMensaje(realRetiroResult.estado, realRetiroResult.motivoRechazo)}</h4>
+                  <dl className="breb-real-destino-list">
+                    <dt>Monto</dt><dd>{fmtMoney(realRetiroResult.valor)}</dd>
+                    <dt>Estado</dt><dd>{realRetiroResult.estado.replace(/_/g, ' ')}</dd>
+                    <dt>Fecha de solicitud</dt><dd>{fmtDate(realRetiroResult.fechaSolicitud)}</dd>
+                  </dl>
+                  {clasificarRetiroRealEstado(realRetiroResult.estado) === 'transitorio' && (
+                    <p className="breb-retiro-note">
+                      Este retiro sigue en proceso. Actualiza esta página más tarde para ver si ya se completó.
+                    </p>
+                  )}
+                  <button type="button" className="wallet-send-link-btn" onClick={resetRetiroRealFlow}>
+                    Hacer otro retiro
+                  </button>
+                </div>
               )}
             </>
           )}

@@ -44,6 +44,11 @@ public class ReportesService
             nombreWallet    = wallet.NombreWallet,
             estado          = wallet.Estado,
             saldoDisponible = saldo?.SaldoDisponible ?? 0m,
+            // XPAY-375 — expuesto por primera vez: necesario para que el
+            // usuario pueda ver su saldo reservado durante un retiro Bre-B
+            // real en curso (XPAY-373). Sólo lectura — este endpoint nunca
+            // escribe saldo.
+            saldoRetenido   = saldo?.SaldoRetenido ?? 0m,
             movimientos
         };
     }

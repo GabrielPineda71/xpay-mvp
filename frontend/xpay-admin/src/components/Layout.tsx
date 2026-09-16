@@ -49,6 +49,11 @@ export function Layout() {
         case 'withdraw-bank':
           navigate('/mi-wallet?tab=banco');
           break;
+        // XPAY-375 — retiro Bre-B REAL, ruta propia y separada de 'banco'
+        // (simulado) y de 'breb-key' (envío a terceros, todavía sin ruta).
+        case 'withdraw-breb-real':
+          navigate('/mi-wallet?tab=retirar-breb');
+          break;
         case 'breb-key':
         case 'where-to-buy':
           // Sin ruta/backend real todavía. breb-key en particular NO debe
