@@ -24,7 +24,40 @@ public sealed class PassportConfigurationException(string message) : PassportExc
 
 // Fallo de transporte: HttpRequestException, timeout no provocado por el
 // caller, o cualquier respuesta non-2xx que no sea 401/403.
-public sealed class PassportTransportException(string message) : PassportException(message);
+//
+// XPAY-358 — StatusCode/SafeErrorCode/SafeErrorMessage son diagnóstico
+// ESTRUCTURADO y OPCIONAL, poblado únicamente para el caso de respuesta
+// HTTP no exitosa (ver PassportHttpClient + PassportErrorBodySanitizer).
+// Los constructores de timeout/fallo de conexión (un solo argumento) los
+// dejan en null — no aplica diagnóstico HTTP a un fallo que nunca obtuvo
+// respuesta. NINGUNA de estas tres propiedades puede contener jamás: el
+// body crudo de la respuesta, headers, Authorization/Bearer/tokens,
+// credenciales, ni ningún identificador crudo — SafeErrorCode/
+// SafeErrorMessage ya llegan sanitizados por PassportErrorBodySanitizer
+// antes de construir esta excepción; esta clase no sanitiza nada por sí
+// misma, sólo transporta lo que ya fue validado. Message/ToString() NO se
+// sobreescriben para incluir estos campos — permanecen con el texto
+// genérico de siempre, por lo que esta excepción es segura incluso si se
+// registra completa por accidente.
+public sealed class PassportTransportException : PassportException
+{
+    public int?    StatusCode       { get; }
+    public string? SafeErrorCode    { get; }
+    public string? SafeErrorMessage { get; }
+
+    public PassportTransportException(string message) : base(message)
+    {
+    }
+
+    public PassportTransportException(
+        string message, int? statusCode, string? safeErrorCode, string? safeErrorMessage)
+        : base(message)
+    {
+        StatusCode       = statusCode;
+        SafeErrorCode    = safeErrorCode;
+        SafeErrorMessage = safeErrorMessage;
+    }
+}
 
 // Respuesta recibida pero no interpretable: JSON inválido, sin
 // access_token, o expires_in ausente / no numérico / <= 0.

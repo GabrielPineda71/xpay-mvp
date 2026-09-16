@@ -113,20 +113,45 @@ public static class CreateQrStaticEvidenceBuilder
 
     // Fallo real de Passport (HTTP no-2xx, o error de protocolo). Nunca
     // filtra el response body, key_id ni customer_id.
+    //
+    // XPAY-358 — safeErrorCode/safeErrorMessage son OPCIONALES y llegan
+    // YA SANITIZADOS por PassportErrorBodySanitizer (vía
+    // PassportTransportException) — esta función NUNCA sanitiza nada por
+    // sí misma, sólo los registra tal cual si están presentes. httpStatus
+    // se mantiene disponible (viene de PassportTransportException.
+    // StatusCode) pero EvidenceRecord.HttpStatus permanece null POR DISEÑO
+    // — decisión deliberada, no un olvido: ese campo tiene una regla
+    // documentada repo-wide ("siempre null por diseño", ver
+    // EvidenceRecord.cs) que aplica a TODOS los casos de certificación, no
+    // sólo M4-T1 — cambiarla unilateralmente aquí sería inconsistente con
+    // esa convención compartida. El status HTTP conocido se expone
+    // únicamente dentro de response_sanitized (extensión libre ya
+    // establecida, mismo patrón que M3-T6-INVALID/M3-T7).
     public static EvidenceRecord BuildPassportHttpFailure(
-        string reason, int? httpStatus, string commitSha, DateTime executedAtUtc) => new(
+        string reason, int? httpStatus, string commitSha, DateTime executedAtUtc,
+        string? safeErrorCode = null, string? safeErrorMessage = null) => new(
         CaseId: CaseId,
         ExecutedAtUtc: FormatTimestamp(executedAtUtc),
         Environment: EvidenceRecord.EnvironmentSandbox,
         BackendCommitSha: commitSha,
         Operation: Operation,
-        HttpStatus: httpStatus,
+        HttpStatus: null,
         Result: EvidenceRecord.ResultFail,
         RequestSanitized: new Dictionary<string, object?>(),
-        ResponseSanitized: new Dictionary<string, object?>(),
+        ResponseSanitized: BuildFailureResponseSanitized(httpStatus, safeErrorCode, safeErrorMessage),
         AutomatedTestReference: null,
         Notes: EvidenceRecord.NotePrefixPassportHttpFailure + reason,
         ReviewStatus: EvidenceRecord.ReviewPendingPassportReview);
+
+    private static Dictionary<string, object?> BuildFailureResponseSanitized(
+        int? httpStatus, string? safeErrorCode, string? safeErrorMessage)
+    {
+        var dict = new Dictionary<string, object?>();
+        if (httpStatus is not null) dict["observed_http_status"] = httpStatus;
+        if (safeErrorCode is not null) dict["error_code"] = safeErrorCode;
+        if (safeErrorMessage is not null) dict["error_message"] = safeErrorMessage;
+        return dict;
+    }
 
     private static string FormatTimestamp(DateTime executedAtUtc) =>
         executedAtUtc.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture);

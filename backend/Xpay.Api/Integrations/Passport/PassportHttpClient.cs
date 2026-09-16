@@ -135,8 +135,29 @@ public sealed class PassportHttpClient : IPassportHttpClient
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("passport.http: respuesta de error HTTP {Status}.", status);
-                throw new PassportTransportException($"Passport respondió con error HTTP {status}.");
+                // XPAY-358 — lectura ACOTADA del body de error (nunca sin
+                // límite) + extracción allowlist-based, fail-closed. El
+                // body crudo NUNCA se registra ni se propaga — sólo
+                // status_code (siempre seguro) y, si corresponde,
+                // safe_error_code ya sanitizado (nunca safe_error_message,
+                // por ser texto libre de mayor riesgo residual — ver
+                // PassportErrorBodySanitizer).
+                var rawErrorBody = await ReadBoundedBodyAsync(
+                        response.Content,
+                        PassportErrorBodySanitizer.MaxBodyLengthForDiagnosticsBytes,
+                        linkedCts.Token)
+                    .ConfigureAwait(false);
+                var diagnostics = PassportErrorBodySanitizer.Extract(rawErrorBody);
+
+                _logger.LogWarning(
+                    "passport.http: respuesta de error HTTP {Status}. safe_error_code={SafeErrorCode}",
+                    status, diagnostics.SafeErrorCode ?? "(none)");
+
+                throw new PassportTransportException(
+                    $"Passport respondió con error HTTP {status}.",
+                    statusCode: status,
+                    safeErrorCode: diagnostics.SafeErrorCode,
+                    safeErrorMessage: diagnostics.SafeErrorMessage);
             }
 
             if (!expectResponseBody || response.Content.Headers.ContentLength is 0)
@@ -169,4 +190,40 @@ public sealed class PassportHttpClient : IPassportHttpClient
 
     private static string CombineBaseAndPath(string baseUrl, string path)
         => $"{baseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
+
+    // XPAY-358 — lectura de body ACOTADA en memoria: nunca lee más de
+    // (maxBytes + 1) bytes, sin importar qué tan grande sea el body real.
+    // Si el body excede maxBytes, se descarta POR COMPLETO (se devuelve
+    // null) — nunca se expone un fragmento truncado sin sanitizar (§15).
+    // Fail-closed también ante cualquier error de lectura: nunca lanza,
+    // nunca hace crashear el flujo de manejo de errores — simplemente
+    // "sin diagnóstico disponible".
+    private static async Task<string?> ReadBoundedBodyAsync(
+        HttpContent content, int maxBytes, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var buffer = new byte[maxBytes + 1];
+            var totalRead = 0;
+
+            await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            int read;
+            while (totalRead < buffer.Length &&
+                   (read = await stream
+                       .ReadAsync(buffer.AsMemory(totalRead, buffer.Length - totalRead), cancellationToken)
+                       .ConfigureAwait(false)) > 0)
+            {
+                totalRead += read;
+            }
+
+            if (totalRead > maxBytes)
+                return null; // excede el límite — nunca se conserva un body parcial.
+
+            return System.Text.Encoding.UTF8.GetString(buffer, 0, totalRead);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

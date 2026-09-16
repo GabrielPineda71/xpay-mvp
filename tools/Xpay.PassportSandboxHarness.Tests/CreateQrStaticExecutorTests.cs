@@ -16,15 +16,20 @@ public class CreateQrStaticExecutorTests
     private sealed class FakeQrClient : IPassportQrClient
     {
         private readonly bool _throwOnCreate;
+        private readonly PassportTransportException? _exceptionToThrow;
         private readonly PassportQrCodeResponse? _response;
         public int CreateQrCodeCallCount { get; private set; }
         public int DecodeQrCodeCallCount { get; private set; }
         public PassportCreateQrCodeRequest? LastRequest { get; private set; }
 
-        public FakeQrClient(bool throwOnCreate = false, PassportQrCodeResponse? response = null)
+        public FakeQrClient(
+            bool throwOnCreate = false,
+            PassportQrCodeResponse? response = null,
+            PassportTransportException? exceptionToThrow = null)
         {
             _throwOnCreate = throwOnCreate;
             _response = response;
+            _exceptionToThrow = exceptionToThrow;
         }
 
         public Task<PassportQrCodeResponse> CreateQrCodeAsync(
@@ -32,6 +37,8 @@ public class CreateQrStaticExecutorTests
         {
             CreateQrCodeCallCount++;
             LastRequest = request;
+            if (_exceptionToThrow is not null)
+                throw _exceptionToThrow;
             if (_throwOnCreate)
                 throw new PassportTransportException("Passport respondió con error HTTP 400 (sintético).");
             return Task.FromResult(_response ?? new PassportQrCodeResponse
@@ -247,6 +254,56 @@ public class CreateQrStaticExecutorTests
         Assert.NotNull(result.Evidence);
         Assert.Equal("M4-T1", result.Evidence!.CaseId);
         Assert.Equal(EvidenceRecord.ResultFail, result.Evidence.Result);
+    }
+
+    // XPAY-358 §17 — cuando la excepción SÍ trae diagnóstico estructurado
+    // (StatusCode/SafeErrorCode/SafeErrorMessage, ya sanitizado por
+    // PassportErrorBodySanitizer), el executor lo reenvía tal cual hacia la
+    // evidencia — sin volver a sanitizar, sin inventar campos.
+    [Fact]
+    public async Task ExecuteAsync_PassportRejectsWithStructuredDiagnostics_PropagatesIntoEvidence()
+    {
+        var diagnosticException = new PassportTransportException(
+            "Passport respondió con error HTTP 400.",
+            statusCode: 400,
+            safeErrorCode: "INVALID_CHANNEL",
+            safeErrorMessage: "The channel value is not valid for this key type.");
+        var client = new FakeQrClient(exceptionToThrow: diagnosticException);
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            ConfigWithTarget(), client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Equal(KeyOperationOutcome.PassportFailure, result.Outcome);
+        var evidenceJson = System.Text.Json.JsonSerializer.Serialize(result.Evidence);
+        using var doc = System.Text.Json.JsonDocument.Parse(evidenceJson);
+        var responseSanitized = doc.RootElement.GetProperty("response_sanitized");
+
+        Assert.Equal(400, responseSanitized.GetProperty("observed_http_status").GetInt32());
+        Assert.Equal("INVALID_CHANNEL", responseSanitized.GetProperty("error_code").GetString());
+        Assert.Equal(
+            "The channel value is not valid for this key type.",
+            responseSanitized.GetProperty("error_message").GetString());
+
+        // EvidenceRecord.http_status permanece null por diseño (convención
+        // repo-wide preservada — ver CreateQrStaticEvidenceBuilder).
+        Assert.Null(result.Evidence!.HttpStatus);
+    }
+
+    // Regresión: cuando la excepción NO trae diagnóstico (constructor de 1
+    // argumento, p. ej. timeout/fallo de conexión reclasificado), la
+    // evidencia sigue produciendo response_sanitized VACÍO — sin inventar
+    // valores por defecto.
+    [Fact]
+    public async Task ExecuteAsync_PassportRejectsWithoutStructuredDiagnostics_ProducesEmptyResponseSanitized()
+    {
+        var client = new FakeQrClient(throwOnCreate: true); // constructor de 1 argumento, sin diagnóstico.
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            ConfigWithTarget(), client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Empty(result.Evidence!.ResponseSanitized);
     }
 
     [Fact]

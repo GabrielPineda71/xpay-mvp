@@ -131,8 +131,21 @@ public static class CreateQrStaticExecutor
             // Mensajes ya saneados por diseño (PassportHttpClient/
             // PassportQrClient): nunca incluyen body, token ni
             // Authorization, ni key_id/customer_id/qr_code_data.
+            //
+            // XPAY-358 — si la excepción es un PassportTransportException,
+            // ya trae diagnóstico estructurado y PRE-SANEADO (StatusCode/
+            // SafeErrorCode/SafeErrorMessage, vía
+            // PassportErrorBodySanitizer) — se reenvía tal cual, sin volver
+            // a sanitizar aquí (esta clase no es responsable de sanitizar,
+            // sólo de transportar lo que ya llegó seguro). Las otras dos
+            // excepciones (Authentication/Protocol) no tienen este
+            // diagnóstico — se dejan en null, igual que antes.
+            var (httpStatus, safeErrorCode, safeErrorMessage) = ex is PassportTransportException pte
+                ? (pte.StatusCode, pte.SafeErrorCode, pte.SafeErrorMessage)
+                : (null, null, null);
+
             var evidence = CreateQrStaticEvidenceBuilder.BuildPassportHttpFailure(
-                ex.Message, httpStatus: null, commitSha, executedAtUtc);
+                ex.Message, httpStatus, commitSha, executedAtUtc, safeErrorCode, safeErrorMessage);
             return new(KeyOperationOutcome.PassportFailure, evidence, ex.Message);
         }
     }
