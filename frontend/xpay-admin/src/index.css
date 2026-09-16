@@ -757,6 +757,9 @@ tr:hover td { background: #f7fafc; }
 .breb-real-result--fallido     { border-color: #feb2b2; background: #fff5f5; }
 .breb-real-result--desconocido { border-color: #e2e8f0; background: #f7fafc; }
 
+.breb-real-uncertain-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.8rem; color: #2d3748; }
+.breb-real-uncertain-list li { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
 .wallet-held-balance-row {
   display: flex; justify-content: space-between; align-items: baseline;
   font-size: 0.85rem; color: #4a5568; margin-top: 0.5rem;

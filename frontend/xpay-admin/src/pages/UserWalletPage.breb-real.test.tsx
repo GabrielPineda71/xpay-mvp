@@ -13,10 +13,19 @@ import type { AuthUser } from '../auth/AuthContext.tsx';
 const mockGet = vi.fn();
 const mockPost = vi.fn();
 
-vi.mock('../api/client.ts', () => ({
-  get: (...args: unknown[]) => mockGet(...args),
-  post: (...args: unknown[]) => mockPost(...args),
-}));
+// XPAY-377 — HttpUncertainError se importa de la implementación REAL (no
+// mockeada): sólo get/post están sustituidos; la clase de error debe ser
+// la misma que usa UserWalletPage.tsx para que `instanceof` funcione en
+// los tests de timeout.
+vi.mock('../api/client.ts', async () => {
+  const actual = await vi.importActual<typeof import('../api/client.ts')>('../api/client.ts');
+  return {
+    ...actual,
+    get: (...args: unknown[]) => mockGet(...args),
+    post: (...args: unknown[]) => mockPost(...args),
+  };
+});
+import { HttpUncertainError } from '../api/client.ts';
 
 const mockUser: AuthUser = {
   idUsuario: 3, idPersona: 3, usuario: 'qa.usuario1', estado: 'ACTIVO',
@@ -254,6 +263,115 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     await user.click(screen.getByRole('button', { name: /Continuar/i }));
     await user.click(await screen.findByRole('button', { name: /Confirmar retiro/i }));
 
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/api/breb/retiros/real', { Monto: 5000 }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
+      '/api/breb/retiros/real', { Monto: 5000 }, undefined, expect.any(Number),
+    ));
+  });
+
+  // XPAY-377 FASE 6 — escenarios nuevos: timeout cliente, incertidumbre,
+  // reconciliación, ownership.
+
+  it('Payment queda pendiente hasta timeout cliente: la UI sale de "Procesando..." sin decir que falló', async () => {
+    mockPost.mockImplementation((path: string) => {
+      if (path === '/api/breb/mi-llave/resolver') {
+        return Promise.resolve({ success: true, data: { idBrebLlave: 8, keyType: 'BCODE', keyValueMasked: '***0268', estado: 'VALIDADA', resolucionVerificadaPassport: true, titularNombreMasked: 'XPay ***' } });
+      }
+      if (path === '/api/breb/retiros/real') {
+        return Promise.reject(new HttpUncertainError('Se agotó el tiempo de espera esperando la respuesta del servidor.'));
+      }
+      return Promise.reject(new Error('unexpected'));
+    });
+    const user = userEvent.setup();
+    await renderPage();
+    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
+    const montoInput = await screen.findByPlaceholderText('Ej: 5000');
+    await user.type(montoInput, '5000');
+    await user.click(screen.getByRole('button', { name: /Continuar/i }));
+    const confirmBtn = await screen.findByRole('button', { name: /Confirmar retiro/i });
+    await user.click(confirmBtn);
+
+    // Sale de "Procesando..." (el botón vuelve a estar habilitado/con su
+    // texto normal en la tarjeta de confirmación, que ya no se muestra) —
+    // pero NUNCA aparece un mensaje de fallo financiero normal.
+    const uncertain = await screen.findByTestId('breb-real-uncertain');
+    expect(within(uncertain).getByText(/No pudimos confirmar todavía el resultado de tu retiro/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('breb-real-confirm')).not.toBeInTheDocument();
+  });
+
+  it('timeout cliente NUNCA se presenta como fallo financiero (nunca "El retiro fue rechazado" ni "Retiro completado")', async () => {
+    mockPost.mockImplementation((path: string) => {
+      if (path === '/api/breb/mi-llave/resolver') {
+        return Promise.resolve({ success: true, data: { idBrebLlave: 8, keyType: 'BCODE', keyValueMasked: '***0268', estado: 'VALIDADA', resolucionVerificadaPassport: true, titularNombreMasked: 'XPay ***' } });
+      }
+      return Promise.reject(new HttpUncertainError('timeout'));
+    });
+    const user = userEvent.setup();
+    await renderPage();
+    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
+    const montoInput = await screen.findByPlaceholderText('Ej: 5000');
+    await user.type(montoInput, '5000');
+    await user.click(screen.getByRole('button', { name: /Continuar/i }));
+    await user.click(await screen.findByRole('button', { name: /Confirmar retiro/i }));
+
+    await screen.findByTestId('breb-real-uncertain');
+    expect(screen.queryByText(/Retiro completado/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/fue rechazado/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No se pudo procesar el retiro/i)).not.toBeInTheDocument();
+  });
+
+  it('timeout cliente muestra explícitamente "no vuelvas a intentarlo"', async () => {
+    mockPost.mockImplementation((path: string) => {
+      if (path === '/api/breb/mi-llave/resolver') {
+        return Promise.resolve({ success: true, data: { idBrebLlave: 8, keyType: 'BCODE', keyValueMasked: '***0268', estado: 'VALIDADA', resolucionVerificadaPassport: true, titularNombreMasked: 'XPay ***' } });
+      }
+      return Promise.reject(new HttpUncertainError('timeout'));
+    });
+    const user = userEvent.setup();
+    await renderPage();
+    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
+    const montoInput = await screen.findByPlaceholderText('Ej: 5000');
+    await user.type(montoInput, '5000');
+    await user.click(screen.getByRole('button', { name: /Continuar/i }));
+    await user.click(await screen.findByRole('button', { name: /Confirmar retiro/i }));
+
+    const uncertain = await screen.findByTestId('breb-real-uncertain');
+    expect(within(uncertain).getByText(/No vuelvas a intentarlo/i)).toBeInTheDocument();
+  });
+
+  it('retiro transitorio puede consultar estado vía el endpoint user-side, nunca enviando payment_id', async () => {
+    mockPost.mockImplementation((path: string) => {
+      if (path === '/api/breb/mi-llave/resolver') {
+        return Promise.resolve({ success: true, data: { idBrebLlave: 8, keyType: 'BCODE', keyValueMasked: '***0268', estado: 'VALIDADA', resolucionVerificadaPassport: true, titularNombreMasked: 'XPay ***' } });
+      }
+      if (path === '/api/breb/retiros/real') {
+        return Promise.resolve({ success: true, data: { idBrebRetiro: 42, valor: 5000, moneda: 'COP', estado: 'ENVIADO_PASSPORT', fechaSolicitud: '2026-09-16T07:00:00Z' } });
+      }
+      if (path === '/api/breb/mis-retiros/42/actualizar-estado') {
+        return Promise.resolve({ success: true, data: { idBrebRetiro: 42, valor: 5000, moneda: 'COP', estado: 'LIQUIDADO', fechaSolicitud: '2026-09-16T07:00:00Z' } });
+      }
+      return Promise.reject(new Error(`unmocked POST ${path}`));
+    });
+    const user = userEvent.setup();
+    await renderPage();
+    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
+    const montoInput = await screen.findByPlaceholderText('Ej: 5000');
+    await user.type(montoInput, '5000');
+    await user.click(screen.getByRole('button', { name: /Continuar/i }));
+    await user.click(await screen.findByRole('button', { name: /Confirmar retiro/i }));
+
+    await screen.findByTestId('breb-real-result');
+    await user.click(screen.getByRole('button', { name: /Consultar estado/i }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/api/breb/mis-retiros/42/actualizar-estado', {}));
+    await waitFor(() => expect(screen.getByText(/Retiro completado/i)).toBeInTheDocument());
+
+    // El id va SIEMPRE en la ruta (local, propio) — el body nunca lleva
+    // payment_id ni ningún identificador Passport.
+    const call = mockPost.mock.calls.find(c => c[0] === '/api/breb/mis-retiros/42/actualizar-estado');
+    expect(call?.[1]).toEqual({});
   });
 });

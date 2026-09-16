@@ -56,6 +56,20 @@ public class BrebPaymentService
     public async Task<PassportBrebRetiro> SolicitarRetiroRealAsync(
         long idPersona, long idUsuario, decimal monto, CancellationToken cancellationToken = default)
     {
+        // XPAY-377 FASE 3 — punto de traza MÁS TEMPRANO posible dentro de
+        // este método, ANTES de cualquier validación/DB. Gap diagnosticado
+        // en XPAY-376: el intento real de Gabriel no dejó ningún rastro
+        // server-side porque Application Logging estaba deshabilitado en
+        // QA — este log por sí solo no habría bastado sin habilitar
+        // logging (ver Program.cs / az webapp log config), pero es la
+        // pieza que faltaba del lado del código para que, una vez
+        // habilitado el logging, quede constancia de que el request
+        // REALMENTE llegó hasta este método. idUsuario (id interno, no
+        // PII) y monto (dato de negocio, no secreto) — nunca KeyValue,
+        // BCODE, tokens ni IDs Passport.
+        _logger.LogInformation(
+            "BREB_RETIRO_REAL_REQUEST_RECEIVED: idUsuario={IdUsuario} monto={Monto}", idUsuario, monto);
+
         if (monto <= 0)
             throw new InvalidOperationException("El valor del retiro debe ser mayor a cero.");
 
@@ -267,6 +281,46 @@ public class BrebPaymentService
             ?? throw new InvalidOperationException($"Retiro {idBrebRetiro} no encontrado.");
         if (string.IsNullOrWhiteSpace(retiro.PassportPaymentId))
             throw new InvalidOperationException("El retiro todavía no tiene un payment_id de Passport — no hay nada que consultar.");
+
+        var response = await _paymentClient.RetrievePaymentAsync(retiro.PassportPaymentId, cancellationToken).ConfigureAwait(false);
+        return await ApplyPassportPaymentStatusAsync(
+            retiro.IdBrebRetiro, response.Id, response.Status, response.Error, cancellationToken);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // XPAY-377 FASE 5 — misma operación que ConsultarEstadoAsync, pero
+    // accesible por el USUARIO dueño del retiro (no sólo admin). Cierra el
+    // gap documentado en XPAY-375/376: hasta ahora sólo existía un refresh
+    // admin-only, dejando al usuario sin forma de reconciliar un retiro
+    // propio tras una respuesta incierta (timeout del navegador).
+    //
+    // idBrebRetiro llega del CALLER (controller, desde la ruta) — es un id
+    // LOCAL, nunca un payment_id — el payment_id real sigue resolviéndose
+    // 100% server-side desde la fila ya persistida, igual que
+    // ConsultarEstadoAsync. El único campo nuevo aquí es la verificación de
+    // propiedad: la wallet del retiro debe coincidir con la wallet del
+    // idPersona autenticado.
+    //
+    // Mensaje de error IDÉNTICO para "no existe" y "existe pero es de otro
+    // usuario" — evita que la respuesta funcione como oráculo de
+    // enumeración de ids de retiro ajenos (mismo criterio de no-filtración
+    // ya aplicado en otras partes de XPAY para recursos por id).
+    // ═══════════════════════════════════════════════════════════════════
+    public async Task<PassportBrebRetiro> ConsultarEstadoPropioAsync(
+        long idPersona, long idBrebRetiro, CancellationToken cancellationToken = default)
+    {
+        var wallet = await _db.Wallets.FirstOrDefaultAsync(
+            w => w.IdPersona == idPersona && w.TipoWallet == "PERSONA" && w.Estado == "ACTIVA", cancellationToken)
+            ?? throw new InvalidOperationException("No se encontró wallet activa para este usuario.");
+
+        var retiro = await _db.PassportBrebRetiros.FirstOrDefaultAsync(
+            r => r.IdBrebRetiro == idBrebRetiro, cancellationToken);
+
+        if (retiro is null || retiro.IdWallet != wallet.IdWallet)
+            throw new InvalidOperationException("Retiro no encontrado.");
+
+        if (string.IsNullOrWhiteSpace(retiro.PassportPaymentId))
+            throw new InvalidOperationException("Este retiro todavía no tiene un payment_id de Passport — no hay nada que consultar todavía.");
 
         var response = await _paymentClient.RetrievePaymentAsync(retiro.PassportPaymentId, cancellationToken).ConfigureAwait(false);
         return await ApplyPassportPaymentStatusAsync(

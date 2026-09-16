@@ -590,6 +590,50 @@ public class BrebController : ControllerBase
         { return StatusCode(500, new { success = false, message = "Error interno actualizando estado del retiro." }); }
     }
 
+    // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/mis-retiros/{id}/actualizar-estado
+    // XPAY-377 FASE 5 — cierra el gap documentado en XPAY-375/376: hasta
+    // ahora sólo existía refresh admin-only. El usuario dueño del retiro
+    // puede consultar/reconciliar SU PROPIO retiro tras una respuesta
+    // incierta (timeout del navegador, XPAY-377 FASE 4) sin depender de un
+    // admin. payment_id NUNCA se recibe del caller — sólo el id LOCAL del
+    // retiro, cuya propiedad se verifica server-side
+    // (BrebPaymentService.ConsultarEstadoPropioAsync) antes de tocar nada.
+    // Reutiliza ApplyPassportPaymentStatusAsync — idempotente, mismo
+    // camino que el admin y que el propio EnviarPaymentAsync — sin
+    // duplicar lógica financiera.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpPost("api/breb/mis-retiros/{id:long}/actualizar-estado")]
+    [Authorize]
+    [Authorize(Policy = "KycAprobado")]
+    public async Task<IActionResult> ActualizarEstadoMiRetiro(long id)
+    {
+        if (!TryGetIdPersona(out var idPersona) || !TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_MI_RETIRO_ACTUALIZAR_ESTADO_ATTEMPT", new { idBrebRetiro = id, idUsuario });
+        try
+        {
+            var retiro = await _brebPayment.ConsultarEstadoPropioAsync(idPersona, id);
+            _audit.LogSensitiveAction(HttpContext, "BREB_MI_RETIRO_ACTUALIZAR_ESTADO_OK",
+                new { idBrebRetiro = id, idUsuario, estado = retiro.Estado });
+            return Ok(new { success = true, data = ToRetiroRealResponse(retiro) });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_MI_RETIRO_ACTUALIZAR_ESTADO_RECHAZADO", new { idBrebRetiro = id, idUsuario, motivo = ex.Message });
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (Xpay.Api.Integrations.Passport.PassportException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_MI_RETIRO_ACTUALIZAR_ESTADO_PASSPORT_ERROR",
+                new { idBrebRetiro = id, idUsuario, tipo = ex.GetType().Name });
+            return StatusCode(502, new { success = false, message = ex.Message });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno actualizando estado del retiro." }); }
+    }
+
     private static RetiroRealResponse ToRetiroRealResponse(Xpay.Api.Models.PassportBrebRetiro r) => new()
     {
         IdBrebRetiro            = r.IdBrebRetiro,

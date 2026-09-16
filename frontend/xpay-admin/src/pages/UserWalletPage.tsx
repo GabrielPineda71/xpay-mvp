@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
-import { get, post } from '../api/client.ts';
+import { get, post, HttpUncertainError } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
 import { HeroBalanceCard } from '../components/wallet/HeroBalanceCard.tsx';
 
@@ -101,6 +101,10 @@ interface BrebRetiro {
   keyValueMasked:    string;
   fechaSolicitud:    string;
   motivoRechazo?:    string;
+  // XPAY-377 — presentes sólo para retiros del flujo real (XPAY-373);
+  // ausentes/"ABSENT" (Fingerprint.AbsentMarker) para retiros simulados.
+  paymentIdFingerprint?:    string;
+  resolutionIdFingerprint?: string;
 }
 
 // XPAY-375 — flujo REAL (dinero real, cuenta operativa XPAY en Passport
@@ -314,6 +318,13 @@ export function UserWalletPage() {
   const [realConfirmBusy,   setRealConfirmBusy]   = useState(false);
   const [realConfirmMsg,    setRealConfirmMsg]    = useState<Msg | null>(null);
   const [realRetiroResult,  setRealRetiroResult]  = useState<RetiroReal | null>(null);
+  // XPAY-377 FASE 4 — true SÓLO tras un timeout del cliente (HttpUncertainError):
+  // el servidor pudo haber recibido/procesado la operación aunque el
+  // navegador no haya recibido respuesta. Nunca se presenta como éxito ni
+  // como fallo — es su propio estado, con su propia UI (FASE 4/5).
+  const [realUncertain,     setRealUncertain]     = useState(false);
+  const [realCheckBusy,     setRealCheckBusy]     = useState(false);
+  const [realCheckMsg,      setRealCheckMsg]      = useState<Msg | null>(null);
 
   // ── Pagar comercio QR ─────────────────────────────────────────────────────
   const [pagQrCode,       setPagQrCode]       = useState('');
@@ -829,16 +840,25 @@ export function UserWalletPage() {
   // resolution_id, payment_id y la llave destino se resuelven 100%
   // server-side (BrebPaymentService, XPAY-373); este formulario no tiene
   // ningún campo para ninguno de ellos.
+  // XPAY-377 FASE 4 — timeout propio, mayor al default (20s): esta llamada
+  // puede incluir un viaje real a Passport del lado del servidor. 45s es
+  // generoso mientras no exista un valor medido en producción — preferible
+  // a dejarlo sin límite (el bug original).
+  const CONFIRMAR_RETIRO_TIMEOUT_MS = 45_000;
+
   async function handleConfirmarRetiroReal() {
-    if (realConfirmBusy) return; // protección contra doble clic
+    if (realConfirmBusy) return; // protección contra doble clic — se mantiene intacta
     const val = Number(realMonto);
     if (!val || val <= 0) { setRealConfirmMsg({ ok: false, text: 'Monto inválido.' }); return; }
     setRealConfirmBusy(true);
     setRealConfirmMsg(null);
+    setRealUncertain(false);
     try {
       const r = await post<{ success: boolean; data?: RetiroReal; message?: string; warning?: string }>(
         '/api/breb/retiros/real',
         { Monto: val },
+        undefined,
+        CONFIRMAR_RETIRO_TIMEOUT_MS,
       );
       if (r.success && r.data) {
         setRealRetiroResult(r.data);
@@ -848,9 +868,64 @@ export function UserWalletPage() {
         setRealConfirmMsg({ ok: false, text: r.message ?? 'No se pudo procesar el retiro.' });
       }
     } catch (err) {
-      setRealConfirmMsg({ ok: false, text: (err as Error).message || 'No se pudo procesar el retiro.' });
+      if (err instanceof HttpUncertainError) {
+        // FASE 4 — REQUISITO CRÍTICO: nunca decir "el retiro falló". El
+        // servidor pudo haber recibido/creado la operación. Se sale de
+        // "Procesando..." pero se entra a un estado propio de
+        // incertidumbre, nunca a un mensaje de error normal.
+        setRealUncertain(true);
+      } else {
+        setRealConfirmMsg({ ok: false, text: (err as Error).message || 'No se pudo procesar el retiro.' });
+      }
     } finally {
       setRealConfirmBusy(false);
+    }
+  }
+
+  // XPAY-377 FASE 5 — reconciliación segura tras un timeout: el cliente
+  // NUNCA tuvo un id_breb_retiro (la respuesta que lo traía es
+  // exactamente la que no llegó) — por eso se recarga la lista completa
+  // de "mis retiros" (ya existente, GET /api/breb/mis-retiros) en vez de
+  // pedir un id. El usuario ve si algo se creó, sin adivinar ningún
+  // identificador.
+  async function handleVerMisRetirosTrasIncertidumbre() {
+    setRealCheckBusy(true);
+    setRealCheckMsg(null);
+    try {
+      await loadBreb();
+      setRealCheckMsg({ ok: true, text: 'Lista de retiros actualizada — revisa el más reciente abajo.' });
+    } catch (err) {
+      setRealCheckMsg({ ok: false, text: (err as Error).message || 'No se pudo consultar tus retiros.' });
+    } finally {
+      setRealCheckBusy(false);
+    }
+  }
+
+  // XPAY-377 FASE 5 — consulta el estado de UN retiro propio ya conocido
+  // (por su id local, nunca por payment_id) vía el nuevo endpoint
+  // user-side. Idempotente: puede llamarse tantas veces como haga falta
+  // sin riesgo de doble efecto financiero (BrebPaymentStateMachine ya lo
+  // garantiza del lado del backend).
+  async function handleConsultarEstadoRetiro(idBrebRetiro: number) {
+    setRealCheckBusy(true);
+    setRealCheckMsg(null);
+    try {
+      const r = await post<{ success: boolean; data?: RetiroReal; message?: string }>(
+        `/api/breb/mis-retiros/${idBrebRetiro}/actualizar-estado`,
+        {},
+      );
+      if (r.success && r.data) {
+        setRealRetiroResult(r.data);
+        setRealCheckMsg({ ok: true, text: retiroRealMensaje(r.data.estado, r.data.motivoRechazo) });
+        await loadCuenta();
+        await loadBreb();
+      } else {
+        setRealCheckMsg({ ok: false, text: r.message ?? 'No se pudo consultar el estado.' });
+      }
+    } catch (err) {
+      setRealCheckMsg({ ok: false, text: (err as Error).message || 'No se pudo consultar el estado.' });
+    } finally {
+      setRealCheckBusy(false);
     }
   }
 
@@ -860,6 +935,8 @@ export function UserWalletPage() {
     setRealMontoErr(null);
     setRealConfirmMsg(null);
     setRealRetiroResult(null);
+    setRealUncertain(false);
+    setRealCheckMsg(null);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1654,7 +1731,7 @@ export function UserWalletPage() {
               )}
 
               {/* Confirmación explícita — separada del ingreso de monto (FASE 4) */}
-              {realResolveResult && realStep === 'confirmar' && !realRetiroResult && (
+              {realResolveResult && realStep === 'confirmar' && !realRetiroResult && !realUncertain && (
                 <div className="breb-real-confirm-card" data-testid="breb-real-confirm">
                   <h4>Confirma tu retiro</h4>
                   <dl className="breb-real-destino-list">
@@ -1704,6 +1781,50 @@ export function UserWalletPage() {
                 </div>
               )}
 
+              {/* XPAY-377 FASE 4/5 — estado INCIERTO tras timeout del cliente.
+                  Nunca "falló", nunca "tuvo éxito" — mensaje textual exigido
+                  por el ticket, más la vía de reconciliación segura. */}
+              {realUncertain && (
+                <div className="breb-real-result-card breb-real-result--desconocido" data-testid="breb-real-uncertain">
+                  <h4>No pudimos confirmar todavía el resultado de tu retiro</h4>
+                  <p className="breb-confirm-text">
+                    No vuelvas a intentarlo. Es posible que el servidor ya haya recibido la operación aunque tu
+                    celular no recibió la respuesta a tiempo. Consulta el estado antes de realizar otra operación.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-breb"
+                    disabled={realCheckBusy}
+                    onClick={() => void handleVerMisRetirosTrasIncertidumbre()}
+                  >
+                    {realCheckBusy ? 'Consultando...' : 'Ver mis retiros'}
+                  </button>
+                  {realCheckMsg && (
+                    <span className={realCheckMsg.ok ? 'breb-msg-ok' : 'breb-msg-err'}>{realCheckMsg.text}</span>
+                  )}
+                  {brebRetiros.length > 0 && (
+                    <ul className="breb-real-uncertain-list">
+                      {brebRetiros.slice(0, 3).map(r => (
+                        <li key={r.idBrebRetiro}>
+                          {fmtMoney(r.valor)} · {r.estado.replace(/_/g, ' ')} · {fmtDate(r.fechaSolicitud)}
+                          {r.paymentIdFingerprint && r.paymentIdFingerprint !== 'ABSENT' &&
+                            clasificarRetiroRealEstado(r.estado) === 'transitorio' && (
+                            <button
+                              type="button"
+                              className="wallet-send-link-btn"
+                              disabled={realCheckBusy}
+                              onClick={() => void handleConsultarEstadoRetiro(r.idBrebRetiro)}
+                            >
+                              Consultar estado
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
               {/* Resultado del retiro — SIEMPRE según el estado real devuelto por backend */}
               {realRetiroResult && (
                 <div
@@ -1717,9 +1838,22 @@ export function UserWalletPage() {
                     <dt>Fecha de solicitud</dt><dd>{fmtDate(realRetiroResult.fechaSolicitud)}</dd>
                   </dl>
                   {clasificarRetiroRealEstado(realRetiroResult.estado) === 'transitorio' && (
-                    <p className="breb-retiro-note">
-                      Este retiro sigue en proceso. Actualiza esta página más tarde para ver si ya se completó.
-                    </p>
+                    <>
+                      <p className="breb-retiro-note">
+                        Este retiro sigue en proceso.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn-breb"
+                        disabled={realCheckBusy}
+                        onClick={() => void handleConsultarEstadoRetiro(realRetiroResult.idBrebRetiro)}
+                      >
+                        {realCheckBusy ? 'Consultando...' : 'Consultar estado'}
+                      </button>
+                      {realCheckMsg && (
+                        <span className={realCheckMsg.ok ? 'breb-msg-ok' : 'breb-msg-err'}>{realCheckMsg.text}</span>
+                      )}
+                    </>
                   )}
                   <button type="button" className="wallet-send-link-btn" onClick={resetRetiroRealFlow}>
                     Hacer otro retiro
