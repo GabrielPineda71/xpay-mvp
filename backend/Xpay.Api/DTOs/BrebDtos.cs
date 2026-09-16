@@ -29,6 +29,46 @@ public class MiLlaveResponse
     public string  Estado         { get; set; } = string.Empty;
     public DateTime? FechaRegistro   { get; set; }
     public DateTime? FechaValidacion { get; set; }
+
+    // XPAY-371 — distingue una llave VALIDADA por resolución real de
+    // Passport (POST /v1/resolve-key, ver BrebKeyResolutionResponseMapper)
+    // de una VALIDADA sólo por el botón admin QA
+    // (POST /api/breb/admin/simular-validacion-llave). No requiere columna
+    // nueva: se deriva de la presencia de campos que SÓLO una resolución
+    // real puebla (OwnerNameMasked). Ver BrebService.ToLlaveResponse.
+    public bool    ResolucionVerificadaPassport { get; set; }
+}
+
+// XPAY-371 — request para POST /api/breb/mi-llave/resolver. KeyValue aquí
+// NO es "una llave arbitraria del frontend" (prohibido) — es la
+// reconfirmación del valor que el usuario YA registró; se valida contra el
+// hash almacenado de la llave activa de su propia Wallet ANTES de llamar a
+// Passport (ver BrebKeyResolutionRequestBuilder). Sin este campo no habría
+// forma de reconstruir el key_value en claro, porque PassportBrebLlave
+// nunca lo persiste (sólo hash + máscara).
+public class ResolverLlaveRequest
+{
+    public string KeyValue { get; set; } = string.Empty;
+}
+
+// XPAY-371 FASE 4 — contrato sanitizado para que UserWalletPage.tsx pueda
+// mostrar "Esta es la cuenta asociada a tu llave Bre-B" antes de confirmar
+// un retiro. Implementación de la UI queda fuera de alcance de XPAY-371
+// (backend solamente) — este DTO es el contrato que la consumirá.
+public class MiLlaveResolveResponse
+{
+    public long    IdBrebLlave                  { get; set; }
+    public string  KeyType                      { get; set; } = string.Empty;
+    public string  KeyValueMasked               { get; set; } = string.Empty;
+    public string  Estado                       { get; set; } = string.Empty;
+    public bool    ResolucionVerificadaPassport  { get; set; }
+    public string  TitularNombreMasked          { get; set; } = string.Empty;
+    public string? TitularIdentificacionTipo    { get; set; }
+    public string? TitularIdentificacionMasked  { get; set; }
+    public string? EntidadFinanciera            { get; set; }
+    public string? TipoCuenta                   { get; set; }
+    public string? CuentaMasked                 { get; set; }
+    public string? VigenteHasta                 { get; set; }
 }
 
 public class BrebRetiroResponse
@@ -82,6 +122,12 @@ public class AdminLlaveResponse
     public DateTime  FechaRegistro   { get; set; }
     public DateTime? FechaValidacion { get; set; }
     public bool    EsActiva        { get; set; }
+
+    // XPAY-371 — ver MiLlaveResponse.ResolucionVerificadaPassport. Permite
+    // al admin distinguir, en /api/breb/admin/llaves, cuáles llaves
+    // VALIDADA lo fueron por Passport real y cuáles por el botón QA
+    // simular-validacion-llave.
+    public bool    ResolucionVerificadaPassport { get; set; }
 }
 
 public class PassportHealthResponse

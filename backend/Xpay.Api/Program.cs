@@ -90,6 +90,28 @@ builder.Services.AddSingleton<
     Xpay.Api.Integrations.Passport.IPassportHttpClient,
     Xpay.Api.Integrations.Passport.PassportHttpClient>();
 
+// XPAY-371 — primer cliente de negocio Passport registrado en DI de la
+// aplicación viva: IPassportKeyClient (Resolve Key), consumido por
+// BrebService.ResolverMiLlaveAsync. Mismo lifetime (Singleton) y mismo
+// patrón que IPassportHttpClient/IPassportTokenProvider: PassportKeyClient
+// no tiene estado propio, es un wrapper puro sobre IPassportHttpClient (ya
+// singleton) — no introduce ningún HttpClient/config adicional. Fail-closed
+// sin cambios: sigue dependiendo de PASSPORT_BASE_URL/API_KEY/API_SECRET
+// (vía IPassportHttpClient) y, para Resolve Key específicamente, de
+// PASSPORT_CUSTOMER_ID (ver PassportOptions.EnvOperationalCustomerId) —
+// ninguno de los dos está configurado en ningún ambiente todavía, así que
+// ResolverMiLlaveAsync no puede completar una llamada real hasta que se
+// autorice y configure explícitamente (fuera de alcance de XPAY-371).
+//
+// IPassportCustomerAccountClient NO se registra en este ticket — XPAY-371
+// sólo integra Resolve Key; el cliente de customer/account (saldo de
+// cuenta operativa) no es una dependencia de ResolverMiLlaveAsync y
+// registrarlo ahora ampliaría el alcance sin necesidad (ver XPAY-370
+// Bloque B, todavía no autorizado).
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.Passport.IPassportKeyClient,
+    Xpay.Api.Integrations.Passport.PassportKeyClient>();
+
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.
 var configuredOrigins = builder.Configuration

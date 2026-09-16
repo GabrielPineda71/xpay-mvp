@@ -25,6 +25,19 @@ public sealed class PassportOptions
     public const string EnvClientId     = "PASSPORT_API_KEY";
     public const string EnvClientSecret = "PASSPORT_API_SECRET";
 
+    // XPAY-371 — customer_id de la CUENTA OPERATIVA de XPAY en Passport (la
+    // que resuelve llaves Bre-B de terceros/usuarios propios como
+    // solicitante — no confundir con el customer_id que Passport devuelva
+    // en la respuesta de Resolve Key, que sólo repite el customer_id del
+    // REQUEST, no descubre uno nuevo asociado a la llave resuelta — ver
+    // BrebKeyResolutionRequestBuilder). NO configurado hoy en ningún
+    // ambiente (confirmado en XPAY-370: ausente de las Application
+    // Settings de xpay-api-qa) — su ausencia debe fallar closed, igual que
+    // BaseUrl/ClientId/ClientSecret, ANTES de cualquier llamada HTTP. Este
+    // ticket (XPAY-371) NO configura este valor en ningún ambiente — sólo
+    // agrega el nombre de la variable y el guard fail-closed que la exige.
+    public const string EnvOperationalCustomerId = "PASSPORT_CUSTOMER_ID";
+
     // Config NO secreta, sólo detalle técnico de transporte/cache — no forma
     // parte del contrato de Passport.
     public const string EnvTimeoutSeconds           = "PASSPORT_TIMEOUT_SECONDS";

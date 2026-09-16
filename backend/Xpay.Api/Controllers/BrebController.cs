@@ -108,6 +108,52 @@ public class BrebController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/mi-llave/resolver
+    // XPAY-371 — usuario autenticado, resolución REAL vía Passport
+    // (IPassportKeyClient.ResolveKeyAsync) de la llave ACTIVA de su propia
+    // Wallet. El body sólo reconfirma el valor ya registrado (validado
+    // contra el hash almacenado antes de llamar a Passport — ver
+    // BrebKeyResolutionRequestBuilder) — nunca acepta una llave/destino
+    // distinto. Distinto e independiente de
+    // POST /api/breb/admin/simular-validacion-llave (que se preserva sin
+    // cambios para QA/demo).
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpPost("api/breb/mi-llave/resolver")]
+    [Authorize]
+    [Authorize(Policy = "KycAprobado")]
+    public async Task<IActionResult> ResolverMiLlave([FromBody] ResolverLlaveRequest request)
+    {
+        if (!TryGetIdPersona(out var idPersona) || !TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_LLAVE_RESOLVER_ATTEMPT", new { idUsuario });
+        try
+        {
+            var resultado = await _breb.ResolverMiLlaveAsync(idPersona, idUsuario, request);
+            _audit.LogSensitiveAction(HttpContext, "BREB_LLAVE_RESOLVER_OK",
+                new { idUsuario, idBrebLlave = resultado.IdBrebLlave });
+            return Ok(new { success = true, data = resultado });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_LLAVE_RESOLVER_RECHAZADO", new { idUsuario, motivo = ex.Message });
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        // Xpay.Api.Integrations.Passport.PassportException (configuración,
+        // transporte/timeout, autenticación, protocolo) — Message ya está
+        // saneado por diseño en toda la jerarquía (ver PassportExceptions.cs);
+        // seguro de devolver tal cual, nunca incluye body/tokens/PII.
+        catch (Xpay.Api.Integrations.Passport.PassportException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_LLAVE_RESOLVER_PASSPORT_ERROR",
+                new { idUsuario, tipo = ex.GetType().Name });
+            return StatusCode(502, new { success = false, message = ex.Message });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno resolviendo la llave." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // GET /api/breb/mi-llave/comercio?idComercio={id}
     // COMERCIO o ADMIN — llave Bre-B del comercio.
     // ──────────────────────────────────────────────────────────────────────

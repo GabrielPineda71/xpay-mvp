@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
+using Xpay.Api.Integrations.Passport;
 using Xpay.Api.Models;
 
 namespace Xpay.Api.Services;
@@ -11,6 +12,11 @@ public class BrebService
 {
     private readonly XpayDbContext          _db;
     private readonly ILogger<BrebService>   _logger;
+    // XPAY-371 — cliente real de Passport para Resolve Key. Antes de este
+    // ticket, BrebService no tenía ninguna dependencia Passport: toda la
+    // "validación" de llave era el botón admin QA (SimularValidacionAsync).
+    private readonly IPassportKeyClient     _keyClient;
+    private readonly IConfiguration         _config;
 
     private static readonly HashSet<string> ValidKeyTypes =
         new(StringComparer.OrdinalIgnoreCase) { "ID", "PHONE", "EMAIL", "ALPHA", "BCODE" };
@@ -18,10 +24,13 @@ public class BrebService
     private static readonly HashSet<string> ValidLlaveStates =
         new(StringComparer.OrdinalIgnoreCase) { "VALIDADA", "RECHAZADA" };
 
-    public BrebService(XpayDbContext db, ILogger<BrebService> logger)
+    public BrebService(
+        XpayDbContext db, ILogger<BrebService> logger, IPassportKeyClient keyClient, IConfiguration config)
     {
-        _db     = db;
-        _logger = logger;
+        _db        = db;
+        _logger    = logger;
+        _keyClient = keyClient;
+        _config    = config;
     }
 
     // ── Passport health-config ────────────────────────────────────────────
@@ -55,6 +64,64 @@ public class BrebService
             ?? throw new InvalidOperationException("No se encontró wallet activa para este usuario.");
 
         return await UpsertLlave(wallet.IdWallet, "USUARIO", idUsuario, null, req, idUsuario);
+    }
+
+    // ── Resolver mi llave (Passport real) — XPAY-371 ──────────────────────
+    // Orquestación: DB → construir request PURO (builder valida ownership
+    // por hash) → llamar Passport real → mapear respuesta PURA → persistir.
+    // Ningún dato sensible entra a este método salvo lo estrictamente
+    // necesario para construir el request (keyValueConfirmacion, en
+    // memoria sólo durante este call, nunca persistido).
+    public async Task<MiLlaveResolveResponse> ResolverMiLlaveAsync(
+        long idPersona, long idUsuario, ResolverLlaveRequest req, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(req);
+
+        var wallet = await _db.Wallets.FirstOrDefaultAsync(
+            w => w.IdPersona == idPersona && w.TipoWallet == "PERSONA" && w.Estado == "ACTIVA",
+            cancellationToken)
+            ?? throw new InvalidOperationException("No se encontró wallet activa para este usuario.");
+
+        // Única llave activa de LA WALLET DEL USUARIO AUTENTICADO — nunca
+        // una llave arbitraria del request (no existe tal campo en
+        // ResolverLlaveRequest). Esto es lo que garantiza estructuralmente
+        // XPAY-371 FASE 2.1/2.2/2.3.
+        var llaveActiva = await _db.PassportBrebLlaves.FirstOrDefaultAsync(
+            l => l.IdWallet == wallet.IdWallet && l.EsActiva, cancellationToken);
+
+        var operationalCustomerId = _config[PassportOptions.EnvOperationalCustomerId];
+
+        // BrebKeyResolutionRequestBuilder.Build valida (en este orden):
+        // llave activa presente, valor de confirmación presente, config de
+        // cuenta operativa presente, keyType local mapeable al enum
+        // Passport, y — el guard central — que el hash del valor
+        // reenviado coincide con el hash ya almacenado de la llave activa.
+        var resolveRequest = BrebKeyResolutionRequestBuilder.Build(
+            llaveActiva, req.KeyValue, operationalCustomerId!);
+
+        // A partir de aquí, llaveActiva es necesariamente no-null (el
+        // builder ya lanzó si lo fuera).
+        var response = await _keyClient.ResolveKeyAsync(resolveRequest, cancellationToken).ConfigureAwait(false);
+
+        // FASE 2.6 — nunca "validada" sólo porque hubo HTTP 2xx.
+        if (!BrebKeyResolutionResponseMapper.IsComplete(response))
+        {
+            _logger.LogWarning(
+                "BREB_RESOLVE_INCOMPLETE: wallet={Wallet} llave={Llave} (owner/participant/account faltante)",
+                wallet.IdWallet, llaveActiva!.IdBrebLlave);
+            throw new InvalidOperationException(
+                "Passport devolvió una resolución incompleta; no se pudo verificar la llave.");
+        }
+
+        var now = DateTime.UtcNow;
+        BrebKeyResolutionResponseMapper.ApplyToLlave(llaveActiva!, response, now, idUsuario);
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "BREB_RESOLVE_OK: wallet={Wallet} llave={Llave} keyType={KeyType} estado={Estado}",
+            wallet.IdWallet, llaveActiva!.IdBrebLlave, llaveActiva.KeyType, llaveActiva.Estado);
+
+        return BrebKeyResolutionResponseMapper.ToSanitizedResponse(llaveActiva, response);
     }
 
     // ── Llave Bre-B — COMERCIO ────────────────────────────────────────────
@@ -377,10 +444,25 @@ public class BrebService
                 FechaRegistro   = l.FechaRegistro,
                 FechaValidacion = l.FechaValidacion,
                 EsActiva        = l.EsActiva,
+                // Misma condición que BrebKeyResolutionResponseMapper.
+                // WasResolvedByPassport — inline porque EF Core traduce
+                // este .Select() a SQL y no puede invocar ese método ahí.
+                ResolucionVerificadaPassport = l.OwnerNameMasked != null,
             })
             .ToListAsync();
 
     // ── Simular validación (Admin/QA) ─────────────────────────────────────
+    // XPAY-371 — se preserva sin cambios funcionales: sigue siendo la única
+    // vía para marcar VALIDADA/RECHAZADA una llave EN AMBIENTES/CASOS donde
+    // no aplica (o no se desea todavía) una resolución Passport real —
+    // sigue necesaria para QA/demo mientras PASSPORT_CUSTOMER_ID no esté
+    // configurado en ningún ambiente. Queda INEQUÍVOCAMENTE distinguida de
+    // ResolverMiLlaveAsync (resolución real): esta función JAMÁS puebla
+    // OwnerNameMasked/ParticipantName/AccountType/AccountNumberMasked/
+    // OwnerIdentificationType/OwnerIdentificationNumberMasked/
+    // ParticipantIdentificationNumber — sólo ResolverMiLlaveAsync
+    // (vía BrebKeyResolutionResponseMapper.ApplyToLlave) los puebla. Ver
+    // MiLlaveResponse/AdminLlaveResponse.ResolucionVerificadaPassport.
     public async Task<string> SimularValidacionAsync(SimularValidacionLlaveRequest req, long adminId)
     {
         if (!ValidLlaveStates.Contains(req.Estado))
@@ -573,6 +655,7 @@ public class BrebService
         Estado         = l.Estado,
         FechaRegistro  = l.FechaRegistro,
         FechaValidacion = l.FechaValidacion,
+        ResolucionVerificadaPassport = BrebKeyResolutionResponseMapper.WasResolvedByPassport(l),
     };
 
     private static BrebRetiroResponse ToRetiroResponse(PassportBrebRetiro r, string keyMasked) => new()
