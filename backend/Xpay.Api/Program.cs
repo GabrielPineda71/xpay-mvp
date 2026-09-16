@@ -129,6 +129,20 @@ builder.Services.AddSingleton<
     Xpay.Api.Integrations.Passport.PassportCustomerAccountClient>();
 builder.Services.AddScoped<Xpay.Api.Services.CuentaOperativaService>();
 
+// XPAY-373 — tercer cliente de negocio Passport registrado en DI:
+// IPassportPaymentClient (Bre-B Payment: crear + consultar), consumido por
+// BrebPaymentService. Mismo lifetime/patrón que IPassportKeyClient/
+// IPassportCustomerAccountClient. Fail-closed sin cambios: sigue
+// dependiendo de PASSPORT_BASE_URL/API_KEY/API_SECRET (vía
+// IPassportHttpClient) y de PASSPORT_ACCOUNT_ID (vía
+// BrebPaymentRequestBuilder), ninguno configurado en ningún ambiente
+// todavía — ninguna llamada real es posible hasta que se autorice y
+// configure explícitamente en un ticket futuro (XPAY-374).
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.Passport.IPassportPaymentClient,
+    Xpay.Api.Integrations.Passport.PassportPaymentClient>();
+builder.Services.AddScoped<Xpay.Api.Services.BrebPaymentService>();
+
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.
 var configuredOrigins = builder.Configuration

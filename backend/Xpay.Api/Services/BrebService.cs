@@ -186,6 +186,10 @@ public class BrebService
             FechaConfirmacion   = r.FechaConfirmacion,
             FechaLiquidacion    = r.FechaLiquidacion,
             FechaRechazo        = r.FechaRechazo,
+            // XPAY-373 — sólo poblados para retiros del flujo real.
+            PaymentIdFingerprint    = Xpay.Api.Common.Fingerprint.Compute(r.PassportPaymentId),
+            ResolutionIdFingerprint = Xpay.Api.Common.Fingerprint.Compute(r.PassportResolutionId),
+            FechaEnvioPassport      = r.FechaEnvioPassport,
         }).ToList();
     }
 
@@ -669,6 +673,8 @@ public class BrebService
         KeyValueMasked    = keyMasked,
         FechaSolicitud    = r.FechaSolicitud,
         MotivoRechazo     = r.MotivoRechazo,
+        PaymentIdFingerprint    = Xpay.Api.Common.Fingerprint.Compute(r.PassportPaymentId),
+        ResolutionIdFingerprint = Xpay.Api.Common.Fingerprint.Compute(r.PassportResolutionId),
     };
 
     private static string ComputeKeyHash(string keyValue)

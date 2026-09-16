@@ -161,6 +161,34 @@ public class BrebKeyResolutionResponseMapperTests
     // PassportKeyId/PassportCustomerId/PassportAccountId NUNCA se pueblan
     // desde Resolve Key, porque ese contrato no los provee con la misma
     // semántica (ver comentario de clase). Regresión explícita.
+    // XPAY-373 — la resolución exitosa debe cachear su id y vencimiento en
+    // la llave, para que un retiro posterior pueda copiarlos a su propio
+    // snapshot inmutable (ver PassportBrebRetiro.PassportResolutionExpiresAtUtc
+    // y BrebPaymentRequestBuilder).
+    [Fact]
+    public void ApplyToLlave_PueblaResolutionIdYExpiresAt()
+    {
+        var llave = Llave();
+        var response = FullResponse();
+
+        BrebKeyResolutionResponseMapper.ApplyToLlave(llave, response, DateTime.UtcNow, updatedByUsuario: 7);
+
+        Assert.Equal("synthetic-resolution-id-001", llave.PassportResolutionId);
+        Assert.Equal(new DateTime(2026, 1, 1, 0, 30, 0, DateTimeKind.Utc), llave.PassportResolutionExpiresAtUtc);
+    }
+
+    [Fact]
+    public void ApplyToLlave_ExpiresAtNoParseable_QuedaNullFailClosed()
+    {
+        var llave = Llave();
+        var response = FullResponse();
+        response.ExpiresAt = "no-es-una-fecha";
+
+        BrebKeyResolutionResponseMapper.ApplyToLlave(llave, response, DateTime.UtcNow, updatedByUsuario: 7);
+
+        Assert.Null(llave.PassportResolutionExpiresAtUtc);
+    }
+
     [Fact]
     public void ApplyToLlave_NuncaPueblaKeyIdCustomerIdNiAccountId()
     {

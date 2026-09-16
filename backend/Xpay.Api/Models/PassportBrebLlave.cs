@@ -14,6 +14,14 @@ public class PassportBrebLlave
     public string? PassportCustomerId                 { get; set; }
     public string? PassportAccountId                  { get; set; }
     public string? PassportKeyId                      { get; set; }
+    // XPAY-373 (043) — caché de la resolución Passport MÁS RECIENTE de
+    // esta llave (poblada por BrebKeyResolutionResponseMapper.ApplyToLlave,
+    // XPAY-371/373). Se sobreescribe en cada resolve exitoso — no es un
+    // historial. Un retiro nuevo copia estos valores a su propia columna
+    // inmutable (PassportBrebRetiro.PassportResolutionExpiresAtUtc) al
+    // crearse — ver BrebPaymentService.
+    public string?   PassportResolutionId              { get; set; }
+    public DateTime? PassportResolutionExpiresAtUtc     { get; set; }
     public string? OwnerIdentificationType            { get; set; }
     public string? OwnerIdentificationNumberMasked    { get; set; }
     public string? OwnerNameMasked                    { get; set; }

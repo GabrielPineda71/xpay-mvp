@@ -15,16 +15,21 @@ public class BrebController : ControllerBase
     // XPAY-372 — separado de BrebService a propósito (ver
     // CuentaOperativaService: sin dependencia de XpayDbContext).
     private readonly CuentaOperativaService  _cuentaOperativa;
+    // XPAY-373 — flujo REAL de Payment Bre-B (separado de BrebService, que
+    // sigue siendo el flujo simulado — ver comentario de clase en
+    // BrebPaymentService.cs).
+    private readonly BrebPaymentService      _brebPayment;
 
     public BrebController(
         BrebService breb, AuditLogService audit, IConfiguration config, ComercioScopeService scope,
-        CuentaOperativaService cuentaOperativa)
+        CuentaOperativaService cuentaOperativa, BrebPaymentService brebPayment)
     {
         _breb            = breb;
         _audit           = audit;
         _config          = config;
         _scope           = scope;
         _cuentaOperativa = cuentaOperativa;
+        _brebPayment     = brebPayment;
     }
 
     // KYC-GATING-001 / BREB-COMERCIO-IDOR-FIX-001: valida que el idComercio
@@ -489,4 +494,112 @@ public class BrebController : ControllerBase
         catch
         { return StatusCode(500, new { success = false, message = "Error interno creando retiro." }); }
     }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/retiros/real
+    // XPAY-373 — usuario autenticado, retiro REAL (dinero real de la
+    // cuenta operativa QA XPAY). SIEMPRE usa la llave activa REALMENTE
+    // resuelta (WasResolvedByPassport) de la Wallet del usuario autenticado
+    // — jamás una llave/cuenta/monto arbitrario del request (el único
+    // campo del body es Monto). Reserva Wallet + intento de envío a
+    // Passport encadenados: si la reserva falla (saldo insuficiente, llave
+    // no resuelta, resolución vencida), nunca se intenta contactar
+    // Passport.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpPost("api/breb/retiros/real")]
+    [Authorize]
+    [Authorize(Policy = "KycAprobado")]
+    public async Task<IActionResult> SolicitarRetiroReal([FromBody] SolicitarRetiroRealRequest request)
+    {
+        if (!TryGetIdPersona(out var idPersona) || !TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_REAL_ATTEMPT", new { idUsuario, monto = request.Monto });
+        try
+        {
+            var retiro = await _brebPayment.SolicitarRetiroRealAsync(idPersona, idUsuario, request.Monto);
+            try
+            {
+                retiro = await _brebPayment.EnviarPaymentAsync(retiro.IdBrebRetiro);
+            }
+            catch (Exception exEnvio)
+            {
+                // La reserva YA quedó persistida — EnviarPaymentAsync ya
+                // maneja internamente fallo local (libera) vs. incierto
+                // (deja ENVIADO_PASSPORT). Si esta llamada en sí lanza
+                // (p.ej. una excepción no contemplada), se informa al
+                // usuario que el retiro quedó creado pero debe consultarse
+                // su estado — nunca se oculta el retiro ya persistido.
+                _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_REAL_ENVIO_ERROR",
+                    new { idUsuario, idBrebRetiro = retiro.IdBrebRetiro, tipo = exEnvio.GetType().Name });
+                return Ok(new { success = true, data = ToRetiroRealResponse(retiro), warning = "El retiro se creó pero su envío a Passport no pudo confirmarse; consulta su estado." });
+            }
+
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_REAL_OK",
+                new { idUsuario, idBrebRetiro = retiro.IdBrebRetiro, estado = retiro.Estado });
+            return Ok(new { success = true, data = ToRetiroRealResponse(retiro) });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_REAL_RECHAZADO", new { idUsuario, motivo = ex.Message });
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (Xpay.Api.Integrations.Passport.PassportException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_REAL_PASSPORT_ERROR", new { idUsuario, tipo = ex.GetType().Name });
+            return StatusCode(502, new { success = false, message = ex.Message });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno creando el retiro real." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/admin/retiros/{id}/actualizar-estado
+    // XPAY-373 FASE 10 — consulta GET /v1/payments/{payment_id} y aplica
+    // el estado resultante (idempotente). Sólo ADMIN_XPAY/SUPERUSUARIO
+    // (arquitectura administrativa existente, per FASE 10: "endpoint
+    // administrativo... según arquitectura existente"). El payment_id
+    // NUNCA se recibe del caller — se obtiene server-side desde el propio
+    // retiro. NO ejecuta red real en XPAY-373 (PASSPORT_ACCOUNT_ID/
+    // PASSPORT_BASE_URL ausentes en todo ambiente).
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpPost("api/breb/admin/retiros/{id:long}/actualizar-estado")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> ActualizarEstadoRetiroReal(long id)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_REAL_ACTUALIZAR_ESTADO_ATTEMPT", new { idBrebRetiro = id, adminId });
+        try
+        {
+            var retiro = await _brebPayment.ConsultarEstadoAsync(id);
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_REAL_ACTUALIZAR_ESTADO_OK",
+                new { idBrebRetiro = id, estado = retiro.Estado });
+            return Ok(new { success = true, data = ToRetiroRealResponse(retiro) });
+        }
+        catch (InvalidOperationException ex)
+        { return BadRequest(new { success = false, message = ex.Message }); }
+        catch (Xpay.Api.Integrations.Passport.PassportException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_REAL_ACTUALIZAR_ESTADO_PASSPORT_ERROR",
+                new { idBrebRetiro = id, tipo = ex.GetType().Name });
+            return StatusCode(502, new { success = false, message = ex.Message });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno actualizando estado del retiro." }); }
+    }
+
+    private static RetiroRealResponse ToRetiroRealResponse(Xpay.Api.Models.PassportBrebRetiro r) => new()
+    {
+        IdBrebRetiro            = r.IdBrebRetiro,
+        Valor                   = r.Valor,
+        Moneda                  = r.Moneda,
+        Estado                  = r.Estado,
+        PaymentIdFingerprint    = Xpay.Api.Common.Fingerprint.Compute(r.PassportPaymentId),
+        ResolutionIdFingerprint = Xpay.Api.Common.Fingerprint.Compute(r.PassportResolutionId),
+        FechaSolicitud          = r.FechaSolicitud,
+        FechaEnvioPassport      = r.FechaEnvioPassport,
+        MotivoRechazo           = r.MotivoRechazo,
+    };
 }

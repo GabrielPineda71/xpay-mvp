@@ -80,6 +80,15 @@ public static class BrebKeyResolutionResponseMapper
         var participant = response.Participant!;
         var account     = response.Account!;
 
+        // XPAY-373 — caché de la resolución más reciente (ver comentario de
+        // clase en PassportBrebLlave.cs). expires_at se parsea de forma
+        // fail-closed: si Passport devuelve un formato no parseable, se
+        // deja null en vez de asumir una fecha — un vencimiento ausente ya
+        // es tratado como "vencido" por BrebPaymentRequestBuilder (XPAY-373),
+        // nunca como "sin límite".
+        llave.PassportResolutionId          = response.Id;
+        llave.PassportResolutionExpiresAtUtc = ParseExpiresAt(response.ExpiresAt);
+
         llave.OwnerIdentificationType         = owner.IdentificationType;
         llave.OwnerIdentificationNumberMasked = MaskTail(owner.IdentificationNumber);
         llave.OwnerNameMasked                 = MaskOwnerName(owner);
@@ -143,6 +152,21 @@ public static class BrebKeyResolutionResponseMapper
         var firstSpace = trimmed.IndexOf(' ');
         if (firstSpace <= 0) return $"{trimmed} ***";
         return $"{trimmed[..firstSpace]} ***";
+    }
+
+    // XPAY-373 — parseo fail-closed de expires_at (ISO 8601 UTC, formato
+    // confirmado en el fixture ya versionado de PassportKeyClientTests:
+    // "2026-01-01T00:30:00.000000Z"). Cualquier valor no parseable produce
+    // null (nunca lanza, nunca asume "sin vencimiento").
+    private static DateTime? ParseExpiresAt(string? expiresAt)
+    {
+        if (string.IsNullOrWhiteSpace(expiresAt)) return null;
+        return DateTime.TryParse(
+            expiresAt, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal,
+            out var parsed)
+            ? parsed
+            : null;
     }
 
     // Mismo criterio que MaskGeneric (BrebService): últimos 4 caracteres

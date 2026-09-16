@@ -82,6 +82,36 @@ public class BrebRetiroResponse
     public string  KeyValueMasked    { get; set; } = string.Empty;
     public DateTime FechaSolicitud   { get; set; }
     public string? MotivoRechazo     { get; set; }
+
+    // XPAY-373 — sólo poblados para retiros del flujo REAL
+    // (BrebPaymentService); null para retiros simulados (Fase 64), que
+    // nunca llaman Passport. Nunca el ID completo — sólo fingerprint.
+    public string? PaymentIdFingerprint    { get; set; }
+    public string? ResolutionIdFingerprint { get; set; }
+}
+
+// XPAY-373 FASE 13 — request de POST /api/breb/retiros/real. Sólo el
+// monto: account_id/resolution_id/destination key se obtienen 100%
+// server-side (ver BrebPaymentService) — no existe ningún campo en este
+// DTO por el que el frontend pueda influirlos.
+public class SolicitarRetiroRealRequest
+{
+    public decimal Monto { get; set; }
+}
+
+// XPAY-373 FASE 13 — respuesta sanitizada de un retiro real. Nunca expone
+// PassportPaymentId/PassportResolutionId completos.
+public class RetiroRealResponse
+{
+    public long      IdBrebRetiro            { get; set; }
+    public decimal   Valor                   { get; set; }
+    public string    Moneda                  { get; set; } = "COP";
+    public string    Estado                  { get; set; } = string.Empty;
+    public string?   PaymentIdFingerprint    { get; set; }
+    public string?   ResolutionIdFingerprint { get; set; }
+    public DateTime  FechaSolicitud          { get; set; }
+    public DateTime? FechaEnvioPassport      { get; set; }
+    public string?   MotivoRechazo           { get; set; }
 }
 
 public class AdminRetiroResponse
@@ -102,6 +132,12 @@ public class AdminRetiroResponse
     public DateTime? FechaConfirmacion { get; set; }
     public DateTime? FechaLiquidacion  { get; set; }
     public DateTime? FechaRechazo      { get; set; }
+
+    // XPAY-373 FASE 14 — visibilidad admin del flujo real. Nunca IDs
+    // Passport completos.
+    public string? PaymentIdFingerprint    { get; set; }
+    public string? ResolutionIdFingerprint { get; set; }
+    public DateTime? FechaEnvioPassport    { get; set; }
 }
 
 public class RechazarRetiroRequest

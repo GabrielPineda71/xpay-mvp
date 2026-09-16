@@ -13,6 +13,14 @@ public class PassportBrebRetiro
     public string  Estado               { get; set; } = "CREADO";
     public string? PassportPaymentId    { get; set; }
     public string? PassportResolutionId { get; set; }
+    // XPAY-373 (043) — snapshot INMUTABLE del vencimiento de la resolución
+    // que ESTE retiro usó al crearse (copiado desde PassportBrebLlave.
+    // PassportResolutionExpiresAtUtc en el momento de la reserva) —
+    // deliberadamente independiente de la caché mutable de la llave, que
+    // pudo haberse refrescado después. Se verifica antes de enviar el
+    // Payment (BrebPaymentService.EnviarPaymentAsync) — nunca se reutiliza
+    // silenciosamente una resolución vencida.
+    public DateTime? PassportResolutionExpiresAtUtc { get; set; }
     public string? PassportRecipientId  { get; set; }
     public string  ReferenciaInterna    { get; set; } = string.Empty;
     public string  IdempotencyKey       { get; set; } = string.Empty;
