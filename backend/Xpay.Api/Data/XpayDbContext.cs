@@ -43,6 +43,8 @@ public class XpayDbContext : DbContext
     public DbSet<WalletMovimiento> WalletMovimientos => Set<WalletMovimiento>();
     public DbSet<LedgerCuenta> LedgerCuentas => Set<LedgerCuenta>();
     public DbSet<LedgerTransaccion> LedgerTransacciones => Set<LedgerTransaccion>();
+    // XPAY-385 — CAPA 2 (tesorería real), independiente de LedgerCuentas/Wallet.
+    public DbSet<CuentaOperativa> CuentasOperativas => Set<CuentaOperativa>();
     public DbSet<LedgerMovimiento> LedgerMovimientos => Set<LedgerMovimiento>();
     public DbSet<Auditoria> Auditorias => Set<Auditoria>();
     public DbSet<Comercio> Comercios => Set<Comercio>();
@@ -110,6 +112,8 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<WalletMovimiento>(e => { e.ToTable("wallet_movimientos"); e.HasKey(x => x.IdMovimientoWallet); MapWalletMovimiento(e); });
         modelBuilder.Entity<LedgerCuenta>(e => { e.ToTable("ledger_cuentas"); e.HasKey(x => x.IdCuenta); MapLedgerCuenta(e); });
         modelBuilder.Entity<LedgerTransaccion>(e => { e.ToTable("ledger_transacciones"); e.HasKey(x => x.IdTransaccionLedger); MapLedgerTransaccion(e); });
+        // XPAY-385 — CAPA 2.
+        modelBuilder.Entity<CuentaOperativa>(e => { e.ToTable("cuentas_operativas"); e.HasKey(x => x.IdCuentaOperativa); MapCuentaOperativa(e); });
         modelBuilder.Entity<LedgerMovimiento>(e => { e.ToTable("ledger_movimientos"); e.HasKey(x => x.IdMovimientoLedger); MapLedgerMovimiento(e); });
         modelBuilder.Entity<Auditoria>(e => { e.ToTable("auditoria"); e.HasKey(x => x.IdAuditoria); MapAuditoria(e); });
         modelBuilder.Entity<Comercio>(e => { e.ToTable("comercios"); e.HasKey(x => x.IdComercio); MapComercio(e); });
@@ -192,6 +196,9 @@ public class XpayDbContext : DbContext
     { e.Property(x => x.IdMovimientoWallet).HasColumnName("id_movimiento_wallet"); e.Property(x => x.IdWallet).HasColumnName("id_wallet"); e.Property(x => x.IdTransaccionLedger).HasColumnName("id_transaccion_ledger"); e.Property(x => x.TipoMovimiento).HasColumnName("tipo_movimiento"); e.Property(x => x.Naturaleza).HasColumnName("naturaleza"); e.Property(x => x.Valor).HasColumnName("valor"); e.Property(x => x.SaldoAntes).HasColumnName("saldo_antes"); e.Property(x => x.SaldoDespues).HasColumnName("saldo_despues"); e.Property(x => x.Descripcion).HasColumnName("descripcion"); e.Property(x => x.ReferenciaTipo).HasColumnName("referencia_tipo"); e.Property(x => x.ReferenciaId).HasColumnName("referencia_id"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.CreadoPor).HasColumnName("creado_por"); e.Property(x => x.FechaMovimiento).HasColumnName("fecha_movimiento"); }
     private static void MapLedgerCuenta(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<LedgerCuenta> e)
     { e.Property(x => x.IdCuenta).HasColumnName("id_cuenta"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.Codigo).HasColumnName("codigo"); e.Property(x => x.Nombre).HasColumnName("nombre"); e.Property(x => x.TipoCuenta).HasColumnName("tipo_cuenta"); e.Property(x => x.SubtipoCuenta).HasColumnName("subtipo_cuenta"); e.Property(x => x.Naturaleza).HasColumnName("naturaleza"); e.Property(x => x.PermiteMovimiento).HasColumnName("permite_movimiento"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion"); }
+    // XPAY-385 — CAPA 2.
+    private static void MapCuentaOperativa(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<CuentaOperativa> e)
+    { e.Property(x => x.IdCuentaOperativa).HasColumnName("id_cuenta_operativa"); e.Property(x => x.Proveedor).HasColumnName("proveedor"); e.Property(x => x.Institucion).HasColumnName("institucion"); e.Property(x => x.Moneda).HasColumnName("moneda"); e.Property(x => x.Ambiente).HasColumnName("ambiente"); e.Property(x => x.AccountIdFingerprint).HasColumnName("account_id_fingerprint"); e.Property(x => x.ConfigKeyReference).HasColumnName("config_key_reference"); e.Property(x => x.IdCuentaLedger).HasColumnName("id_cuenta_ledger"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion"); }
     private static void MapLedgerTransaccion(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<LedgerTransaccion> e)
     { e.Property(x => x.IdTransaccionLedger).HasColumnName("id_transaccion_ledger"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.TipoTransaccion).HasColumnName("tipo_transaccion"); e.Property(x => x.ReferenciaTipo).HasColumnName("referencia_tipo"); e.Property(x => x.ReferenciaId).HasColumnName("referencia_id"); e.Property(x => x.Descripcion).HasColumnName("descripcion"); e.Property(x => x.ValorTotal).HasColumnName("valor_total"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.CreadoPor).HasColumnName("creado_por"); e.Property(x => x.FechaTransaccion).HasColumnName("fecha_transaccion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion"); }
     private static void MapLedgerMovimiento(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<LedgerMovimiento> e)

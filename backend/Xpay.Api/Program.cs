@@ -314,6 +314,11 @@ builder.Services.AddHsts(options =>
 
 var app = builder.Build();
 
+// XPAY-385 — bootstrap idempotente de la fila de cuentas_operativas
+// (CAPA 2). Corre una sola vez por arranque del proceso, antes de servir
+// tráfico. Nunca lee/loguea PASSPORT_ACCOUNT_ID — solo su fingerprint.
+await OperationalAccountBootstrapper.EnsureSeededAsync(app.Services, app.Logger);
+
 // Startup: log CORS origins (no son secretos — son URLs públicas del frontend)
 app.Logger.LogInformation(
     "CORS: FrontendCorsPolicy — allowed origins: {Origins}",
