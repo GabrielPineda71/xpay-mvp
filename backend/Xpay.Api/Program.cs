@@ -112,6 +112,23 @@ builder.Services.AddSingleton<
     Xpay.Api.Integrations.Passport.IPassportKeyClient,
     Xpay.Api.Integrations.Passport.PassportKeyClient>();
 
+// XPAY-372 — segundo cliente de negocio Passport registrado en DI:
+// IPassportCustomerAccountClient (Retrieve Account), consumido por
+// CuentaOperativaService.ObtenerCuentaOperativaAsync (GET
+// /api/breb/admin/cuenta-operativa). Mismo lifetime/patrón que
+// IPassportKeyClient — wrapper puro y sin estado sobre IPassportHttpClient.
+// XPAY-372 NO llama LinkMerchantAsync/LinkAccountAsync (creación de
+// customer/account) desde ningún código productivo — sólo se consume
+// RetrieveAccountAsync, sobre una cuenta que Passport YA aprovisionó
+// (ver PassportOptions.EnvOperationalAccountId). Fail-closed sin cambios:
+// sigue dependiendo de PASSPORT_BASE_URL/API_KEY/API_SECRET (vía
+// IPassportHttpClient) y de PASSPORT_ACCOUNT_ID, ninguno configurado en
+// ningún ambiente todavía.
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.Passport.IPassportCustomerAccountClient,
+    Xpay.Api.Integrations.Passport.PassportCustomerAccountClient>();
+builder.Services.AddScoped<Xpay.Api.Services.CuentaOperativaService>();
+
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.
 var configuredOrigins = builder.Configuration

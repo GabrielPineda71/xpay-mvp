@@ -8,17 +8,23 @@ namespace Xpay.Api.Controllers;
 [ApiController]
 public class BrebController : ControllerBase
 {
-    private readonly BrebService          _breb;
-    private readonly AuditLogService      _audit;
-    private readonly IConfiguration       _config;
-    private readonly ComercioScopeService _scope;
+    private readonly BrebService             _breb;
+    private readonly AuditLogService         _audit;
+    private readonly IConfiguration          _config;
+    private readonly ComercioScopeService    _scope;
+    // XPAY-372 — separado de BrebService a propósito (ver
+    // CuentaOperativaService: sin dependencia de XpayDbContext).
+    private readonly CuentaOperativaService  _cuentaOperativa;
 
-    public BrebController(BrebService breb, AuditLogService audit, IConfiguration config, ComercioScopeService scope)
+    public BrebController(
+        BrebService breb, AuditLogService audit, IConfiguration config, ComercioScopeService scope,
+        CuentaOperativaService cuentaOperativa)
     {
-        _breb   = breb;
-        _audit  = audit;
-        _config = config;
-        _scope  = scope;
+        _breb            = breb;
+        _audit           = audit;
+        _config          = config;
+        _scope           = scope;
+        _cuentaOperativa = cuentaOperativa;
     }
 
     // KYC-GATING-001 / BREB-COMERCIO-IDOR-FIX-001: valida que el idComercio
@@ -206,6 +212,33 @@ public class BrebController : ControllerBase
         { return BadRequest(new { success = false, message = ex.Message }); }
         catch
         { return StatusCode(500, new { success = false, message = "Error interno registrando llave comercio." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // GET /api/breb/admin/cuenta-operativa
+    // XPAY-372 — Sólo ADMIN_XPAY/SUPERUSUARIO. account_id se obtiene
+    // EXCLUSIVAMENTE server-side desde configuración (nunca del request) —
+    // consulta real Passport (RetrieveAccountAsync) vía CuentaOperativaService.
+    // NO crea/modifica nada — read-only. La cuenta operativa es de XPAY, no
+    // de ningún usuario individual — este endpoint nunca acepta un
+    // identificador de wallet/usuario como parámetro.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("api/breb/admin/cuenta-operativa")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> GetCuentaOperativa()
+    {
+        try
+        {
+            var resultado = await _cuentaOperativa.ObtenerCuentaOperativaAsync();
+            return Ok(new { success = true, data = resultado });
+        }
+        catch (Xpay.Api.Integrations.Passport.PassportException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "CUENTA_OPERATIVA_CONSULTA_ERROR", new { tipo = ex.GetType().Name });
+            return StatusCode(502, new { success = false, message = ex.Message });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno consultando la cuenta operativa." }); }
     }
 
     // ──────────────────────────────────────────────────────────────────────

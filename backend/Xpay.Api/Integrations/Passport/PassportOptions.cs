@@ -38,6 +38,16 @@ public sealed class PassportOptions
     // agrega el nombre de la variable y el guard fail-closed que la exige.
     public const string EnvOperationalCustomerId = "PASSPORT_CUSTOMER_ID";
 
+    // XPAY-372 — account_id de la CUENTA OPERATIVA de XPAY en Passport/
+    // Coopcentral (la fuente real del dinero que sale por Bre-B — distinta
+    // de la Wallet del usuario, ver CuentaOperativaService). Mismo criterio
+    // fail-closed que EnvOperationalCustomerId: NO configurado hoy en
+    // ningún ambiente (confirmado en XPAY-370/372 — ausente de las
+    // Application Settings de xpay-api-qa). Este ticket (XPAY-372) NO
+    // configura este valor en ningún ambiente — sólo agrega el nombre de
+    // la variable y el guard fail-closed que la exige.
+    public const string EnvOperationalAccountId = "PASSPORT_ACCOUNT_ID";
+
     // Config NO secreta, sólo detalle técnico de transporte/cache — no forma
     // parte del contrato de Passport.
     public const string EnvTimeoutSeconds           = "PASSPORT_TIMEOUT_SECONDS";

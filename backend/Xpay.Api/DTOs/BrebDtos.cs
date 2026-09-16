@@ -130,6 +130,20 @@ public class AdminLlaveResponse
     public bool    ResolucionVerificadaPassport { get; set; }
 }
 
+// XPAY-372 FASE 4 — DTO sanitizado de GET /api/breb/admin/cuenta-operativa.
+// NUNCA expone account_id/customer_id en claro (sólo fingerprint) ni
+// ningún dato bancario adicional — sólo lo estrictamente necesario para que
+// el admin vea el estado de la cuenta operativa QA.
+public class CuentaOperativaResponse
+{
+    public string    AccountIdFingerprint { get; set; } = string.Empty;
+    public string?   Estado               { get; set; }
+    public string?   Currency             { get; set; }
+    public decimal?  SaldoDisponible      { get; set; }
+    public decimal?  SaldoPendiente       { get; set; }
+    public DateTime  ConsultadoEnUtc      { get; set; }
+}
+
 public class PassportHealthResponse
 {
     public bool PassportBaseUrl      { get; set; }
