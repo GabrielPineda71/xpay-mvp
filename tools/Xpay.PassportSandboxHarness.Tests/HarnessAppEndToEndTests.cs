@@ -2127,14 +2127,16 @@ public class HarnessAppEndToEndTests
                 new[] { "create-qr-static", "--execute", "--confirm-create-qr-static" }, config, dependencies, output);
 
             // F/G/H — exactamente 1 llamada HTTP, POST /v1/qrcodes,
-            // type=STATIC, SIN "amount" ni "vat" ni "inc" ni
-            // "qr_code_reference" en el body (XPAY-357).
+            // type=STATIC, SIN "amount" ni "inc" ni "qr_code_reference" en
+            // el body. "vat" SÍ debe estar presente (XPAY-360 — restaurado
+            // tras confirmación empírica real de Passport en XPAY-359: HTTP
+            // 400 "Field 'vat' is required").
             Assert.Equal(1, handler.CallCount);
             Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
             Assert.Equal("/v1/qrcodes", handler.LastRequest.RequestUri!.AbsolutePath);
             Assert.Contains("\"STATIC\"", handler.LastRequestBody);
             Assert.DoesNotContain("\"amount\"", handler.LastRequestBody);
-            Assert.DoesNotContain("\"vat\"", handler.LastRequestBody);
+            Assert.Contains("\"vat\"", handler.LastRequestBody);
             Assert.DoesNotContain("\"inc\"", handler.LastRequestBody);
             Assert.DoesNotContain("\"qr_code_reference\"", handler.LastRequestBody);
 
@@ -2165,8 +2167,8 @@ public class HarnessAppEndToEndTests
             // XPAY-356 — la evidencia futura (result=PASS) debe reflejar POS.
             Assert.Equal("POS", requestSanitized.GetProperty("channel").GetString());
             Assert.False(requestSanitized.GetProperty("amount_present").GetBoolean());
-            // XPAY-357 — vat_present=false, sin inventar vat_type/vat_value/vat_base_value.
-            Assert.False(requestSanitized.GetProperty("vat_present").GetBoolean());
+            // XPAY-360 — vat_present=true (restaurado), sin exponer vat_type/vat_value/vat_base_value.
+            Assert.True(requestSanitized.GetProperty("vat_present").GetBoolean());
             Assert.False(requestSanitized.GetProperty("qr_code_reference_present").GetBoolean());
 
             var responseSanitized = root.GetProperty("response_sanitized");

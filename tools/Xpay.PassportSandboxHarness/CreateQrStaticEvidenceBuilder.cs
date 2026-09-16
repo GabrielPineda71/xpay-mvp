@@ -16,13 +16,16 @@ namespace Xpay.PassportSandboxHarness;
 //   - type/channel (request): se conservan tal cual — no son sensibles, son
 //     sólo la categoría de protocolo (mismo criterio que key_type en
 //     Create/Suspend/Activate Key).
-//   - amount_present / vat_present (request): booleanos únicamente — M4-T1
-//     nunca debe incluir amount ni vat (QR ESTÁTICO, XPAY-357: vat pasó a
-//     ser opcional a nivel de DTO y ya no se envía para este caso), pero se
-//     registran explícitamente para que la evidencia sea auto-verificable
-//     sin depender de una inspección externa del código. Nunca se inventan
-//     valores de vat_type/vat_value/vat_base_value cuando vat está ausente
-//     — sólo la presencia/ausencia se registra.
+//   - amount_present / vat_present (request): booleanos únicamente. M4-T1
+//     nunca debe incluir amount (QR ESTÁTICO sin monto). vat pasó a ser
+//     opcional a nivel de DTO en XPAY-357 (dejó de enviarse), pero XPAY-360
+//     lo RESTAURÓ en el executor tras confirmación empírica real de
+//     Passport Sandbox (HTTP 400 "Field 'vat' is required" en XPAY-359) —
+//     M4-T1 vuelve a enviarlo siempre. Ambos booleanos se registran
+//     explícitamente para que la evidencia sea auto-verificable sin
+//     depender de una inspección externa del código. Nunca se exponen
+//     valores literales de vat_type/vat_value/vat_base_value (presentes o
+//     ausentes) — sólo la presencia/ausencia se registra.
 //   - id (response, campo raíz, el qr id remoto): SOLO fingerprint,
 //     ETIQUETADO EXPLÍCITAMENTE como `qr_id_fingerprint` — NUNCA como
 //     key_id/key_id_fingerprint ni resolution_id_fingerprint (son conceptos

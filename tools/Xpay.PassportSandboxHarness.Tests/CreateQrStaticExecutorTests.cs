@@ -75,11 +75,13 @@ public class CreateQrStaticExecutorTests
     // F/G/H/I/Q — exactamente 1 llamada lógica, type=STATIC, amount ausente,
     // usa IPassportQrClient (nunca IPassportKeyClient), sin reintentos.
     //
-    // XPAY-356 §9 / XPAY-357 §11 — CONTRACT SHAPE TEST: fortalecido para
-    // verificar SIMULTÁNEAMENTE la forma completa del request tras las
-    // correcciones de channel (APP→POS, XPAY-356) y vat (PRESENTE→AUSENTE,
-    // XPAY-357), protegiendo contra una regresión silenciosa de CUALQUIER
-    // campo del contrato. transaction_purpose permanece "00"
+    // XPAY-356 §9 / XPAY-357 §11 / XPAY-360 §11 — CONTRACT SHAPE TEST:
+    // fortalecido para verificar SIMULTÁNEAMENTE la forma completa del
+    // request tras channel (APP→POS, XPAY-356), vat (PRESENTE→AUSENTE en
+    // XPAY-357, RESTAURADO en XPAY-360 tras confirmación empírica real de
+    // Passport en XPAY-359: HTTP 400 "Field 'vat' is required"),
+    // protegiendo contra una regresión silenciosa de CUALQUIER campo del
+    // contrato. transaction_purpose permanece "00"
     // (TRANSACTION_PURPOSE_CHANGE_BLOCKED=YES — ver CreateQrStaticExecutor).
     [Fact]
     public async Task ExecuteAsync_Success_CallsOnlyCreateQrCodeAsync_ExactlyOnce_FullContractShape()
@@ -103,9 +105,17 @@ public class CreateQrStaticExecutorTests
         Assert.Equal(PassportQrChannel.POS, sent.Channel);
 
         Assert.Null(sent.Amount);                 // amount ausente.
-        Assert.Null(sent.Vat);                    // XPAY-357 — vat ausente.
         Assert.Null(sent.Inc);                    // inc ausente.
         Assert.Null(sent.QrCodeReference);         // qr_code_reference ausente.
+
+        // XPAY-360 — vat RESTAURADO (confirmado requerido por Passport
+        // Sandbox real en XPAY-359); valores exactamente los históricos
+        // previos a XPAY-357, respaldados hoy por
+        // PassportQrClientTests.CreateQrCodeAsync_StaticWithVatExplicitlyIncluded_IsAllowed.
+        Assert.NotNull(sent.Vat);
+        Assert.Equal(PassportQrVatType.FIXED, sent.Vat.VatType);
+        Assert.Equal("0.00", sent.Vat.VatValue);
+        Assert.Equal("0.00", sent.Vat.VatBaseValue);
 
         // XPAY-357 §8 — transaction_purpose permanece "00": PURCHASE
         // bloqueado documentalmente (única aparición local es en la
@@ -117,10 +127,14 @@ public class CreateQrStaticExecutorTests
         Assert.NotNull(result.Evidence);
     }
 
-    // XPAY-357 §5/§13 — regresión explícita: CreateQrStaticExecutor debe
-    // construir vat=ABSENT (nunca reintroducir vat silenciosamente).
+    // XPAY-360 §5/§11 — regresión explícita: CreateQrStaticExecutor debe
+    // construir vat=PRESENTE con EXACTAMENTE FIXED/"0.00"/"0.00" (nunca
+    // volver a omitirlo silenciosamente, ni derivar a otro vat_type/valor).
+    // También verifica la serialización JSON efectiva, no sólo propiedades
+    // del objeto — via el fake que captura el request y lo serializa con el
+    // mismo JsonSerializer que usaría el transporte real.
     [Fact]
-    public async Task ExecuteAsync_Success_NeverIncludesVat()
+    public async Task ExecuteAsync_Success_AlwaysIncludesVatWithHistoricalValues()
     {
         var client = new FakeQrClient();
         var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
@@ -128,7 +142,18 @@ public class CreateQrStaticExecutorTests
         await CreateQrStaticExecutor.ExecuteAsync(
             ConfigWithTarget(), client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
 
-        Assert.Null(client.LastRequest!.Vat);
+        var sent = client.LastRequest!;
+        Assert.NotNull(sent.Vat);
+        Assert.Equal(PassportQrVatType.FIXED, sent.Vat.VatType);
+        Assert.Equal("0.00", sent.Vat.VatValue);
+        Assert.Equal("0.00", sent.Vat.VatBaseValue);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(sent);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var vat = doc.RootElement.GetProperty("vat");
+        Assert.Equal("FIXED", vat.GetProperty("vat_type").GetString());
+        Assert.Equal("0.00", vat.GetProperty("vat_value").GetString());
+        Assert.Equal("0.00", vat.GetProperty("vat_base_value").GetString());
     }
 
     // XPAY-356 §7/§8 — regresión explícita: CreateQrStaticExecutor debe
@@ -219,10 +244,13 @@ public class CreateQrStaticExecutorTests
         Assert.Contains("qr_id_fingerprint", evidenceJson);
     }
 
-    // XPAY-357 §14 — evidencia futura debe registrar vat_present=false de
-    // forma inequívoca, sin inventar vat_type/vat_value/vat_base_value.
+    // XPAY-360 §15 — desde que vat fue restaurado, la evidencia futura debe
+    // registrar vat_present=TRUE de forma inequívoca, pero SIN exponer los
+    // valores concretos de vat_type/vat_value/vat_base_value (no son
+    // sensibles, pero CreateQrStaticEvidenceBuilder deliberadamente sólo
+    // registra presencia — mismo criterio ya aplicado a amount_present).
     [Fact]
-    public async Task ExecuteAsync_Success_EvidenceRecordsVatPresentFalse()
+    public async Task ExecuteAsync_Success_EvidenceRecordsVatPresentTrue()
     {
         var client = new FakeQrClient();
         var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
@@ -234,7 +262,7 @@ public class CreateQrStaticExecutorTests
         using var doc = System.Text.Json.JsonDocument.Parse(evidenceJson);
         var requestSanitized = doc.RootElement.GetProperty("request_sanitized");
 
-        Assert.False(requestSanitized.GetProperty("vat_present").GetBoolean());
+        Assert.True(requestSanitized.GetProperty("vat_present").GetBoolean());
         Assert.DoesNotContain("vat_type", evidenceJson);
         Assert.DoesNotContain("vat_value", evidenceJson);
         Assert.DoesNotContain("vat_base_value", evidenceJson);

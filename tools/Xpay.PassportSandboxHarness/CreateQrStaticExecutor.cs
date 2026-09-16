@@ -45,6 +45,30 @@ public static class CreateQrStaticExecutor
     private const string CertificationTerminalLabel      = "XPAY-M4-T1-CERT";
     private const string CertificationTransactionPurpose = "00";
 
+    // XPAY-360 — RESTAURADOS tras confirmación empírica: la ejecución real
+    // de XPAY-359 (evidence-2026-09-16T00-33-15Z.json, sin vat, según la
+    // corrección de XPAY-357) recibió HTTP 400 con
+    // error_code=invalid_parameter_value, error_message="Field 'vat' is
+    // required" — Passport Sandbox SÍ exige vat para STATIC, contradiciendo
+    // el ejemplo oficial documentado que el director había revisado (que no
+    // lo mostraba). El error confirma ÚNICAMENTE que vat es requerido — NO
+    // confirma por sí mismo qué vat_type/vat_value/vat_base_value son
+    // válidos. Estos tres valores concretos (FIXED/"0.00"/"0.00") se
+    // restauran porque son EXACTAMENTE los que M4-T1 usaba antes de
+    // XPAY-357, y siguen estando respaldados hoy por el contrato productivo
+    // (PassportQrClient.Validate acepta cualquier PassportQrVatType definido
+    // + cualquier vat_value/vat_base_value no vacíos) y por tests activos
+    // (PassportQrClientTests.CreateQrCodeAsync_StaticWithVatExplicitlyIncluded_IsAllowed,
+    // y el propio SyntheticVat() por defecto, usado también por DYNAMIC sin
+    // cambios) — no una inferencia nueva ni un valor inventado para este
+    // ticket. QUEDA PENDIENTE (fuera de alcance de XPAY-360, requiere
+    // confirmación adicional de Passport/director): si vat_type=FIXED y
+    // vat_value/vat_base_value="0.00" son la combinación que Passport
+    // finalmente aceptará — el error de XPAY-359 no llegó a evaluar esos
+    // subcampos porque vat estaba completamente ausente.
+    private const string CertificationVatValue     = "0.00";
+    private const string CertificationVatBaseValue = "0.00";
+
     public static async Task<KeyOperationResult> ExecuteAsync(
         IConfiguration configuration,
         IPassportQrClient qrClient,
@@ -102,11 +126,13 @@ public static class CreateQrStaticExecutor
         // contrato basada en el valor STATIC ya confirmado localmente,
         // no una conclusión causal definitiva.
         //
-        // XPAY-357 — vat deliberadamente AUSENTE (no se construye
-        // PassportQrVatRequest en absoluto): el ejemplo oficial STATIC
-        // vigente revisado por el director no lo muestra. PassportQrClient
-        // ya no lo exige incondicionalmente (sólo sigue siendo requerido
-        // para DYNAMIC, sin cambios) — ver PassportQrClient.Validate.
+        // XPAY-357 removió vat de este request (basándose en el ejemplo
+        // oficial STATIC vigente, que no lo mostraba); XPAY-360 lo
+        // RESTAURA tras confirmación empírica real de Passport Sandbox
+        // (XPAY-359: HTTP 400, "Field 'vat' is required") — ver comentario
+        // de CertificationVatValue/CertificationVatBaseValue arriba para el
+        // razonamiento completo. amount/inc/qr_code_reference permanecen
+        // deliberadamente AUSENTES, sin cambios respecto a XPAY-351/357.
         var request = new PassportCreateQrCodeRequest(
             KeyId: keyId,
             CustomerId: customerId,
@@ -114,7 +140,13 @@ public static class CreateQrStaticExecutor
             Channel: PassportQrChannel.POS,
             AdditionalInfo: new PassportQrAdditionalInfoRequest(
                 TransactionPurpose: CertificationTransactionPurpose,
-                TerminalLabel: CertificationTerminalLabel));
+                TerminalLabel: CertificationTerminalLabel))
+        {
+            Vat = new PassportQrVatRequest(
+                VatType: PassportQrVatType.FIXED,
+                VatValue: CertificationVatValue,
+                VatBaseValue: CertificationVatBaseValue),
+        };
 
         try
         {
