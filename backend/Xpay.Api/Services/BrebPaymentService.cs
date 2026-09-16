@@ -344,11 +344,29 @@ public class BrebPaymentService
         await using var dbTx = await _db.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            // Relectura fresca DENTRO de la transacción — condición
-            // necesaria para que la idempotencia sea real ante llamadas
-            // concurrentes/repetidas (polling + webhook llegando casi al
-            // mismo tiempo).
-            var retiro = await _db.PassportBrebRetiros.FindAsync([idBrebRetiro], cancellationToken)
+            // XPAY-381 FASE 2 — relectura fresca DENTRO de la transacción CON
+            // WITH (UPDLOCK, ROWLOCK), no un FindAsync plano. Antes de
+            // XPAY-381 esta línea era un SELECT sin lock: bajo READ COMMITTED
+            // (default de SQL Server), dos llamadas casi simultáneas a esta
+            // función para el MISMO retiro (p. ej. el nuevo reconciliador
+            // automático y el botón manual "Consultar estado", o dos ticks
+            // del reconciliador) podían AMBAS leer el mismo Estado="ENVIADO_
+            // PASSPORT" antes de que cualquiera hiciera commit, decidir AMBAS
+            // FinalizarLiquidado/LiberarRechazado, y sólo serializar más
+            // abajo en el UPDLOCK de wallet_saldos — para entonces la SEGUNDA
+            // llamada ya había decidido con datos obsoletos y ejecutaba
+            // AplicarLiquidacionAsync/AplicarRechazoAsync una SEGUNDA vez
+            // (doble movimiento de wallet, doble asiento ledger). El UPDLOCK
+            // aquí, con el MISMO patrón ya usado para wallet_saldos, hace que
+            // la segunda llamada BLOQUEE hasta que la primera confirme, y al
+            // reanudar relea el Estado YA finalizado — Decide() entonces
+            // devuelve NoOpYaFinalizado, exactamente como debe ser. Mismo
+            // orden de adquisición de locks en todos los casos (retiro
+            // primero, wallet_saldos después) — sin riesgo de deadlock por
+            // orden inconsistente.
+            var retiro = await _db.PassportBrebRetiros
+                .FromSqlInterpolated($"SELECT * FROM passport_breb_retiros WITH (UPDLOCK, ROWLOCK) WHERE id_breb_retiro = {idBrebRetiro}")
+                .FirstOrDefaultAsync(cancellationToken)
                 ?? throw new InvalidOperationException($"Retiro {idBrebRetiro} no encontrado.");
 
             if (!string.IsNullOrWhiteSpace(passportPaymentId) && string.IsNullOrWhiteSpace(retiro.PassportPaymentId))

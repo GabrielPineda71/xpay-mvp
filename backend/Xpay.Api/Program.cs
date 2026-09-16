@@ -47,6 +47,11 @@ builder.Services.AddScoped<WalletCierreDiarioComercioService>();
 builder.Services.AddScoped<WalletCajaComercioService>();
 builder.Services.AddScoped<CatalogoGeograficoService>();
 builder.Services.AddHostedService<CajaVencidaSchedulerService>();
+// XPAY-381 — reconciliación automática server-side de retiros Bre-B reales
+// transitorios (ENVIADO_PASSPORT). Requiere que IPassportPaymentClient y
+// BrebPaymentService ya estén registrados (ver registro Passport más abajo
+// en este archivo) — Scoped, resueltos por scope nuevo en cada barrido.
+builder.Services.AddHostedService<BrebPaymentReconciliationService>();
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 {
     o.MultipartBodyLengthLimit = 6 * 1024 * 1024; // 6 MB global — per-endpoint can restrict further
