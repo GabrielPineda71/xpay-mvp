@@ -44,6 +44,18 @@ jobs:
         env:
           VITE_API_BASE_URL: https://api-qa.xpaycol.com
 
+      # XPAY-413C — server.cjs/package.json recuperados del App Service QA
+      # real (xpay-admin-qa, vía Kudu VFS de solo lectura, XPAY-413B) y
+      # versionados en frontend/xpay-admin/qa-runtime/ — NUNCA generados por
+      # Vite. Se copian a dist/ recién ahora, después del build QA (para no
+      # ser borrados/sobrescritos por él) y antes de empaquetar. dist/ sigue
+      # siendo salida de build, no fuente: qa-runtime/ es la única fuente
+      # versionada de estos dos archivos.
+      - name: Copy QA runtime files
+        run: |
+          cp frontend/xpay-admin/qa-runtime/server.cjs frontend/xpay-admin/dist/server.cjs
+          cp frontend/xpay-admin/qa-runtime/package.json frontend/xpay-admin/dist/package.json
+
       # Empaqueta el CONTENIDO de dist/ en la raíz del ZIP (sin carpeta
       # "dist" envolvente) — Azure App Service espera los archivos
       # directamente en /home/site/wwwroot/.
