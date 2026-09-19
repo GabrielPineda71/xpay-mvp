@@ -187,11 +187,6 @@ function parseRecValorAmount(raw: string): { amount: number | null; error: strin
   return { amount: n, error: null };
 }
 
-function fmtTime(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
-}
-
 function kycLabel(estado: string): string {
   const labels: Record<string, string> = {
     NO_INICIADO: 'No iniciado',
@@ -1059,45 +1054,35 @@ export function UserWalletPage() {
   return (
     <div className="page">
       <h2>Mi Wallet</h2>
-      <p className="dashboard-subtitle">
-        Usuario: <strong>{user.usuario}</strong>
-        {' · '}Wallet #{miWallet.idWallet}
-        {' · '}<span className="badge badge-info">QA / Demo</span>
-      </p>
 
-      {/* ── Auto-refresh status bar ──────────────────────────────────────── */}
-      <div className="wallet-refresh-bar">
-        <span className="refresh-label">
-          {refreshing ? '● Actualizando...' : '↻ Actualización automática activa'}
-        </span>
-        {lastUpdated && !refreshing && (
-          <span className="refresh-time">Última actualización: {fmtTime(lastUpdated)}</span>
-        )}
-        <button
-          className="btn-refresh-now"
-          onClick={() => void loadCuenta()}
-          disabled={loading || refreshing}
-        >
-          Actualizar ahora
-        </button>
-        {refreshErr && !loading && (
-          <span className="refresh-err">{refreshErr}</span>
-        )}
-      </div>
+      {/* XPAY-415 — el encabezado técnico (Usuario/Wallet #/QA-Demo, la barra
+          de auto-refresh visible y el badge "Verificación de identidad"
+          repetido) se retira de esta vista: no aporta a la operación normal
+          y esa misma información (identidad, actualización) ya vive en
+          Perfil. La lógica de actualización automática (polling, loadCuenta,
+          useEffect) sigue intacta y corriendo en segundo plano — solo se
+          quita su indicador visual. */}
 
       {/* ── KYC status section ───────────────────────────────────────────── */}
+      {/* XPAY-415A — corrección de alcance: XPAY-415 pedía únicamente retirar
+          el texto técnico repetitivo ("Verificación de identidad:" y
+          "Identidad verificada.") — NO crear una política nueva de
+          visibilidad por estado KYC. Este bloque vuelve a renderizarse
+          exactamente en las mismas condiciones que antes de XPAY-415 (mismo
+          contenedor siempre presente, mismo badge siempre visible, mismas
+          ramas pendiente/en revisión/canStart/kycMsg, mismos botones y
+          handlers) — el único cambio real es la eliminación de esas dos
+          líneas de texto, sin tocar cuándo se puede iniciar/reintentar
+          Veriff ni ninguna acción necesaria para KYC no aprobado. */}
       {(() => {
         const canStart   = ['NO_INICIADO', 'RECHAZADO', 'EXPIRADO', 'ERROR'].includes(kycEstado);
         const isPending  = kycEstado === 'PENDIENTE';
         const inReview   = kycEstado === 'EN_REVISION';
-        const approved   = kycEstado === 'APROBADO';
         return (
           <div className="kyc-status-bar">
-            <span className="kyc-label">Verificación de identidad:</span>
             <span className={KYC_BADGE_CLASS[kycEstado] ?? 'kyc-badge kyc-badge-no-iniciado'}>
               {kycLabel(kycEstado)}
             </span>
-            {approved && <span className="kyc-nota kyc-nota-aprobado">Identidad verificada.</span>}
             {inReview && <span className="kyc-nota">Tu verificación está en revisión.</span>}
             {isPending && (
               <>
@@ -1150,7 +1135,7 @@ export function UserWalletPage() {
         ) : cuenta ? (
           <>
             <HeroBalanceCard
-              nombreWallet={cuenta.nombreWallet}
+              titulo={user.usuario}
               saldoFormateado={fmtMoney(cuenta.saldoDisponible)}
               estado={cuenta.estado}
             />
@@ -1163,11 +1148,49 @@ export function UserWalletPage() {
                 <strong>{fmtMoney(cuenta.saldoRetenido)}</strong>
               </div>
             )}
-            {cuenta.movimientos.length > 0 && (
-              <div style={{ marginTop: '1rem', fontSize: '0.82rem', color: '#718096' }}>
-                Último movimiento: {fmtDate(cuenta.movimientos[0].fecha)} — {cuenta.movimientos[0].tipoMovimiento}
+
+            {/* XPAY-415 — "Últimos movimientos": mismos datos ya cargados en
+                `cuenta.movimientos` (GET /api/reportes/mi-estado-cuenta, sin
+                endpoint nuevo), mismo orden que entrega el backend (más
+                reciente primero) y misma función descripcionVisible()/estilo
+                de fila que el tab "Movimientos" — solo recortado a 10 y con
+                jerarquía visual propia, separado de la tarjeta de saldo. */}
+            <div className="wallet-recent-movements">
+              <div className="wallet-recent-movements-header">
+                <span className="wallet-movements-title">Últimos movimientos</span>
+                {cuenta.movimientos.length > 0 && (
+                  <button
+                    type="button"
+                    className="wallet-send-link-btn"
+                    onClick={() => setTab('movimientos')}
+                  >
+                    Ver todos los movimientos
+                  </button>
+                )}
               </div>
-            )}
+              {cuenta.movimientos.length > 0 ? (
+                <ul className="wallet-movements-list">
+                  {cuenta.movimientos.slice(0, 10).map(m => (
+                    <li key={m.idMovimiento} className="wallet-movement-item">
+                      <div className="wallet-movement-main">
+                        <span className="wallet-movement-desc">{descripcionVisible(m)}</span>
+                        <span className={`wallet-movement-value${m.naturaleza === 'C' ? ' wallet-movement-value--credit' : ' wallet-movement-value--debit'}`}>
+                          {m.naturaleza === 'C' ? '+' : '−'}{fmtMoney(m.valor)}
+                        </span>
+                      </div>
+                      <div className="wallet-movement-meta">
+                        <span className={`wallet-movement-badge${m.naturaleza === 'C' ? ' wallet-movement-badge--credit' : ' wallet-movement-badge--debit'}`}>
+                          {m.tipoMovimiento}
+                        </span>
+                        <span className="wallet-movement-date">{fmtDate(m.fecha)}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="empty">Sin movimientos registrados.</div>
+              )}
+            </div>
           </>
         ) : null
       )}
@@ -1221,11 +1244,6 @@ export function UserWalletPage() {
           >
             {recQrBusy ? 'Generando...' : 'Generar QR'}
           </button>
-
-          <p className="wallet-receive-footnote">
-            QA/Demo · el QR contiene type=XPAY_TRANSFER, receiverWalletId={miWallet.idWallet} ·
-            sin dinero real · sin producción.
-          </p>
         </div>
       )}
 
@@ -1387,11 +1405,6 @@ export function UserWalletPage() {
           )}
           </>
           )}
-
-          <p className="wallet-send-footnote">
-            QA/Demo · transferencia ficticia · sin dinero real ·
-            Escanear QR solo rellena datos — la transferencia NO ocurre hasta confirmar.
-          </p>
         </div>
       )}
 
@@ -1543,11 +1556,6 @@ export function UserWalletPage() {
               )}
             </>
           )}
-
-          <p className="wallet-pay-footnote">
-            QA/Demo · pago ficticio · sin dinero real ·
-            Escanear QR solo rellena datos — el pago NO ocurre hasta confirmar.
-          </p>
         </div>
       )}
 
@@ -1715,8 +1723,6 @@ export function UserWalletPage() {
           ejecuta salvo que el propio usuario dispare cada acción. */}
       {tab === 'retirar-breb' && (
         <div className="breb-real-section">
-          <span className="breb-real-badge">Bre-B real — este retiro mueve dinero real</span>
-
           {brebLlaveLoad ? (
             <div className="loading">Cargando llave Bre-B...</div>
           ) : !brebLlave || brebLlave.keyType !== 'BCODE' ? (
@@ -1769,7 +1775,7 @@ export function UserWalletPage() {
               {/* Verificar mi llave — única acción que llama a Passport real */}
               <form className="breb-form" onSubmit={(e) => void handleVerificarLlaveReal(e)}>
                 <label>
-                  Confirma el valor de tu llave para verificarla
+                  Ingresa tu llave Bre-B para verificarla
                   <input
                     type="text"
                     value={realKeyValueInput}

@@ -93,8 +93,16 @@
   padding: 0.5rem var(--sp-5) 0.2rem;
 }
 
+/* XPAY-415 — logo ligeramente más grande (120px → 140px, +16%): cambio
+   moderado, solo CSS, reutiliza el mismo asset/componente (BrandMark).
+   height:auto en .wallet-brand-mark (regla base arriba) conserva la
+   proporción automáticamente; sin @media que sobreescriba este ancho en
+   otros breakpoints, así que el aumento aplica de forma consistente en
+   móvil/tablet/desktop sin deformar el logo ni romper el layout flex de
+   .wh-topbar (space-between, con margen suficiente para el ícono de la
+   derecha). */
 .wallet-shell-v2 .wallet-hero-logo {
-  width: 120px;
+  width: 140px;
 }
 
 .wallet-shell-v2 .wh-actions-icons {
@@ -1245,4 +1253,23 @@
   font-weight: 600;
   color: var(--fn-success);
   margin: var(--sp-2) 0 0;
+}
+
+/* ── "Últimos movimientos" en Mi Wallet (UserWalletPage.tsx, tab "saldo") —
+   XPAY-415. Reutiliza .wallet-movement-* (arriba) para las filas — solo
+   agrega jerarquía visual propia (separado de la tarjeta de saldo, sin
+   convertirse en un bloque gigantesco) y el encabezado con el link discreto
+   hacia el tab "Movimientos" completo. ── */
+.wallet-recent-movements {
+  margin-top: var(--sp-4);
+}
+.wallet-recent-movements-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.wallet-recent-movements-header .wallet-movements-title {
+  margin: 0;
 }

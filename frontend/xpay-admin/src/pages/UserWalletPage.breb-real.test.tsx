@@ -65,7 +65,11 @@ async function renderPage(initialTab = 'retirar-breb', getImpl: (path: string) =
     </MemoryRouter>,
   );
   // Espera a que cargue el estado inicial (saldo/llave) antes de continuar.
-  await waitFor(() => expect(screen.getByText(/Bre-B real/i)).toBeInTheDocument());
+  // XPAY-415 — el badge "Bre-B real" (aviso rojo permanente) se eliminó de
+  // esta vista; el placeholder del formulario de verificación es una ancla
+  // igual de estable para el estado "ya cargó, hay llave BCODE" que usan
+  // todos los tests de este archivo.
+  await waitFor(() => expect(screen.getByPlaceholderText(/Valor de tu llave BCODE/i)).toBeInTheDocument());
   return utils;
 }
 
@@ -81,7 +85,22 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     // La sección real debe existir y estar contenida en un solo bloque
     // (max-width acotado vía CSS, ya verificado por inspección — aquí sólo
     // confirmamos que el marcado esencial está presente en el DOM).
-    expect(screen.getByText(/Bre-B real — este retiro mueve dinero real/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Verificar mi llave/i })).toBeInTheDocument();
+  });
+
+  // XPAY-415 — el aviso rojo permanente "Bre-B real — este retiro mueve
+  // dinero real" se retira de la vista; la confirmación final del retiro
+  // (monto/destino/institución/"moverá dinero real") sigue intacta y se
+  // prueba por separado más abajo.
+  it('XPAY-415: ya NO muestra el aviso rojo permanente "Bre-B real — este retiro mueve dinero real"', async () => {
+    await renderPage();
+    expect(screen.queryByText(/Bre-B real — este retiro mueve dinero real/i)).not.toBeInTheDocument();
+  });
+
+  it('XPAY-415: el formulario de verificación usa "Ingresa tu llave Bre-B para verificarla"', async () => {
+    await renderPage();
+    expect(screen.getByText('Ingresa tu llave Bre-B para verificarla')).toBeInTheDocument();
+    expect(screen.queryByText(/Confirma el valor de tu llave para verificarla/i)).not.toBeInTheDocument();
   });
 
   it('muestra el saldo disponible y, si hay retenido, también el retenido', async () => {
