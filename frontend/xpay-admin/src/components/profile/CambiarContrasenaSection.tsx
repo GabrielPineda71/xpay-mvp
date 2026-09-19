@@ -97,7 +97,18 @@ export function CambiarContrasenaSection() {
           Cambiar contraseña
         </button>
       ) : (
-        <form className="profile-edit-form" onSubmit={e => void handleSubmit(e)} autoComplete="off">
+        // XPAY-412 — noValidate: sin esto, la validación HTML5 nativa de los
+        // 3 campos `required` intercepta el evento submit ANTES de que este
+        // handler se ejecute cuando algún campo queda vacío — el navegador
+        // bloquea el envío silenciosamente (o muestra su propio tooltip
+        // nativo) y `setErrorLocal('Completa los tres campos.')` nunca se
+        // alcanza. React ya es la única fuente de verdad para estos
+        // mensajes (política de contraseña, coincidencia de confirmación,
+        // errores del backend) — noValidate simplemente deja que handleSubmit
+        // sea quien decide, sin cambiar ninguna validación existente.
+        // `required` se conserva en los inputs como semántica/accesibilidad,
+        // ya no bloquea el submit.
+        <form className="profile-edit-form" onSubmit={e => void handleSubmit(e)} autoComplete="off" noValidate>
           <label>
             Contraseña actual
             <input

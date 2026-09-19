@@ -165,7 +165,16 @@ export function MiInformacionSection() {
           </button>
         </>
       ) : (
-        <form className="profile-edit-form" onSubmit={e => void handleGuardar(e)}>
+        // XPAY-412 — noValidate: mismo motivo que CambiarContrasenaSection.tsx.
+        // Sin esto, la validación HTML5 nativa (Celular `required`, Email
+        // `type="email"`) intercepta el submit ANTES de que handleGuardar se
+        // ejecute — un email con formato inválido, por ejemplo, nunca llega
+        // a llamar `actualizar()`/PATCH, así que el mensaje de error real del
+        // backend (setMensaje en useMiPerfil) jamás se muestra. React ya
+        // valida lo que necesita validar aquí (celular no vacío) y delega el
+        // resto al backend, que es la autoridad real de formato/longitud —
+        // noValidate no cambia esa lógica, solo deja de bloquearla.
+        <form className="profile-edit-form" onSubmit={e => void handleGuardar(e)} noValidate>
           <label>
             Celular
             <input
