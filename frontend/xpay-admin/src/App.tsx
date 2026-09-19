@@ -96,8 +96,10 @@ export default function App() {
                 <Route path="mi-wallet"   element={<UserWalletPage />} />
                 <Route path="mi-wallet/libranza" element={<MiWalletLibranzaPage />} />
                 <Route path="mi-wallet/cartera" element={<MiCarteraOrdinariaPage />} />
-                {/* XPAY-392 — Perfil real (Fase 1: Datos personales de solo
-                    lectura + Mi llave Bre-B + placeholder de Seguridad). */}
+                {/* XPAY-392/401 — Perfil dedicado: Mi información (datos
+                    legales de solo lectura + datos de contacto editables),
+                    Seguridad (cambio voluntario de contraseña) y Mi llave
+                    Bre-B. */}
                 <Route path="mi-wallet/perfil" element={<ProfilePage />} />
               </Route>
 
