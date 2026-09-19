@@ -24,6 +24,10 @@ jobs:
         working-directory: frontend/xpay-admin
         run: npm install
 
+      - name: Test
+        working-directory: frontend/xpay-admin
+        run: npm test
+
       - name: Build
         working-directory: frontend/xpay-admin
         run: npm run build
