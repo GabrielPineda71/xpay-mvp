@@ -33,3 +33,46 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE_URL: http://localhost:5000
+
+      # XPAY-413A — build QA-específico, separado del build de validación de
+      # arriba (que usa localhost:5000 y no se conserva). VITE_API_BASE_URL
+      # es configuración pública de frontend (se embebe en el bundle
+      # servido al navegador), no un secreto — no requiere GitHub Secrets.
+      - name: Build QA artifact
+        working-directory: frontend/xpay-admin
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: https://api-qa.xpaycol.com
+
+      # Empaqueta el CONTENIDO de dist/ en la raíz del ZIP (sin carpeta
+      # "dist" envolvente) — Azure App Service espera los archivos
+      # directamente en /home/site/wwwroot/.
+      - name: Package QA artifact
+        working-directory: frontend/xpay-admin/dist
+        run: zip -r "../xpay-admin-qa-${GITHUB_SHA}.zip" . -x "*.DS_Store"
+
+      - name: Compute QA artifact checksum and build info
+        working-directory: frontend/xpay-admin
+        run: |
+          sha256sum "xpay-admin-qa-${GITHUB_SHA}.zip" > "xpay-admin-qa-${GITHUB_SHA}.sha256.txt"
+          echo "ZIP: xpay-admin-qa-${GITHUB_SHA}.zip"
+          echo "SHA-256: $(cut -d' ' -f1 "xpay-admin-qa-${GITHUB_SHA}.sha256.txt")"
+          echo "Commit: ${GITHUB_SHA}"
+          {
+            echo "GIT_SHA=${GITHUB_SHA}"
+            echo "TARGET=QA"
+            echo "VITE_API_BASE_URL=https://api-qa.xpaycol.com"
+          } > "xpay-admin-qa-build-info.txt"
+
+      # Solo conserva el artifact — NO despliega nada. XPAY-414 descarga
+      # este ZIP ya validado y lo publica en Azure sin recompilar.
+      - name: Upload QA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xpay-admin-qa-${{ github.sha }}
+          path: |
+            frontend/xpay-admin/xpay-admin-qa-${{ github.sha }}.zip
+            frontend/xpay-admin/xpay-admin-qa-${{ github.sha }}.sha256.txt
+            frontend/xpay-admin/xpay-admin-qa-build-info.txt
+          retention-days: 7
+          if-no-files-found: error
