@@ -156,7 +156,15 @@
   display: flex;
   gap: var(--sp-4);
   overflow-x: auto;
-  padding: var(--sp-4) var(--sp-5) 0;
+  /* XPAY-422 — padding-top reducido en la regla base (mobile-first: esta
+     regla base ES el estilo móvil, ver convención de .wh-topbar/.wallet-hero
+     de este mismo archivo) de var(--sp-4)=16px a var(--sp-2)=8px, para
+     acercar visualmente las acciones al logo/header sin tocar el logo ni
+     los botones en sí — el espacio entre .wh-topbar y este bloque venía de
+     la suma de ese padding-top con la altura del logo ya agrandado en
+     XPAY-415. Restaurado a 16px sólo en desktop/tablet (@media min-width:
+     641px, abajo) para no afectar esos breakpoints. */
+  padding: var(--sp-2) var(--sp-5) 0;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
   touch-action: auto;
@@ -356,6 +364,10 @@
     overflow: visible;
     flex-wrap: wrap;
     justify-content: center;
+    /* XPAY-422 — restaura el padding-top original (16px) sólo desde este
+       breakpoint: la reducción a 8px de la regla base es específicamente
+       para el espacio ajustado de móvil, no debe afectar desktop/tablet. */
+    padding-top: var(--sp-4);
   }
 
   .wallet-shell-v2 .wallet-shell-content {
@@ -376,6 +388,16 @@
     right: calc((100% - 640px) / 2 + var(--sp-4));
     left: auto;
   }
+}
+
+/* XPAY-422 A3 — identificación simple del usuario en Mi Wallet, fuera de la
+   tarjeta de saldo y del bloque KYC. Texto plano, sin badge ni color de
+   estado — deliberadamente NO reutiliza .kyc-badge/.wallet-balance-badge. */
+.wallet-username-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--xpay-text-secondary);
+  margin: 0 0 var(--sp-2);
 }
 
 /* ── HeroBalanceCard (UserWalletPage.tsx, tab "saldo") — tarjeta blanca
@@ -400,12 +422,6 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--sp-2);
-}
-.wallet-balance-label {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--xpay-text-secondary);
 }
 .wallet-balance-badge {
   font-size: 0.68rem;

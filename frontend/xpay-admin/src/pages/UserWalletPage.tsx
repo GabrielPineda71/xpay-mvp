@@ -1,11 +1,11 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
-import { Html5Qrcode } from 'html5-qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { get, post, HttpUncertainError } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
 import { HeroBalanceCard } from '../components/wallet/HeroBalanceCard.tsx';
+import { useQrScanner } from '../hooks/useQrScanner.ts';
 
 // Fase 71.2-E-C: DEMO_MAP eliminado — la wallet propia se resuelve vía
 // GET /api/wallets/mi-wallet (claim idPersona del JWT), no por username.
@@ -296,7 +296,6 @@ export function UserWalletPage() {
   // de envMsg (que sigue reservado para errores del formulario reutilizable).
   const [envSuccessMsg, setEnvSuccessMsg] = useState<string | null>(null);
   const envSuccessTimerRef = useRef<number | null>(null);
-  const envScannerRef = useRef<Html5Qrcode | null>(null);
   // Fase 71.2-E-G: una Idempotency-Key por intento lógico de transferencia —
   // se reutiliza mientras destino/valor/descripción no cambien (reintento del
   // mismo intento); se descarta al tener éxito o al cambiar cualquiera de
@@ -358,7 +357,6 @@ export function UserWalletPage() {
   const [pagScanning,     setPagScanning]     = useState(false);
   const [pagScanErr,      setPagScanErr]      = useState<string | null>(null);
   const [pagMetodoPago,   setPagMetodoPago]   = useState<'wallet' | 'cupo' | null>(null);
-  const pagScannerRef = useRef<Html5Qrcode | null>(null);
   // Fase 71.2-E-G: misma idea que envIdemRef, para el pago QR.
   const pagIdemRef = useRef<{ key: string; qrCode: string; valor: string } | null>(null);
 
@@ -501,17 +499,15 @@ export function UserWalletPage() {
   }, [kycEstado, loadKyc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Cleanup on unmount ────────────────────────────────────────────────────
+  // XPAY-422 D — la liberación de cámara/scanner ya no vive aquí: cada
+  // `useQrScanner` (ver más abajo) gestiona su propio unmount vía el
+  // cleanup de su efecto interno, encolado en su propia cadena serializada.
+  // Este efecto conserva únicamente los timers que sí son locales a esta
+  // página.
   useEffect(() => {
     return () => {
       if (newMovToastTimerRef.current) clearTimeout(newMovToastTimerRef.current);
       if (envSuccessTimerRef.current) clearTimeout(envSuccessTimerRef.current);
-      const stopScanner = async (s: Html5Qrcode | null) => {
-        if (!s) return;
-        try { await s.stop(); } catch { /* ignore */ }
-        try { s.clear(); } catch { /* ignore */ }
-      };
-      void stopScanner(envScannerRef.current);
-      void stopScanner(pagScannerRef.current);
     };
   }, []);
 
@@ -553,84 +549,52 @@ export function UserWalletPage() {
   const parseMerchantQrRef = useRef(parseMerchantQr);
   parseMerchantQrRef.current = parseMerchantQr;
 
-  // ── Env scanner lifecycle (html5-qrcode) ──────────────────────────────────
-  // XPAY-390 — se agrega el guard `tab !== 'enviar'` (y `tab` a las deps):
-  // si el usuario cambia de tab sin que este componente se desmonte (el
-  // sistema de tabs es puramente condicional dentro del mismo render), el
-  // efecto se reevalúa, la condición falla, y React ejecuta el cleanup de
-  // la ejecución anterior (teardown → scanner.stop()/clear()) ANTES de
-  // hacer nada más — libera la cámara aunque `envScanning` siga en `true`
-  // en el estado. Sin este guard, cambiar de tab solo removía el <div>
-  // contenedor del DOM (por el renderizado condicional de la pestaña) pero
-  // NO detenía el MediaStream de la cámara.
-  useEffect(() => {
-    if (!envScanning || tab !== 'enviar') return;
-    let done = false;
-    const scanner = new Html5Qrcode('env-qr-reader');
-    envScannerRef.current = scanner;
+  // ── Scanner físico único compartido (XPAY-422B) ───────────────────────────
+  // XPAY-422 Parte D introdujo `useQrScanner` con DOS llamadas separadas
+  // (una por modo), cada una con su propio scannerRef/cadena de promesas
+  // interna. La auditoría XPAY-422A encontró que eso NO impedía que el
+  // stop() de Enviar y el start() de Comprar corrieran solapados sobre la
+  // MISMA cámara física del dispositivo al cambiar de tab (dos colas
+  // independientes, sin coordinación entre sí) — la misma clase de
+  // condición de carrera que XPAY-421 diagnosticó, ahora entre dos hooks en
+  // vez de dentro de uno solo.
+  //
+  // La corrección NO es una cadena global de módulo: es reconocer que en
+  // esta página solo puede existir UNA sesión física de cámara a la vez, y
+  // modelar eso literalmente con UNA SOLA invocación de `useQrScanner`, cuyo
+  // "objetivo" (elementId + callbacks) se deriva de qué modo está deseado
+  // en cada render. Al ser una única llamada, hay un único scannerRef y una
+  // única cadena de promesas para TODA la página — cualquier transición,
+  // incluidas las que cruzan de Enviar a Comprar o viceversa, pasa por la
+  // misma serialización ya auditada (XPAY-421/422/422A) sin cambiarla ni
+  // duplicarla: "cambiar de modo" es, para el hook, exactamente el mismo
+  // caso ya probado de "toggle activo→inactivo→activo" (ver SCANNER TEST 3),
+  // solo que el segundo "activo" apunta a otro elementId/callback.
+  const scannerMode: 'enviar' | 'pagar' | null =
+    envScanning && tab === 'enviar' ? 'enviar' :
+    pagScanning && tab === 'pagar'  ? 'pagar'  :
+    null;
 
-    const teardown = async () => {
-      try { await scanner.stop(); } catch { /* ignore */ }
-      try { scanner.clear(); } catch { /* ignore */ }
-      envScannerRef.current = null;
-    };
-
-    void scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      (text) => {
-        if (done) return;
-        done = true;
-        void teardown().then(() => { setEnvScanning(false); parseTransferQrRef.current(text); });
-      },
-      () => { /* per-frame decode miss — normal, ignored */ },
-    ).catch(() => {
-      if (done) return;
-      done = true;
-      void teardown().then(() => {
-        setEnvScanning(false);
-        setEnvScanErr('No se pudo abrir la cámara. Puedes pegar el código QR manualmente.');
-      });
-    });
-
-    return () => { done = true; void teardown(); };
-  }, [envScanning, tab]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Pag scanner lifecycle (html5-qrcode) ──────────────────────────────────
-  // XPAY-390 — mismo guard/razón que el scanner de Enviar (ver comentario
-  // arriba): libera la cámara al cambiar de tab, no solo al desmontar.
-  useEffect(() => {
-    if (!pagScanning || tab !== 'pagar') return;
-    let done = false;
-    const scanner = new Html5Qrcode('pag-qr-reader');
-    pagScannerRef.current = scanner;
-
-    const teardown = async () => {
-      try { await scanner.stop(); } catch { /* ignore */ }
-      try { scanner.clear(); } catch { /* ignore */ }
-      pagScannerRef.current = null;
-    };
-
-    void scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 250, height: 250 } },
-      (text) => {
-        if (done) return;
-        done = true;
-        void teardown().then(() => { setPagScanning(false); parseMerchantQrRef.current(text); });
-      },
-      () => { /* per-frame decode miss — normal, ignored */ },
-    ).catch(() => {
-      if (done) return;
-      done = true;
-      void teardown().then(() => {
-        setPagScanning(false);
-        setPagScanErr('No se pudo abrir la cámara. Puedes pegar el código QR manualmente.');
-      });
-    });
-
-    return () => { done = true; void teardown(); };
-  }, [pagScanning, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  useQrScanner({
+    active: scannerMode !== null,
+    // Sin sesión deseada el valor es irrelevante (no se llama start()) —
+    // se deja vacío en vez de un elementId "stale" de un modo ya abandonado.
+    elementId: scannerMode === 'enviar' ? 'env-qr-reader' : scannerMode === 'pagar' ? 'pag-qr-reader' : '',
+    // Cada callback vuelve a comprobar `scannerMode` al momento de
+    // ejecutarse (no solo al momento de registrarse): un decode/error tardío
+    // de una sesión ya inválida nunca llega aquí (isStillWanted() de
+    // useQrScanner lo filtra antes), pero esta doble comprobación documenta
+    // explícitamente la regla del punto 5 de XPAY-422B — un callback de la
+    // sesión anterior jamás debe tocar el estado de la sesión nueva.
+    onDecode: (text) => {
+      if (scannerMode === 'enviar') { setEnvScanning(false); parseTransferQrRef.current(text); }
+      else if (scannerMode === 'pagar') { setPagScanning(false); parseMerchantQrRef.current(text); }
+    },
+    onError: (message) => {
+      if (scannerMode === 'enviar') { setEnvScanning(false); setEnvScanErr(message); }
+      else if (scannerMode === 'pagar') { setPagScanning(false); setPagScanErr(message); }
+    },
+  });
 
   // ── Auto-inicio de escaneo al entrar a 'enviar'/'pagar', y liberación al
   //    salir (XPAY-390 R4/R5) ─────────────────────────────────────────────
@@ -1063,26 +1027,34 @@ export function UserWalletPage() {
           useEffect) sigue intacta y corriendo en segundo plano — solo se
           quita su indicador visual. */}
 
+      {/* XPAY-422 A3 — identificación simple del usuario, SIEMPRE visible,
+          independiente del estado KYC. Reemplaza el espacio que antes ocupaba
+          la franja "Aprobado" — texto plano, sin badge, sin color de estado. */}
+      <p className="wallet-username-label">{user.usuario}</p>
+
       {/* ── KYC status section ───────────────────────────────────────────── */}
-      {/* XPAY-415A — corrección de alcance: XPAY-415 pedía únicamente retirar
-          el texto técnico repetitivo ("Verificación de identidad:" y
-          "Identidad verificada.") — NO crear una política nueva de
-          visibilidad por estado KYC. Este bloque vuelve a renderizarse
-          exactamente en las mismas condiciones que antes de XPAY-415 (mismo
-          contenedor siempre presente, mismo badge siempre visible, mismas
-          ramas pendiente/en revisión/canStart/kycMsg, mismos botones y
-          handlers) — el único cambio real es la eliminación de esas dos
-          líneas de texto, sin tocar cuándo se puede iniciar/reintentar
-          Veriff ni ninguna acción necesaria para KYC no aprobado. */}
+      {/* XPAY-422 A2 — el bloque completo (badge + notas + botones) deja de
+          renderizarse cuando kycEstado==='APROBADO' y no hay un kycMsg
+          transitorio pendiente de mostrar: en ese estado no tiene ninguna
+          función más allá de repetir "Aprobado" (sin botón, sin nota — ver
+          auditoría XPAY-421/422), y esa identidad ya vive en Perfil. Para
+          CUALQUIER otro estado (pendiente/en revisión/canStart) el bloque se
+          preserva EXACTAMENTE igual que antes — mismas condiciones, mismos
+          botones, mismos handlers (loadKyc/handleIniciarVerificacion), sin
+          tocar cuándo se puede iniciar/reintentar Veriff. */}
       {(() => {
         const canStart   = ['NO_INICIADO', 'RECHAZADO', 'EXPIRADO', 'ERROR'].includes(kycEstado);
         const isPending  = kycEstado === 'PENDIENTE';
         const inReview   = kycEstado === 'EN_REVISION';
+        const approved   = kycEstado === 'APROBADO';
+        if (approved && !kycMsg) return null;
         return (
           <div className="kyc-status-bar">
-            <span className={KYC_BADGE_CLASS[kycEstado] ?? 'kyc-badge kyc-badge-no-iniciado'}>
-              {kycLabel(kycEstado)}
-            </span>
+            {!approved && (
+              <span className={KYC_BADGE_CLASS[kycEstado] ?? 'kyc-badge kyc-badge-no-iniciado'}>
+                {kycLabel(kycEstado)}
+              </span>
+            )}
             {inReview && <span className="kyc-nota">Tu verificación está en revisión.</span>}
             {isPending && (
               <>
@@ -1135,7 +1107,6 @@ export function UserWalletPage() {
         ) : cuenta ? (
           <>
             <HeroBalanceCard
-              titulo={user.usuario}
               saldoFormateado={fmtMoney(cuenta.saldoDisponible)}
               estado={cuenta.estado}
             />

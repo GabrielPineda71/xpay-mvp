@@ -103,20 +103,54 @@ describe('UserWalletPage — Mi Wallet simplificado (XPAY-415)', () => {
     expect(screen.queryByText('Verificación de identidad:')).not.toBeInTheDocument();
     // "Identidad verificada." (nota redundante con Perfil) se elimina.
     expect(screen.queryByText('Identidad verificada.')).not.toBeInTheDocument();
-    // XPAY-415A — corrección de alcance: el bloque KYC (badge de estado)
-    // sigue renderizándose exactamente en las mismas condiciones que antes
-    // de XPAY-415, sin ninguna política nueva de visibilidad por estado —
-    // solo se retiraron esos dos textos puntuales.
-    expect(screen.getByText('Aprobado')).toBeInTheDocument();
+    // XPAY-422 A2 — corrige XPAY-415A: ahora sí se autoriza explícitamente
+    // ocultar el bloque KYC completo (badge incluido) cuando el estado es
+    // APROBADO y no hay un mensaje transitorio pendiente — ya no aporta
+    // nada más allá de repetir "Aprobado", y esa identidad ya vive en
+    // Perfil. Ver tests F/G más abajo para los estados NO aprobados, donde
+    // el bloque se preserva funcionalmente sin cambios.
+    expect(screen.queryByText('Aprobado')).not.toBeInTheDocument();
   });
 
-  it('B: la tarjeta de saldo ya no muestra el nombre técnico interno de la wallet', async () => {
+  it('B: la tarjeta de saldo ya no muestra el nombre técnico interno de la wallet, ni el usuario (XPAY-422 A4)', async () => {
     renderWalletAt('saldo');
     await waitFor(() => expect(screen.getByText('Últimos movimientos')).toBeInTheDocument());
     expect(screen.queryByText('Wallet qa.usuario1')).not.toBeInTheDocument();
-    // En su lugar, la tarjeta muestra el usuario (apropiado para cliente).
-    expect(screen.getByText('qa.usuario1')).toBeInTheDocument();
+
+    // XPAY-422 A3/A4 — el usuario ahora se identifica FUERA de la tarjeta de
+    // saldo, en un párrafo propio ("wallet-username-label"); HeroBalanceCard
+    // ya no recibe ni renderiza ningún prop de usuario/título.
+    const usernameLabel = document.querySelector('.wallet-username-label');
+    expect(usernameLabel).not.toBeNull();
+    expect(usernameLabel).toHaveTextContent('qa.usuario1');
+
+    const balanceCard = document.querySelector('.wallet-balance-card');
+    expect(balanceCard).not.toBeNull();
+    expect(balanceCard).not.toHaveTextContent('qa.usuario1');
+
+    // La tarjeta conserva estado y saldo — nada más se le quitó.
+    expect(balanceCard).toHaveTextContent('ACTIVA');
     expect(screen.getByText('Disponible')).toBeInTheDocument();
+  });
+
+  it('F: KYC PENDIENTE conserva badge, nota y botón "Actualizar estado" sin cambios (XPAY-422 A2)', async () => {
+    renderWalletAt('saldo', (path: string) =>
+      path === '/api/kyc/mi-estado'
+        ? Promise.resolve({ success: true, data: { estadoKyc: 'PENDIENTE' } })
+        : apiRoutedGet(path));
+    await waitFor(() => expect(screen.getByText('Pendiente')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Actualizar estado' })).toBeInTheDocument();
+    // El párrafo de usuario sigue visible igual, independiente del KYC.
+    expect(document.querySelector('.wallet-username-label')).toHaveTextContent('qa.usuario1');
+  });
+
+  it('G: KYC NO_INICIADO conserva badge, nota y botón "Iniciar verificación" sin cambios (XPAY-422 A2)', async () => {
+    renderWalletAt('saldo', (path: string) =>
+      path === '/api/kyc/mi-estado'
+        ? Promise.resolve({ success: true, data: { estadoKyc: 'NO_INICIADO' } })
+        : apiRoutedGet(path));
+    await waitFor(() => expect(screen.getByText('No iniciado')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Iniciar verificación' })).toBeInTheDocument();
   });
 
   it('B: muestra "Últimos movimientos" con como máximo 10 filas aunque existan más (15 en el fixture)', async () => {
