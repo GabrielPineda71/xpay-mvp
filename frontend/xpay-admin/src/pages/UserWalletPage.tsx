@@ -76,7 +76,9 @@ type Msg = { ok: boolean; text: string };
 type Tab = 'saldo' | 'recibir' | 'enviar' | 'pagar' | 'movimientos' | 'banco' | 'retirar-breb';
 const VALID_TABS: Tab[] = ['saldo', 'recibir', 'enviar', 'pagar', 'movimientos', 'banco', 'retirar-breb'];
 
-interface BrebLlave {
+// XPAY-392 — exportado para que useMyBrebKey.ts (Perfil) reutilice
+// exactamente el mismo tipo, sin duplicarlo. No cambia forma ni semántica.
+export interface BrebLlave {
   idBrebLlave:     number;
   tipoSujeto:      string;
   keyType:         string;
@@ -171,6 +173,20 @@ function validatePin(pin: string): string | null {
   return null;
 }
 
+// XPAY-390 — valor opcional COP del QR de Recibir. Vacío → QR base sin
+// amount (válido, no es un error). Si hay texto, debe ser un entero
+// positivo (sin decimales, sin negativos, sin cero explícito, sin texto/
+// NaN) — nunca se deja pasar un valor "raro" al payload del QR.
+function parseRecValorAmount(raw: string): { amount: number | null; error: string | null } {
+  const trimmed = raw.trim();
+  if (trimmed === '') return { amount: null, error: null };
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return { amount: null, error: 'Ingresa un valor numérico válido.' };
+  if (n <= 0) return { amount: null, error: 'El valor debe ser mayor a cero.' };
+  if (!Number.isInteger(n)) return { amount: null, error: 'Ingresa un valor en pesos, sin decimales.' };
+  return { amount: n, error: null };
+}
+
 function fmtTime(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
@@ -257,9 +273,16 @@ export function UserWalletPage() {
   const opInProgressRef     = useRef(false); // true during financial transactions
 
   // ── Recibir dinero ────────────────────────────────────────────────────────
-  const [recValor,   setRecValor]   = useState('');
-  const [recQrSrc,   setRecQrSrc]   = useState<string | null>(null);
-  const [recQrBusy,  setRecQrBusy]  = useState(false);
+  const [recValor,    setRecValor]    = useState('');
+  const [recValorErr, setRecValorErr] = useState<string | null>(null);
+  const [recQrSrc,    setRecQrSrc]    = useState<string | null>(null);
+  const [recQrAmount, setRecQrAmount] = useState<number | null>(null);
+  const [recQrBusy,   setRecQrBusy]   = useState(false);
+  // XPAY-390 — recuerda el idWallet para el que se generó el último QR, de
+  // modo que si cambia la wallet activa (usuario distinto en la misma
+  // instancia montada) el QR obsoleto se invalide y se regenere para la
+  // wallet correcta — nunca mostrar un QR de otra wallet.
+  const recQrWalletIdRef = useRef<number | null>(null);
 
   // ── Enviar dinero ─────────────────────────────────────────────────────────
   const [envDest,       setEnvDest]       = useState<number | null>(null);
@@ -294,12 +317,15 @@ export function UserWalletPage() {
   const kycEstadoRef = useRef<string>('NO_INICIADO');
 
   // ── Bre-B / Retirar a mi banco ───────────────────────────────────────────
+  // XPAY-392A — brebKeyType/brebKeyValue/brebRegBusy/brebRegMsg y
+  // handleRegistrarLlave (POST /api/breb/mi-llave) fueron eliminados de
+  // aquí: el registro/actualización de la llave vive ahora exclusivamente
+  // en Perfil → Mi llave Bre-B (useMyBrebKey.ts/BrebMyKeySection.tsx,
+  // mismo endpoint). Ya no tenían ningún formulario que los invocara desde
+  // XPAY-392. brebLlave/brebLlaveLoad se conservan — siguen siendo la
+  // fuente de estado de la llave para este tab y para "retirar-breb".
   const [brebLlave,      setBrebLlave]      = useState<BrebLlave | null>(null);
   const [brebLlaveLoad,  setBrebLlaveLoad]  = useState(false);
-  const [brebKeyType,    setBrebKeyType]    = useState('ID');
-  const [brebKeyValue,   setBrebKeyValue]   = useState('');
-  const [brebRegBusy,    setBrebRegBusy]    = useState(false);
-  const [brebRegMsg,     setBrebRegMsg]     = useState<Msg | null>(null);
   const [brebRetiros,    setBrebRetiros]    = useState<BrebRetiro[]>([]);
   const [brebRetValor,   setBrebRetValor]   = useState('');
   const [brebRetBusy,    setBrebRetBusy]    = useState(false);
@@ -533,8 +559,17 @@ export function UserWalletPage() {
   parseMerchantQrRef.current = parseMerchantQr;
 
   // ── Env scanner lifecycle (html5-qrcode) ──────────────────────────────────
+  // XPAY-390 — se agrega el guard `tab !== 'enviar'` (y `tab` a las deps):
+  // si el usuario cambia de tab sin que este componente se desmonte (el
+  // sistema de tabs es puramente condicional dentro del mismo render), el
+  // efecto se reevalúa, la condición falla, y React ejecuta el cleanup de
+  // la ejecución anterior (teardown → scanner.stop()/clear()) ANTES de
+  // hacer nada más — libera la cámara aunque `envScanning` siga en `true`
+  // en el estado. Sin este guard, cambiar de tab solo removía el <div>
+  // contenedor del DOM (por el renderizado condicional de la pestaña) pero
+  // NO detenía el MediaStream de la cámara.
   useEffect(() => {
-    if (!envScanning) return;
+    if (!envScanning || tab !== 'enviar') return;
     let done = false;
     const scanner = new Html5Qrcode('env-qr-reader');
     envScannerRef.current = scanner;
@@ -564,11 +599,13 @@ export function UserWalletPage() {
     });
 
     return () => { done = true; void teardown(); };
-  }, [envScanning]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [envScanning, tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Pag scanner lifecycle (html5-qrcode) ──────────────────────────────────
+  // XPAY-390 — mismo guard/razón que el scanner de Enviar (ver comentario
+  // arriba): libera la cámara al cambiar de tab, no solo al desmontar.
   useEffect(() => {
-    if (!pagScanning) return;
+    if (!pagScanning || tab !== 'pagar') return;
     let done = false;
     const scanner = new Html5Qrcode('pag-qr-reader');
     pagScannerRef.current = scanner;
@@ -598,10 +635,70 @@ export function UserWalletPage() {
     });
 
     return () => { done = true; void teardown(); };
-  }, [pagScanning]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pagScanning, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Auto-inicio de escaneo al entrar a 'enviar'/'pagar', y liberación al
+  //    salir (XPAY-390 R4/R5) ─────────────────────────────────────────────
+  // Auto-inicio: sólo si aún no hay destino/QR resuelto y no se está
+  // escaneando ya (guard evita reintentos en loop). Reutiliza exactamente
+  // el mismo estado/efecto de escaneo que el botón manual usaba antes —
+  // ningún handler financiero se modifica.
+  useEffect(() => {
+    if (tab === 'enviar' && !envDest && !envManual && !envScanning) {
+      setEnvScanning(true);
+    }
+  }, [tab, envDest, envManual, envScanning]);
+
+  useEffect(() => {
+    if (tab === 'pagar' && !pagQrCode && !pagScanning) {
+      setPagScanning(true);
+    }
+  }, [tab, pagQrCode, pagScanning]);
+
+  // Liberación explícita del flag al abandonar el tab — el guard `tab !==`
+  // dentro de cada efecto de scanner ya detiene la cámara real; esto sólo
+  // mantiene el estado de React consistente con la realidad (no queda
+  // "envScanning=true" fantasma mientras no hay cámara activa).
+  useEffect(() => {
+    if (tab !== 'enviar' && envScanning) setEnvScanning(false);
+  }, [tab, envScanning]);
+
+  useEffect(() => {
+    if (tab !== 'pagar' && pagScanning) setPagScanning(false);
+  }, [tab, pagScanning]);
+
+  // ── Auto-generación del QR base de Recibir al entrar al tab (XPAY-390 R2/
+  //    R3) — SIN backend, SIN Passport: mismo `generarQr(null)` ya usado por
+  //    el botón manual. Guard `!recQrSrc` evita loops/regeneraciones
+  //    innecesarias — una vez generado, no se vuelve a generar solo por
+  //    reentrar al tab (se conserva el QR ya mostrado).
+  useEffect(() => {
+    if (tab === 'recibir' && user && miWallet && !recQrSrc && !recQrBusy) {
+      void generarQr(null);
+    }
+  }, [tab, user, miWallet, recQrSrc, recQrBusy]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Si la wallet activa cambia (usuario distinto en la misma instancia
+  // montada), el QR ya mostrado queda obsoleto — se invalida para que el
+  // efecto de arriba lo regenere para la wallet correcta.
+  useEffect(() => {
+    if (!miWallet) return;
+    if (recQrWalletIdRef.current !== null && recQrWalletIdRef.current !== miWallet.idWallet) {
+      setRecQrSrc(null);
+      setRecQrAmount(null);
+    }
+    recQrWalletIdRef.current = miWallet.idWallet;
+  }, [miWallet]);
 
   // ── QR generation (Recibir) ───────────────────────────────────────────────
-  async function handleGenerarQr() {
+  // XPAY-390 — separado en dos funciones: `generarQr` es la operación pura
+  // (mismo payload XPAY_TRANSFER, mismos campos type/env/version/
+  // receiverUser/receiverWalletId/currency que ya existían — NUNCA se
+  // cambia su forma, para mantener compatibilidad total con
+  // parseTransferQr() de Enviar) y se usa tanto por el auto-generado al
+  // entrar al tab (amount=null, sin backend/Passport) como por el botón
+  // manual "Generar QR" (amount validado desde recValor).
+  async function generarQr(amount: number | null) {
     if (!user || !miWallet) return;
     setRecQrBusy(true);
     try {
@@ -611,12 +708,20 @@ export function UserWalletPage() {
         version:          1,
         receiverUser:     user.usuario,
         receiverWalletId: miWallet.idWallet,
-        amount:           recValor ? Number(recValor) : null,
+        amount,
         currency:         'COP',
       };
       const dataUrl = await QRCode.toDataURL(JSON.stringify(payload), { width: 280, margin: 2, color: { dark: '#1a202c' } });
       setRecQrSrc(dataUrl);
+      setRecQrAmount(amount);
     } finally { setRecQrBusy(false); }
+  }
+
+  async function handleGenerarQr() {
+    const { amount, error } = parseRecValorAmount(recValor);
+    if (error) { setRecValorErr(error); return; }
+    setRecValorErr(null);
+    await generarQr(amount);
   }
 
   function handleDescargarQr() {
@@ -736,27 +841,6 @@ export function UserWalletPage() {
   }
 
   // ── Bre-B handlers ────────────────────────────────────────────────────────
-  async function handleRegistrarLlave(e: FormEvent) {
-    e.preventDefault();
-    if (!brebKeyValue.trim()) { setBrebRegMsg({ ok: false, text: 'Ingresa el valor de la llave.' }); return; }
-    setBrebRegBusy(true); setBrebRegMsg(null);
-    try {
-      const r = await post<{ success: boolean; data?: BrebLlave; message?: string }>(
-        '/api/breb/mi-llave',
-        { keyType: brebKeyType, keyValue: brebKeyValue.trim() },
-      );
-      if (r.success && r.data) {
-        setBrebLlave(r.data);
-        setBrebKeyValue('');
-        setBrebRegMsg({ ok: true, text: `Llave registrada: ${r.data.keyValueMasked} — estado: ${r.data.estado}` });
-      } else {
-        setBrebRegMsg({ ok: false, text: r.message ?? 'Error registrando llave.' });
-      }
-    } catch (err) {
-      setBrebRegMsg({ ok: false, text: (err as Error).message || 'Error registrando llave.' });
-    } finally { setBrebRegBusy(false); }
-  }
-
   async function handleSolicitarRetiro(e: FormEvent) {
     e.preventDefault();
     const val = Number(brebRetValor);
@@ -1088,24 +1172,48 @@ export function UserWalletPage() {
         ) : null
       )}
 
-      {/* ── RECIBIR DINERO ────────────────────────────────────────────────── */}
+      {/* ── RECIBIR ───────────────────────────────────────────────────────── */}
+      {/* XPAY-390 R2/R3 — el QR base se genera automáticamente al entrar
+          (ver efecto "Auto-generación del QR base de Recibir" más arriba);
+          esta vista ya no requiere pulsar "Generar QR" para el caso sin
+          monto. Se retira el párrafo introductorio — la jerarquía visual es
+          ahora: título → QR (o estado de carga) → campo de valor opcional →
+          botón. */}
       {tab === 'recibir' && (
         <div className="wallet-receive">
-          <h3 className="wallet-receive-title">Recibir dinero</h3>
-          <p className="wallet-receive-hint">
-            Genera un QR para que otra persona te transfiera. El receptor muestra este QR al emisor.
-          </p>
+          <h3 className="wallet-receive-title">Recibir</h3>
+
+          {recQrSrc ? (
+            <div className="wallet-receive-qr-display">
+              <img src={recQrSrc} alt="QR para recibir dinero" className="wallet-receive-qr-image" />
+              <p className="wallet-receive-qr-caption">Este es tu QR para recibir dinero en XPAY</p>
+              {recQrAmount != null && (
+                <p className="wallet-receive-qr-subcaption">Con valor {fmtMoney(recQrAmount)}</p>
+              )}
+              <button className="wallet-receive-download-btn" onClick={handleDescargarQr}>
+                ↓ Descargar QR PNG
+              </button>
+            </div>
+          ) : (
+            <div className="wallet-receive-qr-loading">Generando tu QR...</div>
+          )}
+
           <label className="wallet-receive-field">
-            <span className="wallet-receive-field-label">Valor a recibir (opcional — COP ficticio)</span>
+            <span className="wallet-receive-field-label">Valor opcional (COP)</span>
             <input
               type="number"
               className="wallet-receive-input"
               value={recValor}
-              onChange={e => { setRecValor(e.target.value); setRecQrSrc(null); }}
-              placeholder="Dejar vacío si el emisor elige el monto"
+              onChange={e => { setRecValor(e.target.value); setRecValorErr(null); }}
+              placeholder="Ej. 10000 — vacío para QR sin valor fijo"
               min={0}
             />
           </label>
+          {recValor && !recValorErr && Number.isFinite(Number(recValor)) && Number(recValor) > 0 && (
+            <p className="wallet-receive-cop-preview">{fmtMoney(Number(recValor))}</p>
+          )}
+          {recValorErr && <p className="wallet-receive-error">{recValorErr}</p>}
+
           <button
             className="wallet-receive-generate-btn"
             onClick={() => void handleGenerarQr()}
@@ -1113,20 +1221,6 @@ export function UserWalletPage() {
           >
             {recQrBusy ? 'Generando...' : 'Generar QR'}
           </button>
-
-          {recQrSrc && (
-            <div className="wallet-receive-qr-display">
-              <img src={recQrSrc} alt="QR para recibir dinero" className="wallet-receive-qr-image" />
-              <p className="wallet-receive-qr-caption">
-                {recValor
-                  ? `QR con valor ${fmtMoney(Number(recValor))} (COP ficticio)`
-                  : 'QR sin valor fijo — el emisor ingresa el monto'}
-              </p>
-              <button className="wallet-receive-download-btn" onClick={handleDescargarQr}>
-                ↓ Descargar QR PNG
-              </button>
-            </div>
-          )}
 
           <p className="wallet-receive-footnote">
             QA/Demo · el QR contiene type=XPAY_TRANSFER, receiverWalletId={miWallet.idWallet} ·
@@ -1144,48 +1238,56 @@ export function UserWalletPage() {
             <div className="wallet-send-msg wallet-send-msg--ok">{envSuccessMsg}</div>
           ) : (
           <>
-          <p className="wallet-send-hint">Escanea el QR del receptor, pega su contenido, o ingresa el ID de wallet.</p>
-
+          {/* XPAY-390 R4 — el escaneo se inicia automáticamente al entrar
+              (ver efecto "Auto-inicio de escaneo" más arriba); ya no exige
+              pulsar "Escanear QR" primero. Pegar contenido / ingresar
+              destino manualmente se conservan íntegros (mismos handlers)
+              como fallback secundario, colapsado dentro de "Otras
+              opciones". */}
           {!envDest && !envManual && (
             <div className="wallet-send-scan">
+              <p className="wallet-send-scan-title">Escanea el QR del receptor</p>
+
               {envScanning && <div id="env-qr-reader" className="qr-reader-container" />}
 
-              {!envScanning && (
-                <>
-                  <button
-                    className="wallet-send-scan-btn"
-                    onClick={() => { setEnvScanErr(null); setEnvScanning(true); }}
-                  >
-                    📷 Escanear QR
-                  </button>
-                  <div className="wallet-send-paste-block">
-                    <label className="wallet-send-field">
-                      <span className="wallet-send-field-label">Pegar contenido del QR</span>
-                      <textarea
-                        className="wallet-send-textarea"
-                        value={envPasted}
-                        onChange={e => setEnvPasted(e.target.value)}
-                        placeholder={'{"type":"XPAY_TRANSFER","env":"QA","receiverWalletId":3,...}'}
-                        rows={3}
-                      />
-                    </label>
-                    <div className="wallet-send-actions-row">
-                      <button className="wallet-send-secondary-btn" disabled={!envPasted.trim()} onClick={() => parseTransferQr(envPasted.trim())}>
-                        Usar QR pegado
-                      </button>
-                      <button className="wallet-send-link-btn" onClick={() => setEnvManual(true)}>
-                        Ingresar destino manualmente →
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
               {envScanning && (
                 <button className="wallet-send-secondary-btn wallet-send-cancel-btn" onClick={() => setEnvScanning(false)}>
                   Cancelar escaneo
                 </button>
               )}
+              {!envScanning && (
+                <button
+                  className="wallet-send-scan-btn"
+                  onClick={() => { setEnvScanErr(null); setEnvScanning(true); }}
+                >
+                  📷 {envScanErr ? 'Reintentar escaneo' : 'Activar cámara'}
+                </button>
+              )}
               {envScanErr && <div className="wallet-send-error">{envScanErr}</div>}
+
+              <details className="wallet-send-other-options">
+                <summary className="wallet-send-other-options-summary">Otras opciones</summary>
+                <div className="wallet-send-paste-block">
+                  <label className="wallet-send-field">
+                    <span className="wallet-send-field-label">Pegar contenido del QR</span>
+                    <textarea
+                      className="wallet-send-textarea"
+                      value={envPasted}
+                      onChange={e => setEnvPasted(e.target.value)}
+                      placeholder={'{"type":"XPAY_TRANSFER","env":"QA","receiverWalletId":3,...}'}
+                      rows={3}
+                    />
+                  </label>
+                  <div className="wallet-send-actions-row">
+                    <button className="wallet-send-secondary-btn" disabled={!envPasted.trim()} onClick={() => parseTransferQr(envPasted.trim())}>
+                      Usar QR pegado
+                    </button>
+                    <button className="wallet-send-link-btn" onClick={() => { setEnvScanning(false); setEnvManual(true); }}>
+                      Ingresar destino manualmente →
+                    </button>
+                  </div>
+                </div>
+              </details>
             </div>
           )}
 
@@ -1293,47 +1395,54 @@ export function UserWalletPage() {
         </div>
       )}
 
-      {/* ── PAGAR COMERCIO QR ─────────────────────────────────────────────── */}
+      {/* ── COMPRAR CON QR ───────────────────────────────────────────────── */}
+      {/* XPAY-390 R5 — el escaneo se inicia automáticamente al entrar (ver
+          efecto "Auto-inicio de escaneo" más arriba). Handlers/endpoint
+          (POST /api/qr/pagar, parseMerchantQr) sin cambios — separado por
+          diseño de Enviar (ver comentario en R4/handleEnviar). */}
       {tab === 'pagar' && (
         <div className="wallet-pay">
-          <h3 className="wallet-pay-title">Pagar con QR</h3>
-          <p className="wallet-pay-hint">Escanea el QR del comercio o pega el código / contenido JSON.</p>
+          <h3 className="wallet-pay-title">Comprar con QR</h3>
 
           {!pagQrCode && (
             <div className="wallet-pay-scan">
+              <p className="wallet-pay-scan-title">Escanea el QR del comercio</p>
+
               {pagScanning && <div id="pag-qr-reader" className="qr-reader-container" />}
 
-              {!pagScanning && (
-                <>
-                  <button
-                    className="wallet-pay-scan-btn"
-                    onClick={() => { setPagScanErr(null); setPagScanning(true); }}
-                  >
-                    📷 Escanear QR del comercio
-                  </button>
-                  <div className="wallet-pay-paste-block">
-                    <label className="wallet-pay-field">
-                      <span className="wallet-pay-field-label">Pegar código QR o contenido JSON</span>
-                      <textarea
-                        className="wallet-pay-textarea"
-                        value={pagPasted}
-                        onChange={e => setPagPasted(e.target.value)}
-                        placeholder={`QR-DEMO-XPAY-QA-001\no\n{"type":"XPAY_MERCHANT_PAYMENT","env":"QA",...}`}
-                        rows={3}
-                      />
-                    </label>
-                    <button className="wallet-pay-secondary-btn" disabled={!pagPasted.trim()} onClick={() => parseMerchantQr(pagPasted.trim())}>
-                      Usar código pegado
-                    </button>
-                  </div>
-                </>
-              )}
               {pagScanning && (
                 <button className="wallet-pay-secondary-btn wallet-pay-cancel-btn" onClick={() => setPagScanning(false)}>
                   Cancelar escaneo
                 </button>
               )}
+              {!pagScanning && (
+                <button
+                  className="wallet-pay-scan-btn"
+                  onClick={() => { setPagScanErr(null); setPagScanning(true); }}
+                >
+                  📷 {pagScanErr ? 'Reintentar escaneo' : 'Activar cámara'}
+                </button>
+              )}
               {pagScanErr && <div className="wallet-pay-error">{pagScanErr}</div>}
+
+              <details className="wallet-pay-other-options">
+                <summary className="wallet-pay-other-options-summary">Otras opciones</summary>
+                <div className="wallet-pay-paste-block">
+                  <label className="wallet-pay-field">
+                    <span className="wallet-pay-field-label">Pegar código QR o contenido JSON</span>
+                    <textarea
+                      className="wallet-pay-textarea"
+                      value={pagPasted}
+                      onChange={e => setPagPasted(e.target.value)}
+                      placeholder={`QR-DEMO-XPAY-QA-001\no\n{"type":"XPAY_MERCHANT_PAYMENT","env":"QA",...}`}
+                      rows={3}
+                    />
+                  </label>
+                  <button className="wallet-pay-secondary-btn" disabled={!pagPasted.trim()} onClick={() => parseMerchantQr(pagPasted.trim())}>
+                    Usar código pegado
+                  </button>
+                </div>
+              </details>
             </div>
           )}
 
@@ -1512,46 +1621,26 @@ export function UserWalletPage() {
                 )}
               </div>
 
-              {/* Formulario registro de llave */}
-              <h4 style={{ margin: '0 0 0.3rem', fontSize: '0.88rem', color: '#2d3748' }}>
-                {brebLlave ? 'Actualizar llave Bre-B' : 'Registrar llave Bre-B'}
-              </h4>
-              <form className="breb-form" onSubmit={(e) => void handleRegistrarLlave(e)}>
-                <label>
-                  Tipo de llave
-                  <select value={brebKeyType} onChange={e => setBrebKeyType(e.target.value)}>
-                    <option value="ID">Cédula / ID</option>
-                    <option value="PHONE">Número de celular</option>
-                    <option value="EMAIL">Correo electrónico</option>
-                    <option value="ALPHA">Alias alfanumérico</option>
-                    <option value="BCODE">Código Bre-B</option>
-                  </select>
-                </label>
-                <label>
-                  Valor de la llave
-                  <input
-                    type="text"
-                    value={brebKeyValue}
-                    onChange={e => setBrebKeyValue(e.target.value)}
-                    placeholder={
-                      brebKeyType === 'ID'    ? 'Ej: 1234567890' :
-                      brebKeyType === 'PHONE' ? 'Ej: 3001234567' :
-                      brebKeyType === 'EMAIL' ? 'Ej: correo@banco.com' :
-                      brebKeyType === 'ALPHA' ? 'Ej: mi-alias-breb' : 'Ej: BREB-XXXXXX'
-                    }
-                  />
-                </label>
-                <p className="breb-confirm-text">
-                  Al registrar confirmas que esta llave Bre-B te pertenece y corresponde a tu cuenta bancaria.
-                  No se puede retirar a llaves de terceros.
-                </p>
-                <button type="submit" className="btn-breb" disabled={brebRegBusy || !brebKeyValue.trim()}>
-                  {brebRegBusy ? 'Registrando...' : brebLlave ? 'Actualizar llave' : 'Registrar llave'}
-                </button>
-                {brebRegMsg && (
-                  <span className={brebRegMsg.ok ? 'breb-msg-ok' : 'breb-msg-err'}>{brebRegMsg.text}</span>
-                )}
-              </form>
+              {/* XPAY-392/392A — el formulario de registro/actualización de
+                  la llave se movió a Perfil → Mi llave Bre-B
+                  (BrebMyKeySection, mismo endpoint POST /api/breb/mi-llave
+                  vía useMyBrebKey) — evita mantener dos formularios activos
+                  para la misma asociación. Este tab conserva sin cambios el
+                  estado (arriba) y el flujo simulado de retiro (abajo,
+                  handleSolicitarRetiro). handleRegistrarLlave/brebKeyType/
+                  brebKeyValue/brebRegBusy/brebRegMsg (código muerto tras la
+                  extracción, sin ningún formulario que los invocara) fueron
+                  eliminados de este archivo en XPAY-392A. */}
+              <p className="breb-retiro-note">
+                Gestiona el registro o la actualización de tu llave Bre-B desde{' '}
+                <button
+                  type="button"
+                  className="wallet-send-link-btn"
+                  onClick={() => navigate('/mi-wallet/perfil')}
+                >
+                  Perfil → Mi llave Bre-B
+                </button>.
+              </p>
 
               {/* Formulario retiro — solo si llave VALIDADA */}
               {brebLlave?.estado === 'VALIDADA' && (
@@ -1631,10 +1720,20 @@ export function UserWalletPage() {
           {brebLlaveLoad ? (
             <div className="loading">Cargando llave Bre-B...</div>
           ) : !brebLlave || brebLlave.keyType !== 'BCODE' ? (
-            <p className="breb-retiro-note">
-              No tienes una llave BCODE propia registrada. Registra tu llave en la pestaña
-              "Retirar a mi banco" antes de continuar.
-            </p>
+            // XPAY-392 — CTA hacia Perfil (antes dirigía al tab 'banco', que
+            // ya no tiene entrada en la franja verde desde XPAY-390). No
+            // cambia la condición (misma regla: requiere una llave BCODE
+            // apta), solo el mensaje/destino.
+            <div className="breb-no-key-card">
+              <p className="breb-retiro-note">Primero configura tu llave Bre-B.</p>
+              <button
+                type="button"
+                className="btn-breb"
+                onClick={() => navigate('/mi-wallet/perfil')}
+              >
+                Configurar mi llave Bre-B
+              </button>
+            </div>
           ) : (
             <>
               {/* Saldo de referencia — siempre desde `cuenta` (backend), nunca calculado aquí */}

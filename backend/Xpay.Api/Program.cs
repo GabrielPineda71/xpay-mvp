@@ -21,6 +21,7 @@ builder.Services.AddDbContext<XpayDbContext>(options =>
 
 builder.Services.AddScoped<RegistroUsuarioFinalService>();
 builder.Services.AddScoped<RegistroInicialService>();
+builder.Services.AddScoped<PerfilService>(); // XPAY-399 — Perfil Fase 2A (mi-perfil self-service)
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<WalletService>();
 builder.Services.AddScoped<WalletOperacionService>();
@@ -235,6 +236,20 @@ var loginPermitLimit   = rlSection.GetValue("LoginPermitLimit",   defaultValue: 
 var loginWindowSeconds = rlSection.GetValue("LoginWindowSeconds", defaultValue: 60);
 var loginQueueLimit    = rlSection.GetValue("LoginQueueLimit",    defaultValue: 0);
 
+// XPAY-400 — política dedicada para POST /api/auth/cambiar-clave, NO
+// reutiliza LoginPolicy: LoginPolicy particiona por IP remota, apropiado
+// para un endpoint anónimo (es la única señal disponible antes de
+// autenticar). cambiar-clave es un endpoint AUTENTICADO — particionar por
+// idUsuario es más preciso (evita que usuarios distintos detrás del mismo
+// NAT/IP corporativa compartan un único cupo, y evita que una sola cuenta
+// evada el límite rotando de IP). Límites deliberadamente más
+// conservadores que el login (una cuenta legítima rara vez necesita
+// cambiar su contraseña más de un par de veces seguidas) — configurables,
+// mismo patrón que LoginPermitLimit/LoginWindowSeconds/LoginQueueLimit.
+var cambiarClavePermitLimit   = rlSection.GetValue("CambiarClavePermitLimit",   defaultValue: 5);
+var cambiarClaveWindowSeconds = rlSection.GetValue("CambiarClaveWindowSeconds", defaultValue: 300);
+var cambiarClaveQueueLimit    = rlSection.GetValue("CambiarClaveQueueLimit",    defaultValue: 0);
+
 builder.Services.AddRateLimiter(options =>
 {
     options.AddPolicy("LoginPolicy", httpContext =>
@@ -248,6 +263,22 @@ builder.Services.AddRateLimiter(options =>
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst
             }));
 
+    options.AddPolicy("CambiarClavePolicy", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            // idUsuario del JWT ya autenticado; si por algún motivo no está
+            // presente (no debería, el endpoint exige [Authorize]), cae a IP
+            // remota como último recurso — nunca deja la partición vacía.
+            partitionKey: httpContext.User.FindFirst("idUsuario")?.Value
+                ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit          = cambiarClavePermitLimit,
+                Window               = TimeSpan.FromSeconds(cambiarClaveWindowSeconds),
+                QueueLimit           = cambiarClaveQueueLimit,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
     options.OnRejected = async (context, cancellationToken) =>
     {
         var correlationId = context.HttpContext.Items.TryGetValue("CorrelationId", out var cid)
@@ -256,7 +287,18 @@ builder.Services.AddRateLimiter(options =>
 
         context.HttpContext.Response.StatusCode  = StatusCodes.Status429TooManyRequests;
         context.HttpContext.Response.ContentType = "application/json";
-        context.HttpContext.Response.Headers["Retry-After"] = loginWindowSeconds.ToString();
+
+        // XPAY-400 — ahora hay más de una policy con ventanas distintas
+        // (LoginPolicy=loginWindowSeconds, CambiarClavePolicy=
+        // cambiarClaveWindowSeconds): se usa el Retry-After real que calcula
+        // el propio limiter (metadata estándar de System.Threading.RateLimiting)
+        // en vez de asumir loginWindowSeconds para cualquier policy — antes de
+        // XPAY-400 solo existía LoginPolicy, así que ambos valores siempre
+        // coincidían; ahora ya no es seguro asumirlo.
+        var retryAfterSeconds = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter)
+            ? ((int)retryAfter.TotalSeconds).ToString()
+            : loginWindowSeconds.ToString(); // fallback conservador si el limiter no expone la metadata
+        context.HttpContext.Response.Headers["Retry-After"] = retryAfterSeconds;
 
         await context.HttpContext.Response.WriteAsync(
             $"{{\"error\":\"rate_limit_exceeded\",\"message\":\"Too many requests. Please try again later.\",\"correlationId\":\"{correlationId}\"}}",

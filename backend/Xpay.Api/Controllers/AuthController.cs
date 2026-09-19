@@ -67,4 +67,35 @@ public class AuthController : ControllerBase
             return StatusCode(500, new { success = false, message = "Error interno cambiando la contraseña." });
         }
     }
+
+    // XPAY-400 — cambio VOLUNTARIO de contraseña. [Authorize] SIMPLE
+    // (no "SoloAutenticado"): hereda la DefaultPolicy de Program.cs, que
+    // incluye ClaveVigenteRequirement — si el usuario tiene
+    // RequiereCambioClave=true, la petición ya es rechazada con 403 por el
+    // pipeline de autorización ANTES de llegar a este método (mismo
+    // comportamiento que el resto de la aplicación). Por eso este endpoint
+    // NUNCA permite saltarse /cambiar-clave-obligatoria — no hace falta (ni
+    // se duplica) ninguna comprobación adicional aquí.
+    [HttpPost("cambiar-clave")]
+    [Authorize]
+    [EnableRateLimiting("CambiarClavePolicy")]
+    public async Task<IActionResult> CambiarClave([FromBody] CambiarClaveRequest request)
+    {
+        if (!long.TryParse(User.FindFirst("idUsuario")?.Value, out var idUsuario) || idUsuario <= 0)
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "USUARIO_CAMBIAR_CLAVE_ATTEMPT");
+        try
+        {
+            await _authService.CambiarClaveVoluntariaAsync(idUsuario, request);
+            _audit.LogSensitiveAction(HttpContext, "USUARIO_CAMBIAR_CLAVE_SUCCESS");
+            return Ok(new { success = true, message = "Contraseña actualizada correctamente." });
+        }
+        catch (KeyNotFoundException ex)      { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch
+        {
+            return StatusCode(500, new { success = false, message = "Error interno cambiando la contraseña." });
+        }
+    }
 }

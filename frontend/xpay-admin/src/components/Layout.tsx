@@ -95,6 +95,12 @@ export function Layout() {
         onLogout={handleLogout}
         onAction={handleAction}
         onNavigate={handleNavigate}
+        // XPAY-392 — "Mi perfil" (ProfileSheet) deja de estar deshabilitado:
+        // navega a la página real de Perfil. WalletShell ya abre el mismo
+        // ProfileSheet tanto desde el ícono del hero como desde el ítem
+        // "Perfil" de BottomNav (ver handleNavigate 'profile' abajo, sin
+        // cambios) — un solo camino, sin comportamiento duplicado.
+        onOpenProfileDetail={() => navigate('/mi-wallet/perfil')}
       >
         <Outlet />
       </WalletShell>

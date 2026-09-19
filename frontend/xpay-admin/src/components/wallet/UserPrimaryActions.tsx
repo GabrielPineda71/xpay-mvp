@@ -25,12 +25,6 @@ function IconTransfer(p: IconProps) {
 function IconQr(p: IconProps) {
   return <Svg {...p}><rect x="3.5" y="3.5" width="6" height="6" rx="1" /><rect x="14.5" y="3.5" width="6" height="6" rx="1" /><rect x="3.5" y="14.5" width="6" height="6" rx="1" /><path d="M14.5 15h2.5v2.5" /><path d="M20.5 20.5h-3" /><path d="M17.5 20.5v-3" /></Svg>;
 }
-function IconKeySend(p: IconProps) {
-  return <Svg {...p}><circle cx="7.5" cy="8.5" r="3" /><path d="M9.6 10.6 18.5 19.5" /><path d="M15.5 19.5h3v-3" /></Svg>;
-}
-function IconStore(p: IconProps) {
-  return <Svg {...p}><path d="M3.5 9 5 4h14l1.5 5" /><path d="M4 9v10.5h16V9" /><path d="M9.5 19.5V14h5v5.5" /><path d="M3.5 9c0 1.4 1.1 2.5 2.5 2.5S8.5 10.4 8.5 9M8.5 9c0 1.4 1.1 2.5 2.5 2.5S13.5 10.4 13.5 9M13.5 9c0 1.4 1.1 2.5 2.5 2.5S18.5 10.4 18.5 9" /></Svg>;
-}
 function IconBank(p: IconProps) {
   return <Svg {...p}><path d="M3.5 9.5 12 4l8.5 5.5" /><path d="M4.5 9.5v9.5h15V9.5" /><path d="M8 19v-6M12 19v-6M16 19v-6" /><path d="M3.5 19h17" /></Svg>;
 }
@@ -48,14 +42,18 @@ interface ActionDef {
   icon: ComponentType<IconProps>;
 }
 
+// XPAY-390 FASE 1 — franja verde reducida a las 4 acciones principales
+// (XPAY-389/390): 'breb-key' (envío a llave de terceros, sin ruta/backend
+// real todavía), 'where-to-buy' y 'withdraw-bank' (retiro simulado a banco)
+// quedan FUERA de la franja principal por decisión de producto — su
+// lógica/rutas/tabs en Layout.tsx y UserWalletPage.tsx NO se eliminan, solo
+// dejan de ser alcanzables desde este menú. 'pay-qr' se renombra a "Comprar
+// con QR" (mismo endpoint/handler, solo texto).
 const ACTIONS: ActionDef[] = [
   { key: 'receive', label: 'Recibir', icon: IconReceive },
   { key: 'send', label: 'Enviar', icon: IconTransfer },
-  { key: 'pay-qr', label: 'Pagar QR', icon: IconQr },
-  { key: 'breb-key', label: 'Enviar a mi llave Bre-B', icon: IconKeySend },
-  { key: 'where-to-buy', label: 'Dónde comprar', icon: IconStore },
-  { key: 'withdraw-bank', label: 'Retirar a mi banco', icon: IconBank },
-  // XPAY-375 — botón dedicado, separado, para el retiro Bre-B REAL.
+  { key: 'pay-qr', label: 'Comprar con QR', icon: IconQr },
+  // XPAY-375 — retiro Bre-B REAL; único botón de retiro visible aquí.
   { key: 'withdraw-breb-real', label: 'Retirar a mi llave Bre-B', icon: IconBank },
 ];
 

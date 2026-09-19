@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
+using Xpay.Api.Models;
 
 namespace Xpay.Api.Services;
 
@@ -105,6 +106,62 @@ public class AuthService
             Token     = token,
             RequiereCambioClave = usuario.RequiereCambioClave
         };
+    }
+
+    // XPAY-400 — cambio VOLUNTARIO de contraseña para un usuario YA
+    // autenticado con clave vigente (RequiereCambioClave=false). Deliberadamente
+    // NO modifica CambiarClaveObligatoriaAsync — reutiliza únicamente lo seguro
+    // de reutilizar: verificación BCrypt de la clave actual y
+    // ValidarPoliticaClave (misma política exacta, cero duplicación).
+    //
+    // Por qué esta clase NO vuelve a comprobar RequiereCambioClave aquí: el
+    // endpoint HTTP que llama a este método usa [Authorize] simple (ver
+    // AuthController.CambiarClave), que hereda la DefaultPolicy configurada en
+    // Program.cs — esa policy ya incluye ClaveVigenteRequirement, que consulta
+    // usuarios.requiere_cambio_clave EN VIVO contra la base de datos y devuelve
+    // 403 ANTES de que la petición llegue aquí si es true. Es el mismo
+    // mecanismo que protege a todo el resto de la aplicación (nunca duplicado
+    // manualmente en cada servicio) — replicar la comprobación aquí sería
+    // lógica redundante, no una capa de seguridad adicional real.
+    //
+    // No emite un JWT nuevo (a diferencia del flujo obligatorio): esta
+    // operación no cambia RequiereCambioClave ni ningún otro claim, así que no
+    // hay ninguna razón funcional para reemitir el token — el existente sigue
+    // siendo válido hasta su expiración natural (JWT stateless, ver XPAY-398/
+    // XPAY-400 PASO 7 — limitación documentada, no resuelta en este ticket).
+    public async Task CambiarClaveVoluntariaAsync(long idUsuario, CambiarClaveRequest request)
+    {
+        var usuario = await _db.Usuarios.FindAsync(idUsuario)
+            ?? throw new KeyNotFoundException("Usuario no encontrado.");
+
+        if (!BCrypt.Net.BCrypt.Verify(request.ClaveActual, usuario.PasswordHash))
+            throw new InvalidOperationException("La contraseña actual no coincide.");
+
+        if (request.ClaveNueva == request.ClaveActual)
+            throw new InvalidOperationException("La contraseña nueva no puede ser igual a la contraseña actual.");
+
+        ValidarPoliticaClave(request.ClaveNueva, usuario.NombreUsuario);
+
+        usuario.PasswordHash       = BCrypt.Net.BCrypt.HashPassword(request.ClaveNueva);
+        usuario.FechaActualizacion = DateTime.UtcNow;
+
+        // Auditoría persistente (tabla `auditoria` ya existente). Deliberadamente
+        // ValorAnterior/ValorNuevo quedan NULL — nunca deben contener password,
+        // hash actual ni hash nuevo (ver XPAY-400 PASO 8). Observacion neutra,
+        // sin ningún dato sensible.
+        _db.Auditorias.Add(new Auditoria
+        {
+            IdUsuario   = idUsuario,
+            Modulo      = "SEGURIDAD",
+            Accion      = "CAMBIAR_CLAVE",
+            Entidad     = "Usuario",
+            IdEntidad   = idUsuario.ToString(),
+            Resultado   = "EXITOSO",
+            Observacion = "Contraseña actualizada por el usuario.",
+            FechaEvento = DateTime.UtcNow,
+        });
+
+        await _db.SaveChangesAsync();
     }
 
     // Fase USUARIOS-ADMIN-5: política mínima aplicada exclusivamente al cambio

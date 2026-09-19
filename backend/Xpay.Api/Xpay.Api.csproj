@@ -14,4 +14,12 @@
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.7.3" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- XPAY-400 — permite que Xpay.Api.Tests pruebe directamente
+         AuthService.ValidarPoliticaClave (internal static, ya pura/sin
+         XpayDbContext) sin duplicar su lógica ni ampliar su visibilidad a
+         "public". Mecanismo estándar del SDK .NET 8, sin dependencia nueva,
+         sin efecto en runtime (solo visibilidad en tiempo de compilación). -->
+    <InternalsVisibleTo Include="Xpay.Api.Tests" />
+  </ItemGroup>
 </Project>

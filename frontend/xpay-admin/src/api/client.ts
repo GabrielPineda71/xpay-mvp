@@ -30,6 +30,24 @@ export class HttpUncertainError extends Error {
   }
 }
 
+// XPAY-402 — error HTTP tipado: preserva `status` (res.status) además del
+// mismo `message` seguro que handleResponse ya construía antes de este
+// ticket (sin cambiar esa extracción en absoluto — ver más abajo). Sigue
+// siendo `instanceof Error` (extiende Error), así que todo consumidor
+// existente que hace `err instanceof Error ? err.message : ...` (auditado:
+// es el único patrón usado en todo el frontend, ver XPAY-402 PASO 7) sigue
+// funcionando idéntico, sin ningún cambio de comportamiento. Nunca
+// almacena Authorization/token/body de la petición — solo status y el
+// mismo message ya seguro.
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 function getToken(): string | null {
   return localStorage.getItem('xpay_token');
 }
@@ -44,9 +62,12 @@ async function handleResponse<T>(res: Response): Promise<T> {
     localStorage.removeItem('xpay_token');
     localStorage.removeItem('xpay_user');
     window.dispatchEvent(new Event('xpay:unauthorized'));
-    throw new Error('Sesión expirada o no autorizada. Inicia sesión nuevamente.');
+    throw new ApiError('Sesión expirada o no autorizada. Inicia sesión nuevamente.', 401);
   }
   if (!res.ok) {
+    // XPAY-402 — misma extracción de mensaje de siempre, sin ningún
+    // cambio; solo el tipo lanzado pasa de Error a ApiError (status
+    // agregado, message idéntico).
     let msg: string;
     try {
       const body = await res.json() as { message?: string };
@@ -54,7 +75,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
     } catch {
       msg = `Error HTTP ${res.status}`;
     }
-    throw new Error(msg);
+    throw new ApiError(msg, res.status);
   }
   try {
     return await res.json() as T;

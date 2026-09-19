@@ -600,6 +600,40 @@
   color: var(--xpay-text-secondary);
   margin: 0;
 }
+/* XPAY-390 — estado de carga del QR auto-generado al entrar al tab, y
+   detalle adicional cuando el QR mostrado incluye un valor. */
+.wallet-receive-qr-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  background: var(--xpay-surface);
+  border: 1px solid var(--xpay-border-soft);
+  border-radius: 16px;
+  color: var(--xpay-text-secondary);
+  font-size: 0.85rem;
+}
+.wallet-receive-qr-subcaption {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--xpay-teal);
+  text-align: center;
+  margin: 0;
+}
+.wallet-receive-cop-preview {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--xpay-text-primary);
+  margin: calc(-1 * var(--sp-1)) 0 0;
+}
+.wallet-receive-error {
+  font-size: 0.82rem;
+  color: var(--fn-error);
+  background: var(--fn-error-bg);
+  border-radius: 8px;
+  padding: var(--sp-2) var(--sp-3);
+  margin: 0;
+}
 
 /* ── Enviar (UserWalletPage.tsx, tab "enviar") — misma lógica real
    (handleEnviar, parseTransferQr, validatePin, resetEnviar, idempotencia)
@@ -634,6 +668,26 @@
   flex-direction: column;
   gap: var(--sp-2);
 }
+.wallet-send-scan-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--xpay-text-primary);
+  margin: 0;
+}
+/* XPAY-390 — "Otras opciones" colapsa pegar/manual (fallback secundario)
+   detrás de un <details> nativo: cero dependencias nuevas, accesible por
+   defecto (teclado/lector de pantalla), cambio mínimo. */
+.wallet-send-other-options {
+  margin-top: var(--sp-1);
+}
+.wallet-send-other-options-summary {
+  font-size: 0.8rem;
+  color: var(--xpay-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.wallet-send-other-options-summary:hover { color: var(--xpay-teal); }
+.wallet-send-other-options[open] .wallet-send-other-options-summary { margin-bottom: var(--sp-2); }
 .wallet-send-scan-btn {
   align-self: flex-start;
   background: var(--xpay-teal);
@@ -811,6 +865,25 @@
   flex-direction: column;
   gap: var(--sp-2);
 }
+.wallet-pay-scan-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--xpay-text-primary);
+  margin: 0;
+}
+/* XPAY-390 — mismo patrón que .wallet-send-other-options (ver comentario
+   allá): fallback secundario colapsado, sin dependencias nuevas. */
+.wallet-pay-other-options {
+  margin-top: var(--sp-1);
+}
+.wallet-pay-other-options-summary {
+  font-size: 0.8rem;
+  color: var(--xpay-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.wallet-pay-other-options-summary:hover { color: var(--xpay-teal); }
+.wallet-pay-other-options[open] .wallet-pay-other-options-summary { margin-bottom: var(--sp-2); }
 .wallet-pay-scan-btn {
   align-self: flex-start;
   background: var(--xpay-teal);
@@ -992,4 +1065,184 @@
   font-size: 0.72rem;
   color: var(--xpay-text-secondary);
   margin: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   PERFIL (XPAY-392) — ProfilePage.tsx (ruta mi-wallet/perfil) y
+   BrebMyKeySection.tsx. Sección completamente nueva, namespace propio
+   (.profile-*/.breb-profile-*) — no reutiliza ni modifica ninguna regla
+   .wallet-receive-*/.wallet-send-*/.wallet-pay-* de XPAY-390 (arriba en
+   este mismo archivo, sin cambios) ni las .breb-*/.btn-breb genéricas ya
+   existentes en index.css (reutilizadas tal cual por BrebMyKeySection,
+   sin redefinirlas aquí). ══════════════════════════════════════════════ */
+.profile-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  max-width: 480px;
+}
+.profile-back-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--xpay-text-secondary);
+  cursor: pointer;
+}
+.profile-back-link:hover { color: var(--xpay-teal); }
+.profile-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.profile-header-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 130, 142, 0.1);
+  color: var(--xpay-teal);
+}
+.profile-header-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+  margin: 0;
+}
+.profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  background: var(--xpay-surface);
+  border: 1px solid var(--xpay-border-soft);
+  border-radius: 16px;
+  padding: var(--sp-4);
+}
+.profile-section-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+  margin: 0;
+}
+.profile-section-subtitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--xpay-text-primary);
+  margin: var(--sp-2) 0 0;
+}
+.profile-data-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+  font-size: 0.85rem;
+}
+.profile-data-list dt { color: var(--xpay-text-secondary); }
+.profile-data-list dd { margin: 0; color: var(--xpay-text-primary); font-weight: 600; }
+.profile-placeholder-note {
+  font-size: 0.82rem;
+  color: var(--xpay-text-secondary);
+  margin: 0;
+}
+
+/* ── Mi llave Bre-B dentro de Perfil (BrebMyKeySection.tsx) ── */
+.breb-profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  background: var(--xpay-surface);
+  border: 1px solid var(--xpay-border-soft);
+  border-radius: 16px;
+  padding: var(--sp-4);
+}
+.breb-profile-status-card {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  font-size: 0.85rem;
+}
+.breb-profile-status-label {
+  color: var(--xpay-text-secondary);
+}
+.breb-profile-meta {
+  font-size: 0.75rem;
+  color: var(--xpay-text-secondary);
+}
+.breb-profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.breb-profile-note {
+  font-size: 0.78rem;
+  color: var(--xpay-text-secondary);
+  margin: 0;
+}
+
+/* ── CTA "sin llave apta" en Retirar (UserWalletPage.tsx, tab
+   retirar-breb) — reemplaza el mensaje que antes apuntaba al tab 'banco'
+   ya inalcanzable desde la franja verde. ── */
+.breb-no-key-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   PERFIL — Mi información / Seguridad (XPAY-401). Namespace propio
+   (.profile-*), no toca ninguna regla .wallet-receive-*/.wallet-send-*/
+   .wallet-pay-*/.breb-profile-* existente — solo reutiliza clases genéricas
+   ya definidas en index.css (.btn-breb, .breb-msg-ok/.breb-msg-err) tal
+   como ya hacía BrebMyKeySection. ══════════════════════════════════════ */
+.profile-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: 0.85rem;
+  color: var(--fn-error);
+}
+.profile-identity-verified {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--fn-success);
+  margin: 0;
+}
+.profile-identity-pending {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--xpay-text-secondary);
+  margin: 0;
+}
+.profile-verificado-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--xpay-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.profile-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.profile-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-1);
+}
+.profile-save-feedback {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--fn-success);
+  margin: var(--sp-2) 0 0;
 }

@@ -36,6 +36,7 @@ import { AdminWalletCierresDiariosComercioPage } from './pages/AdminWalletCierre
 import { AdminUsuariosListPage } from './pages/AdminUsuariosListPage.tsx';
 import { AdminUsuarioDetallePage } from './pages/AdminUsuarioDetallePage.tsx';
 import { CambiarClaveObligatoriaPage } from './pages/CambiarClaveObligatoriaPage.tsx';
+import { ProfilePage } from './pages/ProfilePage.tsx';
 
 // Smart redirect based on user role/view
 function UserRedirect() {
@@ -95,6 +96,9 @@ export default function App() {
                 <Route path="mi-wallet"   element={<UserWalletPage />} />
                 <Route path="mi-wallet/libranza" element={<MiWalletLibranzaPage />} />
                 <Route path="mi-wallet/cartera" element={<MiCarteraOrdinariaPage />} />
+                {/* XPAY-392 — Perfil real (Fase 1: Datos personales de solo
+                    lectura + Mi llave Bre-B + placeholder de Seguridad). */}
+                <Route path="mi-wallet/perfil" element={<ProfilePage />} />
               </Route>
 
               {/* Comercio routes */}
