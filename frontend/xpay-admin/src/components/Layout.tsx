@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, getViewForUser } from '../auth/AuthContext.tsx';
 import { WalletShell, type WalletNavItem, type WalletPrimaryAction } from './wallet/WalletShell.tsx';
+import { WalletNotificationsProvider } from './wallet/WalletNotificationsContext.tsx';
 import { useComercioScope } from '../auth/useComercioScope.ts';
 
 function getApiLabel(): string {
@@ -88,22 +89,29 @@ export function Layout() {
       undefined;
 
     return (
-      <WalletShell
-        userName={user?.usuario}
-        activeNav={activeNav}
-        hasNotifications={false}
-        onLogout={handleLogout}
-        onAction={handleAction}
-        onNavigate={handleNavigate}
-        // XPAY-392 — "Mi perfil" (ProfileSheet) deja de estar deshabilitado:
-        // navega a la página real de Perfil. WalletShell ya abre el mismo
-        // ProfileSheet tanto desde el ícono del hero como desde el ítem
-        // "Perfil" de BottomNav (ver handleNavigate 'profile' abajo, sin
-        // cambios) — un solo camino, sin comportamiento duplicado.
-        onOpenProfileDetail={() => navigate('/mi-wallet/perfil')}
-      >
-        <Outlet />
-      </WalletShell>
+      // XPAY-431 (Block C v1) — WalletNotificationsProvider envuelve tanto
+      // WalletShell (WalletHero, donde vive la campana) como <Outlet/>
+      // (UserWalletPage.tsx, donde se cargan los movimientos) para que
+      // ambos compartan el mismo estado de notificaciones — son ramas
+      // hermanas del árbol, sin esto no tendrían forma de comunicarse
+      // (hallazgo central de la auditoría XPAY-430).
+      <WalletNotificationsProvider>
+        <WalletShell
+          userName={user?.usuario}
+          activeNav={activeNav}
+          onLogout={handleLogout}
+          onAction={handleAction}
+          onNavigate={handleNavigate}
+          // XPAY-392 — "Mi perfil" (ProfileSheet) deja de estar deshabilitado:
+          // navega a la página real de Perfil. WalletShell ya abre el mismo
+          // ProfileSheet tanto desde el ícono del hero como desde el ítem
+          // "Perfil" de BottomNav (ver handleNavigate 'profile' abajo, sin
+          // cambios) — un solo camino, sin comportamiento duplicado.
+          onOpenProfileDetail={() => navigate('/mi-wallet/perfil')}
+        >
+          <Outlet />
+        </WalletShell>
+      </WalletNotificationsProvider>
     );
   }
 

@@ -302,6 +302,103 @@
 }
 .wallet-shell-v2 .wallet-profile-logout:hover { background: #0a6b75; }
 
+/* ── Panel de notificaciones (NotificationsPanel.tsx, XPAY-431 Block C v1)
+   — mismo overlay que ProfileSheet (.wallet-overlay), mismo anclaje que
+   .wallet-profile-sheet (fixed, esquina superior derecha bajo el hero) pero
+   con su propio layout interno (encabezado en fila + lista), así que no
+   reutiliza .wallet-profile-* más allá del overlay compartido. ── */
+.wallet-shell-v2 .wallet-notifications-panel {
+  position: fixed;
+  top: 56px;
+  right: var(--sp-4);
+  left: var(--sp-4);
+  z-index: 41;
+  max-width: 320px;
+  margin-left: auto;
+  background: var(--xpay-surface);
+  border-radius: 16px;
+  padding: var(--sp-5);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.wallet-shell-v2 .wallet-notifications-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-3);
+}
+
+.wallet-shell-v2 .wallet-notifications-panel-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--xpay-text-primary);
+}
+
+.wallet-shell-v2 .wallet-notifications-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--xpay-text-secondary);
+  padding: var(--sp-1);
+  display: flex;
+}
+.wallet-shell-v2 .wallet-notifications-close:focus-visible { outline: 2px solid var(--xpay-teal); outline-offset: 2px; }
+
+.wallet-shell-v2 .wallet-notifications-empty {
+  color: var(--xpay-text-secondary);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: var(--sp-4) 0;
+}
+
+.wallet-shell-v2 .wallet-notifications-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.wallet-shell-v2 .wallet-notifications-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--xpay-border-soft);
+}
+.wallet-shell-v2 .wallet-notifications-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+.wallet-shell-v2 .wallet-notifications-item-text {
+  font-size: 0.85rem;
+  color: var(--xpay-text-primary);
+}
+
+.wallet-shell-v2 .wallet-notifications-item-date {
+  font-size: 0.72rem;
+  color: var(--xpay-text-secondary);
+}
+
+.wallet-shell-v2 .wallet-notifications-mark-seen-btn {
+  margin-top: var(--sp-4);
+  width: 100%;
+  padding: 0.65rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background: var(--xpay-teal);
+  color: #fff;
+}
+.wallet-shell-v2 .wallet-notifications-mark-seen-btn:disabled { opacity: 0.5; cursor: default; }
+.wallet-shell-v2 .wallet-notifications-mark-seen-btn:hover:not(:disabled) { background: #0a6b75; }
+.wallet-shell-v2 .wallet-notifications-mark-seen-btn:focus-visible { outline: 2px solid var(--xpay-teal); outline-offset: 2px; }
+
 /* ── Bottom navigation (BottomNav.tsx) — solo móvil, fija con
    safe-area-inset-bottom; se oculta en escritorio (ver media query). ── */
 .wallet-shell-v2 .wallet-bottom-nav {
@@ -385,6 +482,13 @@
      el panel con el borde derecho real de esa columna en vez del borde
      del viewport. */
   .wallet-shell-v2 .wallet-profile-sheet {
+    right: calc((100% - 640px) / 2 + var(--sp-4));
+    left: auto;
+  }
+
+  /* Mismo recálculo que .wallet-profile-sheet arriba, mismo motivo —
+     XPAY-431 (Block C v1). */
+  .wallet-shell-v2 .wallet-notifications-panel {
     right: calc((100% - 640px) / 2 + var(--sp-4));
     left: auto;
   }

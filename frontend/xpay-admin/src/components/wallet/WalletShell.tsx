@@ -11,7 +11,6 @@ interface WalletShellProps {
   children: ReactNode;
   userName?: string;
   activeNav?: WalletNavItem;
-  hasNotifications?: boolean;
   onLogout: () => void;
   onAction: (action: WalletPrimaryAction) => void;
   onNavigate: (item: WalletNavItem) => void;
@@ -31,7 +30,6 @@ export function WalletShell({
   children,
   userName,
   activeNav,
-  hasNotifications,
   onLogout,
   onAction,
   onNavigate,
@@ -47,7 +45,6 @@ export function WalletShell({
   return (
     <div className="wallet-shell-v2">
       <WalletHero
-        hasNotifications={hasNotifications}
         onOpenProfile={() => setProfileOpen(true)}
         onAction={onAction}
       />

@@ -6,6 +6,7 @@ import { get, post, HttpUncertainError } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
 import { HeroBalanceCard } from '../components/wallet/HeroBalanceCard.tsx';
 import { useQrScanner } from '../hooks/useQrScanner.ts';
+import { useWalletNotifications } from '../components/wallet/WalletNotificationsContext.tsx';
 
 // Fase 71.2-E-C: DEMO_MAP eliminado — la wallet propia se resuelve vía
 // GET /api/wallets/mi-wallet (claim idPersona del JWT), no por username.
@@ -15,6 +16,18 @@ const WALLET_USER_MAP: Record<number, string> = {
   2: 'qa.usuario1',
   3: 'qa.usuario2',
 };
+
+// XPAY-431 (Block C v1) — misma fuente que descripcionVisible() usa para
+// TRANSFERENCIA_ENTRADA, extraída como función independiente para que
+// loadCuenta/pollRefresh puedan resolver el nombre de la contraparte al
+// reportar al contexto de notificaciones. Función de módulo (no depende de
+// estado del componente) — deliberadamente NO se amplía WALLET_USER_MAP
+// aquí; si el id no está mapeado, cae al identificador de wallet, nunca se
+// inventa un nombre.
+function resolveContraparte(referenciaId: number | null): string {
+  if (!referenciaId) return 'Wallet desconocida';
+  return WALLET_USER_MAP[referenciaId] ?? `Wallet #${referenciaId}`;
+}
 
 // Polling interval for automatic wallet refresh (QA/Demo phase)
 // Production: replace with SignalR/WebSocket push notifications
@@ -235,6 +248,10 @@ function descripcionVisible(m: Movimiento): string {
 export function UserWalletPage() {
   const { user } = useAuth();
   const navigate  = useNavigate();
+  // XPAY-431 (Block C v1) — pieza compartida con WalletHero.tsx (campana),
+  // vía WalletNotificationsProvider montado en Layout.tsx. Fuera de ese
+  // árbol (tests que montan esta página directamente) es un no-op seguro.
+  const { reportMovimientos } = useWalletNotifications();
   // Tab en la URL (?tab=...) en vez de estado local puro — permite que
   // WalletHero/BottomNav (Layout.tsx) y la recarga de página abran un tab
   // específico. Sin valor o valor inválido → 'saldo' (mismo comportamiento
@@ -420,9 +437,14 @@ export function UserWalletPage() {
       setLastUpdated(new Date());
       // Establish baseline for new-movement detection
       lastKnownMovIdRef.current = r.data.movimientos[0]?.idMovimiento ?? -1;
+      // XPAY-431 (Block C v1) — reporta al contexto de notificaciones en
+      // cada carga, no solo en el poll: así el badge/panel reflejan el
+      // estado correcto también en la carga inicial (montaje/remount), sin
+      // esperar al primer tick de 7s.
+      reportMovimientos(r.data.idWallet, r.data.movimientos, resolveContraparte);
     } catch (e) { setDataErr((e as Error).message); }
     finally { setLoading(false); }
-  }, [user]);
+  }, [user, reportMovimientos]);
 
   // ── Silent background refresh (polling) ───────────────────────────────────
   const pollRefresh = useCallback(async () => {
@@ -437,21 +459,32 @@ export function UserWalletPage() {
       // Detect new movement since last known baseline
       if (lastKnownMovIdRef.current !== -1 && latestId > lastKnownMovIdRef.current) {
         const newest = fresh.movimientos[0];
-        let msg = 'Movimiento realizado. Saldo actualizado.';
-        if (newest?.naturaleza === 'C') {
-          if (newest.tipoMovimiento === 'TRANSFERENCIA_ENTRADA'
-              && newest.referenciaTipo === 'wallets'
-              && newest.referenciaId) {
-            const from = WALLET_USER_MAP[newest.referenciaId] ?? `Wallet #${newest.referenciaId}`;
-            msg = `Recibiste dinero de ${from}. Saldo actualizado.`;
-          } else {
-            msg = 'Recibiste dinero. Saldo actualizado.';
-          }
+        // XPAY-431 (Block C v1) — TRANSFERENCIA_ENTRADA ya NO usa este toast
+        // efímero de 6s: queda cubierta por la notificación persistente
+        // (WalletNotificationsContext, reportada más abajo), que no
+        // desaparece sola y sobrevive refresh. El toast sigue exactamente
+        // igual que antes para cualquier otro movimiento (débitos, y otros
+        // créditos como recargas/anticipos) — no se toca esa rama.
+        const esTransferenciaEntradaNueva = newest?.naturaleza === 'C'
+          && newest.tipoMovimiento === 'TRANSFERENCIA_ENTRADA'
+          && newest.referenciaTipo === 'wallets'
+          && !!newest.referenciaId;
+        if (!esTransferenciaEntradaNueva) {
+          const msg = newest?.naturaleza === 'C'
+            ? 'Recibiste dinero. Saldo actualizado.'
+            : 'Movimiento realizado. Saldo actualizado.';
+          setNewMovMsg(msg);
+          if (newMovToastTimerRef.current) clearTimeout(newMovToastTimerRef.current);
+          newMovToastTimerRef.current = window.setTimeout(() => setNewMovMsg(null), 6000);
         }
-        setNewMovMsg(msg);
-        if (newMovToastTimerRef.current) clearTimeout(newMovToastTimerRef.current);
-        newMovToastTimerRef.current = window.setTimeout(() => setNewMovMsg(null), 6000);
       }
+
+      // XPAY-431 (Block C v1) — recorre TODOS los movimientos posteriores al
+      // cursor de "visto" (no solo movimientos[0]) para no perder
+      // recepciones múltiples entre dos polls. Se llama en cada tick,
+      // independientemente de si hubo "movimiento nuevo" según el baseline
+      // anterior — es idempotente (ver WalletNotificationsContext).
+      reportMovimientos(fresh.idWallet, fresh.movimientos, resolveContraparte);
 
       lastKnownMovIdRef.current = latestId;
       setCuenta(fresh);
@@ -462,7 +495,7 @@ export function UserWalletPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [user]);
+  }, [user, reportMovimientos]);
 
   useEffect(() => {
     void loadMiWallet(); void loadCuenta(); void loadKyc(); void loadBreb();

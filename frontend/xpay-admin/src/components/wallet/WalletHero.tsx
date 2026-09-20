@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { BrandMark } from '../BrandMark.tsx';
 import { UserPrimaryActions, type WalletPrimaryAction } from './UserPrimaryActions.tsx';
+import { useWalletNotifications } from './WalletNotificationsContext.tsx';
+import { NotificationsPanel } from './NotificationsPanel.tsx';
 
 interface IconProps {
   size?: number;
@@ -22,7 +25,6 @@ function IconUser(p: IconProps) {
 }
 
 interface WalletHeroProps {
-  hasNotifications?: boolean;
   onOpenProfile: () => void;
   onAction: (action: WalletPrimaryAction) => void;
 }
@@ -31,15 +33,31 @@ interface WalletHeroProps {
 // El panel de perfil (ProfileSheet) NO vive aquí — lo monta WalletShell,
 // una sola instancia, para que este botón y el de BottomNav abran
 // siempre el mismo panel sin duplicarlo.
-export function WalletHero({ hasNotifications, onOpenProfile, onAction }: WalletHeroProps) {
+//
+// XPAY-431 (Block C v1) — el badge de la campana ya NO recibe
+// `hasNotifications` como prop fija (era siempre `false`, ver Layout.tsx
+// antes de este cambio — comportamiento muerto). Ahora se conecta
+// directamente a WalletNotificationsContext, la misma pieza de estado
+// compartido que UserWalletPage.tsx alimenta con cada carga/poll de
+// movimientos. El panel de notificaciones vive aquí, con su propio estado
+// local de abierto/cerrado (mismo patrón que ProfileSheet en WalletShell).
+export function WalletHero({ onOpenProfile, onAction }: WalletHeroProps) {
+  const [notifOpen, setNotifOpen] = useState(false);
+  const { unreadCount, notifications, markAllAsSeen } = useWalletNotifications();
+
   return (
     <div className="wallet-hero">
       <div className="wh-topbar">
         <BrandMark variant="logo" theme="white" className="wallet-hero-logo" />
         <div className="wh-actions-icons">
-          <button className="wh-icon-btn" type="button" aria-label="Notificaciones">
+          <button
+            className="wh-icon-btn"
+            type="button"
+            onClick={() => setNotifOpen(o => !o)}
+            aria-label="Notificaciones"
+          >
             <IconBell size={18} />
-            {hasNotifications && <span className="wh-notif-dot" aria-hidden="true" />}
+            {unreadCount > 0 && <span className="wh-notif-dot" aria-hidden="true" />}
           </button>
           <button className="wh-profile-btn" type="button" onClick={onOpenProfile} aria-label="Abrir perfil">
             <IconUser size={16} />
@@ -48,6 +66,14 @@ export function WalletHero({ hasNotifications, onOpenProfile, onAction }: Wallet
       </div>
 
       <UserPrimaryActions onAction={onAction} />
+
+      {notifOpen && (
+        <NotificationsPanel
+          notifications={notifications}
+          onMarkAllSeen={markAllAsSeen}
+          onClose={() => setNotifOpen(false)}
+        />
+      )}
     </div>
   );
 }
