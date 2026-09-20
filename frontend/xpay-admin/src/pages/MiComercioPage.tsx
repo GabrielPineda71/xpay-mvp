@@ -34,6 +34,20 @@ interface RetiroComercio {
   fechaCreacion:string;
 }
 
+// XPAY-447 — Fuente: GET /api/comercio/mi-qr (ComercioViewController, rol
+// COMERCIO). Fix del bug confirmado en XPAY-446: esta pantalla mostraba un
+// código QR hardcodeado ("QR-DEMO-XPAY-QA-001"), ajeno al comercio
+// realmente autenticado. El backend resuelve IdComercio exclusivamente
+// desde el scope server-side y devuelve TODOS los QR activos — nunca "el
+// primero" — porque un comercio puede tener varias tiendas y varios QR.
+interface QrComercioItem {
+  idQr:         number;
+  codigoQr:     string;
+  idTienda:     number;
+  nombreTienda: string | null;
+  estado:       string;
+}
+
 type Msg = { ok: boolean; text: string };
 
 interface BrebLlave {
@@ -316,6 +330,16 @@ export function MiComercioPage() {
   const [qrComBusy,    setQrComBusy]    = useState(false);
   const [qrComCopied,  setQrComCopied]  = useState(false);
 
+  // XPAY-447 — QR(es) reales del comercio autenticado. qrList === null
+  // mientras carga (nunca se muestra ningún QR, ni el demo hardcodeado
+  // anterior, en ese estado — sección 9 del ticket). qrSeleccionado se
+  // auto-completa SOLO cuando hay exactamente un QR activo (sección 6); con
+  // más de uno, queda en null hasta que el usuario elige explícitamente
+  // (sección 7 — nunca "el primero" en silencio).
+  const [qrList,         setQrList]         = useState<QrComercioItem[] | null>(null);
+  const [qrListErr,      setQrListErr]      = useState<string | null>(null);
+  const [qrSeleccionado, setQrSeleccionado] = useState<QrComercioItem | null>(null);
+
   const loadData = useCallback(async () => {
     if (!idComercio) return;
     setLoading(true);
@@ -359,6 +383,32 @@ export function MiComercioPage() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // XPAY-447 — carga el/los QR real(es) del comercio autenticado. Depende
+  // ÚNICAMENTE de idComercio (no de fechaDesde/fechaHasta — el QR no es un
+  // dato histórico) y se reinicia por completo si idComercio cambia, para
+  // no arrastrar el QR de un comercio anterior (sección 7/9 del ticket).
+  useEffect(() => {
+    let cancelled = false;
+    setQrList(null);
+    setQrListErr(null);
+    setQrSeleccionado(null);
+    setQrComSrc(null);
+    setQrComPayload('');
+    if (!idComercio) return;
+    void (async () => {
+      try {
+        const r = await get<{ success: boolean; data: QrComercioItem[] }>('/api/comercio/mi-qr');
+        if (cancelled) return;
+        const items = r.data ?? [];
+        setQrList(items);
+        if (items.length === 1) setQrSeleccionado(items[0]);
+      } catch (e) {
+        if (!cancelled) setQrListErr((e as Error).message || 'No fue posible cargar el QR del comercio.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [idComercio]);
 
   useEffect(() => {
     void loadData();
@@ -547,15 +597,18 @@ export function MiComercioPage() {
     );
   }
 
+  // XPAY-447 — usa el CodigoQr REAL del QR seleccionado (nunca un literal
+  // hardcodeado). El contrato del payload (type/env/version/amount/currency)
+  // no cambia — es exactamente el mismo que ya consume UserWalletPage.tsx.
   async function handleGenerarQrComercio() {
-    if (!resumen) return;
+    if (!resumen || !qrSeleccionado) return;
     setQrComBusy(true);
     try {
       const payload = JSON.stringify({
         type:     'XPAY_MERCHANT_PAYMENT',
         env:      'QA',
         version:  1,
-        qrCode:   'QR-DEMO-XPAY-QA-001',
+        qrCode:   qrSeleccionado.codigoQr,
         amount:   qrComValor ? Number(qrComValor) : null,
         currency: 'COP',
       });
@@ -566,10 +619,11 @@ export function MiComercioPage() {
   }
 
   function handleDescargarQrComercio() {
-    if (!qrComSrc) return;
+    if (!qrComSrc || !qrSeleccionado) return;
+    const nombreSanitizado = qrSeleccionado.codigoQr.replace(/[^a-zA-Z0-9._-]/g, '_');
     const a = document.createElement('a');
     a.href = qrComSrc;
-    a.download = 'xpay-comercio-QR-DEMO-XPAY-QA-001.png';
+    a.download = `xpay-comercio-${nombreSanitizado}.png`;
     a.click();
   }
 
@@ -700,56 +754,107 @@ export function MiComercioPage() {
             </span>
           </div>
 
-          {/* QR del comercio */}
+          {/* QR del comercio — XPAY-447: siempre el QR real del comercio
+              autenticado (nunca el literal demo hardcodeado que reportó
+              XPAY-446). qrList null = cargando, [] = sin QR, >1 = requiere
+              selección explícita — ver comentarios de cada rama abajo. */}
           <div className="comercio-qr-section">
             <h3 style={{ marginBottom: '0.5rem' }}>QR del comercio</h3>
-            <p className="tab-hint">
-              Genera el QR de cobro de este comercio para mostrarlo a los usuarios o imprimirlo.
-              Código: <code>QR-DEMO-XPAY-QA-001</code>
-            </p>
-            <label>
-              Valor (opcional — COP ficticio)
-              <input
-                type="number"
-                value={qrComValor}
-                onChange={e => { setQrComValor(e.target.value); setQrComSrc(null); setQrComPayload(''); }}
-                placeholder="Dejar vacío si el cliente elige el monto"
-                min={0}
-                style={{ maxWidth: '260px' }}
-              />
-            </label>
-            <button
-              className="btn-confirm"
-              onClick={() => void handleGenerarQrComercio()}
-              disabled={qrComBusy || !resumen}
-              style={{ marginTop: '0.5rem' }}
-            >
-              {qrComBusy ? 'Generando...' : 'Generar QR comercio'}
-            </button>
 
-            {qrComSrc && (
-              <div className="qr-display" style={{ marginTop: '1rem' }}>
-                <img src={qrComSrc} alt="QR del comercio" className="qr-image" />
-                <p className="qr-caption">
-                  {qrComValor
-                    ? `QR con valor ${fmtMoney(Number(qrComValor))} (COP ficticio)`
-                    : 'QR sin valor fijo — el usuario ingresa el monto'}
-                </p>
-                <div className="qr-action-row">
-                  <button className="btn-secondary" onClick={handleDescargarQrComercio}>
-                    ↓ Descargar QR PNG
-                  </button>
-                  <button className="btn-secondary" onClick={() => void handleCopiarQrComercio()}>
-                    {qrComCopied ? '✓ Copiado' : '⎘ Copiar JSON'}
-                  </button>
-                </div>
+            {qrList === null && qrListErr === null && (
+              <p className="tab-hint">Cargando QR del comercio...</p>
+            )}
+
+            {qrListErr && (
+              <div className="error-msg">
+                No fue posible cargar el QR de este comercio. Intenta recargar la página.
               </div>
             )}
 
-            <p className="tab-warn">
-              QA/Demo · el QR contiene type=XPAY_MERCHANT_PAYMENT, qrCode=QR-DEMO-XPAY-QA-001 ·
-              datos ficticios · sin dinero real.
-            </p>
+            {qrList !== null && qrList.length === 0 && (
+              <div className="tab-warn">
+                No hay un QR activo configurado para este comercio.
+              </div>
+            )}
+
+            {qrList !== null && qrList.length > 0 && (
+              <>
+                {qrList.length > 1 && (
+                  <label>
+                    Selecciona una tienda / QR
+                    <select
+                      value={qrSeleccionado?.idQr ?? ''}
+                      onChange={e => {
+                        const elegido = qrList.find(q => q.idQr === Number(e.target.value)) ?? null;
+                        setQrSeleccionado(elegido);
+                        setQrComSrc(null);
+                        setQrComPayload('');
+                      }}
+                      style={{ maxWidth: '320px' }}
+                    >
+                      <option value="" disabled>Selecciona una tienda / QR</option>
+                      {qrList.map(q => (
+                        <option key={q.idQr} value={q.idQr}>
+                          {q.nombreTienda ? `${q.nombreTienda} — ${q.codigoQr}` : q.codigoQr}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                {qrSeleccionado && (
+                  <p className="tab-hint">
+                    Genera el QR de cobro de este comercio para mostrarlo a los usuarios o imprimirlo.
+                    {qrSeleccionado.nombreTienda && <>{' '}Tienda: <strong>{qrSeleccionado.nombreTienda}</strong>.</>}
+                    {' '}Código: <code>{qrSeleccionado.codigoQr}</code>
+                  </p>
+                )}
+
+                <label>
+                  Valor (opcional — COP ficticio)
+                  <input
+                    type="number"
+                    value={qrComValor}
+                    onChange={e => { setQrComValor(e.target.value); setQrComSrc(null); setQrComPayload(''); }}
+                    placeholder="Dejar vacío si el cliente elige el monto"
+                    min={0}
+                    style={{ maxWidth: '260px' }}
+                  />
+                </label>
+                <button
+                  className="btn-confirm"
+                  onClick={() => void handleGenerarQrComercio()}
+                  disabled={qrComBusy || !resumen || !qrSeleccionado}
+                  style={{ marginTop: '0.5rem' }}
+                >
+                  {qrComBusy ? 'Generando...' : 'Generar QR comercio'}
+                </button>
+
+                {qrComSrc && qrSeleccionado && (
+                  <div className="qr-display" style={{ marginTop: '1rem' }}>
+                    <img src={qrComSrc} alt="QR del comercio" className="qr-image" />
+                    <p className="qr-caption">
+                      {qrComValor
+                        ? `QR con valor ${fmtMoney(Number(qrComValor))} (COP ficticio)`
+                        : 'QR sin valor fijo — el usuario ingresa el monto'}
+                    </p>
+                    <div className="qr-action-row">
+                      <button className="btn-secondary" onClick={handleDescargarQrComercio}>
+                        ↓ Descargar QR PNG
+                      </button>
+                      <button className="btn-secondary" onClick={() => void handleCopiarQrComercio()}>
+                        {qrComCopied ? '✓ Copiado' : '⎘ Copiar JSON'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <p className="tab-warn">
+                  QA/Demo · el QR contiene type=XPAY_MERCHANT_PAYMENT{qrSeleccionado ? ` · qrCode=${qrSeleccionado.codigoQr}` : ''} ·
+                  datos ficticios · sin dinero real.
+                </p>
+              </>
+            )}
           </div>
 
           {/* Ventas QR */}

@@ -471,6 +471,38 @@ public class ComercioScopeService
             .FirstOrDefaultAsync();
     }
 
+    // XPAY-447 — QR(es) ACTIVO(s) reales del comercio del scope (fix del bug
+    // confirmado en XPAY-446: MiComercioPage.tsx mostraba un código QR
+    // hardcodeado, ajeno al comercio autenticado). IdComercio sale
+    // EXCLUSIVAMENTE de scope.IdComercioExistente (server-side, nunca de un
+    // parámetro del cliente — mismo criterio que el resto de este archivo).
+    // Devuelve TODOS los QR activos, nunca "el primero": el esquema permite
+    // varias tiendas y varios QR por comercio (incluso por tienda) sin
+    // ninguna restricción de unicidad — decidir cuál mostrar es una decisión
+    // de UI, no algo que este método deba ocultar eligiendo por su cuenta.
+    public async Task<List<QrComercioResponse>> ObtenerQrComercioAsync(ComercioScope scope)
+    {
+        var idComercio = scope.IdComercioExistente
+            ?? throw new InvalidOperationException("Tu comercio operativo no tiene un comercio existente asociado.");
+
+        var qrs = await _db.QrComercios
+            .Where(q => q.IdComercio == idComercio && q.Estado == "ACTIVO")
+            .ToListAsync();
+
+        var tiendaIds = qrs.Select(q => q.IdTienda).Distinct().ToList();
+        var tiendaNombres = await _db.ComercioTiendas
+            .Where(t => tiendaIds.Contains(t.IdTienda))
+            .Select(t => new { t.IdTienda, t.NombreTienda })
+            .ToDictionaryAsync(t => t.IdTienda, t => t.NombreTienda);
+
+        return qrs
+            .Select(q => new QrComercioResponse(
+                q.IdQr, q.CodigoQr, q.IdTienda, tiendaNombres.GetValueOrDefault(q.IdTienda), q.Estado))
+            .OrderBy(r => r.NombreTienda, StringComparer.Ordinal)
+            .ThenBy(r => r.IdQr)
+            .ToList();
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private IQueryable<VentaQr> BuildVentasQuery(ComercioScope scope)

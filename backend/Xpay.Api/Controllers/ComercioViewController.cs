@@ -109,4 +109,28 @@ public class ComercioViewController : ControllerBase
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
     }
+
+    // ── QR del comercio ──────────────────────────────────────────────────────
+
+    // XPAY-447 — fix del bug confirmado en XPAY-446: hasta ahora no existía
+    // ningún endpoint para que un comercio consultara su(s) propio(s) QR;
+    // MiComercioPage.tsx mostraba un código hardcodeado ajeno al comercio
+    // autenticado. IdComercio se resuelve exclusivamente desde el scope
+    // server-side (RequireScopeAsync) — nunca aceptado del cliente. Devuelve
+    // TODOS los QR activos (lista, no "el primero" — ver ComercioScopeService.
+    // ObtenerQrComercioAsync).
+    [HttpGet("mi-qr")]
+    public async Task<IActionResult> GetMiQr()
+    {
+        if (!TryGetUsuarioId(out var uid)) return Unauthorized(new { success = false, message = "Token inválido." });
+        try
+        {
+            var s = await _scope.RequireScopeAsync(uid);
+            var qrs = await _scope.ObtenerQrComercioAsync(s);
+            return Ok(new { success = true, data = qrs });
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
 }

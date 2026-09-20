@@ -130,3 +130,20 @@ public record VentaConContextoResponse(
 // ventas históricas existan (0, 100, 2.000 o 100.000). 0 significa "el
 // comercio no tiene ninguna VentaQr todavía".
 public record UltimoIdVentaQrResponse(long IdVentaQr);
+
+// XPAY-447 — fix del bug confirmado en XPAY-446: MiComercioPage.tsx mostraba
+// siempre un código QR hardcodeado ("QR-DEMO-XPAY-QA-001"), sin relación con
+// el comercio realmente autenticado. Este DTO expone los QR ACTIVOS reales
+// del comercio del scope (nunca un selector enviado por el cliente). Es una
+// LISTA deliberada — el esquema (qr_comercios/comercio_tiendas) no impone
+// "un solo QR por comercio": puede haber varias tiendas y varios QR por
+// comercio, incluso por tienda (ver auditoría XPAY-446 §10). Elegir "el
+// primero" en el backend ocultaría esa ambigüedad en vez de resolverla en
+// la UI.
+public record QrComercioResponse(
+    long    IdQr,
+    string  CodigoQr,
+    long    IdTienda,
+    string? NombreTienda,
+    string  Estado
+);
