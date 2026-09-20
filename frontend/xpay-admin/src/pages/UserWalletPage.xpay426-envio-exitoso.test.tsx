@@ -221,7 +221,14 @@ describe('UserWalletPage — Enviar: modal de transferencia exitosa (XPAY-426 Bl
     await user.click(screen.getByRole('button', { name: 'Cerrar' }));
 
     expect(screen.queryByText('Transferencia exitosa')).not.toBeInTheDocument();
-    await waitFor(() => expect(router.state.location.search).toContain('tab=saldo'));
+    // XPAY-428A — corrección: "saldo" es el tab por defecto, y setTab()
+    // (contrato preexistente, no tocado por XPAY-426/426A) lo representa
+    // con query string VACÍO — `if (t === 'saldo') setSearchParams({})` —
+    // en vez de escribir `?tab=saldo` explícitamente. La aserción anterior
+    // (`toContain('tab=saldo')`) asumía incorrectamente lo segundo; el
+    // fallo de CI (XPAY-428) confirmó, vía el DOM adjunto, que la
+    // navegación real a Mi Wallet/saldo sí ocurría correctamente.
+    await waitFor(() => expect(router.state.location.search).toBe(''));
     // La vista de saldo (Mi Wallet) muestra el saldo ya refrescado por
     // loadCuenta() — mismo mecanismo existente, no uno nuevo.
     await waitFor(() => expect(screen.getByText('Disponible')).toBeInTheDocument());
