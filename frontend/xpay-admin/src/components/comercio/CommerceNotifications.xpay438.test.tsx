@@ -530,6 +530,13 @@ describe('XPAY-438/438A — CommerceNotifications', () => {
     await vi.advanceTimersByTimeAsync(7000);
     await waitFor(() => expect(notifDot()).not.toBeNull());
 
+    // XPAY-441 — aísla el conteo de llamadas del mock: el assertion de más
+    // abajo (toHaveBeenCalledTimes(1)) solo quiere confirmar que EL POLL
+    // LENTO de esta sección fue disparado, no cuántas llamadas acumuló el
+    // mock desde el inicio del test (el poll de la venta #2, arriba, ya
+    // generó una llamada propia).
+    mockListarVentasQrDesde.mockClear();
+
     // Arranca un poll que queda en vuelo (con la venta #3, todavía no
     // detectada en el momento del click de abajo).
     ventasState.push(venta({ idVentaQr: 3 }));
