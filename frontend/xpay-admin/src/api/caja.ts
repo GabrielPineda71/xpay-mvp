@@ -86,6 +86,39 @@ export async function getMiScope(): Promise<ComercioScope | null> {
   return r.data ?? null;
 }
 
+// XPAY-438 — notificación operacional de venta QR (modo commerce-wide de
+// GET /api/comercio/ventas). Espejo exacto de VentaConContextoResponse
+// (ComercioScopeDtos.cs) — IdEstablecimiento/NombreEstablecimiento/
+// IdCajeroUsuario/NombreCajero siempre vienen null en este modo (no
+// aplican; ver ComercioScopeService.ListarVentasIncrementalAsync) y
+// deliberadamente no se declaran aquí para no sugerir que sí se usan.
+export interface VentaQrNotificacion {
+  idVentaQr:    number;
+  valorBruto:   number;
+  estado:       string;
+  fechaVenta:   string;
+  idTienda:     number;
+  nombreTienda: string | null;
+}
+
+// desdeIdVentaQr activa el modo commerce-wide (sección 1-3 de XPAY-438):
+// ignora filtros históricos, ordena ASC por IdVentaQr, tope 100 filas.
+export async function listarVentasQrDesde(desdeIdVentaQr: number): Promise<VentaQrNotificacion[]> {
+  const r = await get<ApiEnvelope<VentaQrNotificacion[]>>(
+    `/api/comercio/ventas?desdeIdVentaQr=${desdeIdVentaQr}`);
+  return r.data ?? [];
+}
+
+// XPAY-438A §2 — baseline de primer uso SIN descargar historial (corrige el
+// riesgo de que un comercio con miles de VentaQr dejara el baseline en una
+// venta antigua al drenar por páginas). Una sola consulta commerce-wide,
+// indiferente al volumen histórico. 0 = el comercio no tiene ninguna
+// VentaQr todavía.
+export async function obtenerUltimoIdVentaQr(): Promise<number> {
+  const r = await get<ApiEnvelope<{ idVentaQr: number }>>('/api/comercio/ventas/ultimo-id');
+  return r.data?.idVentaQr ?? 0;
+}
+
 export async function getMiCajaActual(): Promise<CajaDto | null> {
   const r = await get<ApiEnvelope<CajaDto | null>>('/api/comercio/cajas/mi-caja-actual');
   return r.data ?? null;

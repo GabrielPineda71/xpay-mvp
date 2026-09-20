@@ -3,6 +3,8 @@ import { useAuth, getViewForUser } from '../auth/AuthContext.tsx';
 import { WalletShell, type WalletNavItem, type WalletPrimaryAction } from './wallet/WalletShell.tsx';
 import { WalletNotificationsProvider } from './wallet/WalletNotificationsContext.tsx';
 import { useComercioScope } from '../auth/useComercioScope.ts';
+import { CommerceNotificationsProvider } from './comercio/CommerceNotificationsContext.tsx';
+import { CommerceNotificationBell } from './comercio/CommerceNotificationBell.tsx';
 
 function getApiLabel(): string {
   const url = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
@@ -164,6 +166,19 @@ export function Layout() {
         </div>
 
         <div className="nav-user">
+          {/* XPAY-438 — campana de notificación operacional de venta QR,
+              solo vista comercio. El provider vive aquí (dentro del <nav>
+              persistente entre rutas /comercio/*, no dentro del <Outlet/>
+              que sí cambia) para que el polling propio no se reinicie al
+              navegar entre Mi Comercio/Mi Caja/Cajas. idComercioExistente
+              puede llegar undefined mientras useComercioScope resuelve —
+              el provider espera de forma segura (ver CommerceNotifications
+              Context.tsx). */}
+          {view === 'comercio' && (
+            <CommerceNotificationsProvider idComercioExistente={comercioScope?.idComercioExistente ?? null}>
+              <CommerceNotificationBell />
+            </CommerceNotificationsProvider>
+          )}
           {user && <span>{user.usuario}</span>}
           <span className="app-env">API: {getApiLabel()}</span>
           <button className="logout-button" onClick={handleLogout}>Cerrar sesión</button>

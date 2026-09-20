@@ -331,8 +331,19 @@ public class ComercioScopeService
     }
 
     public async Task<List<VentaConContextoResponse>> ListarVentasAsync(
-        ComercioScope scope, long? filtroSede, long? filtroCajero, string? fechaDesde, string? fechaHasta)
+        ComercioScope scope, long? filtroSede, long? filtroCajero, string? fechaDesde, string? fechaHasta,
+        long? desdeIdVentaQr = null)
     {
+        // XPAY-438 — MODO NOTIFICACIÓN OPERACIONAL COMMERCE-WIDE (no es un
+        // workaround del bug de scope histórico CAJERO/ADMIN_SEDE_COMERCIO
+        // documentado en XPAY-437 — es una regla de producto deliberada: la
+        // notificación QR es a nivel comercio, nunca por cajero/caja/sede).
+        // Rama completamente separada: ignora filtroSede/filtroCajero/
+        // fechaDesde/fechaHasta si llegan combinados (sección 3 del ticket),
+        // y no toca en absoluto el modo histórico de abajo.
+        if (desdeIdVentaQr.HasValue)
+            return await ListarVentasIncrementalAsync(scope, desdeIdVentaQr.Value);
+
         var desde = string.IsNullOrEmpty(fechaDesde)
             ? (DateTime?)null : DateTime.Parse(fechaDesde);
         var hasta = string.IsNullOrEmpty(fechaHasta)
@@ -377,6 +388,15 @@ public class ComercioScopeService
             .Select(u => new { u.IdUsuario, u.NombreUsuario })
             .ToDictionaryAsync(u => u.IdUsuario, u => u.NombreUsuario);
 
+        // XPAY-438 §4 — nombres de tienda, estructural desde ComercioTiendas,
+        // nunca inferido. Se resuelve también en el modo histórico para que
+        // el DTO quede completo en ambos modos.
+        var tiendaIds = ventas.Select(v => v.IdTienda).Distinct().ToList();
+        var tiendaNombres = await _db.ComercioTiendas
+            .Where(t => tiendaIds.Contains(t.IdTienda))
+            .Select(t => new { t.IdTienda, t.NombreTienda })
+            .ToDictionaryAsync(t => t.IdTienda, t => t.NombreTienda);
+
         return ventas.Select(v => {
             contextos.TryGetValue(v.IdVentaQr, out var ctx);
             return new VentaConContextoResponse(
@@ -384,9 +404,71 @@ public class ComercioScopeService
                 ctx?.IdEstablecimiento,
                 ctx?.IdEstablecimiento.HasValue == true ? estNombres.GetValueOrDefault(ctx.IdEstablecimiento!.Value) : null,
                 ctx?.IdCajeroUsuario,
-                ctx?.IdCajeroUsuario.HasValue == true ? cajNombres.GetValueOrDefault(ctx.IdCajeroUsuario!.Value) : null
+                ctx?.IdCajeroUsuario.HasValue == true ? cajNombres.GetValueOrDefault(ctx.IdCajeroUsuario!.Value) : null,
+                v.IdTienda,
+                tiendaNombres.GetValueOrDefault(v.IdTienda)
             );
         }).ToList();
+    }
+
+    // XPAY-438 — modo incremental commerce-wide para la notificación
+    // operacional de venta QR (sección 1-4 del ticket). Deliberadamente NO
+    // reutiliza BuildVentasQuery (esa función se ramifica por rol vía
+    // ComercioVentasQrContexto.IdEstablecimiento/IdCajeroUsuario, que
+    // XPAY-436/437 confirmaron que siempre está en null en producción — ver
+    // el bug histórico documentado ahí, que este ticket NO corrige). Aquí se
+    // filtra exclusivamente por IdComercio == scope.IdComercioExistente,
+    // igual para los 3 roles (ADMIN_COMERCIO/ADMIN_SEDE_COMERCIO/CAJERO) —
+    // coherente con la decisión de producto de que la notificación es a
+    // nivel comercio, nunca por cajero/sede/caja.
+    private async Task<List<VentaConContextoResponse>> ListarVentasIncrementalAsync(
+        ComercioScope scope, long desdeIdVentaQr)
+    {
+        var idComercio = scope.IdComercioExistente
+            ?? throw new InvalidOperationException("Tu comercio operativo no tiene un comercio existente asociado.");
+
+        var cursor = desdeIdVentaQr < 0 ? 0 : desdeIdVentaQr;
+
+        var ventas = await _db.VentasQr
+            .Where(v => v.IdComercio == idComercio && v.IdVentaQr > cursor)
+            .OrderBy(v => v.IdVentaQr)
+            .Take(100)
+            .ToListAsync();
+
+        var tiendaIds = ventas.Select(v => v.IdTienda).Distinct().ToList();
+        var tiendaNombres = await _db.ComercioTiendas
+            .Where(t => tiendaIds.Contains(t.IdTienda))
+            .Select(t => new { t.IdTienda, t.NombreTienda })
+            .ToDictionaryAsync(t => t.IdTienda, t => t.NombreTienda);
+
+        // IdEstablecimiento/NombreEstablecimiento/IdCajeroUsuario/NombreCajero
+        // deliberadamente null aquí — no aplican al modo commerce-wide (no se
+        // consulta ComercioVentasQrContexto en esta rama, por diseño).
+        return ventas.Select(v => new VentaConContextoResponse(
+            v.IdVentaQr, v.ValorBruto, v.Estado, v.FechaVenta.ToString("o"),
+            null, null, null, null,
+            v.IdTienda, tiendaNombres.GetValueOrDefault(v.IdTienda)
+        )).ToList();
+    }
+
+    // XPAY-438A §2 — baseline de primer uso de la notificación operacional
+    // QR SIN descargar historial. Una sola consulta MAX(id_venta_qr) WHERE
+    // id_comercio (misma condición de scope commerce-wide que
+    // ListarVentasIncrementalAsync — nunca depende de
+    // ComercioVentasQrContexto), acotada por índice, indiferente a que el
+    // comercio tenga 0, 2.000 o 100.000 VentaQr. 0 = el comercio no tiene
+    // ninguna VentaQr todavía (mismo significado que "sin baseline previo"
+    // ya usa el cliente).
+    public async Task<long> ObtenerUltimoIdVentaQrAsync(ComercioScope scope)
+    {
+        var idComercio = scope.IdComercioExistente
+            ?? throw new InvalidOperationException("Tu comercio operativo no tiene un comercio existente asociado.");
+
+        return await _db.VentasQr
+            .Where(v => v.IdComercio == idComercio)
+            .OrderByDescending(v => v.IdVentaQr)
+            .Select(v => v.IdVentaQr)
+            .FirstOrDefaultAsync();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

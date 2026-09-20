@@ -66,6 +66,115 @@ body {
   .main-content { padding: 1rem; }
 }
 
+/* ── XPAY-438 — Notificación operacional de venta QR (vista comercio) ──
+   Campana + panel propios (NO WalletHero/.wallet-shell-v2 — esos sólo
+   existen en la vista wallet, ver auditoría XPAY-437 §8). Ancla bajo la
+   barra .nav (54px de alto), mismo criterio de anclaje que el panel de
+   Wallet (.wallet-notifications-panel) pero con la paleta oscura de este
+   layout en vez de los tokens --xpay-*. */
+.commerce-notification-bell-wrap { position: relative; display: flex; align-items: center; }
+.commerce-notification-bell-btn {
+  background: transparent;
+  border: 1px solid #4a5568;
+  color: #a0aec0;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s;
+}
+.commerce-notification-bell-btn:hover { background: rgba(255,255,255,0.08); color: white; }
+.commerce-notification-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e53e3e;
+  border: 1.5px solid #1a1a2e;
+}
+
+.commerce-notifications-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 99;
+}
+.commerce-notifications-panel {
+  position: fixed;
+  top: 60px;
+  right: 1.5rem;
+  z-index: 100;
+  width: 320px;
+  max-width: calc(100vw - 2rem);
+  max-height: 70vh;
+  background: white;
+  color: #333;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.commerce-notifications-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+.commerce-notifications-panel-title { font-weight: 700; font-size: 0.95rem; }
+.commerce-notifications-close {
+  background: transparent;
+  border: none;
+  color: #718096;
+  cursor: pointer;
+  padding: 0.2rem;
+  display: flex;
+}
+.commerce-notifications-close:hover { color: #333; }
+.commerce-notifications-empty {
+  padding: 1.25rem 1rem;
+  color: #718096;
+  font-size: 0.88rem;
+  text-align: center;
+}
+.commerce-notifications-list {
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+}
+.commerce-notifications-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #edf2f7;
+}
+.commerce-notifications-item:last-child { border-bottom: none; }
+.commerce-notifications-item-title { font-size: 0.8rem; color: #38a169; font-weight: 600; }
+.commerce-notifications-item-amount { font-size: 1.05rem; font-weight: 700; }
+.commerce-notifications-item-venta { font-size: 0.85rem; color: #4a5568; }
+.commerce-notifications-item-tienda { font-size: 0.82rem; color: #4a5568; }
+.commerce-notifications-item-date { font-size: 0.78rem; color: #a0aec0; }
+.commerce-notifications-mark-seen-btn {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  background: #f4f6f8;
+  color: #2d3748;
+  padding: 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.commerce-notifications-mark-seen-btn:hover:not(:disabled) { background: #e2e8f0; }
+.commerce-notifications-mark-seen-btn:disabled { color: #a0aec0; cursor: default; }
+
 /* ── LOGIN ── */
 .login-container {
   min-height: 100vh;

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
@@ -71,7 +72,11 @@ public class ComercioViewController : ControllerBase
     [HttpGet("ventas")]
     public async Task<IActionResult> GetVentas(
         [FromQuery] long? filtroSede, [FromQuery] long? filtroCajero,
-        [FromQuery] string? fechaDesde, [FromQuery] string? fechaHasta)
+        [FromQuery] string? fechaDesde, [FromQuery] string? fechaHasta,
+        // XPAY-438 — modo notificación operacional commerce-wide: presente
+        // → ignora filtroSede/filtroCajero/fechaDesde/fechaHasta (sección 3
+        // del ticket); ausente → comportamiento histórico sin cambios.
+        [FromQuery] long? desdeIdVentaQr = null)
     {
         if (!TryGetUsuarioId(out var uid)) return Unauthorized(new { success = false, message = "Token inválido." });
         try
@@ -79,9 +84,29 @@ public class ComercioViewController : ControllerBase
             var s = await _scope.RequireScopeAsync(uid);
             if (!s.PuedeVerTodoComercio && filtroSede.HasValue && filtroSede != s.IdEstablecimiento)
                 return Forbid();
-            return Ok(new { success = true, data = await _scope.ListarVentasAsync(s, filtroSede, filtroCajero, fechaDesde, fechaHasta) });
+            return Ok(new { success = true, data = await _scope.ListarVentasAsync(s, filtroSede, filtroCajero, fechaDesde, fechaHasta, desdeIdVentaQr) });
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    // XPAY-438A §2 — baseline de primer uso de la notificación operacional
+    // QR, sin descargar historial (corrige el riesgo real de que un
+    // comercio con >2.000 VentaQr dejara el baseline en una venta antigua
+    // al drenar por páginas — ver CommerceNotificationsContext.tsx).
+    [HttpGet("ventas/ultimo-id")]
+    public async Task<IActionResult> GetUltimoIdVentaQr()
+    {
+        if (!TryGetUsuarioId(out var uid)) return Unauthorized(new { success = false, message = "Token inválido." });
+        try
+        {
+            var s = await _scope.RequireScopeAsync(uid);
+            var idVentaQr = await _scope.ObtenerUltimoIdVentaQrAsync(s);
+            return Ok(new { success = true, data = new UltimoIdVentaQrResponse(idVentaQr) });
+        }
+        catch (UnauthorizedAccessException) { return Forbid(); }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
     }
 }

@@ -112,5 +112,21 @@ public record VentaConContextoResponse(
     long?   IdEstablecimiento,
     string? NombreEstablecimiento,
     long?   IdCajeroUsuario,
-    string? NombreCajero
+    string? NombreCajero,
+    // XPAY-438 — extensión aditiva para la notificación operacional QR.
+    // Estructural, desde VentaQr.IdTienda → comercio_tiendas; nunca inferido
+    // de descripcion/establecimiento/caja. IdTienda es NOT NULL en VentaQr
+    // (siempre se resuelve al pagar), NombreTienda puede ser null (tienda
+    // borrada o sin nombre) — el consumidor debe tolerarlo.
+    long    IdTienda,
+    string? NombreTienda
 );
+
+// XPAY-438A — baseline de primer uso de la notificación operacional QR.
+// Extensión mínima commerce-wide (sección 2 del ticket): evita que
+// CommerceNotificationsContext tenga que drenar TODO el historial (con un
+// tope de páginas) solo para descubrir el IdVentaQr más reciente — una
+// única consulta MAX(id_venta_qr) por comercio, sin importar cuántas
+// ventas históricas existan (0, 100, 2.000 o 100.000). 0 significa "el
+// comercio no tiene ninguna VentaQr todavía".
+public record UltimoIdVentaQrResponse(long IdVentaQr);
