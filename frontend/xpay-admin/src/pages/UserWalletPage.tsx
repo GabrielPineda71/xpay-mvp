@@ -292,10 +292,13 @@ export function UserWalletPage() {
   const [envScanErr,    setEnvScanErr]    = useState<string | null>(null);
   const [envManual,     setEnvManual]     = useState(false);
   const [envManualDest, setEnvManualDest] = useState('');
-  // QA-WALLET-7A: mensaje de confirmación mostrado tras éxito, independiente
-  // de envMsg (que sigue reservado para errores del formulario reutilizable).
-  const [envSuccessMsg, setEnvSuccessMsg] = useState<string | null>(null);
-  const envSuccessTimerRef = useRef<number | null>(null);
+  // XPAY-426 (Block B) — reemplaza el mensaje inline QA-WALLET-7A que
+  // desaparecía solo (~1800ms) y navegaba automáticamente a Movimientos
+  // (auditado en XPAY-421 como insuficiente en móvil). Ahora es un
+  // modal persistente: solo se cierra con el botón "Cerrar" del usuario.
+  // Guarda el monto y el destinatario YA VALIDADOS en el momento del éxito
+  // (independiente de envMsg, que sigue reservado para errores).
+  const [envSuccessModal, setEnvSuccessModal] = useState<{ valor: number; destino: string } | null>(null);
   // Fase 71.2-E-G: una Idempotency-Key por intento lógico de transferencia —
   // se reutiliza mientras destino/valor/descripción no cambien (reintento del
   // mismo intento); se descarta al tener éxito o al cambiar cualquiera de
@@ -502,12 +505,12 @@ export function UserWalletPage() {
   // XPAY-422 D — la liberación de cámara/scanner ya no vive aquí: cada
   // `useQrScanner` (ver más abajo) gestiona su propio unmount vía el
   // cleanup de su efecto interno, encolado en su propia cadena serializada.
-  // Este efecto conserva únicamente los timers que sí son locales a esta
-  // página.
+  // XPAY-426 — el modal de éxito de envío ya no usa timer (ver
+  // envSuccessModal): no hay nada que limpiar aquí para ese caso. Este
+  // efecto conserva únicamente los timers que sí son locales a esta página.
   useEffect(() => {
     return () => {
       if (newMovToastTimerRef.current) clearTimeout(newMovToastTimerRef.current);
-      if (envSuccessTimerRef.current) clearTimeout(envSuccessTimerRef.current);
     };
   }, []);
 
@@ -723,23 +726,37 @@ export function UserWalletPage() {
       if (r.success) {
         envIdemRef.current = null;
         await loadCuenta();
-        // QA-WALLET-7A: limpiar el formulario para que no quede listo para
-        // repetir el envío, mostrar confirmación aparte y navegar a
-        // Movimientos tras una breve pausa.
+        // XPAY-426 (Block B) — destinatario/monto capturados de las mismas
+        // variables locales ya validadas antes del POST (destId/envValor/
+        // envDestUser), no del `data` de la respuesta: es la fuente más
+        // confiable ya presente en el flujo, sin depender de que el backend
+        // agregue nada nuevo al contrato. `envDestUser` solo llega resuelto
+        // cuando el destino vino de un QR (parseTransferQr) — si el destino
+        // se ingresó manualmente no hay username validado, así que se cae
+        // al identificador de wallet (nunca se inventa un nombre).
+        const destinoLabel = envDestUser || `Wallet #${destId}`;
+        const montoTransferido = Number(envValor);
+        // Limpiar el formulario para que no quede listo para repetir el
+        // envío (igual que antes) — la confirmación ahora vive en el modal,
+        // ya no en un mensaje inline de esta misma vista.
         setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
         setEnvPasted(''); setEnvManual(false); setEnvManualDest(''); setEnvScanErr(null);
         setEnvMsg(null);
-        setEnvSuccessMsg(r.message ?? 'Transferencia realizada exitosamente.');
-        if (envSuccessTimerRef.current) clearTimeout(envSuccessTimerRef.current);
-        envSuccessTimerRef.current = window.setTimeout(() => {
-          setEnvSuccessMsg(null);
-          setTab('movimientos');
-        }, 1800);
+        setEnvSuccessModal({ valor: montoTransferido, destino: destinoLabel });
       } else {
         setEnvMsg({ ok: false, text: r.message ?? 'Error al transferir.' });
       }
     } catch (e) { setEnvMsg({ ok: false, text: (e as Error).message }); }
     finally { setEnvBusy(false); setEnvPin(''); opInProgressRef.current = false; }
+  }
+
+  // XPAY-426 (Block B) — único punto de cierre del modal de éxito: no hay
+  // temporizador ni cierre automático en ninguna otra ruta. `loadCuenta()`
+  // ya corrió en el momento del éxito (arriba); volver a "saldo" solo
+  // muestra los datos que ya están frescos en el estado `cuenta`.
+  function handleCerrarEnvioExitoso() {
+    setEnvSuccessModal(null);
+    setTab('saldo');
   }
 
   // ── QR Payment handler ────────────────────────────────────────────────────
@@ -1017,6 +1034,31 @@ export function UserWalletPage() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="page">
+      {/* XPAY-426 (Block B) — confirmación de transferencia exitosa para el
+          EMISOR. Reemplaza el mensaje inline QA-WALLET-7A que desaparecía
+          solo (~1800ms) y navegaba automáticamente a Movimientos —
+          insuficiente en móvil (auditado en XPAY-421). Solo se renderiza
+          tras una respuesta real success===true (envSuccessModal se
+          construye únicamente dentro de esa rama de handleEnviar); no hay
+          temporizador, no hay cierre automático — el único cierre es
+          handleCerrarEnvioExitoso, disparado por el botón "Cerrar". No es
+          un framework de modales nuevo: es un overlay fijo, propio de este
+          flujo (ver .wallet-send-success-* en wallet-shell.css). */}
+      {envSuccessModal && (
+        <div className="wallet-send-success-overlay" role="dialog" aria-modal="true" aria-label="Transferencia exitosa">
+          <div className="wallet-send-success-box">
+            <h3 className="wallet-send-success-title">Transferencia exitosa</h3>
+            <p className="wallet-send-success-amount">{fmtMoney(envSuccessModal.valor)}</p>
+            <p className="wallet-send-success-text">
+              Se envió correctamente a <strong>{envSuccessModal.destino}</strong>.
+            </p>
+            <button className="wallet-send-success-close-btn" onClick={handleCerrarEnvioExitoso}>
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
       <h2>Mi Wallet</h2>
 
       {/* XPAY-415 — el encabezado técnico (Usuario/Wallet #/QA-Demo, la barra
@@ -1223,10 +1265,6 @@ export function UserWalletPage() {
         <div className="wallet-send">
           <h3 className="wallet-send-title">Enviar dinero</h3>
 
-          {envSuccessMsg ? (
-            <div className="wallet-send-msg wallet-send-msg--ok">{envSuccessMsg}</div>
-          ) : (
-          <>
           {/* XPAY-390 R4 — el escaneo se inicia automáticamente al entrar
               (ver efecto "Auto-inicio de escaneo" más arriba); ya no exige
               pulsar "Escanear QR" primero. Pegar contenido / ingresar
@@ -1373,8 +1411,6 @@ export function UserWalletPage() {
                 </div>
               )}
             </>
-          )}
-          </>
           )}
         </div>
       )}

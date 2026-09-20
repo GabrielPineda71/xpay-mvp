@@ -400,6 +400,62 @@
   margin: 0 0 var(--sp-2);
 }
 
+/* ── Confirmación de transferencia exitosa (XPAY-426, Block B) — overlay
+   centrado, persistente (sin auto-cierre, solo el botón "Cerrar" lo quita).
+   No reutiliza .wallet-overlay/.wallet-profile-sheet (esas están prefijadas
+   .wallet-shell-v2 y ancladas al panel de perfil en la esquina); este modal
+   necesita estar centrado y vivir en el espacio de clases sin prefijo de
+   UserWalletPage.tsx (mismo patrón que .wallet-send-*). */
+.wallet-send-success-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+}
+.wallet-send-success-box {
+  background: var(--xpay-surface);
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  padding: var(--sp-6) var(--sp-5);
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+}
+.wallet-send-success-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+  margin: 0 0 var(--sp-3);
+}
+.wallet-send-success-amount {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--xpay-teal);
+  margin: 0 0 var(--sp-2);
+}
+.wallet-send-success-text {
+  font-size: 0.9rem;
+  color: var(--xpay-text-secondary);
+  margin: 0 0 var(--sp-5);
+}
+.wallet-send-success-close-btn {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 10px;
+  border: none;
+  background: var(--xpay-teal);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.wallet-send-success-close-btn:hover { background: #0a6b75; }
+.wallet-send-success-close-btn:focus-visible { outline: 2px solid var(--xpay-teal); outline-offset: 2px; }
+
 /* ── HeroBalanceCard (UserWalletPage.tsx, tab "saldo") — tarjeta blanca
    con acento verde XPAY, sin degradado ni fondo verde. Reemplaza las 3
    tarjetas inline (saldo/wallet/estado) que vivían en .cards/.card
