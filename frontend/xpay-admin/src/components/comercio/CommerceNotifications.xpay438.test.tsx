@@ -561,7 +561,11 @@ describe('XPAY-438/438A — CommerceNotifications', () => {
     // La #3 (no detectada al momento del click) debe seguir/volver a
     // aparecer como nueva — no se perdió.
     await waitFor(() => expect(notifDot()).not.toBeNull());
-    await userEvent.click(screen.getByRole('button', { name: 'Notificaciones de ventas' }));
+    // XPAY-442 — el panel sigue abierto desde abrirCampana() de más arriba
+    // ("Marcar como vistas" no lo cierra, sección 13 de XPAY-438); la
+    // campana es un toggle (CommerceNotificationBell), así que volver a
+    // pulsarla aquí lo CERRARÍA en vez de "abrirlo". Se verifica
+    // directamente sobre el panel ya abierto.
     expect(within(getPanel()).getByText('Venta #3')).toBeInTheDocument();
     expect(within(getPanel()).queryByText('Venta #2')).toBeNull(); // la #2 ya quedó vista, no reaparece.
   });
