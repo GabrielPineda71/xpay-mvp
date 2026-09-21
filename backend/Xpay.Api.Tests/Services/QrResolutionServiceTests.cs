@@ -25,7 +25,7 @@ public sealed class QrResolutionServiceTests
         var creados = new Sembrados();
         try
         {
-            var idComercio = await seed.SembrarComercioAsync(creados, "Comercio Preview");
+            var (idComercio, nombreComercialSembrado) = await seed.SembrarComercioAsync(creados, "Comercio Preview");
             var idTienda   = await seed.SembrarTiendaAsync(idComercio, "Tienda Preview", "ACTIVO", creados);
             var codigoQr   = await seed.SembrarQrAsync(idComercio, idTienda, "ACTIVO", creados);
 
@@ -35,7 +35,11 @@ public sealed class QrResolutionServiceTests
 
             Assert.Equal(codigoQr, resultado.Qr.CodigoQr);
             Assert.Equal(idComercio, resultado.Comercio.IdComercio);
-            Assert.Equal("Comercio Preview", resultado.Comercio.NombreComercial);
+            // XPAY-455 — comparar contra el NombreComercial REALMENTE
+            // persistido (con su sufijo GUID de unicidad), no contra el
+            // prefijo "Comercio Preview" sin sufijo (ver causa raíz en el
+            // comentario de SembrarComercioAsync).
+            Assert.Equal(nombreComercialSembrado, resultado.Comercio.NombreComercial);
             Assert.Equal(idTienda, resultado.Tienda.IdTienda);
             Assert.Equal("Tienda Preview", resultado.Tienda.NombreTienda);
         }
@@ -65,7 +69,7 @@ public sealed class QrResolutionServiceTests
         var creados = new Sembrados();
         try
         {
-            var idComercio = await seed.SembrarComercioAsync(creados, "Comercio QR Inactivo");
+            var (idComercio, _) = await seed.SembrarComercioAsync(creados, "Comercio QR Inactivo");
             var idTienda   = await seed.SembrarTiendaAsync(idComercio, "Tienda", "ACTIVO", creados);
             var codigoQr   = await seed.SembrarQrAsync(idComercio, idTienda, "INACTIVO", creados);
 
@@ -88,7 +92,7 @@ public sealed class QrResolutionServiceTests
         var creados = new Sembrados();
         try
         {
-            var idComercio = await seed.SembrarComercioAsync(creados, "Comercio Inactivo", estado: "INACTIVO");
+            var (idComercio, _) = await seed.SembrarComercioAsync(creados, "Comercio Inactivo", estado: "INACTIVO");
             var idTienda   = await seed.SembrarTiendaAsync(idComercio, "Tienda", "ACTIVO", creados);
             var codigoQr   = await seed.SembrarQrAsync(idComercio, idTienda, "ACTIVO", creados);
 
@@ -110,7 +114,7 @@ public sealed class QrResolutionServiceTests
         var creados = new Sembrados();
         try
         {
-            var idComercio = await seed.SembrarComercioAsync(creados, "Comercio Tienda Inactiva");
+            var (idComercio, _) = await seed.SembrarComercioAsync(creados, "Comercio Tienda Inactiva");
             var idTienda   = await seed.SembrarTiendaAsync(idComercio, "Tienda Cerrada", "INACTIVO", creados);
             var codigoQr   = await seed.SembrarQrAsync(idComercio, idTienda, "ACTIVO", creados);
 
@@ -133,11 +137,11 @@ public sealed class QrResolutionServiceTests
         var creados = new Sembrados();
         try
         {
-            var idComercioA = await seed.SembrarComercioAsync(creados, "Comercio A");
+            var (idComercioA, _) = await seed.SembrarComercioAsync(creados, "Comercio A");
             var idTiendaA   = await seed.SembrarTiendaAsync(idComercioA, "Tienda A", "ACTIVO", creados);
             var codigoQrA   = await seed.SembrarQrAsync(idComercioA, idTiendaA, "ACTIVO", creados);
 
-            var idComercioB = await seed.SembrarComercioAsync(creados, "Comercio B");
+            var (idComercioB, _) = await seed.SembrarComercioAsync(creados, "Comercio B");
             var idTiendaB   = await seed.SembrarTiendaAsync(idComercioB, "Tienda B", "ACTIVO", creados);
             var codigoQrB   = await seed.SembrarQrAsync(idComercioB, idTiendaB, "ACTIVO", creados);
 
@@ -193,21 +197,30 @@ public sealed class QrResolutionServiceTests
             return _idUnidad.Value;
         }
 
-        public async Task<long> SembrarComercioAsync(Sembrados creados, string nombre, string estado = "ACTIVO")
+        // XPAY-455 — devuelve también el NombreComercial REALMENTE persistido
+        // (con su sufijo GUID de unicidad, necesario para no colisionar
+        // contra SQL real) en vez de solo el id. Antes, B1 comparaba el
+        // resultado contra el prefijo "nombre" sin sufijo, lo cual nunca
+        // podía ser exactamente igual al valor sembrado — este método
+        // ahora permite que el test compare contra el valor exacto que
+        // efectivamente se guardó, sin debilitar la aserción a
+        // Contains/StartsWith ni eliminar la unicidad del fixture.
+        public async Task<(long IdComercio, string NombreComercial)> SembrarComercioAsync(Sembrados creados, string nombre, string estado = "ACTIVO")
         {
             var idUnidad = await IdUnidadAsync();
             await using var ctx = NuevoContexto(cs);
+            var nombreComercial = $"{nombre} {Guid.NewGuid():N}"[..40];
             var comercio = new Comercio
             {
                 IdUnidadNegocio = idUnidad,
-                NombreComercial = $"{nombre} {Guid.NewGuid():N}"[..40],
+                NombreComercial = nombreComercial,
                 Estado          = estado,
                 FechaCreacion   = DateTime.UtcNow,
             };
             ctx.Comercios.Add(comercio);
             await ctx.SaveChangesAsync();
             creados.Comercios.Add(comercio.IdComercio);
-            return comercio.IdComercio;
+            return (comercio.IdComercio, nombreComercial);
         }
 
         public async Task<long> SembrarTiendaAsync(long idComercio, string nombreTienda, string estado, Sembrados creados)
