@@ -1,0 +1,40 @@
+{
+  "case_id": "M4-T2",
+  "executed_at_utc": "2026-09-21T21:27:24Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "89b2a178f2e29469ae64bd2f6b23fd96f5430037",
+  "operation": "POST /v1/qrcodes/decode",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "customer_id_fingerprint": "99A710894D3B",
+    "qr_code_data_present": true,
+    "qr_code_data_fingerprint": "CBC707A99069"
+  },
+  "response_sanitized": {
+    "status": "ACTIVE",
+    "type": "STATIC",
+    "channel": "MPOS",
+    "acquirer_network_identifier": "VISI",
+    "amount_present": false,
+    "additional_info_present": false,
+    "inc_present": true,
+    "vat_present": true,
+    "key_present": true,
+    "key_type": "BCODE",
+    "key_value_fingerprint": "41962CECC119",
+    "merchant_present": true,
+    "merchant_category_code": "1234",
+    "merchant_country": "CO",
+    "merchant_name_fingerprint": "7386DE14E4DF",
+    "merchant_city_fingerprint": "6ACC087F5513",
+    "merchant_post_code_fingerprint": "F62D98FDFAEF",
+    "qr_code_data_present": true,
+    "qr_code_data_fingerprint": "CBC707A99069",
+    "qr_code_reference_present": true,
+    "qr_code_reference_fingerprint": "6C9908F76309"
+  },
+  "automated_test_reference": null,
+  "notes": null,
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

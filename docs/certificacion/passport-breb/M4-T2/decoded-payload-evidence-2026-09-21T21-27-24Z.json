@@ -1,0 +1,93 @@
+{
+  "certification_case": "M4-T2",
+  "description": "Decodificar QR estático y validar la estructura JSON",
+  "environment": "Passport Sandbox",
+  "execution_result": "PASS",
+  "passport_decode_calls": 1,
+  "passport_other_calls": 0,
+  "executed_at_utc": "2026-09-21T21:27:24Z",
+  "backend_commit_sha": "89b2a178f2e29469ae64bd2f6b23fd96f5430037",
+  "operation": "POST /v1/qrcodes/decode",
+
+  "source_evidence": {
+    "file": "docs/certificacion/passport-breb/M4-T2/evidence-2026-09-21T21-27-24Z.json",
+    "sha256": "5c2c7eb8a8b3701884d1a7587269f405f09158769805c6e89a929c2fe1dc0ee4",
+    "note": "Este artefacto es DOCUMENTAL/COMPLEMENTARIO — no sustituye, altera ni reescribe la evidencia técnica original referenciada arriba. Todo dato incluido aquí proviene ÚNICAMENTE de esa evidencia técnica (ya saneada) y de metadata local verificable; ningún valor fue re-observado contra Passport para construir este archivo."
+  },
+
+  "traceability": {
+    "m4_t1_qr_code_data_fingerprint": "CBC707A99069",
+    "m4_t1_source_evidence_file": "docs/certificacion/passport-breb/M4-T1/evidence-2026-09-21T20-08-12Z.json",
+    "m4_t1_source_evidence_sha256": "65404462330f9d7fe84ef2454b24cb189cba88cb853cfbfb4f3d67d1334bff0f",
+    "m4_t2_request_qr_code_data_fingerprint": "CBC707A99069",
+    "m4_t2_response_qr_code_data_fingerprint": "CBC707A99069",
+    "fingerprints_match_m4_t1_source_qr": true,
+    "note": "Los tres fingerprints (QR creado en M4-T1, qr_code_data enviado en la solicitud de M4-T2, y qr_code_data reflejado en la respuesta de M4-T2) son IDÉNTICOS — confirma sin ambigüedad, y sin exponer el valor crudo en ningún momento, que M4-T2 decodificó exactamente el mismo QR estático creado en M4-T1."
+  },
+
+  "decoded_payload_observed": {
+    "status": "ACTIVE",
+    "type": "STATIC",
+    "channel": "MPOS",
+    "acquirer_network_identifier": "VISI",
+
+    "qr_code_data_present": true,
+    "qr_code_data_fingerprint": "CBC707A99069",
+
+    "qr_code_reference_present": true,
+    "qr_code_reference_fingerprint": "6C9908F76309",
+
+    "vat": {
+      "present": true,
+      "note": "La evidencia técnica original únicamente preservó vat_present=true. Sus subcampos (vat_type/vat_value/vat_base_value) NUNCA fueron capturados por el evidence builder — por diseño, para no exponer datos potencialmente sensibles — y por tanto NO se reconstruyen ni se infieren aquí."
+    },
+
+    "inc": {
+      "present": true,
+      "note": "La evidencia técnica original únicamente preservó inc_present=true. Sus subcampos (inc_type/inc_value) NUNCA fueron capturados — mismo criterio que vat — y por tanto NO se reconstruyen ni se infieren aquí."
+    },
+
+    "amount": {
+      "present": false,
+      "note": "amount_present=false en la evidencia técnica original. Esto describe la AUSENCIA del objeto amount en la respuesta decodificada — no se representa como ningún valor JSON de amount, porque ninguno fue preservado ni existió."
+    },
+
+    "additional_info": {
+      "present": false,
+      "note": "additional_info_present=false en la evidencia técnica original. Mismo criterio que amount — ausencia documentada, sin inventar un objeto que nunca existió."
+    },
+
+    "key": {
+      "present": true,
+      "key_type": "BCODE",
+      "key_value_fingerprint": "41962CECC119",
+      "note": "key_value NUNCA se preservó en texto plano — es un dato potencialmente PII directa (teléfono/email/cédula según key_type). Sólo su fingerprint y la categoría key_type (no identificante por sí sola) se incluyen aquí, igual que en la evidencia técnica original."
+    },
+
+    "merchant": {
+      "present": true,
+      "merchant_category_code": "1234",
+      "merchant_country": "CO",
+      "merchant_name_fingerprint": "7386DE14E4DF",
+      "merchant_city_fingerprint": "6ACC087F5513",
+      "merchant_post_code_fingerprint": "F62D98FDFAEF",
+      "note": "merchant_category_code/merchant_country son categorías institucionales no identificantes por sí solas y se conservan literales, igual que en la evidencia técnica original; merchant_name/merchant_city/merchant_post_code (que combinados podrían identificar el comercio/ubicación) permanecen únicamente como fingerprint."
+    }
+  },
+
+  "validation": {
+    "json_valid": true,
+    "static_qr_confirmed": true,
+    "channel_matches_m4_t1_creation_contract": true,
+    "qr_code_data_roundtrip_confirmed": true,
+    "single_decode_call_confirmed": true,
+    "notes": "json_valid=true: la deserialización a PassportDecodeQrCodeResponse completó sin excepción sobre una respuesta HTTP 2xx real (http_status=null + result=PASS es la convención repo-wide para \"2xx validado\", ver docs/certificacion/passport-breb/README.md). static_qr_confirmed=true: type=STATIC coincide exactamente con el tipo creado en M4-T1. channel_matches_m4_t1_creation_contract=true: channel=MPOS coincide exactamente con el contrato de creación confirmado por Passport para M4-T1 (XPAY-460). qr_code_data_roundtrip_confirmed=true: el fingerprint del qr_code_data enviado en la solicitud de decode es idéntico al fingerprint reflejado en la respuesta Y al fingerprint histórico registrado en la evidencia de creación de M4-T1 (ver traceability arriba). single_decode_call_confirmed=true: passport_decode_calls=1, passport_other_calls=0, tomado directamente del reporte de ejecución real (ningún reintento, ninguna segunda llamada)."
+  },
+
+  "limitations": {
+    "tip": "not modeled by PassportDecodeQrCodeResponse at execution time; raw successful HTTP JSON was not preserved; presence/value in Passport raw response is therefore undeterminable. Esta limitación NO se interpreta como un fallo de la ejecución M4-T2 — execution_result permanece PASS — es una limitación estructural del DTO productivo vigente al momento de esta ejecución, documentada en una auditoría offline previa.",
+    "vat_inc_subfields": "Sólo se preservó la presencia (vat_present/inc_present=true) en la evidencia técnica original. Los subcampos concretos (vat_type/vat_value/vat_base_value, inc_type/inc_value) nunca fueron capturados por el evidence builder — no pueden reconstruirse ni fueron inferidos en este artefacto.",
+    "raw_http_json": "El JSON HTTP crudo de la respuesta exitosa nunca se preservó en ningún artefacto local: la deserialización lee directamente desde el stream HTTP hacia el objeto tipado (System.Text.Json ReadFromJsonAsync), sin materializar el texto crudo. Este artefacto describe exclusivamente el payload YA DESERIALIZADO y saneado — nunca el JSON crudo original de Passport.",
+    "unmapped_fields": "Cualquier propiedad JSON devuelta por Passport que no esté modelada en PassportDecodeQrCodeResponse (tip incluido, y cualquier otra no listada en decoded_payload_observed) habría sido descartada silenciosamente por el deserializador — su existencia o ausencia en la respuesta real de Passport es indeterminable a partir de artefactos locales, para tip y para cualquier campo no modelado."
+  }
+}
