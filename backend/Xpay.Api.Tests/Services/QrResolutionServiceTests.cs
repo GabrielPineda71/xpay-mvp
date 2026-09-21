@@ -229,7 +229,15 @@ public sealed class QrResolutionServiceTests
         public async Task<string> SembrarQrAsync(long idComercio, long idTienda, string estado, Sembrados creados)
         {
             await using var ctx = NuevoContexto(cs);
-            var codigo = $"QR-451-{Guid.NewGuid():N}"[..40];
+            // XPAY-453 — "QR-451-" (7) + Guid:N (32) = 39 caracteres; el
+            // [..40] anterior asumía incorrectamente que la cadena siempre
+            // tendría AL MENOS 40 caracteres y lanzaba
+            // ArgumentOutOfRangeException en todo entorno con SQL real (ver
+            // CI de XPAY-452) — localmente el early-return de
+            // TryConnString nunca llegaba a ejecutar esta línea. codigo_qr
+            // es NVARCHAR(100): no hace falta truncar, la cadena completa
+            // ya es única (GUID) y cabe sin problema.
+            var codigo = $"QR-451-{Guid.NewGuid():N}";
             var qr = new QrComercio
             {
                 IdComercio    = idComercio,

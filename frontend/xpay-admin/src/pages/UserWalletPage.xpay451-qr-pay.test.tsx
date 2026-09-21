@@ -55,8 +55,17 @@ const PREVIEW_VALIDO = {
   idTienda: 3, nombreTienda: 'QA UAT Tienda 1',
 };
 
-// Controlable por test: 'ok' | 'not-found' | 'network-error'.
-let resolverMode: 'ok' | 'not-found' | 'network-error' = 'ok';
+// Controlable por test: 'ok' | 'not-found' | 'network-error' | 'pending'.
+// XPAY-453 — 'pending' se agrega para representar un preview que nunca
+// resuelve (F1). Se resuelve DENTRO de apiRoutedGet, el mismo router que
+// renderWalletAt() ya instala vía mockGet.mockImplementation(apiRoutedGet)
+// — antes, F1 llamaba mockGet.mockImplementation(...) con un router propio
+// ANTES de renderWalletAt(), pero renderWalletAt() lo sobrescribía
+// internamente con apiRoutedGet, perdiendo el override sin que el test lo
+// notara (falla confirmada en CI de XPAY-452). Usar el mismo mecanismo de
+// resolverMode que el resto de la suite evita ese problema de raíz: no hay
+// ningún override que pueda perderse.
+let resolverMode: 'ok' | 'not-found' | 'network-error' | 'pending' = 'ok';
 
 function apiRoutedGet(path: string) {
   if (path === '/api/wallets/mi-wallet') return Promise.resolve({ success: true, data: { idWallet: 2, idPersona: 3, nombreWallet: 'Wallet qa.usuario1', estado: 'ACTIVA' } });
@@ -67,6 +76,7 @@ function apiRoutedGet(path: string) {
   if (path.startsWith('/api/qr/resolver')) {
     if (resolverMode === 'ok') return Promise.resolve({ success: true, data: PREVIEW_VALIDO });
     if (resolverMode === 'not-found') return Promise.reject(new Error('QR no disponible para pago.'));
+    if (resolverMode === 'pending') return new Promise(() => { /* nunca resuelve, deliberado (F1) */ });
     return Promise.reject(new Error('No fue posible conectar con el backend XPAY. Verifica la URL del API o la conexión.'));
   }
   return Promise.reject(new Error(`unmocked GET ${path}`));
@@ -110,11 +120,7 @@ describe('UserWalletPage — Comprar con QR: preview del receptor + confirmació
   // F1 — QR leído → preview loading → no se ofrece pagar todavía.
   it('F1: mientras el preview está cargando, no se muestra el selector de método de pago', async () => {
     const user = userEvent.setup();
-    resolverMode = 'ok';
-    mockGet.mockImplementation((path: string) => {
-      if (path.startsWith('/api/qr/resolver')) return new Promise(() => { /* nunca resuelve durante este test */ });
-      return apiRoutedGet(path);
-    });
+    resolverMode = 'pending';
     renderWalletAt('pagar');
     await waitFor(() => expect(screen.getByText('Escanea el QR del comercio')).toBeInTheDocument());
 
