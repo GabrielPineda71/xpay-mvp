@@ -36,11 +36,16 @@ const ID_COMERCIO_B = 8;
 
 function venta(overrides: Partial<VentaQrNotificacion> & { idVentaQr: number }): VentaQrNotificacion {
   return {
-    valorBruto:   120_000,
-    estado:       'CONTINGENCIA',
-    fechaVenta:   '2026-09-20T15:30:00Z',
-    idTienda:     1,
-    nombreTienda: 'Tienda Centro',
+    valorBruto:     120_000,
+    estado:         'CONTINGENCIA',
+    fechaVenta:     '2026-09-20T15:30:00Z',
+    idTienda:       1,
+    nombreTienda:   'Tienda Centro',
+    // XPAY-451 §10 — campo nuevo y obligatorio en VentaQrNotificacion
+    // (identidad mínima del pagador); default neutro para no afectar
+    // ninguna aserción existente de este archivo (ninguna de F1-F18
+    // depende de este valor).
+    pagadorDisplay: 'Cliente XPAY',
     ...overrides,
   };
 }
@@ -586,5 +591,45 @@ describe('XPAY-438/438A — CommerceNotifications', () => {
 
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockGet).not.toHaveBeenCalled(); // esta suite solo usa listarVentasQrDesde/obtenerUltimoIdVentaQr, no get() genérico.
+  });
+
+  // F12 (XPAY-451 §10/11, fix P3 de XPAY-450) — la notificación muestra
+  // "De: <pagadorDisplay>", identidad mínima y segura ya resuelta por
+  // backend (nunca inventada/derivada en el cliente).
+  it('F12: la notificación muestra "De: <pagadorDisplay>"', async () => {
+    ventasState = [venta({ idVentaQr: 1 })];
+    renderHarness();
+    await esperarBaseline();
+    await waitFor(() => expect(window.localStorage.getItem(lastSeenKey())).toBe('1'));
+
+    ventasState.push(venta({ idVentaQr: 2, pagadorDisplay: 'Gabriel P.' }));
+    await vi.advanceTimersByTimeAsync(7000);
+    await waitFor(() => expect(notifDot()).not.toBeNull());
+
+    await abrirCampana();
+    expect(within(getPanel()).getByText('De: Gabriel P.')).toBeInTheDocument();
+  });
+
+  // F13 — agregar la identidad del pagador no desplaza ni reemplaza el
+  // resto de los campos ya validados (Venta #, monto, tienda, fecha).
+  it('F13: la notificación conserva Venta #, monto, tienda y fecha junto con la identidad del pagador', async () => {
+    ventasState = [venta({ idVentaQr: 1 })];
+    renderHarness();
+    await esperarBaseline();
+    await waitFor(() => expect(window.localStorage.getItem(lastSeenKey())).toBe('1'));
+
+    ventasState.push(venta({
+      idVentaQr: 2, valorBruto: 100, nombreTienda: 'QA UAT Tienda 1',
+      pagadorDisplay: 'Gabriel P.', fechaVenta: '2026-09-21T02:00:06Z',
+    }));
+    await vi.advanceTimersByTimeAsync(7000);
+    await waitFor(() => expect(notifDot()).not.toBeNull());
+
+    await abrirCampana();
+    const panel = within(getPanel());
+    expect(panel.getByText('Venta #2')).toBeInTheDocument();
+    expect(panel.getByText(/100/)).toBeInTheDocument();
+    expect(panel.getByText('Tienda: QA UAT Tienda 1')).toBeInTheDocument();
+    expect(panel.getByText('De: Gabriel P.')).toBeInTheDocument();
   });
 });

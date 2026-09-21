@@ -560,6 +560,99 @@
 .wallet-send-success-close-btn:hover { background: #0a6b75; }
 .wallet-send-success-close-btn:focus-visible { outline: 2px solid var(--xpay-teal); outline-offset: 2px; }
 
+/* ── Confirmación de pago QR exitoso (XPAY-451, fix P1 de XPAY-450) —
+   mismo patrón visual que .wallet-send-success-* (overlay centrado,
+   persistente, sin botón de pago activo debajo), pero con sus PROPIAS
+   clases: flujos financieros distintos (transferencia vs. pago QR), mismo
+   criterio ya usado por .wallet-send-success-* de no acoplarse a
+   .wallet-overlay/.wallet-profile-sheet. */
+.wallet-pay-success-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
+}
+.wallet-pay-success-box {
+  background: var(--xpay-surface);
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  padding: var(--sp-6) var(--sp-5);
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+}
+.wallet-pay-success-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--xpay-teal);
+  margin: 0 0 var(--sp-3);
+}
+.wallet-pay-success-amount {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+  margin: 0 0 var(--sp-3);
+}
+.wallet-pay-success-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: 0.88rem;
+  color: var(--xpay-text-secondary);
+  margin: 0 0 var(--sp-2);
+  text-align: left;
+}
+.wallet-pay-success-row strong { color: var(--xpay-text-primary); }
+.wallet-pay-success-close-btn {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 10px;
+  border: none;
+  background: var(--xpay-teal);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  margin-top: var(--sp-3);
+}
+.wallet-pay-success-close-btn:hover { background: #0a6b75; }
+.wallet-pay-success-close-btn:focus-visible { outline: 2px solid var(--xpay-teal); outline-offset: 2px; }
+
+/* ── Preview read-only del receptor (XPAY-451, fix P4 de XPAY-450) — los
+   nombres SIEMPRE se resuelven en backend (GET /api/qr/resolver), nunca se
+   toman del payload del QR escaneado. */
+.wallet-pay-preview-loading {
+  font-size: 0.85rem;
+  color: var(--xpay-text-secondary);
+  margin: var(--sp-2) 0;
+}
+.wallet-pay-recipient {
+  background: var(--xpay-page-bg);
+  border-radius: 10px;
+  padding: var(--sp-3) var(--sp-4);
+  margin: var(--sp-2) 0 var(--sp-3);
+}
+.wallet-pay-recipient-label {
+  font-size: 0.78rem;
+  color: var(--xpay-text-secondary);
+  margin: 0 0 0.15rem;
+}
+.wallet-pay-recipient-comercio {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--xpay-text-primary);
+  margin: 0;
+}
+.wallet-pay-recipient-tienda {
+  font-size: 0.85rem;
+  color: var(--xpay-text-secondary);
+  margin: 0.1rem 0 0;
+}
+
 /* ── HeroBalanceCard (UserWalletPage.tsx, tab "saldo") — tarjeta blanca
    con acento verde XPAY, sin degradado ni fondo verde. Reemplaza las 3
    tarjetas inline (saldo/wallet/estado) que vivían en .cards/.card

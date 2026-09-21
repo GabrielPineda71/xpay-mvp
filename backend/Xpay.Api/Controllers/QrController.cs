@@ -11,16 +11,20 @@ namespace Xpay.Api.Controllers;
 [Route("api/qr")]
 public class QrController : ControllerBase
 {
-    private readonly PagoQrService   _pagoQrService;
-    private readonly WalletService   _walletService;
-    private readonly AuditLogService _audit;
+    private readonly PagoQrService       _pagoQrService;
+    private readonly WalletService       _walletService;
+    private readonly AuditLogService     _audit;
+    private readonly QrResolutionService _qrResolution;
     private readonly ILogger<QrController> _logger;
 
-    public QrController(PagoQrService pagoQrService, WalletService walletService, AuditLogService audit, ILogger<QrController> logger)
+    public QrController(
+        PagoQrService pagoQrService, WalletService walletService, AuditLogService audit,
+        QrResolutionService qrResolution, ILogger<QrController> logger)
     {
         _pagoQrService = pagoQrService;
         _walletService = walletService;
         _audit         = audit;
+        _qrResolution  = qrResolution;
         _logger        = logger;
     }
 
@@ -126,6 +130,43 @@ public class QrController : ControllerBase
         {
             _logger.LogError(ex, "Error interno procesando pago QR para wallet {IdWallet}.", walletPropia.IdWallet);
             return StatusCode(500, new { success = false, message = "Error interno procesando el pago QR." });
+        }
+    }
+
+    // XPAY-451 §3/4 — preview de SOLO LECTURA para que el pagador confirme
+    // Comercio + Tienda ANTES de enviar el POST financiero. Reutiliza
+    // exactamente QrResolutionService (misma resolución que usa el pago
+    // real) — nunca puede aceptar/devolver algo que el pago rechazaría
+    // después. NO requiere KycAprobado (a diferencia de Pagar): es de solo
+    // lectura y no mueve dinero, así que basta con el [Authorize] de la
+    // clase (cualquier usuario autenticado puede validar un QR antes de
+    // decidir si completa su KYC para pagarlo). Respuesta deliberadamente
+    // genérica en caso de fallo — no distingue "QR no existe" de "comercio
+    // inactivo" de "tienda inactiva" para no filtrar detalles internos a
+    // quien apunta el escáner a un código arbitrario.
+    [HttpGet("resolver")]
+    public async Task<IActionResult> Resolver([FromQuery] string? codigoQr)
+    {
+        if (string.IsNullOrWhiteSpace(codigoQr))
+            return BadRequest(new { success = false, message = "codigoQr es requerido." });
+
+        try
+        {
+            var (qr, comercio, tienda) = await _qrResolution.ResolverQrActivoAsync(codigoQr);
+            return Ok(new
+            {
+                success = true,
+                data = new QrResolverResponse(qr.CodigoQr, comercio.IdComercio, comercio.NombreComercial, tienda.IdTienda, tienda.NombreTienda)
+            });
+        }
+        catch (InvalidOperationException)
+        {
+            return NotFound(new { success = false, message = "QR no disponible para pago." });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error interno resolviendo preview de QR.");
+            return StatusCode(500, new { success = false, message = "Error interno." });
         }
     }
 }

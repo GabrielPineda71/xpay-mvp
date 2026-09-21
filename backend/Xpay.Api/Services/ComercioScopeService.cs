@@ -397,6 +397,10 @@ public class ComercioScopeService
             .Select(t => new { t.IdTienda, t.NombreTienda })
             .ToDictionaryAsync(t => t.IdTienda, t => t.NombreTienda);
 
+        // XPAY-451 §10 — identidad mínima del pagador, misma resolución que
+        // el modo incremental (ver ObtenerPagadorDisplayPorWalletAsync).
+        var pagadorPorWallet = await ObtenerPagadorDisplayPorWalletAsync(ventas.Select(v => v.IdWalletUsuario));
+
         return ventas.Select(v => {
             contextos.TryGetValue(v.IdVentaQr, out var ctx);
             return new VentaConContextoResponse(
@@ -406,7 +410,8 @@ public class ComercioScopeService
                 ctx?.IdCajeroUsuario,
                 ctx?.IdCajeroUsuario.HasValue == true ? cajNombres.GetValueOrDefault(ctx.IdCajeroUsuario!.Value) : null,
                 v.IdTienda,
-                tiendaNombres.GetValueOrDefault(v.IdTienda)
+                tiendaNombres.GetValueOrDefault(v.IdTienda),
+                pagadorPorWallet.GetValueOrDefault(v.IdWalletUsuario, PagadorDisplayFallback)
             );
         }).ToList();
     }
@@ -441,14 +446,63 @@ public class ComercioScopeService
             .Select(t => new { t.IdTienda, t.NombreTienda })
             .ToDictionaryAsync(t => t.IdTienda, t => t.NombreTienda);
 
+        // XPAY-451 §10/P3 — identidad mínima y segura del pagador (hallazgo
+        // de XPAY-450: la notificación no identificaba quién pagó). Filtro
+        // por IdComercio ya aplicado arriba (server-side, scope) ANTES de
+        // resolver esto — nunca se expone identidad fuera del propio scope
+        // ya autorizado del comercio.
+        var pagadorPorWallet = await ObtenerPagadorDisplayPorWalletAsync(ventas.Select(v => v.IdWalletUsuario));
+
         // IdEstablecimiento/NombreEstablecimiento/IdCajeroUsuario/NombreCajero
         // deliberadamente null aquí — no aplican al modo commerce-wide (no se
         // consulta ComercioVentasQrContexto en esta rama, por diseño).
         return ventas.Select(v => new VentaConContextoResponse(
             v.IdVentaQr, v.ValorBruto, v.Estado, v.FechaVenta.ToString("o"),
             null, null, null, null,
-            v.IdTienda, tiendaNombres.GetValueOrDefault(v.IdTienda)
+            v.IdTienda, tiendaNombres.GetValueOrDefault(v.IdTienda),
+            pagadorPorWallet.GetValueOrDefault(v.IdWalletUsuario, PagadorDisplayFallback)
         )).ToList();
+    }
+
+    // XPAY-451 §10 — "Cliente XPAY" es el único fallback permitido cuando la
+    // persona no tiene PrimerNombre registrado. NUNCA usar NombreUsuario
+    // (username técnico) como fallback — instrucción explícita del ticket.
+    private const string PagadorDisplayFallback = "Cliente XPAY";
+
+    // Resuelve IdWalletUsuario → Wallet.IdPersona → Persona, y formatea
+    // "PrimerNombre + inicial de PrimerApellido" (p.ej. "Gabriel P."). Nunca
+    // expone NombreUsuario/documento/email/teléfono/IdUsuario/IdWallet — ni
+    // siquiera internamente en este método, que solo lee PrimerNombre y
+    // PrimerApellido de Personas.
+    private async Task<Dictionary<long, string>> ObtenerPagadorDisplayPorWalletAsync(IEnumerable<long> idsWalletUsuario)
+    {
+        var walletIds = idsWalletUsuario.Distinct().ToList();
+
+        var wallets = await _db.Wallets
+            .Where(w => walletIds.Contains(w.IdWallet))
+            .Select(w => new { w.IdWallet, w.IdPersona })
+            .ToListAsync();
+
+        var personaIds = wallets.Where(w => w.IdPersona.HasValue).Select(w => w.IdPersona!.Value).Distinct().ToList();
+        var personas = await _db.Personas
+            .Where(p => personaIds.Contains(p.IdPersona))
+            .Select(p => new { p.IdPersona, p.PrimerNombre, p.PrimerApellido })
+            .ToDictionaryAsync(p => p.IdPersona);
+
+        return wallets.ToDictionary(
+            w => w.IdWallet,
+            w =>
+            {
+                var persona = w.IdPersona.HasValue ? personas.GetValueOrDefault(w.IdPersona.Value) : null;
+                return FormatearPagadorDisplay(persona?.PrimerNombre, persona?.PrimerApellido);
+            });
+    }
+
+    private static string FormatearPagadorDisplay(string? primerNombre, string? primerApellido)
+    {
+        if (string.IsNullOrWhiteSpace(primerNombre)) return PagadorDisplayFallback;
+        var inicial = !string.IsNullOrWhiteSpace(primerApellido) ? $" {primerApellido.Trim()[0]}." : "";
+        return $"{primerNombre.Trim()}{inicial}";
     }
 
     // XPAY-438A §2 — baseline de primer uso de la notificación operacional

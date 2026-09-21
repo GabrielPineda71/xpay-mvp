@@ -67,14 +67,17 @@ public class PagoQrService
                 return await IdempotencyStore.ResolverReplayAsync<PagoQrResultadoDto>(_db, creadoPor, endpoint, idempotencyKey, requestHash);
             }
 
-            var qr = await _db.QrComercios.FirstOrDefaultAsync(q => q.CodigoQr == request.CodigoQr && q.Estado == "ACTIVO")
-                ?? throw new InvalidOperationException("El QR no existe o no está activo.");
-
-            var comercio = await _db.Comercios.FirstOrDefaultAsync(c => c.IdComercio == qr.IdComercio && c.Estado == "ACTIVO")
-                ?? throw new InvalidOperationException("El comercio no existe o no está activo.");
-
-            var tienda = await _db.ComercioTiendas.FirstOrDefaultAsync(t => t.IdTienda == qr.IdTienda && t.Estado == "ACTIVO")
-                ?? throw new InvalidOperationException("La tienda no existe o no está activa.");
+            // XPAY-451 — resolución CodigoQr→QR/Comercio/Tienda extraída a
+            // QrResolutionService (núcleo estático, mismas 3 consultas y
+            // mismos mensajes de excepción exactos que antes) para que el
+            // preview de solo lectura (QrController.Resolver) nunca pueda
+            // divergir de lo que este pago real acepta. Se llama el overload
+            // estático, deliberadamente SIN agregar QrResolutionService al
+            // constructor de PagoQrService — evita tocar los dos sitios que
+            // instancian PagoQrService directamente bajo el freeze de
+            // XPAY-419 (CarteraAsignarCupoConcurrencyTests.cs,
+            // CarteraOrdinariaEstadosActivosTests.cs).
+            var (qr, comercio, tienda) = await QrResolutionService.ResolverQrActivoAsync(_db, request.CodigoQr);
 
             var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == idWalletUsuario && w.Estado == "ACTIVA")
                 ?? throw new InvalidOperationException("La wallet del usuario no existe o no está activa.");

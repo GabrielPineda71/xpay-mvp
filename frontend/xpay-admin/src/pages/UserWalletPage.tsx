@@ -55,6 +55,19 @@ interface XpayMerchantQR {
   currency: string;
 }
 
+// XPAY-451 §3 — respuesta de GET /api/qr/resolver (preview read-only ANTES
+// del POST financiero). Espejo exacto de QrResolverResponse
+// (backend/DTOs/QrResolverResponse.cs). NombreComercio/NombreTienda son la
+// ÚNICA fuente confiable de esos nombres — XpayMerchantQR.merchantName
+// (arriba) nunca se usa como autoridad, ni siquiera cuando viene poblado.
+interface QrPreview {
+  codigoQr:       string;
+  idComercio:     number;
+  nombreComercio: string;
+  idTienda:       number;
+  nombreTienda:   string;
+}
+
 interface Movimiento {
   idMovimiento:   number;
   fecha:          string;
@@ -379,6 +392,43 @@ export function UserWalletPage() {
   const [pagMetodoPago,   setPagMetodoPago]   = useState<'wallet' | 'cupo' | null>(null);
   // Fase 71.2-E-G: misma idea que envIdemRef, para el pago QR.
   const pagIdemRef = useRef<{ key: string; qrCode: string; valor: string } | null>(null);
+
+  // XPAY-451 §3-6 (fix P4 de XPAY-450) — preview read-only del receptor
+  // (Comercio + Tienda), resuelto por backend ANTES de habilitar cualquier
+  // método de pago. Nunca se confía en el payload del QR escaneado.
+  const [pagPreview,        setPagPreview]        = useState<QrPreview | null>(null);
+  const [pagPreviewLoading, setPagPreviewLoading] = useState(false);
+  const [pagPreviewErr,     setPagPreviewErr]     = useState<string | null>(null);
+  // XPAY-451 §7-9 (fix P1 de XPAY-450) — estado de éxito dedicado: mientras
+  // esté poblado, el formulario de pago (PIN/botón) deja de ser el estado
+  // visible. idVentaQr/valor vienen SIEMPRE de response.data del propio
+  // POST — nunca inventados ni derivados de estado local.
+  const [pagSuccess, setPagSuccess] = useState<{ idVentaQr: number; valor: number } | null>(null);
+
+  // XPAY-451 §3-6 — resuelve el receptor apenas se lee un QR nuevo, ANTES
+  // de que el usuario pueda elegir método de pago. Se reinicia por
+  // completo cada vez que cambia pagQrCode (QR nuevo, "✕ Cambiar" o
+  // "Hacer otro pago" — todos pasan por resetPagar, que limpia pagQrCode).
+  useEffect(() => {
+    let cancelado = false;
+    setPagPreview(null);
+    setPagPreviewErr(null);
+    if (!pagQrCode) { setPagPreviewLoading(false); return; }
+    setPagPreviewLoading(true);
+    void (async () => {
+      try {
+        const r = await get<{ success: boolean; data: QrPreview }>(
+          `/api/qr/resolver?codigoQr=${encodeURIComponent(pagQrCode)}`);
+        if (cancelado) return;
+        setPagPreview(r.data);
+      } catch (err) {
+        if (!cancelado) setPagPreviewErr((err as Error).message || 'No fue posible validar este QR.');
+      } finally {
+        if (!cancelado) setPagPreviewLoading(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [pagQrCode]);
 
   // ── KYC load / manual refresh ─────────────────────────────────────────────
   const loadKyc = useCallback(async (silent = false) => {
@@ -807,13 +857,28 @@ export function UserWalletPage() {
     try {
       // Fase 71.2-E-D: idWalletUsuario/creadoPor ya no se envían — el backend
       // los resuelve desde el JWT (ver PagoQrRequest).
-      const r = await post<{ success: boolean; message?: string }>('/api/qr/pagar', {
-        codigoQr:    pagQrCode,
-        valor:       Number(pagValor),
-        descripcion: 'Pago a Comercio Demo XPAY QA',
-      }, { 'Idempotency-Key': pagIdemRef.current.key });
-      setPagMsg({ ok: r.success, text: r.message ?? (r.success ? 'Pago QR realizado.' : 'Error al pagar QR.') });
-      if (r.success) { pagIdemRef.current = null; await loadCuenta(); }
+      // XPAY-451 §8 — se tipa y consume response.data (antes se ignoraba
+      // por completo): idVentaQr/valor para el comprobante SIEMPRE vienen
+      // de aquí, nunca inventados ni derivados de estado local.
+      const r = await post<{ success: boolean; message?: string; data?: { idVentaQr: number; valor: number } }>(
+        '/api/qr/pagar', {
+          codigoQr:    pagQrCode,
+          valor:       Number(pagValor),
+          descripcion: 'Pago a Comercio Demo XPAY QA',
+        }, { 'Idempotency-Key': pagIdemRef.current.key });
+      if (r.success && r.data) {
+        // XPAY-451 §7/9 (fix P1) — pagIdemRef se limpia igual que antes
+        // (un pago genuinamente nuevo después de este éxito debe generar su
+        // propia clave); lo que cambia es que el formulario deja de ser el
+        // estado visible: pagSuccess reemplaza al formulario por un estado
+        // de éxito dedicado, y solo "Hacer otro pago" (resetPagar) puede
+        // volver a habilitarlo — ver JSX de "Comprar con QR".
+        pagIdemRef.current = null;
+        setPagSuccess({ idVentaQr: r.data.idVentaQr, valor: r.data.valor });
+        await loadCuenta();
+      } else {
+        setPagMsg({ ok: false, text: r.message ?? 'Error al pagar QR.' });
+      }
     } catch (e) { setPagMsg({ ok: false, text: (e as Error).message }); }
     finally { setPagBusy(false); setPagPin(''); opInProgressRef.current = false; }
   }
@@ -1043,6 +1108,11 @@ export function UserWalletPage() {
     setPagQrCode(''); setPagValor(''); setPagNeedValor(false);
     setPagMsg(null); setPagScanErr(null); setPagPasted('');
     setPagScanning(false); setPagMetodoPago(null);
+    // XPAY-451 §9 — única función que puede volver a habilitar el
+    // formulario tras un éxito ("Hacer otro pago"/"✕ Cambiar"). Limpia
+    // también el preview y el estado de éxito — un QR/pago anterior nunca
+    // debe quedar visible al iniciar un flujo nuevo.
+    setPagPreview(null); setPagPreviewErr(null); setPagSuccess(null);
     pagIdemRef.current = null; // Fase 71.2-E-G: cambio material del formulario → clave nueva en el próximo intento
   }
 
@@ -1499,7 +1569,31 @@ export function UserWalletPage() {
             </div>
           )}
 
-          {pagQrCode && (
+          {pagQrCode && pagSuccess && (
+            // XPAY-451 §7-9 (fix P1 de XPAY-450) — estado de éxito dedicado:
+            // reemplaza por completo el formulario/badge/preview mientras
+            // esté poblado. idVentaQr/valor vienen de response.data del
+            // propio POST (§8) — nunca inventados. Solo "Hacer otro pago"
+            // (resetPagar) puede volver a mostrar un formulario reutilizable.
+            <div className="wallet-pay-success-overlay">
+              <div className="wallet-pay-success-box">
+                <p className="wallet-pay-success-title">✓ Pago realizado</p>
+                <p className="wallet-pay-success-amount">{fmtMoney(pagSuccess.valor)}</p>
+                {pagPreview && (
+                  <>
+                    <p className="wallet-pay-success-row"><span>Comercio</span><strong>{pagPreview.nombreComercio}</strong></p>
+                    <p className="wallet-pay-success-row"><span>Tienda</span><strong>{pagPreview.nombreTienda}</strong></p>
+                  </>
+                )}
+                <p className="wallet-pay-success-row"><span>Venta</span><strong>#{pagSuccess.idVentaQr}</strong></p>
+                <button className="wallet-pay-success-close-btn" onClick={resetPagar}>
+                  Hacer otro pago
+                </button>
+              </div>
+            </div>
+          )}
+
+          {pagQrCode && !pagSuccess && (
             <>
               <div className="wallet-pay-confirmed">
                 <span className="wallet-pay-confirmed-badge">QR comercio leído</span>
@@ -1508,8 +1602,29 @@ export function UserWalletPage() {
                 <button className="wallet-pay-link-btn" onClick={resetPagar}>✕ Cambiar</button>
               </div>
 
-              {/* ── Selector de método de pago ─────────────────────── */}
-              {!pagMetodoPago && (
+              {/* ── Preview read-only del receptor (XPAY-451 §3-6, fix P4
+                  de XPAY-450) — Comercio/Tienda SIEMPRE resueltos por
+                  backend, ANTES de cualquier método/botón financiero. */}
+              {pagPreviewLoading && <p className="wallet-pay-preview-loading">Validando QR...</p>}
+              {pagPreviewErr && (
+                <div className="wallet-pay-error">
+                  {pagPreviewErr}
+                  {' '}
+                  <button className="wallet-pay-link-btn" onClick={resetPagar}>Escanear otro QR</button>
+                </div>
+              )}
+              {pagPreview && (
+                <div className="wallet-pay-recipient">
+                  <p className="wallet-pay-recipient-label">Pagar a:</p>
+                  <p className="wallet-pay-recipient-comercio">{pagPreview.nombreComercio}</p>
+                  <p className="wallet-pay-recipient-tienda">{pagPreview.nombreTienda}</p>
+                </div>
+              )}
+
+              {/* ── Selector de método de pago — solo con preview válido
+                  (XPAY-451 §6: "Solo habilitar Pagar QR con Wallet cuando
+                  QR válido + preview backend válido..."). ──────────────── */}
+              {!pagMetodoPago && pagPreview && (
                 <div className="wallet-pay-method">
                   <p className="wallet-pay-method-title">¿Cómo quieres pagar?</p>
                   <div className="wallet-pay-method-options">
@@ -1538,7 +1653,7 @@ export function UserWalletPage() {
               )}
 
               {/* ── Flujo pago con Wallet ──────────────────────────── */}
-              {pagMetodoPago === 'wallet' && (
+              {pagMetodoPago === 'wallet' && pagPreview && (
                 <>
                   <form className="wallet-pay-form" onSubmit={e => void handlePagarQr(e)}>
                     <label className="wallet-pay-field">
@@ -1573,7 +1688,7 @@ export function UserWalletPage() {
                     <button
                       className="wallet-pay-submit-btn"
                       type="submit"
-                      disabled={pagBusy || !pagValor || Number(pagValor) < 1 || pagPin.length !== 7}
+                      disabled={pagBusy || !pagValor || Number(pagValor) < 1 || pagPin.length !== 7 || !pagPreview}
                     >
                       {pagBusy ? 'Procesando...' : 'Pagar QR con Wallet'}
                     </button>
@@ -1582,14 +1697,12 @@ export function UserWalletPage() {
                       ← Cambiar método
                     </button>
                   </form>
+                  {/* pagMsg ahora solo se usa para errores (validación de
+                      PIN, fallo del POST) — un éxito nunca lo puebla, ver
+                      handlePagarQr. */}
                   {pagMsg && (
-                    <div className={`wallet-pay-msg${pagMsg.ok ? ' wallet-pay-msg--ok' : ' wallet-pay-msg--err'}`}>
+                    <div className="wallet-pay-msg wallet-pay-msg--err">
                       {pagMsg.text}
-                      {pagMsg.ok && (
-                        <button className="wallet-pay-link-btn wallet-pay-retry-link" onClick={resetPagar}>
-                          Realizar otro pago
-                        </button>
-                      )}
                     </div>
                   )}
                 </>

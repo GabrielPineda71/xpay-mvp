@@ -119,7 +119,15 @@ public record VentaConContextoResponse(
     // (siempre se resuelve al pagar), NombreTienda puede ser null (tienda
     // borrada o sin nombre) — el consumidor debe tolerarlo.
     long    IdTienda,
-    string? NombreTienda
+    string? NombreTienda,
+    // XPAY-451 §10 — identidad MÍNIMA y segura del pagador (hallazgo P3 de
+    // XPAY-450). Formato "PrimerNombre + inicial de PrimerApellido" (p.ej.
+    // "Gabriel P."), resuelto desde VentaQr.IdWalletUsuario → Wallet →
+    // Persona — NUNCA username técnico, documento, email, teléfono,
+    // IdUsuario ni IdWallet. Nunca null: "Cliente XPAY" si la persona no
+    // tiene PrimerNombre registrado. Ver ComercioScopeService.
+    // FormatearPagadorDisplay.
+    string  PagadorDisplay
 );
 
 // XPAY-438A — baseline de primer uso de la notificación operacional QR.

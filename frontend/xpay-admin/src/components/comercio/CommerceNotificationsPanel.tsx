@@ -59,6 +59,10 @@ export function CommerceNotificationsPanel({ notifications, onMarkAllSeen, onClo
               <li key={n.idVentaQr} className="commerce-notifications-item">
                 <span className="commerce-notifications-item-title">Pago recibido</span>
                 <span className="commerce-notifications-item-amount">{fmtMoney(n.valorBruto)}</span>
+                {/* XPAY-451 §10/11 — identidad mínima del pagador (fix P3
+                    de XPAY-450). Siempre viene poblada por el backend
+                    ("Cliente XPAY" si no hay nombre registrado). */}
+                <span className="commerce-notifications-item-pagador">De: {n.pagadorDisplay}</span>
                 <span className="commerce-notifications-item-venta">Venta #{n.idVentaQr}</span>
                 {n.nombreTienda && (
                   <span className="commerce-notifications-item-tienda">Tienda: {n.nombreTienda}</span>

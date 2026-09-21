@@ -159,6 +159,7 @@ body {
 .commerce-notifications-item:last-child { border-bottom: none; }
 .commerce-notifications-item-title { font-size: 0.8rem; color: #38a169; font-weight: 600; }
 .commerce-notifications-item-amount { font-size: 1.05rem; font-weight: 700; }
+.commerce-notifications-item-pagador { font-size: 0.85rem; color: #4a5568; }
 .commerce-notifications-item-venta { font-size: 0.85rem; color: #4a5568; }
 .commerce-notifications-item-tienda { font-size: 0.82rem; color: #4a5568; }
 .commerce-notifications-item-date { font-size: 0.78rem; color: #a0aec0; }

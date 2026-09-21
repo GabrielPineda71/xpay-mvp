@@ -58,11 +58,14 @@ const MAX_PAGES_PER_CYCLE = 20; // fail-safe contra loops patológicos, SOLO apl
 const POLL_INTERVAL_MS   = 7000; // mismo valor ya validado en Block C (Wallet).
 
 export interface CommerceNotification {
-  idVentaQr:    number;
-  valorBruto:   number;
-  fechaVenta:   string;
-  idTienda:     number;
-  nombreTienda: string | null;
+  idVentaQr:      number;
+  valorBruto:     number;
+  fechaVenta:     string;
+  idTienda:       number;
+  nombreTienda:   string | null;
+  // XPAY-451 §10/11 — identidad mínima y segura del pagador (fix P3 de
+  // XPAY-450). Siempre viene poblado desde el backend.
+  pagadorDisplay: string;
 }
 
 interface CommerceNotificationsContextValue {
@@ -104,11 +107,12 @@ function writeSeenCursor(idComercio: number, value: number): void {
 
 function mapNotification(v: VentaQrNotificacion): CommerceNotification {
   return {
-    idVentaQr:    v.idVentaQr,
-    valorBruto:   v.valorBruto,
-    fechaVenta:   v.fechaVenta,
-    idTienda:     v.idTienda,
-    nombreTienda: v.nombreTienda,
+    idVentaQr:      v.idVentaQr,
+    valorBruto:     v.valorBruto,
+    fechaVenta:     v.fechaVenta,
+    idTienda:       v.idTienda,
+    nombreTienda:   v.nombreTienda,
+    pagadorDisplay: v.pagadorDisplay,
   };
 }
 

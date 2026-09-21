@@ -25,6 +25,7 @@ builder.Services.AddScoped<PerfilService>(); // XPAY-399 — Perfil Fase 2A (mi-
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<WalletService>();
 builder.Services.AddScoped<WalletOperacionService>();
+builder.Services.AddScoped<QrResolutionService>(); // XPAY-451 — resolución read-only compartida CodigoQr→Comercio/Tienda
 builder.Services.AddScoped<PagoQrService>();
 builder.Services.AddScoped<LiquidacionComercioService>();
 builder.Services.AddScoped<RetiroComercioService>();

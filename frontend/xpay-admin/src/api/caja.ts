@@ -93,12 +93,17 @@ export async function getMiScope(): Promise<ComercioScope | null> {
 // aplican; ver ComercioScopeService.ListarVentasIncrementalAsync) y
 // deliberadamente no se declaran aquí para no sugerir que sí se usan.
 export interface VentaQrNotificacion {
-  idVentaQr:    number;
-  valorBruto:   number;
-  estado:       string;
-  fechaVenta:   string;
-  idTienda:     number;
-  nombreTienda: string | null;
+  idVentaQr:      number;
+  valorBruto:     number;
+  estado:         string;
+  fechaVenta:     string;
+  idTienda:       number;
+  nombreTienda:   string | null;
+  // XPAY-451 §10 — identidad mínima y segura del pagador (hallazgo P3 de
+  // XPAY-450). Siempre viene poblado por el backend ("Cliente XPAY" si la
+  // persona no tiene nombre registrado) — nunca username/documento/email/
+  // teléfono.
+  pagadorDisplay: string;
 }
 
 // desdeIdVentaQr activa el modo commerce-wide (sección 1-3 de XPAY-438):
