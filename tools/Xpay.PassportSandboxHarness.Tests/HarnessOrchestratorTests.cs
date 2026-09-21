@@ -948,4 +948,131 @@ public class HarnessOrchestratorTests
             new[] { "create-qr-static", "--execute", "--confirm-create-qr-static" }, ConfigWithCreateQrStaticTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-465 — decode-qr-static (M4-T2) — target propio:
+    // PASSPORT_TEST_QR_DECODE_DATA_FILE (ruta a un archivo local privado con
+    // el qr_code_data real, NUNCA el dato en sí) + PASSPORT_TEST_CUSTOMER_ID
+    // (mismo recurso ya usado por create-qr-static/resolve-key).
+    // Completamente independiente del target/confirmación de create-qr-static.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string ValidQrDataFilePath = "/synthetic/path/qr-data.txt";
+
+    private static IConfiguration ConfigWithDecodeQrStaticTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? qrDataFilePath = ValidQrDataFilePath, string? customerId = ValidCustomerId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (qrDataFilePath is not null) dict[HarnessTargetConfig.EnvQrDecodeDataFilePath] = qrDataFilePath;
+        if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrStaticNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "decode-qr-static" }, ConfigWithDecodeQrStaticTarget());
+        Assert.Equal(HarnessCommand.DecodeQrStatic, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrStatic_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-static", "--execute" }, ConfigWithDecodeQrStaticTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrStatic_ConfirmWithoutExecute_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-static", "--confirm-decode-qr-static" }, ConfigWithDecodeQrStaticTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    // Ninguna confirmación de M3 NI de M4-T1 (create-qr-static) autoriza decode-qr-static.
+    [Theory]
+    [InlineData("--confirm-create-key")]
+    [InlineData("--confirm-suspend-key")]
+    [InlineData("--confirm-activate-key")]
+    [InlineData("--confirm-delete-key")]
+    [InlineData("--confirm-delete-already-deleted-key")]
+    [InlineData("--confirm-resolve-key")]
+    [InlineData("--confirm-create-key-missing")]
+    [InlineData("--confirm-create-key-invalid")]
+    [InlineData("--confirm-create-qr-static")]
+    public void Prepare_DecodeQrStatic_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-static", "--execute", wrongConfirmFlag }, ConfigWithDecodeQrStaticTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // --confirm-decode-qr-static NUNCA autoriza create-qr-static (ni ningún
+    // comando de M3) — regresión cruzada explícita, en ambas direcciones.
+    [Theory]
+    [InlineData("create-qr-static")]
+    [InlineData("create-key")]
+    [InlineData("resolve-key")]
+    public void Prepare_OtherCommands_ConfirmDecodeQrStaticDoesNotAuthorizeThem(string otherCommand)
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = ValidSandboxUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvAccountId] = ValidTargetAccountId,
+            [HarnessTargetConfig.EnvNewKeyType] = ValidTargetKeyType,
+            [HarnessTargetConfig.EnvNewKeyValue] = ValidTargetKeyValue,
+            [HarnessTargetConfig.EnvNewKeyId] = ValidTargetKeyId,
+            [HarnessTargetConfig.EnvCustomerId] = ValidCustomerId,
+            [HarnessTargetConfig.EnvBrebKeyType] = ValidBrebKeyType,
+            [HarnessTargetConfig.EnvBrebKeyValue] = ValidBrebKeyValue,
+            [HarnessTargetConfig.EnvQrKeyId] = ValidTargetKeyId,
+            [HarnessTargetConfig.EnvQrDecodeDataFilePath] = ValidQrDataFilePath,
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { otherCommand, "--execute", "--confirm-decode-qr-static" }, config);
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrStatic_MissingQrDataFilePath_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-static" }, ConfigWithDecodeQrStaticTarget(qrDataFilePath: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrStatic_MissingCustomerId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-static" }, ConfigWithDecodeQrStaticTarget(customerId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrStatic_NonSandboxHost_ReturnsAbortedNonSandboxHost()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-static" }, ConfigWithDecodeQrStaticTarget(baseUrl: "https://evil.example.com"));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedNonSandboxHost, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrStatic_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-static", "--execute", "--confirm-decode-qr-static" }, ConfigWithDecodeQrStaticTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
 }

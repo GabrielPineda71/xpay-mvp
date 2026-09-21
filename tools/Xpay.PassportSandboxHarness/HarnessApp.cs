@@ -54,6 +54,7 @@ public static class HarnessApp
                 output.WriteLine("     create-key-missing [--execute --confirm-create-key-missing]");
                 output.WriteLine("     create-key-invalid [--execute --confirm-create-key-invalid]");
                 output.WriteLine("     create-qr-static [--execute --confirm-create-qr-static]");
+                output.WriteLine("     decode-qr-static [--execute --confirm-decode-qr-static]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -207,6 +208,25 @@ public static class HarnessApp
                 output.WriteLine("result=DRY_RUN");
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 output.WriteLine("note=M4-T1: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-351)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrStatic:
+                // XPAY-465 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_CUSTOMER_ID/PASSPORT_TEST_QR_DECODE_DATA_FILE
+                // en este modo (sólo ya se confirmó su PRESENCIA arriba), y
+                // mucho menos el CONTENIDO del archivo que la segunda
+                // apunta — eso sólo se lee en ReadyToExecute, dentro de
+                // DecodeQrStaticExecutor. No se construye ningún
+                // PassportDecodeQrCodeRequest, no se obtiene token, no hay
+                // HTTP, no hay evidencia.
+                output.WriteLine("case=M4-T2 (Decode QR Code — STATIC)");
+                output.WriteLine("endpoint=POST /v1/qrcodes/decode");
+                output.WriteLine("mutating=NO (read-only, decodifica un QR ya existente)");
+                output.WriteLine("requires=--execute --confirm-decode-qr-static");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T2: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-465)");
                 return;
 
             case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateCustomer:
@@ -412,6 +432,29 @@ public static class HarnessApp
                 var path = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
                 output.WriteLine($"result={execution.Evidence!.Result}");
                 output.WriteLine($"evidence_path={path}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.DecodeQrStatic:
+            {
+                var execution = await DecodeQrStaticExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-465 — un bloqueo LOCAL (target ausente, archivo
+                    // de qr_code_data ausente/vacío/ilegible, commit SHA no
+                    // resoluble) NUNCA escribe evidence.json. `Detail` nunca
+                    // incluye el contenido del archivo — ver DecodeQrStaticExecutor.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var decodePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={decodePath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 return;
             }

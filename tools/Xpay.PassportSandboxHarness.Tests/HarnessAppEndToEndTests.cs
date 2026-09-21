@@ -2105,8 +2105,14 @@ public class HarnessAppEndToEndTests
         return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
     }
 
+    // XPAY-465 — ensanchado de LocalFakeQrHandler a HttpMessageHandler
+    // (tipo base común) para que decode-qr-static (M4-T2) pueda reutilizar
+    // este mismo builder con su propio LocalFakeDecodeQrHandler — sin
+    // duplicar la construcción del stack PassportHttpClient/QrClient.
+    // Ningún llamador existente cambia de comportamiento (LocalFakeQrHandler
+    // sigue siendo un HttpMessageHandler válido).
     private static HarnessApp.Dependencies BuildQrDependencies(
-        LocalFakeQrHandler handler, string evidenceDir, IConfiguration config)
+        HttpMessageHandler handler, string evidenceDir, IConfiguration config)
     {
         IPassportHttpClient httpClient = new PassportHttpClient(
             new LocalFakeHttpClientFactory(handler), new LocalFakeTokenProvider(), config,
@@ -2193,6 +2199,10 @@ public class HarnessAppEndToEndTests
                 "synthetic-e2e-commit-sha-0000000000000000000000000000000000000000",
                 root.GetProperty("backend_commit_sha").GetString());
             Assert.Equal("PENDING_PASSPORT_REVIEW", root.GetProperty("review_status").GetString());
+            // XPAY-464 — regresión: notes debe ser null en éxito, nunca el
+            // texto histórico "NOT_EXECUTED_IN_SANDBOX" (falso una vez que
+            // esta evidencia proviene de una ejecución real).
+            Assert.Equal(JsonValueKind.Null, root.GetProperty("notes").ValueKind);
 
             var requestSanitized = root.GetProperty("request_sanitized");
             Assert.Equal("STATIC", requestSanitized.GetProperty("type").GetString());
@@ -2354,6 +2364,259 @@ public class HarnessAppEndToEndTests
                 new[] { "create-key", "--execute", "--confirm-create-qr-static" }, config, dependencies, output);
 
             Assert.Equal(0, handler.CallCount);
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-465 — decode-qr-static (M4-T2), flujo completo real vía
+    // HarnessApp.RunAsync con IPassportQrClient sobre un HttpMessageHandler
+    // fake local (sin red real): exactamente 1 llamada HTTP,
+    // POST /v1/qrcodes/decode, backend_commit_sha sintético, customer_id/
+    // qr_code_data reales AUSENTES de evidence.json y de la consola;
+    // dry-run/aborted nunca generan HTTP ni evidencia; ninguna confirmación
+    // ajena (M3 o M4-T1) autoriza este comando, y viceversa.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string RealDecodeCustomerId       = "SYNTH-E2E-DECODE-CUSTOMER-ID-should-be-fingerprinted-only";
+    private const string RealDecodeQrDataSent        = "00020101SYNTH-E2E-DECODE-SENT-DATA-must-never-appear-0001";
+    private const string RealDecodeQrDataEchoed      = "00020101SYNTH-E2E-DECODE-ECHOED-DATA-must-never-appear-0002";
+    private const string RealDecodeKeyValue          = "SYNTH-E2E-DECODE-KEY-VALUE-must-never-appear-0003";
+    private const string RealDecodeMerchantName      = "Synth E2E Decode Merchant Name Must Never Appear";
+
+    private sealed class LocalFakeDecodeQrHandler : HttpMessageHandler
+    {
+        public int CallCount { get; private set; }
+        public HttpRequestMessage? LastRequest { get; private set; }
+        public string? LastRequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            LastRequest = request;
+            LastRequestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    $$"""
+                    { "status": "ACTIVE", "type": "STATIC", "channel": "MPOS",
+                      "qr_code_data": "{{RealDecodeQrDataEchoed}}",
+                      "qr_code_reference": "SYNM4T2E2EREF01",
+                      "key": { "key_type": "PHONE", "key_value": "{{RealDecodeKeyValue}}" },
+                      "merchant": { "merchant_category_code": "0412", "merchant_country": "CO",
+                                     "merchant_name": "{{RealDecodeMerchantName}}" } }
+                    """,
+                    System.Text.Encoding.UTF8, "application/json"),
+            };
+        }
+    }
+
+    // Crea un archivo temporal REAL (fuera de git — TempPath del SO) con el
+    // qr_code_data "real" sintético, y devuelve tanto la config como la
+    // ruta (para que el caller la borre en `finally`) — mismo criterio de
+    // limpieza ya usado en DecodeQrStaticExecutorTests.
+    private static (IConfiguration Config, string QrDataFilePath) FullDecodeQrConfig()
+    {
+        var qrDataFilePath = Path.Combine(Path.GetTempPath(), $"xpay-decode-e2e-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(qrDataFilePath, RealDecodeQrDataSent);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [PassportOptions.EnvBaseUrl] = BaseUrl,
+                [PassportOptions.EnvClientId] = "synthetic-key",
+                [PassportOptions.EnvClientSecret] = "synthetic-secret",
+                [HarnessTargetConfig.EnvQrDecodeDataFilePath] = qrDataFilePath,
+                [HarnessTargetConfig.EnvCustomerId] = RealDecodeCustomerId,
+            })
+            .Build();
+
+        return (config, qrDataFilePath);
+    }
+
+    [Fact]
+    public async Task DecodeQrStaticExecute_FullPath_ProducesExactlyOneHttpCall_AndPassEvidence()
+    {
+        var dir = NewTempDir();
+        var (config, qrDataFilePath) = FullDecodeQrConfig();
+        try
+        {
+            var handler = new LocalFakeDecodeQrHandler();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "decode-qr-static", "--execute", "--confirm-decode-qr-static" }, config, dependencies, output);
+
+            // Exactamente 1 llamada HTTP, POST /v1/qrcodes/decode, body con
+            // EXACTAMENTE customer_id + qr_code_data (contrato confirmado).
+            Assert.Equal(1, handler.CallCount);
+            Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+            Assert.Equal("/v1/qrcodes/decode", handler.LastRequest.RequestUri!.AbsolutePath);
+
+            using (var bodyDoc = JsonDocument.Parse(handler.LastRequestBody!))
+            {
+                var bodyRoot = bodyDoc.RootElement;
+                Assert.Equal(RealDecodeCustomerId, bodyRoot.GetProperty("customer_id").GetString());
+                Assert.Equal(RealDecodeQrDataSent, bodyRoot.GetProperty("qr_code_data").GetString());
+                var topLevelNames = new List<string>();
+                foreach (var prop in bodyRoot.EnumerateObject()) topLevelNames.Add(prop.Name);
+                Assert.Equal(new[] { "customer_id", "qr_code_data" }, topLevelNames);
+            }
+
+            var evidencePath = Path.Combine(dir, "M4-T2");
+            var files = Directory.GetFiles(evidencePath, "evidence-*.json");
+            Assert.Single(files);
+
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            Assert.Equal("M4-T2", root.GetProperty("case_id").GetString());
+            Assert.Equal("POST /v1/qrcodes/decode", root.GetProperty("operation").GetString());
+            Assert.Equal("PASS", root.GetProperty("result").GetString());
+            Assert.Equal(
+                "synthetic-e2e-commit-sha-0000000000000000000000000000000000000000",
+                root.GetProperty("backend_commit_sha").GetString());
+            Assert.Equal("PENDING_PASSPORT_REVIEW", root.GetProperty("review_status").GetString());
+            // XPAY-465 — mismo criterio que XPAY-464 para M4-T1: notes=null en éxito.
+            Assert.Equal(JsonValueKind.Null, root.GetProperty("notes").ValueKind);
+
+            var responseSanitized = root.GetProperty("response_sanitized");
+            Assert.Equal("ACTIVE", responseSanitized.GetProperty("status").GetString());
+            Assert.Equal("STATIC", responseSanitized.GetProperty("type").GetString());
+            Assert.Equal("MPOS", responseSanitized.GetProperty("channel").GetString());
+            Assert.True(responseSanitized.GetProperty("key_present").GetBoolean());
+            Assert.Equal("PHONE", responseSanitized.GetProperty("key_type").GetString());
+            Assert.True(responseSanitized.GetProperty("merchant_present").GetBoolean());
+            Assert.Equal("0412", responseSanitized.GetProperty("merchant_category_code").GetString());
+
+            // L/M/N/O — nunca customer_id/qr_code_data/key_value/merchant_name
+            // reales, ni en evidence.json ni en la salida por consola.
+            Assert.DoesNotContain(RealDecodeCustomerId, json);
+            Assert.DoesNotContain(RealDecodeQrDataSent, json);
+            Assert.DoesNotContain(RealDecodeQrDataEchoed, json);
+            Assert.DoesNotContain(RealDecodeKeyValue, json);
+            Assert.DoesNotContain(RealDecodeMerchantName, json);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", json);
+
+            var consoleOutput = output.ToString();
+            Assert.DoesNotContain(RealDecodeCustomerId, consoleOutput);
+            Assert.DoesNotContain(RealDecodeQrDataSent, consoleOutput);
+            Assert.DoesNotContain(RealDecodeQrDataEchoed, consoleOutput);
+            Assert.DoesNotContain(RealDecodeKeyValue, consoleOutput);
+            Assert.DoesNotContain(RealDecodeMerchantName, consoleOutput);
+            Assert.DoesNotContain("synthetic-e2e-bearer-token", consoleOutput);
+            Assert.DoesNotContain(qrDataFilePath, consoleOutput); // ni siquiera la ruta se imprime en éxito.
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+            File.Delete(qrDataFilePath);
+        }
+    }
+
+    [Fact]
+    public async Task DecodeQrStaticDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        var (config, qrDataFilePath) = FullDecodeQrConfig();
+        try
+        {
+            var handler = new LocalFakeDecodeQrHandler();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "decode-qr-static" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T2")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+            Assert.DoesNotContain(qrDataFilePath, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+            File.Delete(qrDataFilePath);
+        }
+    }
+
+    [Fact]
+    public async Task DecodeQrStaticExecuteWithoutConfirm_Aborted_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        var (config, qrDataFilePath) = FullDecodeQrConfig();
+        try
+        {
+            var handler = new LocalFakeDecodeQrHandler();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "decode-qr-static", "--execute" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T2")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+            File.Delete(qrDataFilePath);
+        }
+    }
+
+    // XPAY-465 — --confirm-create-qr-static (M4-T1) NUNCA autoriza
+    // decode-qr-static (M4-T2), a nivel de flujo completo.
+    [Fact]
+    public async Task DecodeQrStaticExecute_WithCreateQrStaticConfirmation_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        var (config, qrDataFilePath) = FullDecodeQrConfig();
+        try
+        {
+            var handler = new LocalFakeDecodeQrHandler();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "decode-qr-static", "--execute", "--confirm-create-qr-static" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T2")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+            File.Delete(qrDataFilePath);
+        }
+    }
+
+    // XPAY-465 — inversa: --confirm-decode-qr-static (M4-T2) NUNCA autoriza
+    // create-qr-static (M4-T1), a nivel de flujo completo (reutiliza el
+    // stack fake ya existente de create-qr-static).
+    [Fact]
+    public async Task CreateQrStaticExecute_WithConfirmDecodeQrStatic_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static", "--execute", "--confirm-decode-qr-static" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T1")));
             Assert.Contains("result=ABORTED", output.ToString());
         }
         finally

@@ -54,7 +54,8 @@ public sealed record HarnessTargetConfig(
     bool CustomerIdPresent,
     bool BrebKeyTypePresent,
     bool BrebKeyValuePresent,
-    bool QrKeyIdPresent)
+    bool QrKeyIdPresent,
+    bool QrDecodeDataFilePathPresent)
 {
     public const string EnvAccountId   = "PASSPORT_TEST_ACCOUNT_ID";
     public const string EnvNewKeyType  = "PASSPORT_TEST_NEW_KEY_TYPE";
@@ -82,6 +83,22 @@ public sealed record HarnessTargetConfig(
     // PASSPORT_TEST_NEW_KEY_ID SÍ está presente — ver
     // AllPresentForCreateQrStatic.
     public const string EnvQrKeyId = "PASSPORT_TEST_QR_KEY_ID";
+
+    // XPAY-465 — target de decode-qr-static (M4-T2). Passport exige, para
+    // POST /v1/qrcodes/decode, exactamente customer_id + qr_code_data (ver
+    // PassportDecodeQrCodeRequest.cs/PassportQrClient.ValidateDecodeRequest
+    // — NUNCA id ni qr_code_reference). customer_id reutiliza
+    // PASSPORT_TEST_CUSTOMER_ID (mismo recurso que create-qr-static/
+    // resolve-key). qr_code_data es POTENCIALMENTE SENSIBLE (payload EMVCo
+    // de un QR de pago real) — por eso esta variable NO contiene el dato en
+    // sí, sino la RUTA a un archivo local privado que lo contiene (fuera de
+    // Git, permisos restrictivos — responsabilidad del operador al
+    // crearlo). Esta clase, igual que con el resto de targets, sólo
+    // confirma la PRESENCIA de la variable (la ruta) — nunca abre ni lee el
+    // archivo, y mucho menos su contenido; eso es responsabilidad exclusiva
+    // de DecodeQrStaticExecutor en el momento de --execute, nunca en
+    // dry-run/Prepare.
+    public const string EnvQrDecodeDataFilePath = "PASSPORT_TEST_QR_DECODE_DATA_FILE";
 
     public bool AllPresentForCreateKey  => AccountIdPresent && NewKeyTypePresent && NewKeyValuePresent;
 
@@ -126,6 +143,12 @@ public sealed record HarnessTargetConfig(
     // dedicado que prueba exactamente este escenario).
     public bool AllPresentForCreateQrStatic => QrKeyIdPresent && CustomerIdPresent;
 
+    // XPAY-465 — target de decode-qr-static (M4-T2): la RUTA al archivo
+    // local privado con el qr_code_data real, + customer_id. Sin fallback a
+    // ningún otro dato (nunca deriva qr_code_data de PASSPORT_TEST_NEW_KEY_ID/
+    // PASSPORT_TEST_QR_KEY_ID/qr_code_reference — son conceptos distintos).
+    public bool AllPresentForDecodeQrStatic => QrDecodeDataFilePathPresent && CustomerIdPresent;
+
     public static HarnessTargetConfig FromConfiguration(IConfiguration configuration) => new(
         AccountIdPresent:    !string.IsNullOrWhiteSpace(configuration[EnvAccountId]),
         NewKeyTypePresent:   !string.IsNullOrWhiteSpace(configuration[EnvNewKeyType]),
@@ -134,9 +157,12 @@ public sealed record HarnessTargetConfig(
         CustomerIdPresent:   !string.IsNullOrWhiteSpace(configuration[EnvCustomerId]),
         BrebKeyTypePresent:  !string.IsNullOrWhiteSpace(configuration[EnvBrebKeyType]),
         BrebKeyValuePresent: !string.IsNullOrWhiteSpace(configuration[EnvBrebKeyValue]),
-        QrKeyIdPresent:      !string.IsNullOrWhiteSpace(configuration[EnvQrKeyId]));
+        QrKeyIdPresent:      !string.IsNullOrWhiteSpace(configuration[EnvQrKeyId]),
+        QrDecodeDataFilePathPresent: !string.IsNullOrWhiteSpace(configuration[EnvQrDecodeDataFilePath]));
 
-    // Único formato de impresión permitido — jamás el valor.
+    // Único formato de impresión permitido — jamás el valor (y, para
+    // EnvQrDecodeDataFilePath, ni siquiera la ruta — sólo AVAILABLE/MISSING,
+    // igual que el resto).
     public IEnumerable<string> ToRedactedLines()
     {
         yield return $"{EnvAccountId}={(AccountIdPresent ? "AVAILABLE" : "MISSING")}";
@@ -147,5 +173,6 @@ public sealed record HarnessTargetConfig(
         yield return $"{EnvBrebKeyType}={(BrebKeyTypePresent ? "AVAILABLE" : "MISSING")}";
         yield return $"{EnvBrebKeyValue}={(BrebKeyValuePresent ? "AVAILABLE" : "MISSING")}";
         yield return $"{EnvQrKeyId}={(QrKeyIdPresent ? "AVAILABLE" : "MISSING")}";
+        yield return $"{EnvQrDecodeDataFilePath}={(QrDecodeDataFilePathPresent ? "AVAILABLE" : "MISSING")}";
     }
 }

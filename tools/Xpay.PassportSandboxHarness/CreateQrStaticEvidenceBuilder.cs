@@ -102,7 +102,27 @@ public static class CreateQrStaticEvidenceBuilder
             RequestSanitized: requestSanitized,
             ResponseSanitized: responseSanitized,
             AutomatedTestReference: automatedTestReference,
-            Notes: "M4-T1: NOT_EXECUTED_IN_SANDBOX hasta que esta evidencia provenga de una ejecución real autorizada — XPAY-351 es implementación offline únicamente.",
+            // XPAY-464 — antes: texto fijo "M4-T1: NOT_EXECUTED_IN_SANDBOX
+            // hasta que esta evidencia provenga de una ejecución real
+            // autorizada — XPAY-351 es implementación offline únicamente."
+            // Ese texto quedó estático desde XPAY-351 (cuando M4-T1 en
+            // efecto nunca se había ejecutado) y nunca se actualizó tras las
+            // ejecuciones reales posteriores (los 3 intentos fallidos de
+            // XPAY-354/359/452, y el éxito real de XPAY-463,
+            // evidence-2026-09-21T20-08-12Z.json) — para cuando este
+            // BuildSuccess efectivamente se alcanza, SIEMPRE hay una
+            // ejecución real, así que la nota afirmaba lo contrario de la
+            // realidad. Corregido a null, igual que el resto de los
+            // evidence builders del harness en su caso de éxito
+            // (CreateKeyEvidenceBuilder/ActivateKeyEvidenceBuilder/
+            // DeleteKeyEvidenceBuilder/ResolveKeyEvidenceBuilder) — ninguno
+            // de ellos agrega una nota fija al PASS; sólo Local
+            // Blocked/Passport HTTP Failure la usan, para describir el
+            // motivo del fallo. Este cambio es puramente cosmético: no
+            // toca request/serialización/fingerprints/redacción/HTTP, y NO
+            // reescribe evidence-2026-09-21T20-08-12Z.json (ya escrito en
+            // disco, inmutable) — sólo afecta evidencias FUTURAS.
+            Notes: null,
             ReviewStatus: EvidenceRecord.ReviewPendingPassportReview);
     }
 

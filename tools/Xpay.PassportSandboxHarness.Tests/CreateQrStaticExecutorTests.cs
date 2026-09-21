@@ -247,6 +247,26 @@ public class CreateQrStaticExecutorTests
         Assert.Equal("POST /v1/qrcodes", result.Evidence!.Operation);
     }
 
+    // XPAY-464 — regresión cosmética: la evidencia de ÉXITO nunca debe
+    // afirmar "NOT_EXECUTED_IN_SANDBOX" (texto histórico de XPAY-351, falso
+    // en cualquier BuildSuccess real — ver CreateQrStaticEvidenceBuilder).
+    // Notes debe ser null en éxito, igual que el resto de los evidence
+    // builders del harness (Create/Activate/Delete/Resolve Key).
+    [Fact]
+    public async Task ExecuteAsync_Success_EvidenceNotesIsNull_NeverClaimsNotExecuted()
+    {
+        var client = new FakeQrClient();
+        var commitShaProvider = new FixedCommitShaProvider("synthetic-commit-sha-0000000000000000000000000000000000000000");
+
+        var result = await CreateQrStaticExecutor.ExecuteAsync(
+            ConfigWithTarget(), client, commitShaProvider, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Null(result.Evidence!.Notes);
+
+        var evidenceJson = System.Text.Json.JsonSerializer.Serialize(result.Evidence);
+        Assert.DoesNotContain("NOT_EXECUTED_IN_SANDBOX", evidenceJson);
+    }
+
     // L/M/N/O/P — evidencia nunca contiene identificadores crudos; sólo
     // fingerprints/presencia. Se verifica serializando el EvidenceRecord
     // completo a JSON y confirmando la AUSENCIA total de cada valor crudo.
