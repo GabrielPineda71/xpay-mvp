@@ -53,7 +53,8 @@ public sealed record HarnessTargetConfig(
     bool NewKeyIdPresent,
     bool CustomerIdPresent,
     bool BrebKeyTypePresent,
-    bool BrebKeyValuePresent)
+    bool BrebKeyValuePresent,
+    bool QrKeyIdPresent)
 {
     public const string EnvAccountId   = "PASSPORT_TEST_ACCOUNT_ID";
     public const string EnvNewKeyType  = "PASSPORT_TEST_NEW_KEY_TYPE";
@@ -65,6 +66,22 @@ public sealed record HarnessTargetConfig(
     public const string EnvCustomerId    = "PASSPORT_TEST_CUSTOMER_ID";
     public const string EnvBrebKeyType   = "PASSPORT_TEST_BREB_KEY_TYPE";
     public const string EnvBrebKeyValue  = "PASSPORT_TEST_BREB_KEY";
+
+    // XPAY-460 — target DEDICADO de create-qr-static (M4-T1), deliberadamente
+    // DISTINTO de PASSPORT_TEST_NEW_KEY_ID: Passport confirmó (Gustavo) que
+    // "todos los QRs, por detrás, requieren una llave Bre-B activa", y la
+    // llave identificada por PASSPORT_TEST_NEW_KEY_ID está DELETED (M3-T5/
+    // M3-T7) — reutilizarla para M4 sería usar una llave muerta. El director
+    // verificó visualmente en Passport Sandbox Dashboard (Products → Keys)
+    // que existe una Key ACTIVE de tipo Business Entity Code asociada a una
+    // cuenta de XPAY — su key_id real vive EXCLUSIVAMENTE en
+    // ~/.passport-sandbox.env bajo este nombre nuevo, nunca hardcodeado,
+    // nunca derivado de PASSPORT_TEST_NEW_KEY_ID ni de ningún valor
+    // histórico. NO existe fallback: si esta variable falta, create-qr-static
+    // se bloquea LOCALMENTE (AllPresentForCreateQrStatic abajo), incluso si
+    // PASSPORT_TEST_NEW_KEY_ID SÍ está presente — ver
+    // AllPresentForCreateQrStatic.
+    public const string EnvQrKeyId = "PASSPORT_TEST_QR_KEY_ID";
 
     public bool AllPresentForCreateKey  => AccountIdPresent && NewKeyTypePresent && NewKeyValuePresent;
 
@@ -90,25 +107,24 @@ public sealed record HarnessTargetConfig(
     // dentro del executor, nunca desde el env.
     public bool AllPresentForAccountAndKeyType => AccountIdPresent && NewKeyTypePresent;
 
-    // XPAY-351 — target de create-qr-static (M4-T1): reutiliza
-    // EXCLUSIVAMENTE dos variables YA existentes, ninguna nueva —
-    // PASSPORT_TEST_NEW_KEY_ID (mismo target que Suspend/Activate/Delete/
-    // DeleteAlreadyDeleted: el key_id REMOTO real de la llave de
-    // certificación) como key_id del QR, y PASSPORT_TEST_CUSTOMER_ID (mismo
-    // recurso ya usado por resolve-key) como customer_id del QR. Los demás
-    // campos requeridos por el contrato (type/channel/additional_info/vat)
-    // son constantes de protocolo NO sensibles, fijadas en
-    // CreateQrStaticExecutor — no son "targets" porque no identifican un
-    // recurso privado de Sandbox.
+    // XPAY-351/XPAY-460 — target de create-qr-static (M4-T1):
+    // PASSPORT_TEST_QR_KEY_ID (NUEVO en XPAY-460 — la Key ACTIVE de tipo
+    // Business Entity Code verificada por el director en Passport Sandbox
+    // Dashboard, DISTINTA de la llave DELETED de M3) como key_id del QR, y
+    // PASSPORT_TEST_CUSTOMER_ID (mismo recurso ya usado por resolve-key)
+    // como customer_id del QR. Los demás campos del contrato (type/channel/
+    // vat/inc/tip/qr_code_reference — ver XPAY-458/460; additional_info ya
+    // no se envía para M4-T1) son constantes o valores generados de
+    // protocolo NO sensibles, fijados en CreateQrStaticExecutor — no son
+    // "targets" porque no identifican un recurso privado de Sandbox.
     //
-    // ADVERTENCIA (no bloqueante para XPAY-351, que es offline-only): al
-    // momento de este ticket, la llave identificada por
-    // PASSPORT_TEST_NEW_KEY_ID está en estado DELETED (eliminada en M3-T5 y
-    // confirmada eliminada otra vez en M3-T7) — una ejecución REAL futura de
-    // create-qr-static probablemente sea rechazada por Passport mientras esa
-    // llave no sea reemplazada por una llave ACTIVE. XPAY-351 no resuelve
-    // esto (implementación offline únicamente).
-    public bool AllPresentForCreateQrStatic => NewKeyIdPresent && CustomerIdPresent;
+    // XPAY-460 — DELIBERADAMENTE NewKeyIdPresent NO forma parte de esta
+    // condición: PASSPORT_TEST_NEW_KEY_ID (la llave DELETED de M3) nunca
+    // debe servir de fallback, ni siquiera si está presente y
+    // PASSPORT_TEST_QR_KEY_ID falta — en ese caso el resultado debe seguir
+    // siendo AbortedTargetMissing (ver HarnessOrchestrator, y el test
+    // dedicado que prueba exactamente este escenario).
+    public bool AllPresentForCreateQrStatic => QrKeyIdPresent && CustomerIdPresent;
 
     public static HarnessTargetConfig FromConfiguration(IConfiguration configuration) => new(
         AccountIdPresent:    !string.IsNullOrWhiteSpace(configuration[EnvAccountId]),
@@ -117,7 +133,8 @@ public sealed record HarnessTargetConfig(
         NewKeyIdPresent:     !string.IsNullOrWhiteSpace(configuration[EnvNewKeyId]),
         CustomerIdPresent:   !string.IsNullOrWhiteSpace(configuration[EnvCustomerId]),
         BrebKeyTypePresent:  !string.IsNullOrWhiteSpace(configuration[EnvBrebKeyType]),
-        BrebKeyValuePresent: !string.IsNullOrWhiteSpace(configuration[EnvBrebKeyValue]));
+        BrebKeyValuePresent: !string.IsNullOrWhiteSpace(configuration[EnvBrebKeyValue]),
+        QrKeyIdPresent:      !string.IsNullOrWhiteSpace(configuration[EnvQrKeyId]));
 
     // Único formato de impresión permitido — jamás el valor.
     public IEnumerable<string> ToRedactedLines()
@@ -129,5 +146,6 @@ public sealed record HarnessTargetConfig(
         yield return $"{EnvCustomerId}={(CustomerIdPresent ? "AVAILABLE" : "MISSING")}";
         yield return $"{EnvBrebKeyType}={(BrebKeyTypePresent ? "AVAILABLE" : "MISSING")}";
         yield return $"{EnvBrebKeyValue}={(BrebKeyValuePresent ? "AVAILABLE" : "MISSING")}";
+        yield return $"{EnvQrKeyId}={(QrKeyIdPresent ? "AVAILABLE" : "MISSING")}";
     }
 }

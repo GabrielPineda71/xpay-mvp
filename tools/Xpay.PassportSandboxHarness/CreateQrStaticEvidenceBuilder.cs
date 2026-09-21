@@ -10,22 +10,27 @@ namespace Xpay.PassportSandboxHarness;
 //
 // Política de saneamiento:
 //   - key_id (request): SOLO fingerprint — nunca el valor real (es el
-//     key_id REMOTO real de la llave de certificación, PASSPORT_TEST_NEW_KEY_ID).
+//     key_id REMOTO real de la Key ACTIVE de certificación,
+//     PASSPORT_TEST_QR_KEY_ID desde XPAY-460 — antes PASSPORT_TEST_NEW_KEY_ID,
+//     corregido por ser la llave DELETED de M3).
 //   - customer_id (request): SOLO fingerprint — mismo criterio que
 //     ResolveKeyEvidenceBuilder.
 //   - type/channel (request): se conservan tal cual — no son sensibles, son
 //     sólo la categoría de protocolo (mismo criterio que key_type en
 //     Create/Suspend/Activate Key).
-//   - amount_present / vat_present (request): booleanos únicamente. M4-T1
-//     nunca debe incluir amount (QR ESTÁTICO sin monto). vat pasó a ser
-//     opcional a nivel de DTO en XPAY-357 (dejó de enviarse), pero XPAY-360
-//     lo RESTAURÓ en el executor tras confirmación empírica real de
-//     Passport Sandbox (HTTP 400 "Field 'vat' is required" en XPAY-359) —
-//     M4-T1 vuelve a enviarlo siempre. Ambos booleanos se registran
-//     explícitamente para que la evidencia sea auto-verificable sin
-//     depender de una inspección externa del código. Nunca se exponen
-//     valores literales de vat_type/vat_value/vat_base_value (presentes o
-//     ausentes) — sólo la presencia/ausencia se registra.
+//   - amount_present / vat_present / inc_present / tip_present (request):
+//     booleanos únicamente. M4-T1 nunca debe incluir amount (QR ESTÁTICO
+//     sin monto). vat/inc/tip son siempre enviados por el executor
+//     (confirmado por Passport para M4-T1, XPAY-458 — vat desde XPAY-360,
+//     inc y tip agregados en XPAY-458). Todos se registran explícitamente
+//     para que la evidencia sea auto-verificable sin depender de una
+//     inspección externa del código. Nunca se exponen valores literales de
+//     vat_type/vat_value/vat_base_value/inc_type/inc_value/tip_type/
+//     tip_value (presentes o ausentes) — sólo la presencia/ausencia se
+//     registra.
+//   - qr_code_reference (request/response): SOLO fingerprint (nunca el
+//     valor real, aunque no sea PII — mismo criterio conservador que otros
+//     IDs opacos, XPAY-458).
 //   - id (response, campo raíz, el qr id remoto): SOLO fingerprint,
 //     ETIQUETADO EXPLÍCITAMENTE como `qr_id_fingerprint` — NUNCA como
 //     key_id/key_id_fingerprint ni resolution_id_fingerprint (son conceptos
@@ -63,7 +68,10 @@ public static class CreateQrStaticEvidenceBuilder
             ["channel"]                 = request.Channel.ToString(),
             ["amount_present"]          = request.Amount is not null,
             ["vat_present"]             = request.Vat is not null,
-            ["qr_code_reference_present"] = request.QrCodeReference is not null,
+            ["inc_present"]             = request.Inc is not null,
+            ["tip_present"]             = request.Tip is not null,
+            ["qr_code_reference_present"]    = request.QrCodeReference is not null,
+            ["qr_code_reference_fingerprint"] = Fingerprint.Compute(request.QrCodeReference),
         };
 
         var responseSanitized = new Dictionary<string, object?>
@@ -80,6 +88,7 @@ public static class CreateQrStaticEvidenceBuilder
             ["qr_code_image_fingerprint"]  = Fingerprint.Compute(response.QrCodeImage),
             ["key_id_fingerprint"]         = Fingerprint.Compute(response.KeyId),
             ["customer_id_fingerprint"]    = Fingerprint.Compute(response.CustomerId),
+            ["qr_code_reference_fingerprint"] = Fingerprint.Compute(response.QrCodeReference),
         };
 
         return new EvidenceRecord(

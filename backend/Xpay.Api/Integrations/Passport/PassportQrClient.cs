@@ -115,14 +115,20 @@ public sealed class PassportQrClient : IPassportQrClient
         if (!Enum.IsDefined(request.Channel))
             throw new ArgumentException("channel no es un valor válido.", nameof(request));
 
-        if (request.AdditionalInfo is null)
-            throw new ArgumentException("additional_info es requerido.", nameof(request));
-        if (!ValidTransactionPurposes.Contains(request.AdditionalInfo.TransactionPurpose))
-            throw new ArgumentException("additional_info.transaction_purpose no es un valor válido.", nameof(request));
-        if (string.IsNullOrWhiteSpace(request.AdditionalInfo.TerminalLabel))
-            throw new ArgumentException("additional_info.terminal_label es requerido.", nameof(request));
-        if (request.AdditionalInfo.TerminalLabel.Length > 25)
-            throw new ArgumentException("additional_info.terminal_label excede 25 caracteres.", nameof(request));
+        // XPAY-458 — additional_info pasó de incondicionalmente requerido a
+        // OPCIONAL: Passport confirmó un request funcional para M4-T1
+        // (STATIC sin monto) que no lo incluye en absoluto. Cuando SÍ está
+        // presente, sus subcampos se siguen validando exactamente igual que
+        // antes — mismo criterio condicional ya aplicado a vat/inc/tip.
+        if (request.AdditionalInfo is not null)
+        {
+            if (!ValidTransactionPurposes.Contains(request.AdditionalInfo.TransactionPurpose))
+                throw new ArgumentException("additional_info.transaction_purpose no es un valor válido.", nameof(request));
+            if (string.IsNullOrWhiteSpace(request.AdditionalInfo.TerminalLabel))
+                throw new ArgumentException("additional_info.terminal_label es requerido.", nameof(request));
+            if (request.AdditionalInfo.TerminalLabel.Length > 25)
+                throw new ArgumentException("additional_info.terminal_label excede 25 caracteres.", nameof(request));
+        }
 
         // XPAY-357 — vat dejó de ser incondicionalmente requerido: la
         // documentación oficial vigente revisada por el director muestra
@@ -159,6 +165,15 @@ public sealed class PassportQrClient : IPassportQrClient
                 throw new ArgumentException("inc.inc_type no es un valor válido.", nameof(request));
             if (string.IsNullOrWhiteSpace(request.Inc.IncValue))
                 throw new ArgumentException("inc.inc_value es requerido cuando inc está presente.", nameof(request));
+        }
+
+        // XPAY-458 — tip, mismo criterio de validación condicional que vat/inc.
+        if (request.Tip is not null)
+        {
+            if (!Enum.IsDefined(request.Tip.TipType))
+                throw new ArgumentException("tip.tip_type no es un valor válido.", nameof(request));
+            if (string.IsNullOrWhiteSpace(request.Tip.TipValue))
+                throw new ArgumentException("tip.tip_value es requerido cuando tip está presente.", nameof(request));
         }
 
         // XPAY-300 (hallazgo XPAY-299 FINDING_1) — Passport documenta

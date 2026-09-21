@@ -21,53 +21,41 @@ namespace Xpay.PassportSandboxHarness;
 // KeyOperationResult.cs).
 public static class CreateQrStaticExecutor
 {
-    // XPAY-351 — channel, transaction_purpose y terminal_label son campos
-    // ESTRUCTURALES requeridos por el contrato productivo de Create QR Code
-    // (ver PassportQrClient.Validate) — NO son datos sensibles ni
-    // específicos de un recurso privado de Sandbox concreto (a diferencia de
-    // key_id/customer_id, que sí identifican un recurso real y viven en
-    // ~/.passport-sandbox.env). Se fijan aquí como constantes de
-    // certificación, mismo criterio ya aplicado a
-    // DisplayName="XPay Certification Test Key" en CreateKeyExecutor. No se
-    // leen desde el entorno porque no son "targets": no identifican ningún
-    // recurso privado, sólo satisfacen el contrato de protocolo.
+    // XPAY-458 — respuesta oficial de Passport (Gustavo, 2026-09-21)
+    // confirmó, para M4-T1 (STATIC sin monto), un request funcional que NO
+    // incluye additional_info/transaction_purpose/terminal_label en
+    // absoluto — contradice el supuesto previo (XPAY-351, ver historial de
+    // constantes eliminadas abajo) de que esos campos eran estructuralmente
+    // requeridos por el contrato productivo. PassportQrClient.Validate ya
+    // no los exige incondicionalmente (ver XPAY-458 en
+    // PassportCreateQrCodeRequest.cs/PassportQrClient.cs) — este executor
+    // simplemente deja de construir AdditionalInfo para M4-T1.
     //
-    // transaction_purpose="00" (Compras) — valor documentado más genérico
-    // del conjunto confirmado (XPAY-297/298). XPAY-357 §8 investigó cambiar
-    // este valor al semántico "PURCHASE" (visto en ejemplos oficiales
-    // vigentes) — GATE DOCUMENTAL BLOQUEADO: la única aparición local de
-    // "PURCHASE" en todo el repositorio es en el ejemplo de la RESPUESTA de
-    // Decode QR Code (PassportDecodeQrCodeResponse.cs, endpoint y dirección
-    // distintos), nunca como valor confirmado del REQUEST de Create QR ni
-    // en ValidTransactionPurposes. No existe soporte contractual local
-    // suficiente para incorporarlo sin ampliar una regla productiva
-    // incierta — se mantiene "00" (TRANSACTION_PURPOSE_CHANGE_BLOCKED=YES).
-    private const string CertificationTerminalLabel      = "XPAY-M4-T1-CERT";
-    private const string CertificationTransactionPurpose = "00";
-
-    // XPAY-360 — RESTAURADOS tras confirmación empírica: la ejecución real
-    // de XPAY-359 (evidence-2026-09-16T00-33-15Z.json, sin vat, según la
-    // corrección de XPAY-357) recibió HTTP 400 con
-    // error_code=invalid_parameter_value, error_message="Field 'vat' is
-    // required" — Passport Sandbox SÍ exige vat para STATIC, contradiciendo
-    // el ejemplo oficial documentado que el director había revisado (que no
-    // lo mostraba). El error confirma ÚNICAMENTE que vat es requerido — NO
-    // confirma por sí mismo qué vat_type/vat_value/vat_base_value son
-    // válidos. Estos tres valores concretos (FIXED/"0.00"/"0.00") se
-    // restauran porque son EXACTAMENTE los que M4-T1 usaba antes de
-    // XPAY-357, y siguen estando respaldados hoy por el contrato productivo
-    // (PassportQrClient.Validate acepta cualquier PassportQrVatType definido
-    // + cualquier vat_value/vat_base_value no vacíos) y por tests activos
-    // (PassportQrClientTests.CreateQrCodeAsync_StaticWithVatExplicitlyIncluded_IsAllowed,
-    // y el propio SyntheticVat() por defecto, usado también por DYNAMIC sin
-    // cambios) — no una inferencia nueva ni un valor inventado para este
-    // ticket. QUEDA PENDIENTE (fuera de alcance de XPAY-360, requiere
-    // confirmación adicional de Passport/director): si vat_type=FIXED y
-    // vat_value/vat_base_value="0.00" son la combinación que Passport
-    // finalmente aceptará — el error de XPAY-359 no llegó a evaluar esos
-    // subcampos porque vat estaba completamente ausente.
-    private const string CertificationVatValue     = "0.00";
-    private const string CertificationVatBaseValue = "0.00";
+    // Historial (constantes eliminadas en XPAY-458, documentado aquí para
+    // no perder el rastro): CertificationTerminalLabel="XPAY-M4-T1-CERT",
+    // CertificationTransactionPurpose="00" — usadas desde XPAY-351 hasta
+    // XPAY-452 (evidence-2026-09-16T00-56-00Z.json, el 3er intento fallido,
+    // aún las incluía).
+    //
+    // XPAY-460 — VALORES ACTUALIZADOS: Gustavo confirmó posteriormente que
+    // vat/inc/tip son "características informativas dentro de Bre-B y no se
+    // aplican al valor total", y que sus valores concretos "dependen de la
+    // evaluación comercial/contable de XPAY" — es decir, Passport no exige
+    // un valor específico, sólo la presencia estructural del campo (ya
+    // confirmada empíricamente: XPAY-360 para vat, XPAY-458 para inc —
+    // evidence-2026-09-16T00-33-15Z.json/evidence-2026-09-16T00-56-00Z.json).
+    // Para el FIXTURE DE CERTIFICACIÓN de M4-T1 se adoptan explícitamente
+    // los mismos valores del ejemplo funcional que Passport entregó (SOLO
+    // como valores de harness de certificación — NUNCA como regla financiera
+    // productiva; PassportQrClient.Validate NO exige estos importes
+    // específicos, ver XPAY-460 §7): vat FIXED/"100.00"/"100.00", inc
+    // FIXED/"10.00", tip FIXED/"100.00". Reemplazan los "0.00" de XPAY-458
+    // (elegidos entonces por analogía sin respaldo propio — ver auditoría
+    // XPAY-459, VAT/INC/TIP_EVIDENCE_STRENGTH).
+    private const string CertificationVatValue     = "100.00";
+    private const string CertificationVatBaseValue = "100.00";
+    private const string CertificationIncValue     = "10.00";
+    private const string CertificationTipValue     = "100.00";
 
     public static async Task<KeyOperationResult> ExecuteAsync(
         IConfiguration configuration,
@@ -80,7 +68,14 @@ public static class CreateQrStaticExecutor
         ArgumentNullException.ThrowIfNull(qrClient);
         ArgumentNullException.ThrowIfNull(commitShaProvider);
 
-        var keyId      = configuration[HarnessTargetConfig.EnvNewKeyId];
+        // XPAY-460 — key_id proviene EXCLUSIVAMENTE de PASSPORT_TEST_QR_KEY_ID
+        // (la Key ACTIVE de tipo Business Entity Code verificada por el
+        // director en Passport Sandbox Dashboard), NUNCA de
+        // PASSPORT_TEST_NEW_KEY_ID (la llave DELETED de M3) — sin fallback,
+        // ni siquiera si esta última está presente. Ver
+        // HarnessTargetConfig.AllPresentForCreateQrStatic (misma regla ya
+        // aplicada en el preflight, esto es defensa en profundidad).
+        var keyId      = configuration[HarnessTargetConfig.EnvQrKeyId];
         var customerId = configuration[HarnessTargetConfig.EnvCustomerId];
 
         // Defensa en profundidad: HarnessOrchestrator.Prepare ya debería
@@ -89,7 +84,7 @@ public static class CreateQrStaticExecutor
         if (string.IsNullOrWhiteSpace(keyId) || string.IsNullOrWhiteSpace(customerId))
         {
             return new(KeyOperationOutcome.LocalBlocked, null,
-                "PASSPORT_TEST_NEW_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s) al momento de intentar Create QR Static.");
+                "PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s) al momento de intentar Create QR Static.");
         }
 
         string commitSha;
@@ -108,44 +103,45 @@ public static class CreateQrStaticExecutor
         // una decisión de ESTE caso de certificación, no un cambio a la
         // política general del cliente productivo (que hoy tolera
         // STATIC+amount sin bloquearlo — CONTRACT_GAP_1 de XPAY-350, no
-        // corregido aquí). §8 — qr_code_reference NO se usa: no es
-        // necesario para Create QR (es opcional) y XPAY-351 prefiere
-        // explícitamente no usarlo.
+        // corregido aquí).
         //
-        // XPAY-356 — Channel corregido de APP a POS: la ejecución real de
-        // XPAY-354 (evidence-2026-09-15T23-06-08Z.json) usó APP y recibió
-        // HTTP 400 de Passport. El RCA de XPAY-355 encontró que POS —no
-        // APP— es el valor ya confirmado y probado para STATIC desde la
-        // implementación histórica del cliente QR (ver
-        // PassportQrClientTests.SyntheticStaticRequest(), que usa
-        // Channel=POS desde XPAY-298), y coincide con el ejemplo oficial
-        // STATIC vigente revisado por el director. Esta corrección NO
-        // declara que APP haya sido la causa confirmada del HTTP 400 —
-        // Passport nunca reveló el campo específico rechazado (gap de
-        // diagnóstico documentado en XPAY-355) — es una corrección de
-        // contrato basada en el valor STATIC ya confirmado localmente,
-        // no una conclusión causal definitiva.
+        // XPAY-356 — Channel corregido de APP a POS en su momento (RCA de
+        // XPAY-355 tras el HTTP 400 de XPAY-354). XPAY-458 lo corrige de
+        // nuevo, esta vez de POS a MPOS: el ejemplo funcional confirmado por
+        // Passport (Gustavo, 2026-09-21) específicamente para M4-T1 usa
+        // channel=MPOS. A diferencia de la corrección XPAY-356 (basada en
+        // inferencia, sin que Passport revelara el campo rechazado), ésta
+        // proviene directamente de un ejemplo que Passport confirmó como
+        // funcional — no es una inferencia.
         //
-        // XPAY-357 removió vat de este request (basándose en el ejemplo
-        // oficial STATIC vigente, que no lo mostraba); XPAY-360 lo
-        // RESTAURA tras confirmación empírica real de Passport Sandbox
-        // (XPAY-359: HTTP 400, "Field 'vat' is required") — ver comentario
-        // de CertificationVatValue/CertificationVatBaseValue arriba para el
-        // razonamiento completo. amount/inc/qr_code_reference permanecen
-        // deliberadamente AUSENTES, sin cambios respecto a XPAY-351/357.
+        // XPAY-357 removió vat de este request; XPAY-360 lo restauró tras
+        // confirmación empírica (HTTP 400 "Field 'vat' is required"). XPAY-458
+        // agrega ahora inc (mismo tipo de confirmación empírica: HTTP 400
+        // "Field 'inc' is required", evidence-2026-09-16T00-56-00Z.json) y
+        // tip (nuevo, sin evidencia empírica previa — incluido porque el
+        // ejemplo funcional de Gustavo lo trae), y agrega qr_code_reference
+        // (NUEVA y única por ejecución — ver QrCodeReferenceGenerator; nunca
+        // reutiliza una referencia de un intento anterior). additional_info
+        // queda deliberadamente AUSENTE (ver comentario de las constantes
+        // eliminadas arriba) — amount permanece deliberadamente AUSENTE, sin
+        // cambios respecto a XPAY-351.
         var request = new PassportCreateQrCodeRequest(
             KeyId: keyId,
             CustomerId: customerId,
             Type: PassportQrType.STATIC,
-            Channel: PassportQrChannel.POS,
-            AdditionalInfo: new PassportQrAdditionalInfoRequest(
-                TransactionPurpose: CertificationTransactionPurpose,
-                TerminalLabel: CertificationTerminalLabel))
+            Channel: PassportQrChannel.MPOS)
         {
             Vat = new PassportQrVatRequest(
                 VatType: PassportQrVatType.FIXED,
                 VatValue: CertificationVatValue,
                 VatBaseValue: CertificationVatBaseValue),
+            Inc = new PassportQrIncRequest(
+                IncType: PassportQrVatType.FIXED,
+                IncValue: CertificationIncValue),
+            Tip = new PassportQrTipRequest(
+                TipType: PassportQrVatType.FIXED,
+                TipValue: CertificationTipValue),
+            QrCodeReference = QrCodeReferenceGenerator.Generate(),
         };
 
         try

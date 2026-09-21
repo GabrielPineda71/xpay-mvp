@@ -9,24 +9,56 @@ namespace Xpay.Api.Integrations.Passport;
 // Campos modelados en ESTA fase (evidence-first, sólo lo confirmado y
 // necesario para los dos happy paths de certificación M4-T1/M4-T4):
 // key_id, customer_id, type, channel, additional_info{transaction_purpose,
-// terminal_label}, vat{vat_type,vat_value,vat_base_value} (opcional —
-// XPAY-357: la documentación oficial vigente revisada por el director NO
-// muestra vat en el ejemplo STATIC; vat pasó de requerido incondicional a
-// opcional a nivel de DTO — la obligatoriedad real por tipo vive en
-// PassportQrClient.Validate, no en el DTO), qr_code_reference (opcional),
-// amount{value,currency} (opcional), inc{inc_type,inc_value} (opcional —
-// condicionalmente requerido por Passport cuando amount está presente en
-// DYNAMIC, confirmado verbatim: "Required for Dynamic QR Codes if an Amount
-// is provided" — XPAY no fuerza esa condicionalidad aquí; el caller es
-// responsable de incluir Inc cuando incluye Amount, igual que Passport
-// documenta la regla como condicional al proveedor, no como un guard local
-// inventado).
+// terminal_label} (opcional — ver XPAY-458 abajo), vat{vat_type,vat_value,
+// vat_base_value} (opcional a nivel de DTO — XPAY-357: la documentación
+// oficial vigente revisada por el director NO muestra vat en el ejemplo
+// STATIC; la obligatoriedad real por caso vive en PassportQrClient.Validate
+// y/o en el caller certificador, no en el DTO), qr_code_reference
+// (opcional), amount{value,currency} (opcional), inc{inc_type,inc_value}
+// (opcional — condicionalmente requerido por Passport cuando amount está
+// presente en DYNAMIC, confirmado verbatim: "Required for Dynamic QR Codes
+// if an Amount is provided" — XPAY no fuerza esa condicionalidad aquí; el
+// caller es responsable de incluir Inc cuando incluye Amount, igual que
+// Passport documenta la regla como condicional al proveedor, no como un
+// guard local inventado), tip{tip_type,tip_value} (opcional — ver XPAY-458).
+//
+// XPAY-458 — respuesta oficial de Passport (Gustavo, 2026-09-21) confirmó,
+// para M4-T1 (STATIC sin monto), un request funcional que NO incluye
+// additional_info/transaction_purpose/terminal_label en absoluto, y SÍ
+// incluye vat + inc + tip + qr_code_reference — contradiciendo el supuesto
+// previo (XPAY-298) de que additional_info era incondicionalmente
+// requerido. Por tanto:
+//   - AdditionalInfo pasó de parámetro posicional REQUERIDO a propiedad
+//     OPCIONAL (mismo patrón ya usado por Vat/QrCodeReference/Amount/Inc) —
+//     la obligatoriedad de transaction_purpose/terminal_label CUANDO
+//     additional_info SÍ está presente se preserva sin cambios en
+//     PassportQrClient.Validate (ningún otro caso que sí lo envíe pierde
+//     esa validación).
+//   - Se agrega Tip (nuevo tipo dedicado, mismo criterio que Vat/Inc — ver
+//     PassportQrTipRequest abajo). Los valores concretos de certificación
+//     para M4-T1 viven en el harness (CreateQrStaticExecutor), nunca aquí
+//     ni como regla financiera productiva.
+//   - Passport también informó que VAT e INC pasan a ser obligatorios "en
+//     ambos tipos de QR" (STATIC y DYNAMIC) — evidencia empírica ya
+//     recogida en este repositorio respalda esto para STATIC
+//     específicamente (evidence-2026-09-16T00-33-15Z.json: HTTP 400 "Field
+//     'vat' is required"; evidence-2026-09-16T00-56-00Z.json: HTTP 400
+//     "Field 'inc' is required"). XPAY-458 NO endurece
+//     PassportQrClient.Validate para exigir vat/inc incondicionalmente en
+//     TODO STATIC (eso reescribiría cobertura general existente —
+//     CreateQrCodeAsync_StaticWithoutVat_IsAllowed,
+//     CreateQrCodeAsync_DynamicWithoutAmount_IsAllowed, entre otros — sin
+//     una segunda confirmación explícita de que esa regla aplica fuera del
+//     caso M4-T1); la garantía concreta para M4-T1 vive enteramente en
+//     CreateQrStaticExecutor, que construye vat/inc/tip siempre presentes,
+//     nunca condicionados. Ver reporte XPAY-458 para esta decisión de
+//     alcance, dejada explícita para el director técnico.
 //
 // Otros campos opcionales documentados (invoice_number, mobile_phone_number,
 // store_label, loyalty_label, reference_label, customer_label, customer_info,
-// channel_presentation, tip.*) NO se modelan en esta fase — no son necesarios
-// para representar fielmente los ejemplos oficiales de STATIC/DYNAMIC usados
-// en los tests (XPAY-298, Fase 9/10).
+// channel_presentation) NO se modelan en esta fase — no son necesarios para
+// representar fielmente los ejemplos oficiales de STATIC/DYNAMIC usados en
+// los tests (XPAY-298, Fase 9/10; XPAY-458 para tip).
 //
 // Nunca se loguea una instancia de este record (contiene identificadores y
 // datos transaccionales).
@@ -34,9 +66,17 @@ public sealed record PassportCreateQrCodeRequest(
     [property: JsonPropertyName("key_id")]         string KeyId,
     [property: JsonPropertyName("customer_id")]    string CustomerId,
     [property: JsonPropertyName("type")]           PassportQrType Type,
-    [property: JsonPropertyName("channel")]        PassportQrChannel Channel,
-    [property: JsonPropertyName("additional_info")] PassportQrAdditionalInfoRequest AdditionalInfo)
+    [property: JsonPropertyName("channel")]        PassportQrChannel Channel)
 {
+    // XPAY-458 — pasó de parámetro posicional REQUERIDO a propiedad
+    // OPCIONAL: el contrato confirmado por Passport para M4-T1 (STATIC sin
+    // monto) no lo incluye en absoluto. Cuando SÍ está presente (otros
+    // casos que lo requieran), PassportQrClient.Validate sigue exigiendo
+    // transaction_purpose/terminal_label válidos, sin cambios.
+    [JsonPropertyName("additional_info")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PassportQrAdditionalInfoRequest? AdditionalInfo { get; init; }
+
     // XPAY-357 — Vat pasó de parámetro posicional REQUERIDO a propiedad
     // opcional (mismo patrón ya usado por QrCodeReference/Amount/Inc):
     // el ejemplo oficial STATIC vigente no incluye vat, y M4-T1 (STATIC) no
@@ -58,10 +98,21 @@ public sealed record PassportCreateQrCodeRequest(
     [JsonPropertyName("inc")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public PassportQrIncRequest? Inc { get; init; }
+
+    // XPAY-458 — nuevo campo, contrato confirmado por Passport
+    // (Gustavo, 2026-09-21) para M4-T1: tip{tip_type,tip_value}. Mismo
+    // patrón de tipo que vat/inc (PassportQrVatType reutilizado — mismo
+    // conjunto de valores de cálculo ya confirmado para vat_type/inc_type;
+    // Passport no ha documentado un conjunto distinto para tip_type).
+    [JsonPropertyName("tip")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PassportQrTipRequest? Tip { get; init; }
 }
 
-// additional_info — sólo transaction_purpose y terminal_label en esta fase
-// (ambos requeridos por contrato).
+// additional_info — sólo transaction_purpose y terminal_label en esta fase.
+// XPAY-458 — additional_info en sí es ahora OPCIONAL a nivel de request
+// (ver PassportCreateQrCodeRequest); cuando SÍ está presente, ambos
+// subcampos siguen siendo requeridos por contrato (PassportQrClient.Validate).
 //
 // TransactionPurpose se modela como STRING PLANO, NO como enum C#: los
 // valores documentados son códigos con cero inicial ("00","02","03","04",
@@ -91,6 +142,15 @@ public sealed record PassportQrVatRequest(
 public sealed record PassportQrIncRequest(
     [property: JsonPropertyName("inc_type")]  PassportQrVatType IncType,
     [property: JsonPropertyName("inc_value")] string IncValue);
+
+// tip — XPAY-458, mismo criterio que vat/inc: tip_value es String
+// pre-formateado, no decimal. Contrato confirmado por Passport (Gustavo,
+// 2026-09-21) específicamente para M4-T1; no se ha documentado localmente
+// ninguna condicionalidad (p. ej. requerido sólo si amount está presente)
+// distinta de la que el caller certificador decida.
+public sealed record PassportQrTipRequest(
+    [property: JsonPropertyName("tip_type")]  PassportQrVatType TipType,
+    [property: JsonPropertyName("tip_value")] string TipValue);
 
 // amount — DTO DEDICADO, NO PassportBalance: el contrato de Create QR Code
 // exige `value` como STRING JSON con comillas (ej. "80000.57"), confirmado

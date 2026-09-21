@@ -14,8 +14,12 @@ namespace Xpay.Api.Integrations.Passport;
 // ejemplo JSON truncado de /EN/create-qr-codes no lo mostraba explícitamente
 // (ese ejemplo también truncaba merchant/vat/inc/additional_info con "...").
 //
-// `inc` NO se modela en esta respuesta (fuera del alcance evidence-first de
-// esta fase, aunque aparece en el ejemplo crudo) — ver XPAY-298 Fase 12.
+// XPAY-458 — inc/tip/qr_code_reference agregados a esta respuesta: Passport
+// confirmó (Gustavo, 2026-09-21) un ejemplo de M4-T1 donde el request los
+// incluye, y el contrato de Create QR Code es evidence-first — si el
+// request los envía, la respuesta puede reflejarlos de vuelta. Mismo
+// criterio defensivo que el resto del DTO (todo string/objeto anidado
+// nullable; nunca se asume presencia).
 //
 // TRANSPORTE DEFENSIVO — todas las propiedades nullable: Type/Status/
 // Channel/etc. se modelan como string? (no como los enums usados en el
@@ -64,6 +68,16 @@ public sealed class PassportQrCodeResponse
 
     [JsonPropertyName("additional_info")]
     public PassportQrAdditionalInfoResponse? AdditionalInfo { get; set; }
+
+    // XPAY-458.
+    [JsonPropertyName("inc")]
+    public PassportQrIncResponse? Inc { get; set; }
+
+    [JsonPropertyName("tip")]
+    public PassportQrTipResponse? Tip { get; set; }
+
+    [JsonPropertyName("qr_code_reference")]
+    public string? QrCodeReference { get; set; }
 }
 
 public sealed class PassportQrAmountResponse
@@ -94,4 +108,18 @@ public sealed class PassportQrAdditionalInfoResponse
 
     [JsonPropertyName("terminal_label")]
     public string? TerminalLabel { get; set; }
+}
+
+// XPAY-458 — reutiliza PassportQrIncResponse ya existente (definido en
+// PassportDecodeQrCodeResponse.cs, XPAY-304/305) — mismo shape exacto
+// (inc_type/inc_value, ambos string? defensivos), no se duplica el tipo.
+
+// XPAY-458 — mismo shape que PassportQrVatResponse/PassportQrIncResponse.
+public sealed class PassportQrTipResponse
+{
+    [JsonPropertyName("tip_type")]
+    public string? TipType { get; set; }
+
+    [JsonPropertyName("tip_value")]
+    public string? TipValue { get; set; }
 }

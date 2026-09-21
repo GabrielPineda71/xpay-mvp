@@ -2086,16 +2086,24 @@ public class HarnessAppEndToEndTests
         }
     }
 
-    private static IConfiguration FullQrConfig() => new ConfigurationBuilder()
-        .AddInMemoryCollection(new Dictionary<string, string?>
+    // XPAY-460 — M4-T1 usa EXCLUSIVAMENTE EnvQrKeyId (Key ACTIVE de
+    // certificación), nunca EnvNewKeyId (llave DELETED de M3). `qrKeyId:
+    // null` + `includeStaleNewKeyId: true` reproduce exactamente el
+    // escenario de "no fallback": PASSPORT_TEST_NEW_KEY_ID presente,
+    // PASSPORT_TEST_QR_KEY_ID ausente.
+    private static IConfiguration FullQrConfig(string? qrKeyId = RealQrKeyId, bool includeStaleNewKeyId = false)
+    {
+        var dict = new Dictionary<string, string?>
         {
             [PassportOptions.EnvBaseUrl] = BaseUrl,
             [PassportOptions.EnvClientId] = "synthetic-key",
             [PassportOptions.EnvClientSecret] = "synthetic-secret",
-            [HarnessTargetConfig.EnvNewKeyId] = RealQrKeyId,
             [HarnessTargetConfig.EnvCustomerId] = RealQrCustomerId,
-        })
-        .Build();
+        };
+        if (qrKeyId is not null) dict[HarnessTargetConfig.EnvQrKeyId] = qrKeyId;
+        if (includeStaleNewKeyId) dict[HarnessTargetConfig.EnvNewKeyId] = "synthetic-deleted-m3-key-id";
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
 
     private static HarnessApp.Dependencies BuildQrDependencies(
         LocalFakeQrHandler handler, string evidenceDir, IConfiguration config)
@@ -2126,25 +2134,49 @@ public class HarnessAppEndToEndTests
             await HarnessApp.RunAsync(
                 new[] { "create-qr-static", "--execute", "--confirm-create-qr-static" }, config, dependencies, output);
 
-            // F/G/H — exactamente 1 llamada HTTP, POST /v1/qrcodes,
-            // type=STATIC, SIN "amount" ni "inc" ni "qr_code_reference" en
-            // el body. "vat" SÍ debe estar presente (XPAY-360 — restaurado
-            // tras confirmación empírica real de Passport en XPAY-359: HTTP
-            // 400 "Field 'vat' is required").
+            // F/G/H / XPAY-458 — exactamente 1 llamada HTTP, POST /v1/qrcodes,
+            // type=STATIC, SIN "amount" ni "additional_info" en el body.
+            // "vat"/"inc"/"tip"/"qr_code_reference" SÍ deben estar presentes
+            // — contrato confirmado por Passport (Gustavo, 2026-09-21) para
+            // M4-T1: vat desde XPAY-360, inc/tip/qr_code_reference agregados
+            // y additional_info eliminado en XPAY-458.
             Assert.Equal(1, handler.CallCount);
             Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
             Assert.Equal("/v1/qrcodes", handler.LastRequest.RequestUri!.AbsolutePath);
             Assert.Contains("\"STATIC\"", handler.LastRequestBody);
             Assert.DoesNotContain("\"amount\"", handler.LastRequestBody);
+            Assert.DoesNotContain("\"additional_info\"", handler.LastRequestBody);
             Assert.Contains("\"vat\"", handler.LastRequestBody);
-            Assert.DoesNotContain("\"inc\"", handler.LastRequestBody);
-            Assert.DoesNotContain("\"qr_code_reference\"", handler.LastRequestBody);
+            Assert.Contains("\"inc\"", handler.LastRequestBody);
+            Assert.Contains("\"tip\"", handler.LastRequestBody);
+            Assert.Contains("\"qr_code_reference\"", handler.LastRequestBody);
 
-            // XPAY-356 — regresión channel: el body real de negocio debe
-            // llevar "channel":"POS" (corregido desde APP tras el HTTP 400
-            // observado en XPAY-354 / RCA de XPAY-355) y NUNCA "APP".
-            Assert.Contains("\"channel\":\"POS\"", handler.LastRequestBody);
+            // XPAY-460 — valores exactos del fixture de certificación
+            // confirmado por Gustavo: vat FIXED/"100.00"/"100.00",
+            // inc FIXED/"10.00", tip FIXED/"100.00".
+            using (var bodyDoc = JsonDocument.Parse(handler.LastRequestBody!))
+            {
+                var bodyRoot = bodyDoc.RootElement;
+                var vat = bodyRoot.GetProperty("vat");
+                Assert.Equal("FIXED", vat.GetProperty("vat_type").GetString());
+                Assert.Equal("100.00", vat.GetProperty("vat_value").GetString());
+                Assert.Equal("100.00", vat.GetProperty("vat_base_value").GetString());
+
+                var inc = bodyRoot.GetProperty("inc");
+                Assert.Equal("FIXED", inc.GetProperty("inc_type").GetString());
+                Assert.Equal("10.00", inc.GetProperty("inc_value").GetString());
+
+                var tip = bodyRoot.GetProperty("tip");
+                Assert.Equal("FIXED", tip.GetProperty("tip_type").GetString());
+                Assert.Equal("100.00", tip.GetProperty("tip_value").GetString());
+            }
+
+            // XPAY-458 — regresión channel: el body real de negocio debe
+            // llevar "channel":"MPOS" (corregido desde POS tras el ejemplo
+            // funcional confirmado por Passport) y NUNCA "APP" ni "POS".
+            Assert.Contains("\"channel\":\"MPOS\"", handler.LastRequestBody);
             Assert.DoesNotContain("\"channel\":\"APP\"", handler.LastRequestBody);
+            Assert.DoesNotContain("\"channel\":\"POS\"", handler.LastRequestBody);
 
             var evidencePath = Path.Combine(dir, "M4-T1");
             var files = Directory.GetFiles(evidencePath, "evidence-*.json");
@@ -2164,12 +2196,15 @@ public class HarnessAppEndToEndTests
 
             var requestSanitized = root.GetProperty("request_sanitized");
             Assert.Equal("STATIC", requestSanitized.GetProperty("type").GetString());
-            // XPAY-356 — la evidencia futura (result=PASS) debe reflejar POS.
-            Assert.Equal("POS", requestSanitized.GetProperty("channel").GetString());
+            // XPAY-458 — la evidencia futura (result=PASS) debe reflejar MPOS.
+            Assert.Equal("MPOS", requestSanitized.GetProperty("channel").GetString());
             Assert.False(requestSanitized.GetProperty("amount_present").GetBoolean());
-            // XPAY-360 — vat_present=true (restaurado), sin exponer vat_type/vat_value/vat_base_value.
+            // XPAY-360/XPAY-458 — vat/inc/tip/qr_code_reference presentes,
+            // sin exponer ninguno de sus valores concretos.
             Assert.True(requestSanitized.GetProperty("vat_present").GetBoolean());
-            Assert.False(requestSanitized.GetProperty("qr_code_reference_present").GetBoolean());
+            Assert.True(requestSanitized.GetProperty("inc_present").GetBoolean());
+            Assert.True(requestSanitized.GetProperty("tip_present").GetBoolean());
+            Assert.True(requestSanitized.GetProperty("qr_code_reference_present").GetBoolean());
 
             var responseSanitized = root.GetProperty("response_sanitized");
             Assert.True(responseSanitized.GetProperty("qr_code_data_present").GetBoolean());
@@ -2234,6 +2269,35 @@ public class HarnessAppEndToEndTests
             var output = new StringWriter();
 
             await HarnessApp.RunAsync(new[] { "create-qr-static", "--execute" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T1")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // XPAY-460 — regresión CRÍTICA de seguridad, a nivel de flujo COMPLETO
+    // (HarnessApp.RunAsync real, incluyendo el executor): PASSPORT_TEST_NEW_KEY_ID
+    // (llave DELETED de M3) presente NUNCA debe permitir que create-qr-static
+    // llegue a HTTP — cero llamadas, cero evidencia, sin importar que la
+    // variable histórica esté configurada.
+    [Fact]
+    public async Task CreateQrStaticExecute_NewKeyIdPresentButQrKeyIdMissing_Aborted_NoHttpCall_NoFallback()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig(qrKeyId: null, includeStaleNewKeyId: true);
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static", "--execute", "--confirm-create-qr-static" }, config, dependencies, output);
 
             Assert.Equal(0, handler.CallCount);
             Assert.False(Directory.Exists(Path.Combine(dir, "M4-T1")));

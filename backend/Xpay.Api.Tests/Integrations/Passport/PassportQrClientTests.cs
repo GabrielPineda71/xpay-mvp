@@ -44,13 +44,17 @@ public class PassportQrClientTests
     // porque el ejemplo oficial STATIC vigente no lo muestra. Los tests que
     // necesiten ejercitar STATIC+vat presente lo agregan explícitamente vía
     // `with { Vat = SyntheticVat() }`).
+    // XPAY-458 — AdditionalInfo se movió del constructor posicional a
+    // propiedad opcional (ver PassportCreateQrCodeRequest); este fixture
+    // sigue incluyéndolo por defecto (comportamiento general no-M4-T1 sin
+    // cambios), sólo cambia SU sintaxis de asignación.
     private static PassportCreateQrCodeRequest SyntheticStaticRequest(string? qrCodeReference = null) => new(
         KeyId: "synthetic-key-id-001",
         CustomerId: "synthetic-customer-id-001",
         Type: PassportQrType.STATIC,
-        Channel: PassportQrChannel.POS,
-        AdditionalInfo: SyntheticAdditionalInfo())
+        Channel: PassportQrChannel.POS)
     {
+        AdditionalInfo = SyntheticAdditionalInfo(),
         QrCodeReference = qrCodeReference,
     };
 
@@ -62,13 +66,36 @@ public class PassportQrClientTests
         KeyId: "synthetic-key-id-001",
         CustomerId: "synthetic-customer-id-001",
         Type: PassportQrType.DYNAMIC,
-        Channel: PassportQrChannel.ECOMM,
-        AdditionalInfo: SyntheticAdditionalInfo("06"))
+        Channel: PassportQrChannel.ECOMM)
     {
+        AdditionalInfo = SyntheticAdditionalInfo("06"),
         Vat = SyntheticVat(),
         QrCodeReference = qrCodeReference,
         Amount = new PassportQrAmountRequest("80000.57"),
         Inc = new PassportQrIncRequest(PassportQrVatType.FIXED, "10.00"),
+    };
+
+    // XPAY-458 — fixture dedicado al contrato M4-T1 confirmado por Passport
+    // (Gustavo, 2026-09-21): STATIC + MPOS + vat/inc/tip/qr_code_reference,
+    // SIN amount ni additional_info. Ningún ID/valor copiado del correo de
+    // Gustavo — todos sintéticos.
+    // XPAY-460 — vat/inc/tip actualizados a los valores del FIXTURE DE
+    // CERTIFICACIÓN que Passport confirmó explícitamente (Gustavo aclaró
+    // que son informativos, no reglas productivas — ver
+    // CreateQrStaticExecutor para el razonamiento completo). Reemplazan los
+    // valores de XPAY-458 (elegidos entonces deliberadamente DISTINTOS del
+    // ejemplo de Gustavo, antes de que este ticket confirmara que adoptarlos
+    // es lo correcto).
+    private static PassportCreateQrCodeRequest SyntheticM4T1ConfirmedRequest(string qrCodeReference = "SYNM4T1REF01") => new(
+        KeyId: "synthetic-key-id-001",
+        CustomerId: "synthetic-customer-id-001",
+        Type: PassportQrType.STATIC,
+        Channel: PassportQrChannel.MPOS)
+    {
+        Vat = new PassportQrVatRequest(PassportQrVatType.FIXED, "100.00", "100.00"),
+        Inc = new PassportQrIncRequest(PassportQrVatType.FIXED, "10.00"),
+        Tip = new PassportQrTipRequest(PassportQrVatType.FIXED, "100.00"),
+        QrCodeReference = qrCodeReference,
     };
 
     private const string MinimalOkBody = "{\"id\":\"synthetic-qr-id-001\"}";
@@ -280,6 +307,124 @@ public class PassportQrClientTests
         Assert.Equal(0, handler.CallCount);
     }
 
+    // ── XPAY-458 — tip (nuevo campo, mismo criterio de validación que vat/inc) ──
+
+    [Fact]
+    public async Task CreateQrCodeAsync_OutOfRangeTipType_ThrowsBeforeHttp()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, MinimalOkBody));
+        var client = CreateClient(handler);
+        var request = SyntheticStaticRequest() with { Tip = new PassportQrTipRequest((PassportQrVatType)999, "50.00") };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.CreateQrCodeAsync(request));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CreateQrCodeAsync_TipPresentWithBlankValue_ThrowsBeforeHttp(string? blank)
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, MinimalOkBody));
+        var client = CreateClient(handler);
+        var request = SyntheticStaticRequest() with { Tip = new PassportQrTipRequest(PassportQrVatType.FIXED, blank!) };
+
+        await Assert.ThrowsAsync<ArgumentException>(() => client.CreateQrCodeAsync(request));
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task CreateQrCodeAsync_WithoutTip_OmitsField()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, MinimalOkBody));
+        var client = CreateClient(handler);
+
+        await client.CreateQrCodeAsync(SyntheticStaticRequest());
+
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.False(doc.RootElement.TryGetProperty("tip", out _));
+    }
+
+    [Fact]
+    public async Task CreateQrCodeAsync_WithTip_SerializesCorrectJsonNames()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, MinimalOkBody));
+        var client = CreateClient(handler);
+        var request = SyntheticStaticRequest() with
+        {
+            Tip = new PassportQrTipRequest(PassportQrVatType.FIXED, "100.00"),
+        };
+
+        var result = await client.CreateQrCodeAsync(request);
+
+        Assert.Equal("synthetic-qr-id-001", result.Id);
+        Assert.Equal(1, handler.CallCount);
+
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        var tip = doc.RootElement.GetProperty("tip");
+        Assert.Equal("FIXED", tip.GetProperty("tip_type").GetString());
+        Assert.Equal(JsonValueKind.String, tip.GetProperty("tip_value").ValueKind);
+        Assert.Equal("100.00", tip.GetProperty("tip_value").GetString());
+    }
+
+    // ── XPAY-458 — contrato M4-T1 confirmado por Passport (Gustavo,
+    // 2026-09-21): STATIC + MPOS + vat/inc/tip/qr_code_reference presentes,
+    // SIN amount/additional_info/transaction_purpose/terminal_label. ──────
+
+    [Fact]
+    public async Task CreateQrCodeAsync_M4T1ConfirmedContract_PostsExactContractShape()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, MinimalOkBody));
+        var client = CreateClient(handler);
+
+        var result = await client.CreateQrCodeAsync(SyntheticM4T1ConfirmedRequest());
+
+        Assert.Equal("synthetic-qr-id-001", result.Id);
+        Assert.Equal(1, handler.CallCount);
+
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        var root = doc.RootElement;
+
+        Assert.Equal("STATIC", root.GetProperty("type").GetString());
+        Assert.Equal("MPOS", root.GetProperty("channel").GetString());
+
+        // Presentes — XPAY-460: valores exactos del fixture de
+        // certificación confirmado por Passport (Gustavo, 2026-09-21).
+        Assert.True(root.TryGetProperty("vat", out var vat));
+        Assert.Equal("FIXED", vat.GetProperty("vat_type").GetString());
+        Assert.Equal(JsonValueKind.String, vat.GetProperty("vat_value").ValueKind);
+        Assert.Equal("100.00", vat.GetProperty("vat_value").GetString());
+        Assert.Equal(JsonValueKind.String, vat.GetProperty("vat_base_value").ValueKind);
+        Assert.Equal("100.00", vat.GetProperty("vat_base_value").GetString());
+
+        Assert.True(root.TryGetProperty("inc", out var inc));
+        Assert.Equal("FIXED", inc.GetProperty("inc_type").GetString());
+        Assert.Equal(JsonValueKind.String, inc.GetProperty("inc_value").ValueKind);
+        Assert.Equal("10.00", inc.GetProperty("inc_value").GetString());
+
+        Assert.True(root.TryGetProperty("tip", out var tip));
+        Assert.Equal("FIXED", tip.GetProperty("tip_type").GetString());
+        Assert.Equal(JsonValueKind.String, tip.GetProperty("tip_value").ValueKind);
+        Assert.Equal("100.00", tip.GetProperty("tip_value").GetString());
+
+        Assert.True(root.TryGetProperty("qr_code_reference", out var qrCodeReference));
+        Assert.Equal(JsonValueKind.String, qrCodeReference.ValueKind);
+
+        // Ausentes — el contrato confirmado por Passport para M4-T1 NO los incluye.
+        Assert.False(root.TryGetProperty("amount", out _));
+        Assert.False(root.TryGetProperty("additional_info", out _));
+
+        // Sin campos inventados: exactamente 8 propiedades top-level (orden
+        // = orden de declaración de propiedades en PassportCreateQrCodeRequest).
+        var topLevelNames = new List<string>();
+        foreach (var prop in root.EnumerateObject())
+            topLevelNames.Add(prop.Name);
+        Assert.Equal(
+            new[] { "key_id", "customer_id", "type", "channel", "vat", "qr_code_reference", "inc", "tip" },
+            topLevelNames);
+    }
+
     [Theory]
     [InlineData("01")]   // no está en el conjunto documentado (00,02-07)
     [InlineData("0")]    // pierde el cero inicial
@@ -348,15 +493,25 @@ public class PassportQrClientTests
         Assert.Equal(0, handler.CallCount);
     }
 
+    // XPAY-458 — CAMBIO DE CONTRATO: additional_info pasó de incondicionalmente
+    // requerido a OPCIONAL (Passport confirmó, para M4-T1, un request
+    // funcional que no lo incluye en absoluto). Este test reemplaza al
+    // histórico "CreateQrCodeAsync_NullAdditionalInfo_ThrowsBeforeHttp"
+    // (aserción inversa, ya no válida bajo el contrato confirmado).
     [Fact]
-    public async Task CreateQrCodeAsync_NullAdditionalInfo_ThrowsBeforeHttp()
+    public async Task CreateQrCodeAsync_NullAdditionalInfo_IsAllowed()
     {
         var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, MinimalOkBody));
         var client = CreateClient(handler);
-        var request = SyntheticStaticRequest() with { AdditionalInfo = null! };
+        var request = SyntheticStaticRequest() with { AdditionalInfo = null };
 
-        await Assert.ThrowsAsync<ArgumentException>(() => client.CreateQrCodeAsync(request));
-        Assert.Equal(0, handler.CallCount);
+        var result = await client.CreateQrCodeAsync(request);
+
+        Assert.Equal("synthetic-qr-id-001", result.Id);
+        Assert.Equal(1, handler.CallCount);
+
+        using var doc = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.False(doc.RootElement.TryGetProperty("additional_info", out _));
     }
 
     // XPAY-357 — vat SIGUE siendo requerido para DYNAMIC (comportamiento
@@ -556,6 +711,56 @@ public class PassportQrClientTests
         Assert.Equal("80000.57", result.Amount!.Value);
         Assert.Equal("COP", result.Amount.Currency);
         Assert.Equal("iVBORw0KGgoSyntheticBase64==", result.QrCodeImage);
+    }
+
+    // XPAY-458 — deserialización de inc/tip/qr_code_reference en la
+    // respuesta de Create QR Code (campos nuevos). Datos COMPLETAMENTE
+    // SINTÉTICOS — ningún ID/key/customer_id/valor real de Gustavo.
+    [Fact]
+    public async Task CreateQrCodeAsync_Http200_DeserializesIncTipAndQrCodeReference()
+    {
+        var handler = new FakeHttpMessageHandler(
+            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, """
+                {
+                  "id": "synthetic-qr-id-003",
+                  "customer_id": "synthetic-customer-id-001",
+                  "status": "ACTIVE",
+                  "type": "STATIC",
+                  "qr_code_data": "00020101...synthetic-emv-payload...6304IJKL",
+                  "qr_code_image": "iVBORw0KGgoSyntheticBase64Two==",
+                  "created_at": "2026-01-01T00:00:00.000000Z",
+                  "key_id": "synthetic-key-id-001",
+                  "channel": "MPOS",
+                  "vat": { "vat_type": "FIXED", "vat_value": "0.00", "vat_base_value": "0.00" },
+                  "inc": { "inc_type": "FIXED", "inc_value": "0.00" },
+                  "tip": { "tip_type": "FIXED", "tip_value": "0.00" },
+                  "qr_code_reference": "SYNM4T1REF01"
+                }
+                """));
+        var client = CreateClient(handler);
+
+        var result = await client.CreateQrCodeAsync(SyntheticM4T1ConfirmedRequest());
+
+        Assert.Equal("synthetic-qr-id-003", result.Id);
+        Assert.Equal("STATIC", result.Type);
+        Assert.Equal("ACTIVE", result.Status);
+        Assert.Equal("MPOS", result.Channel);
+        Assert.Equal("00020101...synthetic-emv-payload...6304IJKL", result.QrCodeData);
+        Assert.Equal("iVBORw0KGgoSyntheticBase64Two==", result.QrCodeImage);
+
+        Assert.NotNull(result.Vat);
+        Assert.Equal("FIXED", result.Vat!.VatType);
+
+        Assert.NotNull(result.Inc);
+        Assert.Equal("FIXED", result.Inc!.IncType);
+        Assert.Equal("0.00", result.Inc.IncValue);
+
+        Assert.NotNull(result.Tip);
+        Assert.Equal("FIXED", result.Tip!.TipType);
+        Assert.Equal("0.00", result.Tip.TipValue);
+
+        Assert.Equal("SYNM4T1REF01", result.QrCodeReference);
+        Assert.Null(result.AdditionalInfo);
     }
 
     [Theory]

@@ -800,22 +800,23 @@ public class HarnessOrchestratorTests
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // XPAY-351 — create-qr-static (M4-T1) — target propio: key_id REMOTO
-    // real de la llave de certificación (PASSPORT_TEST_NEW_KEY_ID, mismo
-    // target que suspend/activate/delete-key) + PASSPORT_TEST_CUSTOMER_ID
-    // (mismo recurso ya usado por resolve-key). Ninguna variable nueva.
+    // XPAY-351/XPAY-460 — create-qr-static (M4-T1) — target propio:
+    // PASSPORT_TEST_QR_KEY_ID (Key ACTIVE de certificación, XPAY-460 —
+    // DISTINTA de PASSPORT_TEST_NEW_KEY_ID, la llave DELETED de M3) +
+    // PASSPORT_TEST_CUSTOMER_ID (mismo recurso ya usado por resolve-key).
     // ══════════════════════════════════════════════════════════════════════
 
     private static IConfiguration ConfigWithCreateQrStaticTarget(
         string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
-        string? newKeyId = ValidTargetKeyId, string? customerId = ValidCustomerId)
+        string? qrKeyId = ValidTargetKeyId, string? customerId = ValidCustomerId, string? newKeyId = null)
     {
         var dict = new Dictionary<string, string?>();
         if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
         if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
         if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
-        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        if (qrKeyId is not null) dict[HarnessTargetConfig.EnvQrKeyId] = qrKeyId;
         if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
+        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
         return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
     }
 
@@ -899,12 +900,25 @@ public class HarnessOrchestratorTests
         Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
     }
 
-    // G. PASSPORT_TEST_NEW_KEY_ID ausente => AbortedTargetMissing.
+    // G. PASSPORT_TEST_QR_KEY_ID ausente => AbortedTargetMissing.
     [Fact]
-    public void Prepare_CreateQrStatic_MissingNewKeyId_ReturnsAbortedTargetMissing()
+    public void Prepare_CreateQrStatic_MissingQrKeyId_ReturnsAbortedTargetMissing()
     {
         var decision = HarnessOrchestrator.Prepare(
-            new[] { "create-qr-static" }, ConfigWithCreateQrStaticTarget(newKeyId: null));
+            new[] { "create-qr-static" }, ConfigWithCreateQrStaticTarget(qrKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // XPAY-460 — regresión CRÍTICA de seguridad, a nivel de preflight
+    // (HarnessOrchestrator.Prepare): PASSPORT_TEST_NEW_KEY_ID (llave DELETED
+    // de M3) presente NUNCA debe alcanzar para autorizar create-qr-static —
+    // sin PASSPORT_TEST_QR_KEY_ID, sigue AbortedTargetMissing.
+    [Fact]
+    public void Prepare_CreateQrStatic_NewKeyIdPresentButQrKeyIdMissing_ReturnsAbortedTargetMissing_NoFallback()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static" },
+            ConfigWithCreateQrStaticTarget(qrKeyId: null, newKeyId: "synthetic-deleted-m3-key-id"));
         Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
     }
 
