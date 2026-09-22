@@ -182,6 +182,27 @@ public sealed record HarnessTargetConfig(
     // subcaso, siempre proviene de InvalidCustomerIdGenerator.Generate().
     public bool AllPresentForCreateQrStaticInvalidCustomer => QrKeyIdPresent;
 
+    // XPAY-474 — target de create-m4-t3-suspended-fixture-key (preparación
+    // de M4-T3-A): ÚNICAMENTE PASSPORT_TEST_ACCOUNT_ID (recurso COMPARTIDO
+    // y estable, la cuenta Sandbox misma — mismo criterio ya usado con
+    // PASSPORT_TEST_CUSTOMER_ID reutilizado de forma segura en varios
+    // comandos). Deliberadamente NO incluye NewKeyTypePresent/
+    // NewKeyValuePresent (key_type es constante BCODE, key_value se genera
+    // internamente — DisposableBcodeGenerator — nunca desde el entorno) ni
+    // QrKeyIdPresent/QrSuspendedKeyIdPresent (esta operación CREA una
+    // llave, no depende de ninguna llave existente).
+    public bool AllPresentForCreateM4T3SuspendedFixtureKey => AccountIdPresent;
+
+    // XPAY-474 — target de suspend-m4-t3-fixture-key (preparación de
+    // M4-T3-A): ÚNICAMENTE PASSPORT_TEST_QR_SUSPENDED_KEY_ID — la misma
+    // variable que create-m4-t3-suspended-fixture-key deja pendiente de
+    // configuración manual tras su ejecución real, y que
+    // create-qr-static-suspended-key (M4-T3-A) ya consume. DELIBERADAMENTE
+    // ni NewKeyIdPresent ni QrKeyIdPresent forman parte de esta condición —
+    // sin fallback hacia la llave DELETED de M3 ni hacia la llave ACTIVA
+    // protegida de M4-T1/T2.
+    public bool AllPresentForSuspendM4T3FixtureKey => QrSuspendedKeyIdPresent;
+
     public static HarnessTargetConfig FromConfiguration(IConfiguration configuration) => new(
         AccountIdPresent:    !string.IsNullOrWhiteSpace(configuration[EnvAccountId]),
         NewKeyTypePresent:   !string.IsNullOrWhiteSpace(configuration[EnvNewKeyType]),

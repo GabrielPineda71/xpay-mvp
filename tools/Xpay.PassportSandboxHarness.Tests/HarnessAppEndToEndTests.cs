@@ -2899,4 +2899,229 @@ public class HarnessAppEndToEndTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-474 — preparación de la llave desechable de M4-T3-A, flujo
+    // completo real vía HarnessApp.RunAsync con IPassportKeyClient sobre un
+    // HttpMessageHandler fake local (sin red real). Reutiliza LocalFakeHandler
+    // (mismo shape de respuesta Create/Suspend Key que M3-T1/T3).
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration CreateFixtureE2EConfig() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvAccountId] = RealAccountId,
+        })
+        .Build();
+
+    private const string RealSuspendedFixtureKeyId = "SYNTH-E2E-SUSPENDED-FIXTURE-KEY-should-be-fingerprinted-only";
+
+    private static IConfiguration SuspendFixtureE2EConfig() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvQrSuspendedKeyId] = RealSuspendedFixtureKeyId,
+        })
+        .Build();
+
+    [Fact]
+    public async Task CreateM4T3SuspendedFixtureKeyDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeHandler();
+            var config = CreateFixtureE2EConfig();
+            var dependencies = BuildDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-m4-t3-suspended-fixture-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-A-KEY-PREP-CREATE")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateM4T3SuspendedFixtureKeyExecute_FullPath_ProducesExactlyOneHttpCall_AndEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeHandler();
+            var config = CreateFixtureE2EConfig();
+            var dependencies = BuildDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-m4-t3-suspended-fixture-key", "--execute", "--confirm-create-m4-t3-suspended-fixture-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T3-A-KEY-PREP-CREATE"), "evidence-*.json");
+            Assert.Single(files);
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("M4-T3-A-KEY-PREP-CREATE", doc.RootElement.GetProperty("case_id").GetString());
+
+            Assert.DoesNotContain(RealAccountId, json);
+            Assert.DoesNotContain(RealKeyValue, json);
+            Assert.DoesNotContain(RealAccountId, output.ToString());
+            Assert.DoesNotContain(RealKeyValue, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateM4T3SuspendedFixtureKeyExecute_WithCreateKeyConfirmation_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeHandler();
+            var config = CreateFixtureE2EConfig();
+            var dependencies = BuildDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-m4-t3-suspended-fixture-key", "--execute", "--confirm-create-key" },
+                config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-A-KEY-PREP-CREATE")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SuspendM4T3FixtureKeyDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeHandler();
+            var config = SuspendFixtureE2EConfig();
+            var dependencies = BuildDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "suspend-m4-t3-fixture-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-A-KEY-PREP-SUSPEND")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+            Assert.DoesNotContain(RealSuspendedFixtureKeyId, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SuspendM4T3FixtureKeyExecute_FullPath_ProducesExactlyOneHttpCall_AndEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeHandler();
+            var config = SuspendFixtureE2EConfig();
+            var dependencies = BuildDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "suspend-m4-t3-fixture-key", "--execute", "--confirm-suspend-m4-t3-fixture-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T3-A-KEY-PREP-SUSPEND"), "evidence-*.json");
+            Assert.Single(files);
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("M4-T3-A-KEY-PREP-SUSPEND", doc.RootElement.GetProperty("case_id").GetString());
+
+            Assert.DoesNotContain(RealSuspendedFixtureKeyId, json);
+            Assert.DoesNotContain(RealSuspendedFixtureKeyId, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SuspendM4T3FixtureKeyExecute_WithSuspendKeyConfirmation_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeHandler();
+            var config = SuspendFixtureE2EConfig();
+            var dependencies = BuildDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "suspend-m4-t3-fixture-key", "--execute", "--confirm-suspend-key" },
+                config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-A-KEY-PREP-SUSPEND")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // create-qr-static-suspended-key (M4-T3-A final) sigue apuntando
+    // EXCLUSIVAMENTE a PASSPORT_TEST_QR_SUSPENDED_KEY_ID — sin cambios tras
+    // XPAY-474 (no se tocó CreateQrStaticSuspendedKeyExecutor.cs).
+    [Fact]
+    public async Task CreateQrStaticSuspendedKeyExecute_StillUsesOnlyQrSuspendedKeyId_AfterM4T3PrepIntroduced()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = SuspendedKeyE2EConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static-suspended-key", "--execute", "--confirm-create-qr-static-suspended-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            using var bodyDoc = JsonDocument.Parse(handler.LastRequestBody!);
+            // La misma variable de siempre — RealSuspendedKeyId (definida
+            // para los tests de M4-T3-A de XPAY-471), sin relación con
+            // RealSuspendedFixtureKeyId (XPAY-474, de un paso de
+            // preparación completamente distinto) — confirma que
+            // introducir la preparación de M4-T3-A no alteró en absoluto
+            // el comportamiento ya existente de create-qr-static-suspended-key.
+            Assert.Equal(RealSuspendedKeyId, bodyDoc.RootElement.GetProperty("key_id").GetString());
+            Assert.NotEqual(RealSuspendedFixtureKeyId, bodyDoc.RootElement.GetProperty("key_id").GetString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

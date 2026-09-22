@@ -1339,4 +1339,180 @@ public class HarnessOrchestratorTests
             new[] { "decode-qr-static", "--execute", wrongConfirmFlag }, ConfigWithDecodeQrStaticTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-474 — preparación de la llave desechable de M4-T3-A: dos
+    // operaciones independientes (Create/Suspend Fixture Key), target/
+    // confirmación completamente separados entre sí, de create-key/
+    // suspend-key (M3), y de create-qr-static-suspended-key (M4-T3-A final).
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration ConfigWithCreateFixtureTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? accountId = ValidTargetAccountId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (accountId is not null) dict[HarnessTargetConfig.EnvAccountId] = accountId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    private static IConfiguration ConfigWithSuspendFixtureTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? qrSuspendedKeyId = ValidSuspendedKeyId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (qrSuspendedKeyId is not null) dict[HarnessTargetConfig.EnvQrSuspendedKeyId] = qrSuspendedKeyId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // ── Create Fixture ───────────────────────────────────────────────────
+
+    [Fact]
+    public void Prepare_CreateM4T3SuspendedFixtureKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-m4-t3-suspended-fixture-key" }, ConfigWithCreateFixtureTarget());
+        Assert.Equal(HarnessCommand.CreateM4T3SuspendedFixtureKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateM4T3SuspendedFixtureKey_MissingAccountId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-m4-t3-suspended-fixture-key" }, ConfigWithCreateFixtureTarget(accountId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateM4T3SuspendedFixtureKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-m4-t3-suspended-fixture-key", "--execute" }, ConfigWithCreateFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-key")]
+    [InlineData("--confirm-suspend-key")]
+    [InlineData("--confirm-create-qr-static-suspended-key")]
+    [InlineData("--confirm-suspend-m4-t3-fixture-key")]
+    public void Prepare_CreateM4T3SuspendedFixtureKey_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-m4-t3-suspended-fixture-key", "--execute", wrongConfirmFlag }, ConfigWithCreateFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateM4T3SuspendedFixtureKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-m4-t3-suspended-fixture-key", "--execute", "--confirm-create-m4-t3-suspended-fixture-key" },
+            ConfigWithCreateFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // create-key (M3) NUNCA autoriza create-m4-t3-suspended-fixture-key, y viceversa.
+    [Fact]
+    public void Prepare_CreateKey_ConfirmCreateM4T3SuspendedFixtureKey_DoesNotAuthorize()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-key", "--execute", "--confirm-create-m4-t3-suspended-fixture-key" }, ConfigWithTargets());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // ── Suspend Fixture ──────────────────────────────────────────────────
+
+    [Fact]
+    public void Prepare_SuspendM4T3FixtureKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-m4-t3-fixture-key" }, ConfigWithSuspendFixtureTarget());
+        Assert.Equal(HarnessCommand.SuspendM4T3FixtureKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_SuspendM4T3FixtureKey_MissingSuspendedKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-m4-t3-fixture-key" }, ConfigWithSuspendFixtureTarget(qrSuspendedKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // Regresión: aunque PASSPORT_TEST_NEW_KEY_ID/PASSPORT_TEST_QR_KEY_ID
+    // estén presentes, sin PASSPORT_TEST_QR_SUSPENDED_KEY_ID el target
+    // sigue incompleto — sin fallback.
+    [Fact]
+    public void Prepare_SuspendM4T3FixtureKey_OtherKeysPresentButSuspendedMissing_ReturnsAbortedTargetMissing_NoFallback()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = ValidSandboxUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvNewKeyId] = ValidTargetKeyId,
+            [HarnessTargetConfig.EnvQrKeyId] = ValidTargetKeyId,
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        var decision = HarnessOrchestrator.Prepare(new[] { "suspend-m4-t3-fixture-key" }, config);
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_SuspendM4T3FixtureKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-m4-t3-fixture-key", "--execute" }, ConfigWithSuspendFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-suspend-key")]
+    [InlineData("--confirm-create-m4-t3-suspended-fixture-key")]
+    [InlineData("--confirm-create-qr-static-suspended-key")]
+    public void Prepare_SuspendM4T3FixtureKey_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-m4-t3-fixture-key", "--execute", wrongConfirmFlag }, ConfigWithSuspendFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_SuspendM4T3FixtureKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-m4-t3-fixture-key", "--execute", "--confirm-suspend-m4-t3-fixture-key" },
+            ConfigWithSuspendFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // suspend-key (M3) NUNCA autoriza suspend-m4-t3-fixture-key, y viceversa.
+    [Fact]
+    public void Prepare_SuspendKey_ConfirmSuspendM4T3FixtureKey_DoesNotAuthorize()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "suspend-key", "--execute", "--confirm-suspend-m4-t3-fixture-key" }, ConfigWithSuspendTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // create-qr-static-suspended-key (M4-T3-A final) tampoco se autoriza con
+    // ninguna de las dos confirmaciones nuevas, y viceversa.
+    [Theory]
+    [InlineData("--confirm-create-m4-t3-suspended-fixture-key")]
+    [InlineData("--confirm-suspend-m4-t3-fixture-key")]
+    public void Prepare_CreateQrStaticSuspendedKey_M4T3PrepConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-suspended-key", "--execute", wrongConfirmFlag }, ConfigWithSuspendedKeyTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
 }

@@ -47,6 +47,8 @@ public static class HarnessOrchestrator
                                     or HarnessCommand.CreateQrStaticSuspendedKey
                                     or HarnessCommand.CreateQrStaticDeletedKey
                                     or HarnessCommand.CreateQrStaticInvalidCustomer
+                                    or HarnessCommand.CreateM4T3SuspendedFixtureKey
+                                    or HarnessCommand.SuspendM4T3FixtureKey
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -150,6 +152,23 @@ public static class HarnessOrchestrator
             && !targetConfig.AllPresentForCreateQrStaticInvalidCustomer)
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Target de create-qr-static-invalid-customer incompleto — PASSPORT_TEST_QR_KEY_ID ausente.");
+
+        // XPAY-474 — create-m4-t3-suspended-fixture-key: target propio
+        // (ÚNICAMENTE PASSPORT_TEST_ACCOUNT_ID — key_type es constante
+        // BCODE, key_value se genera internamente).
+        if (command == HarnessCommand.CreateM4T3SuspendedFixtureKey && targetConfig is not null
+            && !targetConfig.AllPresentForCreateM4T3SuspendedFixtureKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-m4-t3-suspended-fixture-key incompleto — PASSPORT_TEST_ACCOUNT_ID ausente.");
+
+        // XPAY-474 — suspend-m4-t3-fixture-key: target propio (ÚNICAMENTE
+        // PASSPORT_TEST_QR_SUSPENDED_KEY_ID). NUNCA cae en fallback hacia
+        // PASSPORT_TEST_NEW_KEY_ID (M3) ni PASSPORT_TEST_QR_KEY_ID (llave
+        // activa protegida M4-T1/T2).
+        if (command == HarnessCommand.SuspendM4T3FixtureKey && targetConfig is not null
+            && !targetConfig.AllPresentForSuspendM4T3FixtureKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de suspend-m4-t3-fixture-key incompleto — PASSPORT_TEST_QR_SUSPENDED_KEY_ID ausente.");
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

@@ -58,6 +58,8 @@ public static class HarnessApp
                 output.WriteLine("     create-qr-static-suspended-key    [--execute --confirm-create-qr-static-suspended-key]");
                 output.WriteLine("     create-qr-static-deleted-key      [--execute --confirm-create-qr-static-deleted-key]");
                 output.WriteLine("     create-qr-static-invalid-customer [--execute --confirm-create-qr-static-invalid-customer]");
+                output.WriteLine("     create-m4-t3-suspended-fixture-key [--execute --confirm-create-m4-t3-suspended-fixture-key]");
+                output.WriteLine("     suspend-m4-t3-fixture-key          [--execute --confirm-suspend-m4-t3-fixture-key]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -283,6 +285,37 @@ public static class HarnessApp
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 output.WriteLine("note=M4-T3-C: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-471)");
                 output.WriteLine("note=CASO NEGATIVO: un HTTP 4xx es el resultado ESPERADO, pero este comando NUNCA lo certifica automáticamente");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateM4T3SuspendedFixtureKey:
+                // XPAY-474 — NUNCA lee el valor real de
+                // PASSPORT_TEST_ACCOUNT_ID en este modo. CRÍTICO: el
+                // key_value (DisposableBcodeGenerator) NUNCA se genera aquí
+                // — sólo dentro de CreateM4T3SuspendedFixtureKeyExecutor,
+                // exclusivamente en ReadyToExecute. Dry-run nunca consume
+                // aleatoriedad ni produce un valor que luego no se usaría.
+                output.WriteLine("case=M4-T3-A PREP (Create Key — llave desechable dedicada)");
+                output.WriteLine("endpoint=POST /v1/keys");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-474)");
+                output.WriteLine("requires=--execute --confirm-create-m4-t3-suspended-fixture-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-A-KEY-PREP-CREATE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-474)");
+                output.WriteLine("note=Esta llave NO se suspende automáticamente — ver suspend-m4-t3-fixture-key (paso separado)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.SuspendM4T3FixtureKey:
+                // XPAY-474 — NUNCA lee el valor real de
+                // PASSPORT_TEST_QR_SUSPENDED_KEY_ID en este modo.
+                output.WriteLine("case=M4-T3-A PREP (Suspend Key — llave desechable dedicada)");
+                output.WriteLine("endpoint=PATCH /v1/keys/{key_id}/suspend");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-474)");
+                output.WriteLine("requires=--execute --confirm-suspend-m4-t3-fixture-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-A-KEY-PREP-SUSPEND: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-474)");
                 return;
 
             case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateCustomer:
@@ -576,6 +609,47 @@ public static class HarnessApp
                 output.WriteLine($"evidence_path={invalidCustomerPath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 output.WriteLine("note=CASO NEGATIVO: result=FAIL a nivel transporte no implica fallo de certificación — ver evidencia");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateM4T3SuspendedFixtureKey:
+            {
+                var execution = await CreateM4T3SuspendedFixtureKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-474 — un bloqueo LOCAL NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var createFixturePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={createFixturePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=Recupere el key_id real manualmente desde Passport Sandbox Dashboard y configure PASSPORT_TEST_QR_SUSPENDED_KEY_ID usted mismo — este harness nunca lo persiste");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.SuspendM4T3FixtureKey:
+            {
+                var execution = await SuspendM4T3FixtureKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-474 — un bloqueo LOCAL NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var suspendFixturePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={suspendFixturePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 return;
             }
         }

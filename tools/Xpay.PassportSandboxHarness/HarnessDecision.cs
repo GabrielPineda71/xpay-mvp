@@ -57,6 +57,12 @@ public enum HarnessCommand
     CreateQrStaticSuspendedKey,
     CreateQrStaticDeletedKey,
     CreateQrStaticInvalidCustomer,
+    // XPAY-474 — preparación de la llave desechable de M4-T3-A: dos
+    // operaciones INDEPENDIENTES entre sí y de create-key/suspend-key (M3)
+    // y de create-qr-static-suspended-key (M4-T3-A) — cada una con su
+    // propio comando y bandera de confirmación exclusiva.
+    CreateM4T3SuspendedFixtureKey,
+    SuspendM4T3FixtureKey,
 }
 
 public static class HarnessDecision
@@ -95,6 +101,9 @@ public static class HarnessDecision
     public const string CommandCreateQrStaticSuspendedKey    = "create-qr-static-suspended-key";
     public const string CommandCreateQrStaticDeletedKey      = "create-qr-static-deleted-key";
     public const string CommandCreateQrStaticInvalidCustomer = "create-qr-static-invalid-customer";
+    // XPAY-474 — preparación de la llave desechable de M4-T3-A.
+    public const string CommandCreateM4T3SuspendedFixtureKey = "create-m4-t3-suspended-fixture-key";
+    public const string CommandSuspendM4T3FixtureKey         = "suspend-m4-t3-fixture-key";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -128,6 +137,11 @@ public static class HarnessDecision
     public const string FlagConfirmCreateQrStaticSuspendedKey    = "--confirm-create-qr-static-suspended-key";
     public const string FlagConfirmCreateQrStaticDeletedKey      = "--confirm-create-qr-static-deleted-key";
     public const string FlagConfirmCreateQrStaticInvalidCustomer = "--confirm-create-qr-static-invalid-customer";
+    // XPAY-474 — exclusivas de la preparación de M4-T3-A; ninguna autoriza
+    // create-key/suspend-key (M3), create-qr-static-suspended-key (M4-T3-A
+    // final), ni entre sí.
+    public const string FlagConfirmCreateM4T3SuspendedFixtureKey = "--confirm-create-m4-t3-suspended-fixture-key";
+    public const string FlagConfirmSuspendM4T3FixtureKey         = "--confirm-suspend-m4-t3-fixture-key";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -147,6 +161,8 @@ public static class HarnessDecision
             CommandCreateQrStaticSuspendedKey    => HarnessCommand.CreateQrStaticSuspendedKey,
             CommandCreateQrStaticDeletedKey      => HarnessCommand.CreateQrStaticDeletedKey,
             CommandCreateQrStaticInvalidCustomer => HarnessCommand.CreateQrStaticInvalidCustomer,
+            CommandCreateM4T3SuspendedFixtureKey => HarnessCommand.CreateM4T3SuspendedFixtureKey,
+            CommandSuspendM4T3FixtureKey         => HarnessCommand.SuspendM4T3FixtureKey,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -185,6 +201,8 @@ public static class HarnessDecision
             HarnessCommand.CreateQrStaticSuspendedKey    => FlagConfirmCreateQrStaticSuspendedKey,
             HarnessCommand.CreateQrStaticDeletedKey      => FlagConfirmCreateQrStaticDeletedKey,
             HarnessCommand.CreateQrStaticInvalidCustomer => FlagConfirmCreateQrStaticInvalidCustomer,
+            HarnessCommand.CreateM4T3SuspendedFixtureKey => FlagConfirmCreateM4T3SuspendedFixtureKey,
+            HarnessCommand.SuspendM4T3FixtureKey         => FlagConfirmSuspendM4T3FixtureKey,
             _                                      => null,
         };
 
