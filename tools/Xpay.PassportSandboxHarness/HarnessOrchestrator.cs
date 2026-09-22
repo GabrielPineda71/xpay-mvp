@@ -49,6 +49,7 @@ public static class HarnessOrchestrator
                                     or HarnessCommand.CreateQrStaticInvalidCustomer
                                     or HarnessCommand.CreateM4T3SuspendedFixtureKey
                                     or HarnessCommand.SuspendM4T3FixtureKey
+                                    or HarnessCommand.RecoverDeletedKeyId
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -169,6 +170,15 @@ public static class HarnessOrchestrator
             && !targetConfig.AllPresentForSuspendM4T3FixtureKey)
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Target de suspend-m4-t3-fixture-key incompleto — PASSPORT_TEST_QR_SUSPENDED_KEY_ID ausente.");
+
+        // XPAY-489 — recover-deleted-key-id: target propio (PASSPORT_TEST_ACCOUNT_ID
+        // + PASSPORT_TEST_NEW_KEY_TYPE + PASSPORT_TEST_NEW_KEY_VALUE). NUNCA
+        // exige PASSPORT_TEST_NEW_KEY_ID — ese es el valor que este comando
+        // existe para validar/reemplazar, no una precondición suya.
+        if (command == HarnessCommand.RecoverDeletedKeyId && targetConfig is not null
+            && !targetConfig.AllPresentForRecoverDeletedKeyId)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de recover-deleted-key-id incompleto — PASSPORT_TEST_ACCOUNT_ID/PASSPORT_TEST_NEW_KEY_TYPE/PASSPORT_TEST_NEW_KEY_VALUE ausente(s).");
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

@@ -60,6 +60,7 @@ public static class HarnessApp
                 output.WriteLine("     create-qr-static-invalid-customer [--execute --confirm-create-qr-static-invalid-customer]");
                 output.WriteLine("     create-m4-t3-suspended-fixture-key [--execute --confirm-create-m4-t3-suspended-fixture-key]");
                 output.WriteLine("     suspend-m4-t3-fixture-key          [--execute --confirm-suspend-m4-t3-fixture-key]");
+                output.WriteLine("     recover-deleted-key-id             [--execute --confirm-recover-deleted-key]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -316,6 +317,23 @@ public static class HarnessApp
                 output.WriteLine("result=DRY_RUN");
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 output.WriteLine("note=M4-T3-A-KEY-PREP-SUSPEND: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-474)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.RecoverDeletedKeyId:
+                // XPAY-489 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_ACCOUNT_ID/PASSPORT_TEST_NEW_KEY_TYPE/
+                // PASSPORT_TEST_NEW_KEY_VALUE en este modo. Read-only por
+                // diseño — ni siquiera en ReadyToExecute muta nada.
+                output.WriteLine("case=RECOVERY (List Keys read-only — localizar key_id DELETED del ciclo M3)");
+                output.WriteLine("endpoint=GET /v1/keys");
+                output.WriteLine("mutating=NO (read-only — ninguna mutación de llave es alcanzable desde este comando)");
+                output.WriteLine("requires=--execute --confirm-recover-deleted-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-B-KEY-RECOVERY: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-489)");
+                output.WriteLine("note=Fail-closed en 0 o >1 coincidencias — nunca selecciona automáticamente ni cae en fallback");
+                output.WriteLine("note=Este comando NUNCA escribe ~/.passport-sandbox.env — la reparación de PASSPORT_TEST_NEW_KEY_ID es un paso manual separado");
                 return;
 
             case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateCustomer:
@@ -650,6 +668,27 @@ public static class HarnessApp
                 output.WriteLine($"result={execution.Evidence!.Result}");
                 output.WriteLine($"evidence_path={suspendFixturePath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.RecoverDeletedKeyId:
+            {
+                var execution = await RecoverDeletedKeyIdExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-489 — un bloqueo LOCAL NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var recoveryPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={recoveryPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=Este comando NUNCA escribió ~/.passport-sandbox.env — revise la evidencia sanitizada para el resultado (match_found/matches_count/status/id_fingerprint) y, si corresponde, configure PASSPORT_TEST_NEW_KEY_ID usted mismo, manualmente");
                 return;
             }
         }

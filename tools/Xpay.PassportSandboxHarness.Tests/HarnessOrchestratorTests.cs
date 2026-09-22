@@ -1515,4 +1515,113 @@ public class HarnessOrchestratorTests
             new[] { "create-qr-static-suspended-key", "--execute", wrongConfirmFlag }, ConfigWithSuspendedKeyTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-489 — recover-deleted-key-id: recuperación read-only (List Keys)
+    // del key_id histórico DELETED del ciclo M3. Target/confirmación
+    // completamente independientes de cualquier otro comando.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration ConfigWithRecoverDeletedKeyIdTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? accountId = ValidTargetAccountId, string? newKeyType = ValidTargetKeyType, string? newKeyValue = ValidTargetKeyValue)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (accountId is not null) dict[HarnessTargetConfig.EnvAccountId] = accountId;
+        if (newKeyType is not null) dict[HarnessTargetConfig.EnvNewKeyType] = newKeyType;
+        if (newKeyValue is not null) dict[HarnessTargetConfig.EnvNewKeyValue] = newKeyValue;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    [Fact]
+    public void Prepare_RecoverDeletedKeyIdNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "recover-deleted-key-id" }, ConfigWithRecoverDeletedKeyIdTarget());
+        Assert.Equal(HarnessCommand.RecoverDeletedKeyId, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData(null, ValidTargetKeyType, ValidTargetKeyValue)]
+    [InlineData(ValidTargetAccountId, null, ValidTargetKeyValue)]
+    [InlineData(ValidTargetAccountId, ValidTargetKeyType, null)]
+    public void Prepare_RecoverDeletedKeyId_MissingAnyCriterion_ReturnsAbortedTargetMissing(
+        string? accountId, string? newKeyType, string? newKeyValue)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "recover-deleted-key-id" },
+            ConfigWithRecoverDeletedKeyIdTarget(accountId: accountId, newKeyType: newKeyType, newKeyValue: newKeyValue));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // Regresión: aunque PASSPORT_TEST_NEW_KEY_ID (el valor contaminado) esté
+    // presente, NO forma parte del target — su presencia/ausencia nunca
+    // afecta este comando.
+    [Fact]
+    public void Prepare_RecoverDeletedKeyId_NewKeyIdPresentOrAbsent_NeverAffectsTarget()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = ValidSandboxUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvAccountId] = ValidTargetAccountId,
+            [HarnessTargetConfig.EnvNewKeyType] = ValidTargetKeyType,
+            [HarnessTargetConfig.EnvNewKeyValue] = ValidTargetKeyValue,
+            [HarnessTargetConfig.EnvNewKeyId] = "synthetic-contaminated-new-key-id",
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        var decision = HarnessOrchestrator.Prepare(new[] { "recover-deleted-key-id" }, config);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_RecoverDeletedKeyId_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "recover-deleted-key-id", "--execute" }, ConfigWithRecoverDeletedKeyIdTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-key")]
+    [InlineData("--confirm-suspend-key")]
+    [InlineData("--confirm-create-m4-t3-suspended-fixture-key")]
+    [InlineData("--confirm-suspend-m4-t3-fixture-key")]
+    [InlineData("--confirm-create-qr-static-suspended-key")]
+    [InlineData("--confirm-create-qr-static-deleted-key")]
+    public void Prepare_RecoverDeletedKeyId_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "recover-deleted-key-id", "--execute", wrongConfirmFlag }, ConfigWithRecoverDeletedKeyIdTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_RecoverDeletedKeyId_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "recover-deleted-key-id", "--execute", "--confirm-recover-deleted-key" },
+            ConfigWithRecoverDeletedKeyIdTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // --confirm-recover-deleted-key NUNCA autoriza ningún otro comando mutante.
+    [Theory]
+    [InlineData("create-key")]
+    [InlineData("suspend-key")]
+    [InlineData("create-m4-t3-suspended-fixture-key")]
+    [InlineData("suspend-m4-t3-fixture-key")]
+    [InlineData("create-qr-static-deleted-key")]
+    public void Prepare_OtherCommands_ConfirmRecoverDeletedKey_DoesNotAuthorize(string otherCommand)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { otherCommand, "--execute", "--confirm-recover-deleted-key" }, ConfigWithTargets());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
 }

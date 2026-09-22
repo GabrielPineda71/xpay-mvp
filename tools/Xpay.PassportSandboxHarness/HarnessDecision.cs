@@ -63,6 +63,10 @@ public enum HarnessCommand
     // propio comando y bandera de confirmación exclusiva.
     CreateM4T3SuspendedFixtureKey,
     SuspendM4T3FixtureKey,
+    // XPAY-489 — recuperación read-only del key_id histórico DELETED del
+    // ciclo M3, vía List Keys. Completamente independiente de las dos
+    // anteriores (ninguna comparte confirmación ni target).
+    RecoverDeletedKeyId,
 }
 
 public static class HarnessDecision
@@ -104,6 +108,8 @@ public static class HarnessDecision
     // XPAY-474 — preparación de la llave desechable de M4-T3-A.
     public const string CommandCreateM4T3SuspendedFixtureKey = "create-m4-t3-suspended-fixture-key";
     public const string CommandSuspendM4T3FixtureKey         = "suspend-m4-t3-fixture-key";
+    // XPAY-489 — recuperación read-only del key_id DELETED del ciclo M3.
+    public const string CommandRecoverDeletedKeyId            = "recover-deleted-key-id";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -142,6 +148,9 @@ public static class HarnessDecision
     // final), ni entre sí.
     public const string FlagConfirmCreateM4T3SuspendedFixtureKey = "--confirm-create-m4-t3-suspended-fixture-key";
     public const string FlagConfirmSuspendM4T3FixtureKey         = "--confirm-suspend-m4-t3-fixture-key";
+    // XPAY-489 — exclusiva de recover-deleted-key-id; no autoriza ni es
+    // autorizada por ninguna otra bandera de confirmación.
+    public const string FlagConfirmRecoverDeletedKeyId = "--confirm-recover-deleted-key";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -163,6 +172,7 @@ public static class HarnessDecision
             CommandCreateQrStaticInvalidCustomer => HarnessCommand.CreateQrStaticInvalidCustomer,
             CommandCreateM4T3SuspendedFixtureKey => HarnessCommand.CreateM4T3SuspendedFixtureKey,
             CommandSuspendM4T3FixtureKey         => HarnessCommand.SuspendM4T3FixtureKey,
+            CommandRecoverDeletedKeyId           => HarnessCommand.RecoverDeletedKeyId,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -203,6 +213,7 @@ public static class HarnessDecision
             HarnessCommand.CreateQrStaticInvalidCustomer => FlagConfirmCreateQrStaticInvalidCustomer,
             HarnessCommand.CreateM4T3SuspendedFixtureKey => FlagConfirmCreateM4T3SuspendedFixtureKey,
             HarnessCommand.SuspendM4T3FixtureKey         => FlagConfirmSuspendM4T3FixtureKey,
+            HarnessCommand.RecoverDeletedKeyId           => FlagConfirmRecoverDeletedKeyId,
             _                                      => null,
         };
 

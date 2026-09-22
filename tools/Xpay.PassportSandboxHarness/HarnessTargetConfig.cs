@@ -203,6 +203,17 @@ public sealed record HarnessTargetConfig(
     // protegida de M4-T1/T2.
     public bool AllPresentForSuspendM4T3FixtureKey => QrSuspendedKeyIdPresent;
 
+    // XPAY-489 — target de recover-deleted-key-id (recuperación read-only,
+    // vía List Keys, del key_id histórico DELETED del ciclo M3):
+    // PASSPORT_TEST_ACCOUNT_ID + PASSPORT_TEST_NEW_KEY_TYPE +
+    // PASSPORT_TEST_NEW_KEY_VALUE — los tres criterios de búsqueda exactos
+    // de KeySelector.SelectExactMatch. DELIBERADAMENTE no incluye
+    // NewKeyIdPresent: PASSPORT_TEST_NEW_KEY_ID es precisamente el valor
+    // hoy no confiable (XPAY-487/488) que este comando existe para
+    // validar/reemplazar, nunca una entrada de su propia búsqueda.
+    public bool AllPresentForRecoverDeletedKeyId =>
+        AccountIdPresent && NewKeyTypePresent && NewKeyValuePresent;
+
     public static HarnessTargetConfig FromConfiguration(IConfiguration configuration) => new(
         AccountIdPresent:    !string.IsNullOrWhiteSpace(configuration[EnvAccountId]),
         NewKeyTypePresent:   !string.IsNullOrWhiteSpace(configuration[EnvNewKeyType]),

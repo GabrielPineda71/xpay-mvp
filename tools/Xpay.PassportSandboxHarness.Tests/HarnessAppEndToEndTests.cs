@@ -3124,4 +3124,185 @@ public class HarnessAppEndToEndTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-489 — recover-deleted-key-id, flujo completo real vía
+    // HarnessApp.RunAsync con IPassportKeyClient.ListKeysAsync sobre un
+    // HttpMessageHandler fake local (sin red real). Shape de respuesta
+    // distinto (`{ keys: [...] }`) — handler dedicado, nunca reutiliza
+    // LocalFakeHandler (Create/Suspend/Activate Key).
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string RealRecoveredKeyId = "SYNTH-E2E-RECOVERED-DELETED-KEY-ID-should-be-fingerprinted-only";
+
+    private sealed class LocalFakeListKeysHandler : HttpMessageHandler
+    {
+        private readonly string _keysJsonArray;
+        public int CallCount { get; private set; }
+        public HttpRequestMessage? LastRequest { get; private set; }
+
+        public LocalFakeListKeysHandler(string? keysJsonArray = null)
+        {
+            _keysJsonArray = keysJsonArray ?? $$"""
+                [ { "id": "{{RealRecoveredKeyId}}", "status": "DELETED",
+                    "account_id": "{{RealAccountId}}",
+                    "key": { "key_type": "BCODE", "key_value": "{{RealKeyValue}}" } } ]
+                """;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            LastRequest = request;
+
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    $$"""{ "keys": {{_keysJsonArray}} }""",
+                    System.Text.Encoding.UTF8, "application/json"),
+            };
+            return Task.FromResult(response);
+        }
+    }
+
+    private static IConfiguration RecoverDeletedKeyIdE2EConfig() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvAccountId] = RealAccountId,
+            [HarnessTargetConfig.EnvNewKeyType] = "BCODE",
+            [HarnessTargetConfig.EnvNewKeyValue] = RealKeyValue,
+        })
+        .Build();
+
+    private static HarnessApp.Dependencies BuildRecoverDependencies(
+        HttpMessageHandler handler, string evidenceDir, IConfiguration config)
+    {
+        IPassportHttpClient httpClient = new PassportHttpClient(
+            new LocalFakeHttpClientFactory(handler), new LocalFakeTokenProvider(), config,
+            NullLogger<PassportHttpClient>.Instance);
+
+        return new HarnessApp.Dependencies(
+            CustomerAccountClient: new PassportCustomerAccountClient(httpClient),
+            KeyClient: new PassportKeyClient(httpClient),
+            CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
+            EvidenceBaseDirectory: evidenceDir,
+            QrClient: new PassportQrClient(httpClient));
+    }
+
+    [Fact]
+    public async Task RecoverDeletedKeyIdDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeListKeysHandler();
+            var config = RecoverDeletedKeyIdE2EConfig();
+            var dependencies = BuildRecoverDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "recover-deleted-key-id" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-B-KEY-RECOVERY")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RecoverDeletedKeyIdExecute_ExactlyOneMatch_ProducesExactlyOneHttpCall_AndEvidence_NeverExposesRawValues()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeListKeysHandler();
+            var config = RecoverDeletedKeyIdE2EConfig();
+            var dependencies = BuildRecoverDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "recover-deleted-key-id", "--execute", "--confirm-recover-deleted-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T3-B-KEY-RECOVERY"), "evidence-*.json");
+            Assert.Single(files);
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("M4-T3-B-KEY-RECOVERY", doc.RootElement.GetProperty("case_id").GetString());
+            Assert.True(doc.RootElement.GetProperty("response_sanitized").GetProperty("match_found").GetBoolean());
+            Assert.Equal("DELETED", doc.RootElement.GetProperty("response_sanitized").GetProperty("status").GetString());
+
+            Assert.DoesNotContain(RealAccountId, json);
+            Assert.DoesNotContain(RealKeyValue, json);
+            Assert.DoesNotContain(RealRecoveredKeyId, json);
+            Assert.DoesNotContain(RealAccountId, output.ToString());
+            Assert.DoesNotContain(RealKeyValue, output.ToString());
+            Assert.DoesNotContain(RealRecoveredKeyId, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RecoverDeletedKeyIdExecute_NoMatch_ProducesExactlyOneHttpCall_EvidenceReportsNoMatch()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeListKeysHandler(keysJsonArray: "[]");
+            var config = RecoverDeletedKeyIdE2EConfig();
+            var dependencies = BuildRecoverDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "recover-deleted-key-id", "--execute", "--confirm-recover-deleted-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T3-B-KEY-RECOVERY"), "evidence-*.json");
+            Assert.Single(files);
+            using var doc = JsonDocument.Parse(File.ReadAllText(files[0]));
+            Assert.False(doc.RootElement.GetProperty("response_sanitized").GetProperty("match_found").GetBoolean());
+            Assert.Equal("NoMatch", doc.RootElement.GetProperty("response_sanitized").GetProperty("selection_outcome").GetString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task RecoverDeletedKeyIdExecute_WithCreateKeyConfirmation_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeListKeysHandler();
+            var config = RecoverDeletedKeyIdE2EConfig();
+            var dependencies = BuildRecoverDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "recover-deleted-key-id", "--execute", "--confirm-create-key" },
+                config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-B-KEY-RECOVERY")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }
