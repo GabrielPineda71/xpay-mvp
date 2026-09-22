@@ -55,7 +55,8 @@ public sealed record HarnessTargetConfig(
     bool BrebKeyTypePresent,
     bool BrebKeyValuePresent,
     bool QrKeyIdPresent,
-    bool QrDecodeDataFilePathPresent)
+    bool QrDecodeDataFilePathPresent,
+    bool QrSuspendedKeyIdPresent)
 {
     public const string EnvAccountId   = "PASSPORT_TEST_ACCOUNT_ID";
     public const string EnvNewKeyType  = "PASSPORT_TEST_NEW_KEY_TYPE";
@@ -99,6 +100,17 @@ public sealed record HarnessTargetConfig(
     // de DecodeQrStaticExecutor en el momento de --execute, nunca en
     // dry-run/Prepare.
     public const string EnvQrDecodeDataFilePath = "PASSPORT_TEST_QR_DECODE_DATA_FILE";
+
+    // XPAY-471 — target DEDICADO de create-qr-static-suspended-key (M4-T3-A).
+    // Apunta a una llave DESECHABLE dedicada, todavía NO creada ni
+    // suspendida (eso queda fuera de alcance de XPAY-471, que es soporte de
+    // código únicamente) — su key_id real vivirá, cuando exista,
+    // EXCLUSIVAMENTE en ~/.passport-sandbox.env bajo este nombre, nunca
+    // hardcodeado. PROHIBIDO cualquier fallback hacia PASSPORT_TEST_QR_KEY_ID
+    // (llave ACTIVA protegida de M4-T1/M4-T2) o PASSPORT_TEST_NEW_KEY_ID
+    // (llave DELETED de M3, target exclusivo de M4-T3-B) — ver
+    // AllPresentForCreateQrStaticSuspendedKey.
+    public const string EnvQrSuspendedKeyId = "PASSPORT_TEST_QR_SUSPENDED_KEY_ID";
 
     public bool AllPresentForCreateKey  => AccountIdPresent && NewKeyTypePresent && NewKeyValuePresent;
 
@@ -149,6 +161,27 @@ public sealed record HarnessTargetConfig(
     // PASSPORT_TEST_QR_KEY_ID/qr_code_reference — son conceptos distintos).
     public bool AllPresentForDecodeQrStatic => QrDecodeDataFilePathPresent && CustomerIdPresent;
 
+    // XPAY-471 — target de create-qr-static-suspended-key (M4-T3-A):
+    // PASSPORT_TEST_QR_SUSPENDED_KEY_ID + PASSPORT_TEST_CUSTOMER_ID.
+    // DELIBERADAMENTE ni QrKeyIdPresent ni NewKeyIdPresent forman parte de
+    // esta condición — sin fallback hacia la llave activa protegida ni
+    // hacia la llave deleted de M3-T3-B.
+    public bool AllPresentForCreateQrStaticSuspendedKey => QrSuspendedKeyIdPresent && CustomerIdPresent;
+
+    // XPAY-471 — target de create-qr-static-deleted-key (M4-T3-B):
+    // PASSPORT_TEST_NEW_KEY_ID (llave DELETED de M3, usada ÚNICAMENTE como
+    // referencia histórica, nunca mutada) + PASSPORT_TEST_CUSTOMER_ID
+    // (customer_id VÁLIDO — lo único deliberadamente incorrecto en M4-T3 es
+    // el target de M4-T3-C, no éste).
+    public bool AllPresentForCreateQrStaticDeletedKey => NewKeyIdPresent && CustomerIdPresent;
+
+    // XPAY-471 — target de create-qr-static-invalid-customer (M4-T3-C):
+    // ÚNICAMENTE PASSPORT_TEST_QR_KEY_ID (llave ACTIVA protegida, usada
+    // sólo de forma read/reference). CustomerIdPresent NO forma parte de
+    // esta condición — el customer_id nunca se lee del entorno para este
+    // subcaso, siempre proviene de InvalidCustomerIdGenerator.Generate().
+    public bool AllPresentForCreateQrStaticInvalidCustomer => QrKeyIdPresent;
+
     public static HarnessTargetConfig FromConfiguration(IConfiguration configuration) => new(
         AccountIdPresent:    !string.IsNullOrWhiteSpace(configuration[EnvAccountId]),
         NewKeyTypePresent:   !string.IsNullOrWhiteSpace(configuration[EnvNewKeyType]),
@@ -158,7 +191,8 @@ public sealed record HarnessTargetConfig(
         BrebKeyTypePresent:  !string.IsNullOrWhiteSpace(configuration[EnvBrebKeyType]),
         BrebKeyValuePresent: !string.IsNullOrWhiteSpace(configuration[EnvBrebKeyValue]),
         QrKeyIdPresent:      !string.IsNullOrWhiteSpace(configuration[EnvQrKeyId]),
-        QrDecodeDataFilePathPresent: !string.IsNullOrWhiteSpace(configuration[EnvQrDecodeDataFilePath]));
+        QrDecodeDataFilePathPresent: !string.IsNullOrWhiteSpace(configuration[EnvQrDecodeDataFilePath]),
+        QrSuspendedKeyIdPresent:     !string.IsNullOrWhiteSpace(configuration[EnvQrSuspendedKeyId]));
 
     // Único formato de impresión permitido — jamás el valor (y, para
     // EnvQrDecodeDataFilePath, ni siquiera la ruta — sólo AVAILABLE/MISSING,
@@ -174,5 +208,6 @@ public sealed record HarnessTargetConfig(
         yield return $"{EnvBrebKeyValue}={(BrebKeyValuePresent ? "AVAILABLE" : "MISSING")}";
         yield return $"{EnvQrKeyId}={(QrKeyIdPresent ? "AVAILABLE" : "MISSING")}";
         yield return $"{EnvQrDecodeDataFilePath}={(QrDecodeDataFilePathPresent ? "AVAILABLE" : "MISSING")}";
+        yield return $"{EnvQrSuspendedKeyId}={(QrSuspendedKeyIdPresent ? "AVAILABLE" : "MISSING")}";
     }
 }

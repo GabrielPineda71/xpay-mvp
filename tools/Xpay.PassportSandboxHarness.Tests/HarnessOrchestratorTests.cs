@@ -1075,4 +1075,268 @@ public class HarnessOrchestratorTests
             new[] { "decode-qr-static", "--execute", "--confirm-decode-qr-static" }, ConfigWithDecodeQrStaticTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-471 — M4-T3: tres subcasos negativos, target/confirmación
+    // completamente independientes entre sí y de create-qr-static/
+    // decode-qr-static.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string ValidSuspendedKeyId = "synthetic-suspended-key-id-001";
+
+    private static IConfiguration ConfigWithSuspendedKeyTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? suspendedKeyId = ValidSuspendedKeyId, string? customerId = ValidCustomerId,
+        string? qrKeyId = null, string? newKeyId = null)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (suspendedKeyId is not null) dict[HarnessTargetConfig.EnvQrSuspendedKeyId] = suspendedKeyId;
+        if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
+        if (qrKeyId is not null) dict[HarnessTargetConfig.EnvQrKeyId] = qrKeyId;
+        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    private static IConfiguration ConfigWithDeletedKeyTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? newKeyId = ValidTargetKeyId, string? customerId = ValidCustomerId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    private static IConfiguration ConfigWithInvalidCustomerTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? qrKeyId = ValidTargetKeyId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (qrKeyId is not null) dict[HarnessTargetConfig.EnvQrKeyId] = qrKeyId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // ── M4-T3-A (suspended-key) ──────────────────────────────────────────
+
+    [Fact]
+    public void Prepare_CreateQrStaticSuspendedKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-suspended-key" }, ConfigWithSuspendedKeyTarget());
+        Assert.Equal(HarnessCommand.CreateQrStaticSuspendedKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticSuspendedKey_MissingSuspendedKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-suspended-key" }, ConfigWithSuspendedKeyTarget(suspendedKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // Regresión CRÍTICA: ni la llave activa (QR_KEY_ID) ni la llave
+    // eliminada (NEW_KEY_ID) sirven de fallback si falta SUSPENDED_KEY_ID.
+    [Fact]
+    public void Prepare_CreateQrStaticSuspendedKey_OtherKeysPresentButSuspendedMissing_ReturnsAbortedTargetMissing_NoFallback()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-suspended-key" },
+            ConfigWithSuspendedKeyTarget(suspendedKeyId: null, qrKeyId: ValidTargetKeyId, newKeyId: ValidTargetKeyId));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticSuspendedKey_MissingCustomerId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-suspended-key" }, ConfigWithSuspendedKeyTarget(customerId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticSuspendedKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-suspended-key", "--execute" }, ConfigWithSuspendedKeyTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-qr-static")]
+    [InlineData("--confirm-decode-qr-static")]
+    [InlineData("--confirm-create-qr-static-deleted-key")]
+    [InlineData("--confirm-create-qr-static-invalid-customer")]
+    public void Prepare_CreateQrStaticSuspendedKey_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-suspended-key", "--execute", wrongConfirmFlag }, ConfigWithSuspendedKeyTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticSuspendedKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-suspended-key", "--execute", "--confirm-create-qr-static-suspended-key" },
+            ConfigWithSuspendedKeyTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // ── M4-T3-B (deleted-key) ────────────────────────────────────────────
+
+    [Fact]
+    public void Prepare_CreateQrStaticDeletedKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-deleted-key" }, ConfigWithDeletedKeyTarget());
+        Assert.Equal(HarnessCommand.CreateQrStaticDeletedKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticDeletedKey_MissingNewKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-deleted-key" }, ConfigWithDeletedKeyTarget(newKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticDeletedKey_MissingCustomerId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-deleted-key" }, ConfigWithDeletedKeyTarget(customerId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticDeletedKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-deleted-key", "--execute" }, ConfigWithDeletedKeyTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-qr-static")]
+    [InlineData("--confirm-decode-qr-static")]
+    [InlineData("--confirm-create-qr-static-suspended-key")]
+    [InlineData("--confirm-create-qr-static-invalid-customer")]
+    public void Prepare_CreateQrStaticDeletedKey_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-deleted-key", "--execute", wrongConfirmFlag }, ConfigWithDeletedKeyTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticDeletedKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-deleted-key", "--execute", "--confirm-create-qr-static-deleted-key" },
+            ConfigWithDeletedKeyTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // ── M4-T3-C (invalid-customer) ───────────────────────────────────────
+
+    [Fact]
+    public void Prepare_CreateQrStaticInvalidCustomerNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-invalid-customer" }, ConfigWithInvalidCustomerTarget());
+        Assert.Equal(HarnessCommand.CreateQrStaticInvalidCustomer, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticInvalidCustomer_MissingQrKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-invalid-customer" }, ConfigWithInvalidCustomerTarget(qrKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // Ausencia de PASSPORT_TEST_CUSTOMER_ID NO bloquea este comando — el
+    // customer_id nunca se lee del entorno para M4-T3-C.
+    [Fact]
+    public void Prepare_CreateQrStaticInvalidCustomer_CustomerIdAbsentFromEnv_StillReadyToExecute()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = ValidSandboxUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvQrKeyId] = ValidTargetKeyId,
+            // Deliberadamente SIN EnvCustomerId.
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-invalid-customer", "--execute", "--confirm-create-qr-static-invalid-customer" }, config);
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticInvalidCustomer_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-invalid-customer", "--execute" }, ConfigWithInvalidCustomerTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-qr-static")]
+    [InlineData("--confirm-decode-qr-static")]
+    [InlineData("--confirm-create-qr-static-suspended-key")]
+    [InlineData("--confirm-create-qr-static-deleted-key")]
+    public void Prepare_CreateQrStaticInvalidCustomer_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-invalid-customer", "--execute", wrongConfirmFlag }, ConfigWithInvalidCustomerTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrStaticInvalidCustomer_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-invalid-customer", "--execute", "--confirm-create-qr-static-invalid-customer" },
+            ConfigWithInvalidCustomerTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // ── Cruces: ninguna confirmación de M4-T3 autoriza M4-T1/M4-T2, y viceversa ──
+
+    [Theory]
+    [InlineData("--confirm-create-qr-static-suspended-key")]
+    [InlineData("--confirm-create-qr-static-deleted-key")]
+    [InlineData("--confirm-create-qr-static-invalid-customer")]
+    public void Prepare_CreateQrStatic_M4T3Confirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static", "--execute", wrongConfirmFlag }, ConfigWithCreateQrStaticTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-qr-static-suspended-key")]
+    [InlineData("--confirm-create-qr-static-deleted-key")]
+    [InlineData("--confirm-create-qr-static-invalid-customer")]
+    public void Prepare_DecodeQrStatic_M4T3Confirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-static", "--execute", wrongConfirmFlag }, ConfigWithDecodeQrStaticTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
 }

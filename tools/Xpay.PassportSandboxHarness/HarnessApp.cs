@@ -55,6 +55,9 @@ public static class HarnessApp
                 output.WriteLine("     create-key-invalid [--execute --confirm-create-key-invalid]");
                 output.WriteLine("     create-qr-static [--execute --confirm-create-qr-static]");
                 output.WriteLine("     decode-qr-static [--execute --confirm-decode-qr-static]");
+                output.WriteLine("     create-qr-static-suspended-key    [--execute --confirm-create-qr-static-suspended-key]");
+                output.WriteLine("     create-qr-static-deleted-key      [--execute --confirm-create-qr-static-deleted-key]");
+                output.WriteLine("     create-qr-static-invalid-customer [--execute --confirm-create-qr-static-invalid-customer]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -227,6 +230,59 @@ public static class HarnessApp
                 output.WriteLine("result=DRY_RUN");
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 output.WriteLine("note=M4-T2: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-465)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrStaticSuspendedKey:
+                // XPAY-471 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_QR_SUSPENDED_KEY_ID/PASSPORT_TEST_CUSTOMER_ID
+                // en este modo. No se construye ningún request, no se
+                // obtiene token, no hay HTTP, no hay evidencia. Este comando
+                // NO crea ni suspende ninguna llave — sólo intentaría Create
+                // QR contra una que YA debería estar suspendida.
+                output.WriteLine("case=M4-T3-A (Create QR Code STATIC — llave Bre-B SUSPENDIDA)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-471)");
+                output.WriteLine("requires=--execute --confirm-create-qr-static-suspended-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-A: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-471)");
+                output.WriteLine("note=CASO NEGATIVO: un HTTP 4xx es el resultado ESPERADO, pero este comando NUNCA lo certifica automáticamente");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrStaticDeletedKey:
+                // XPAY-471 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_NEW_KEY_ID/PASSPORT_TEST_CUSTOMER_ID en este
+                // modo. Este comando NUNCA muta la llave de M3 (nunca
+                // Delete/Suspend/Activate/List Keys) — sólo intentaría
+                // Create QR contra ella, usándola como referencia histórica
+                // eliminada.
+                output.WriteLine("case=M4-T3-B (Create QR Code STATIC — llave Bre-B ELIMINADA)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-471)");
+                output.WriteLine("requires=--execute --confirm-create-qr-static-deleted-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-B: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-471)");
+                output.WriteLine("note=CASO NEGATIVO: un HTTP 4xx es el resultado ESPERADO, pero este comando NUNCA lo certifica automáticamente");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrStaticInvalidCustomer:
+                // XPAY-471 — NUNCA lee el valor real de
+                // PASSPORT_TEST_QR_KEY_ID en este modo. customer_id nunca
+                // proviene del entorno para este comando (siempre
+                // InvalidCustomerIdGenerator, determinista y sintético) —
+                // dry-run tampoco lo genera ni lo imprime.
+                output.WriteLine("case=M4-T3-C (Create QR Code STATIC — customer_id INCORRECTO)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-471)");
+                output.WriteLine("requires=--execute --confirm-create-qr-static-invalid-customer");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-C: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-471)");
+                output.WriteLine("note=CASO NEGATIVO: un HTTP 4xx es el resultado ESPERADO, pero este comando NUNCA lo certifica automáticamente");
                 return;
 
             case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateCustomer:
@@ -456,6 +512,70 @@ public static class HarnessApp
                 output.WriteLine($"result={execution.Evidence!.Result}");
                 output.WriteLine($"evidence_path={decodePath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrStaticSuspendedKey:
+            {
+                var execution = await CreateQrStaticSuspendedKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-471 — un bloqueo LOCAL (target ausente, commit
+                    // SHA no resoluble) NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var suspendedKeyPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={suspendedKeyPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=CASO NEGATIVO: result=FAIL a nivel transporte no implica fallo de certificación — ver evidencia");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrStaticDeletedKey:
+            {
+                var execution = await CreateQrStaticDeletedKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-471 — un bloqueo LOCAL NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var deletedKeyPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={deletedKeyPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=CASO NEGATIVO: result=FAIL a nivel transporte no implica fallo de certificación — ver evidencia");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrStaticInvalidCustomer:
+            {
+                var execution = await CreateQrStaticInvalidCustomerExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-471 — un bloqueo LOCAL NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var invalidCustomerPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={invalidCustomerPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=CASO NEGATIVO: result=FAIL a nivel transporte no implica fallo de certificación — ver evidencia");
                 return;
             }
         }

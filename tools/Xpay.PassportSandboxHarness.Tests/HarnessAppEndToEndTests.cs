@@ -2624,4 +2624,279 @@ public class HarnessAppEndToEndTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-471 — M4-T3, flujo completo real vía HarnessApp.RunAsync con
+    // IPassportQrClient sobre un HttpMessageHandler fake local (sin red
+    // real). Los tres subcasos reutilizan LocalFakeQrHandler (mismo shape
+    // de respuesta Create QR que M4-T1) — nunca invocan Decode.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private const string RealSuspendedKeyId     = "SYNTH-E2E-SUSPENDED-KEY-should-be-fingerprinted-only";
+    private const string RealDeletedKeyId       = "SYNTH-E2E-DELETED-KEY-should-be-fingerprinted-only";
+    private const string RealActiveQrKeyIdForC  = "SYNTH-E2E-ACTIVE-QR-KEY-FOR-C-should-be-fingerprinted-only";
+    private const string RealM4T3CustomerId     = "SYNTH-E2E-M4T3-CUSTOMER-should-be-fingerprinted-only";
+
+    private static IConfiguration SuspendedKeyE2EConfig() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvQrSuspendedKeyId] = RealSuspendedKeyId,
+            [HarnessTargetConfig.EnvCustomerId] = RealM4T3CustomerId,
+        })
+        .Build();
+
+    private static IConfiguration DeletedKeyE2EConfig() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvNewKeyId] = RealDeletedKeyId,
+            [HarnessTargetConfig.EnvCustomerId] = RealM4T3CustomerId,
+        })
+        .Build();
+
+    private static IConfiguration InvalidCustomerE2EConfig() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvQrKeyId] = RealActiveQrKeyIdForC,
+        })
+        .Build();
+
+    // ── M4-T3-A — Suspended Key ──────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateQrStaticSuspendedKeyDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = SuspendedKeyE2EConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-qr-static-suspended-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-A")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+            Assert.DoesNotContain(RealSuspendedKeyId, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateQrStaticSuspendedKeyExecute_FullPath_ProducesExactlyOneHttpCall_AndEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = SuspendedKeyE2EConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static-suspended-key", "--execute", "--confirm-create-qr-static-suspended-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+            Assert.Equal("/v1/qrcodes", handler.LastRequest.RequestUri!.AbsolutePath);
+
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T3-A"), "evidence-*.json");
+            Assert.Single(files);
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("M4-T3-A", doc.RootElement.GetProperty("case_id").GetString());
+
+            Assert.DoesNotContain(RealSuspendedKeyId, json);
+            Assert.DoesNotContain(RealM4T3CustomerId, json);
+            Assert.DoesNotContain(RealSuspendedKeyId, output.ToString());
+            Assert.DoesNotContain(RealM4T3CustomerId, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateQrStaticSuspendedKeyExecute_WithCreateQrStaticConfirmation_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = SuspendedKeyE2EConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static-suspended-key", "--execute", "--confirm-create-qr-static" },
+                config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-A")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ── M4-T3-B — Deleted Key ────────────────────────────────────────────
+
+    [Fact]
+    public async Task CreateQrStaticDeletedKeyDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = DeletedKeyE2EConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-qr-static-deleted-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-B")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateQrStaticDeletedKeyExecute_FullPath_ProducesExactlyOneHttpCall_AndEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = DeletedKeyE2EConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static-deleted-key", "--execute", "--confirm-create-qr-static-deleted-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T3-B"), "evidence-*.json");
+            Assert.Single(files);
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("M4-T3-B", doc.RootElement.GetProperty("case_id").GetString());
+
+            Assert.DoesNotContain(RealDeletedKeyId, json);
+            Assert.DoesNotContain(RealM4T3CustomerId, json);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ── M4-T3-C — Invalid Customer ───────────────────────────────────────
+
+    [Fact]
+    public async Task CreateQrStaticInvalidCustomerDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = InvalidCustomerE2EConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-qr-static-invalid-customer" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-C")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateQrStaticInvalidCustomerExecute_FullPath_ProducesExactlyOneHttpCall_AndEvidence_NeverSendsRealCustomerId()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = InvalidCustomerE2EConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static-invalid-customer", "--execute", "--confirm-create-qr-static-invalid-customer" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            using (var bodyDoc = JsonDocument.Parse(handler.LastRequestBody!))
+            {
+                Assert.Equal(InvalidCustomerIdGenerator.Generate(), bodyDoc.RootElement.GetProperty("customer_id").GetString());
+            }
+
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T3-C"), "evidence-*.json");
+            Assert.Single(files);
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("M4-T3-C", doc.RootElement.GetProperty("case_id").GetString());
+
+            Assert.DoesNotContain(RealActiveQrKeyIdForC, json);
+            Assert.DoesNotContain(InvalidCustomerIdGenerator.Generate(), json);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ── Cruces a nivel de flujo completo ─────────────────────────────────
+
+    [Fact]
+    public async Task CreateQrStaticExecute_WithConfirmSuspendedKey_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static", "--execute", "--confirm-create-qr-static-suspended-key" },
+                config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T1")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

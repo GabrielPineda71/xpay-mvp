@@ -44,6 +44,9 @@ public static class HarnessOrchestrator
                                     or HarnessCommand.DeleteAlreadyDeletedKey or HarnessCommand.ResolveKey
                                     or HarnessCommand.CreateKeyMissing or HarnessCommand.CreateKeyInvalid
                                     or HarnessCommand.CreateQrStatic or HarnessCommand.DecodeQrStatic
+                                    or HarnessCommand.CreateQrStaticSuspendedKey
+                                    or HarnessCommand.CreateQrStaticDeletedKey
+                                    or HarnessCommand.CreateQrStaticInvalidCustomer
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -120,6 +123,33 @@ public static class HarnessOrchestrator
         if (command == HarnessCommand.DecodeQrStatic && targetConfig is not null && !targetConfig.AllPresentForDecodeQrStatic)
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Target de decode-qr-static incompleto — PASSPORT_TEST_QR_DECODE_DATA_FILE/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        // XPAY-471 — create-qr-static-suspended-key (M4-T3-A): target propio
+        // (PASSPORT_TEST_QR_SUSPENDED_KEY_ID + PASSPORT_TEST_CUSTOMER_ID).
+        // NUNCA cae en fallback hacia PASSPORT_TEST_QR_KEY_ID ni
+        // PASSPORT_TEST_NEW_KEY_ID — ver HarnessTargetConfig.
+        // AllPresentForCreateQrStaticSuspendedKey.
+        if (command == HarnessCommand.CreateQrStaticSuspendedKey && targetConfig is not null
+            && !targetConfig.AllPresentForCreateQrStaticSuspendedKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-static-suspended-key incompleto — PASSPORT_TEST_QR_SUSPENDED_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        // XPAY-471 — create-qr-static-deleted-key (M4-T3-B): target propio
+        // (PASSPORT_TEST_NEW_KEY_ID + PASSPORT_TEST_CUSTOMER_ID) — reutiliza
+        // la llave DELETED de M3 únicamente como referencia histórica.
+        if (command == HarnessCommand.CreateQrStaticDeletedKey && targetConfig is not null
+            && !targetConfig.AllPresentForCreateQrStaticDeletedKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-static-deleted-key incompleto — PASSPORT_TEST_NEW_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        // XPAY-471 — create-qr-static-invalid-customer (M4-T3-C): target
+        // propio (ÚNICAMENTE PASSPORT_TEST_QR_KEY_ID — el customer_id
+        // siempre es sintético, generado internamente, nunca leído del
+        // entorno).
+        if (command == HarnessCommand.CreateQrStaticInvalidCustomer && targetConfig is not null
+            && !targetConfig.AllPresentForCreateQrStaticInvalidCustomer)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-static-invalid-customer incompleto — PASSPORT_TEST_QR_KEY_ID ausente.");
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

@@ -50,6 +50,13 @@ public enum HarnessCommand
     // viceversa (mismo criterio de no-conflación ya aplicado a cada par de
     // comandos anterior).
     DecodeQrStatic,
+    // XPAY-471 — M4-T3 (casos de error de QR estático): tres subcasos
+    // INDEPENDIENTES entre sí y de create-qr-static/decode-qr-static —
+    // cada uno con su propio comando y bandera de confirmación exclusiva,
+    // mismo criterio de no-conflación ya aplicado a cada par anterior.
+    CreateQrStaticSuspendedKey,
+    CreateQrStaticDeletedKey,
+    CreateQrStaticInvalidCustomer,
 }
 
 public static class HarnessDecision
@@ -83,6 +90,11 @@ public static class HarnessDecision
     // XPAY-465 — M4-T2: comando inequívoco, independiente de create-qr-static
     // (M4-T1) aunque ambos operen sobre QR codes vía el mismo IPassportQrClient.
     public const string CommandDecodeQrStatic = "decode-qr-static";
+    // XPAY-471 — M4-T3, tres comandos independientes (nombres finales,
+    // coherentes con la convención kebab-case ya establecida).
+    public const string CommandCreateQrStaticSuspendedKey    = "create-qr-static-suspended-key";
+    public const string CommandCreateQrStaticDeletedKey      = "create-qr-static-deleted-key";
+    public const string CommandCreateQrStaticInvalidCustomer = "create-qr-static-invalid-customer";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -110,6 +122,12 @@ public static class HarnessDecision
     // XPAY-465 — exclusiva de decode-qr-static; --confirm-create-qr-static
     // NUNCA la autoriza, y ésta NUNCA autoriza create-qr-static.
     public const string FlagConfirmDecodeQrStatic = "--confirm-decode-qr-static";
+    // XPAY-471 — M4-T3, tres banderas de confirmación exclusivas. Ninguna
+    // de las tres autoriza create-qr-static/decode-qr-static ni entre sí,
+    // y viceversa.
+    public const string FlagConfirmCreateQrStaticSuspendedKey    = "--confirm-create-qr-static-suspended-key";
+    public const string FlagConfirmCreateQrStaticDeletedKey      = "--confirm-create-qr-static-deleted-key";
+    public const string FlagConfirmCreateQrStaticInvalidCustomer = "--confirm-create-qr-static-invalid-customer";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -126,6 +144,9 @@ public static class HarnessDecision
             CommandCreateKeyInvalid        => HarnessCommand.CreateKeyInvalid,
             CommandCreateQrStatic          => HarnessCommand.CreateQrStatic,
             CommandDecodeQrStatic          => HarnessCommand.DecodeQrStatic,
+            CommandCreateQrStaticSuspendedKey    => HarnessCommand.CreateQrStaticSuspendedKey,
+            CommandCreateQrStaticDeletedKey      => HarnessCommand.CreateQrStaticDeletedKey,
+            CommandCreateQrStaticInvalidCustomer => HarnessCommand.CreateQrStaticInvalidCustomer,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -161,6 +182,9 @@ public static class HarnessDecision
             HarnessCommand.CreateKeyInvalid        => FlagConfirmCreateKeyInvalid,
             HarnessCommand.CreateQrStatic          => FlagConfirmCreateQrStatic,
             HarnessCommand.DecodeQrStatic          => FlagConfirmDecodeQrStatic,
+            HarnessCommand.CreateQrStaticSuspendedKey    => FlagConfirmCreateQrStaticSuspendedKey,
+            HarnessCommand.CreateQrStaticDeletedKey      => FlagConfirmCreateQrStaticDeletedKey,
+            HarnessCommand.CreateQrStaticInvalidCustomer => FlagConfirmCreateQrStaticInvalidCustomer,
             _                                      => null,
         };
 
