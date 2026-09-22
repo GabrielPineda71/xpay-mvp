@@ -61,6 +61,8 @@ public static class HarnessApp
                 output.WriteLine("     create-m4-t3-suspended-fixture-key [--execute --confirm-create-m4-t3-suspended-fixture-key]");
                 output.WriteLine("     suspend-m4-t3-fixture-key          [--execute --confirm-suspend-m4-t3-fixture-key]");
                 output.WriteLine("     recover-deleted-key-id             [--execute --confirm-recover-deleted-key]");
+                output.WriteLine("     create-m4-t3-deleted-fixture-key   [--execute --confirm-create-m4-t3-deleted-fixture-key]");
+                output.WriteLine("     delete-m4-t3-fixture-key           [--execute --confirm-delete-m4-t3-fixture-key]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -334,6 +336,36 @@ public static class HarnessApp
                 output.WriteLine("note=M4-T3-B-KEY-RECOVERY: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-489)");
                 output.WriteLine("note=Fail-closed en 0 o >1 coincidencias — nunca selecciona automáticamente ni cae en fallback");
                 output.WriteLine("note=Este comando NUNCA escribe ~/.passport-sandbox.env — la reparación de PASSPORT_TEST_NEW_KEY_ID es un paso manual separado");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateM4T3DeletedFixtureKey:
+                // XPAY-492 — NUNCA lee el valor real de
+                // PASSPORT_TEST_ACCOUNT_ID en este modo. CRÍTICO: el
+                // key_value (DisposableBcodeGenerator) NUNCA se genera aquí
+                // — sólo dentro de CreateM4T3DeletedFixtureKeyExecutor,
+                // exclusivamente en ReadyToExecute.
+                output.WriteLine("case=M4-T3-B PREP (Create Key — llave desechable dedicada)");
+                output.WriteLine("endpoint=POST /v1/keys");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-492)");
+                output.WriteLine("requires=--execute --confirm-create-m4-t3-deleted-fixture-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-B-KEY-PREP-CREATE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-492)");
+                output.WriteLine("note=Esta llave NO se elimina automáticamente — ver delete-m4-t3-fixture-key (paso separado)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DeleteM4T3FixtureKey:
+                // XPAY-492 — NUNCA lee el valor real de
+                // PASSPORT_TEST_QR_DELETED_KEY_ID en este modo.
+                output.WriteLine("case=M4-T3-B PREP (Delete Key — llave desechable dedicada)");
+                output.WriteLine("endpoint=DELETE /v1/keys/{key_id}");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-492)");
+                output.WriteLine("requires=--execute --confirm-delete-m4-t3-fixture-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-B-KEY-PREP-DELETE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-492)");
                 return;
 
             case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateCustomer:
@@ -689,6 +721,47 @@ public static class HarnessApp
                 output.WriteLine($"evidence_path={recoveryPath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 output.WriteLine("note=Este comando NUNCA escribió ~/.passport-sandbox.env — revise la evidencia sanitizada para el resultado (match_found/matches_count/status/id_fingerprint) y, si corresponde, configure PASSPORT_TEST_NEW_KEY_ID usted mismo, manualmente");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateM4T3DeletedFixtureKey:
+            {
+                var execution = await CreateM4T3DeletedFixtureKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-492 — un bloqueo LOCAL NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var createFixturePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={createFixturePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=Recupere el key_id real manualmente desde Passport Sandbox Dashboard y configure PASSPORT_TEST_QR_DELETED_KEY_ID usted mismo — este harness nunca lo persiste");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.DeleteM4T3FixtureKey:
+            {
+                var execution = await DeleteM4T3FixtureKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-492 — un bloqueo LOCAL NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var deleteFixturePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={deleteFixturePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 return;
             }
         }

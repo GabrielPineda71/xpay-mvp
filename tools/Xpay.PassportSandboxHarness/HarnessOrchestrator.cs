@@ -50,6 +50,8 @@ public static class HarnessOrchestrator
                                     or HarnessCommand.CreateM4T3SuspendedFixtureKey
                                     or HarnessCommand.SuspendM4T3FixtureKey
                                     or HarnessCommand.RecoverDeletedKeyId
+                                    or HarnessCommand.CreateM4T3DeletedFixtureKey
+                                    or HarnessCommand.DeleteM4T3FixtureKey
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -179,6 +181,24 @@ public static class HarnessOrchestrator
             && !targetConfig.AllPresentForRecoverDeletedKeyId)
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Target de recover-deleted-key-id incompleto — PASSPORT_TEST_ACCOUNT_ID/PASSPORT_TEST_NEW_KEY_TYPE/PASSPORT_TEST_NEW_KEY_VALUE ausente(s).");
+
+        // XPAY-492 — create-m4-t3-deleted-fixture-key: target propio
+        // (ÚNICAMENTE PASSPORT_TEST_ACCOUNT_ID — key_type es constante
+        // BCODE, key_value se genera internamente).
+        if (command == HarnessCommand.CreateM4T3DeletedFixtureKey && targetConfig is not null
+            && !targetConfig.AllPresentForCreateM4T3DeletedFixtureKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-m4-t3-deleted-fixture-key incompleto — PASSPORT_TEST_ACCOUNT_ID ausente.");
+
+        // XPAY-492 — delete-m4-t3-fixture-key: target propio (ÚNICAMENTE
+        // PASSPORT_TEST_QR_DELETED_KEY_ID). NUNCA cae en fallback hacia
+        // PASSPORT_TEST_NEW_KEY_ID (contaminada/abandonada), PASSPORT_TEST_QR_KEY_ID
+        // (llave activa protegida) ni PASSPORT_TEST_QR_SUSPENDED_KEY_ID
+        // (llave suspendida protegida de M4-T3-A).
+        if (command == HarnessCommand.DeleteM4T3FixtureKey && targetConfig is not null
+            && !targetConfig.AllPresentForDeleteM4T3FixtureKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de delete-m4-t3-fixture-key incompleto — PASSPORT_TEST_QR_DELETED_KEY_ID ausente.");
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

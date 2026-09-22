@@ -67,6 +67,12 @@ public enum HarnessCommand
     // ciclo M3, vía List Keys. Completamente independiente de las dos
     // anteriores (ninguna comparte confirmación ni target).
     RecoverDeletedKeyId,
+    // XPAY-492 — preparación de la llave desechable de M4-T3-B (fixture
+    // dedicado, reemplaza el intento de reutilizar la llave histórica
+    // contaminada de M3): dos operaciones independientes entre sí y de
+    // cualquier otro comando (ninguna comparte confirmación ni target).
+    CreateM4T3DeletedFixtureKey,
+    DeleteM4T3FixtureKey,
 }
 
 public static class HarnessDecision
@@ -110,6 +116,9 @@ public static class HarnessDecision
     public const string CommandSuspendM4T3FixtureKey         = "suspend-m4-t3-fixture-key";
     // XPAY-489 — recuperación read-only del key_id DELETED del ciclo M3.
     public const string CommandRecoverDeletedKeyId            = "recover-deleted-key-id";
+    // XPAY-492 — preparación del fixture desechable de M4-T3-B.
+    public const string CommandCreateM4T3DeletedFixtureKey = "create-m4-t3-deleted-fixture-key";
+    public const string CommandDeleteM4T3FixtureKey        = "delete-m4-t3-fixture-key";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -151,6 +160,10 @@ public static class HarnessDecision
     // XPAY-489 — exclusiva de recover-deleted-key-id; no autoriza ni es
     // autorizada por ninguna otra bandera de confirmación.
     public const string FlagConfirmRecoverDeletedKeyId = "--confirm-recover-deleted-key";
+    // XPAY-492 — exclusivas de la preparación del fixture desechable de
+    // M4-T3-B; ninguna autoriza ni es autorizada por ninguna otra bandera.
+    public const string FlagConfirmCreateM4T3DeletedFixtureKey = "--confirm-create-m4-t3-deleted-fixture-key";
+    public const string FlagConfirmDeleteM4T3FixtureKey        = "--confirm-delete-m4-t3-fixture-key";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -173,6 +186,8 @@ public static class HarnessDecision
             CommandCreateM4T3SuspendedFixtureKey => HarnessCommand.CreateM4T3SuspendedFixtureKey,
             CommandSuspendM4T3FixtureKey         => HarnessCommand.SuspendM4T3FixtureKey,
             CommandRecoverDeletedKeyId           => HarnessCommand.RecoverDeletedKeyId,
+            CommandCreateM4T3DeletedFixtureKey   => HarnessCommand.CreateM4T3DeletedFixtureKey,
+            CommandDeleteM4T3FixtureKey          => HarnessCommand.DeleteM4T3FixtureKey,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -214,6 +229,8 @@ public static class HarnessDecision
             HarnessCommand.CreateM4T3SuspendedFixtureKey => FlagConfirmCreateM4T3SuspendedFixtureKey,
             HarnessCommand.SuspendM4T3FixtureKey         => FlagConfirmSuspendM4T3FixtureKey,
             HarnessCommand.RecoverDeletedKeyId           => FlagConfirmRecoverDeletedKeyId,
+            HarnessCommand.CreateM4T3DeletedFixtureKey   => FlagConfirmCreateM4T3DeletedFixtureKey,
+            HarnessCommand.DeleteM4T3FixtureKey          => FlagConfirmDeleteM4T3FixtureKey,
             _                                      => null,
         };
 

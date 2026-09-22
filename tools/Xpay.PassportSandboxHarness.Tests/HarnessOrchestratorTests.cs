@@ -1102,13 +1102,13 @@ public class HarnessOrchestratorTests
 
     private static IConfiguration ConfigWithDeletedKeyTarget(
         string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
-        string? newKeyId = ValidTargetKeyId, string? customerId = ValidCustomerId)
+        string? qrDeletedKeyId = ValidTargetKeyId, string? customerId = ValidCustomerId)
     {
         var dict = new Dictionary<string, string?>();
         if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
         if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
         if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
-        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        if (qrDeletedKeyId is not null) dict[HarnessTargetConfig.EnvQrDeletedKeyId] = qrDeletedKeyId;
         if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
         return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
     }
@@ -1204,10 +1204,30 @@ public class HarnessOrchestratorTests
     }
 
     [Fact]
-    public void Prepare_CreateQrStaticDeletedKey_MissingNewKeyId_ReturnsAbortedTargetMissing()
+    public void Prepare_CreateQrStaticDeletedKey_MissingQrDeletedKeyId_ReturnsAbortedTargetMissing()
     {
         var decision = HarnessOrchestrator.Prepare(
-            new[] { "create-qr-static-deleted-key" }, ConfigWithDeletedKeyTarget(newKeyId: null));
+            new[] { "create-qr-static-deleted-key" }, ConfigWithDeletedKeyTarget(qrDeletedKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // Regresión (XPAY-492): PASSPORT_TEST_NEW_KEY_ID (llave histórica de M3,
+    // hoy contaminada/abandonada) presente NUNCA sirve de fallback si
+    // PASSPORT_TEST_QR_DELETED_KEY_ID falta.
+    [Fact]
+    public void Prepare_CreateQrStaticDeletedKey_NewKeyIdPresentButQrDeletedKeyIdMissing_ReturnsAbortedTargetMissing_NoFallback()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = ValidSandboxUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvNewKeyId] = ValidTargetKeyId,
+            [HarnessTargetConfig.EnvCustomerId] = ValidCustomerId,
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        var decision = HarnessOrchestrator.Prepare(new[] { "create-qr-static-deleted-key" }, config);
         Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
     }
 
@@ -1622,6 +1642,190 @@ public class HarnessOrchestratorTests
     {
         var decision = HarnessOrchestrator.Prepare(
             new[] { otherCommand, "--execute", "--confirm-recover-deleted-key" }, ConfigWithTargets());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-492 — preparación de la llave desechable de M4-T3-B: dos
+    // operaciones INDEPENDIENTES entre sí y de cualquier otro comando
+    // (Create/Delete Fixture Key), target/confirmación completamente
+    // separados.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration ConfigWithCreateDeletedFixtureTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? accountId = ValidTargetAccountId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (accountId is not null) dict[HarnessTargetConfig.EnvAccountId] = accountId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    private static IConfiguration ConfigWithDeleteFixtureTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? qrDeletedKeyId = "synthetic-deleted-fixture-key-id-001")
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (qrDeletedKeyId is not null) dict[HarnessTargetConfig.EnvQrDeletedKeyId] = qrDeletedKeyId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // ── Create Fixture ───────────────────────────────────────────────────
+
+    [Fact]
+    public void Prepare_CreateM4T3DeletedFixtureKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-m4-t3-deleted-fixture-key" }, ConfigWithCreateDeletedFixtureTarget());
+        Assert.Equal(HarnessCommand.CreateM4T3DeletedFixtureKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateM4T3DeletedFixtureKey_MissingAccountId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-m4-t3-deleted-fixture-key" }, ConfigWithCreateDeletedFixtureTarget(accountId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateM4T3DeletedFixtureKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-m4-t3-deleted-fixture-key", "--execute" }, ConfigWithCreateDeletedFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-key")]
+    [InlineData("--confirm-create-m4-t3-suspended-fixture-key")]
+    [InlineData("--confirm-suspend-m4-t3-fixture-key")]
+    [InlineData("--confirm-delete-m4-t3-fixture-key")]
+    [InlineData("--confirm-create-qr-static-deleted-key")]
+    public void Prepare_CreateM4T3DeletedFixtureKey_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-m4-t3-deleted-fixture-key", "--execute", wrongConfirmFlag }, ConfigWithCreateDeletedFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateM4T3DeletedFixtureKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-m4-t3-deleted-fixture-key", "--execute", "--confirm-create-m4-t3-deleted-fixture-key" },
+            ConfigWithCreateDeletedFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // create-key (M3) y create-m4-t3-suspended-fixture-key (M4-T3-A) NUNCA
+    // autorizan create-m4-t3-deleted-fixture-key, y viceversa.
+    [Theory]
+    [InlineData("create-key")]
+    [InlineData("create-m4-t3-suspended-fixture-key")]
+    public void Prepare_OtherCommands_ConfirmCreateM4T3DeletedFixtureKey_DoesNotAuthorize(string otherCommand)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { otherCommand, "--execute", "--confirm-create-m4-t3-deleted-fixture-key" }, ConfigWithTargets());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // ── Delete Fixture ───────────────────────────────────────────────────
+
+    [Fact]
+    public void Prepare_DeleteM4T3FixtureKeyNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-m4-t3-fixture-key" }, ConfigWithDeleteFixtureTarget());
+        Assert.Equal(HarnessCommand.DeleteM4T3FixtureKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DeleteM4T3FixtureKey_MissingQrDeletedKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-m4-t3-fixture-key" }, ConfigWithDeleteFixtureTarget(qrDeletedKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    // Regresión: aunque PASSPORT_TEST_NEW_KEY_ID/PASSPORT_TEST_QR_KEY_ID/
+    // PASSPORT_TEST_QR_SUSPENDED_KEY_ID estén presentes, sin
+    // PASSPORT_TEST_QR_DELETED_KEY_ID el target sigue incompleto — sin
+    // fallback.
+    [Fact]
+    public void Prepare_DeleteM4T3FixtureKey_OtherKeysPresentButDeletedFixtureMissing_ReturnsAbortedTargetMissing_NoFallback()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = ValidSandboxUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvNewKeyId] = ValidTargetKeyId,
+            [HarnessTargetConfig.EnvQrKeyId] = ValidTargetKeyId,
+            [HarnessTargetConfig.EnvQrSuspendedKeyId] = ValidTargetKeyId,
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+
+        var decision = HarnessOrchestrator.Prepare(new[] { "delete-m4-t3-fixture-key" }, config);
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DeleteM4T3FixtureKey_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-m4-t3-fixture-key", "--execute" }, ConfigWithDeleteFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-delete-key")]
+    [InlineData("--confirm-suspend-m4-t3-fixture-key")]
+    [InlineData("--confirm-create-m4-t3-deleted-fixture-key")]
+    [InlineData("--confirm-create-qr-static-deleted-key")]
+    public void Prepare_DeleteM4T3FixtureKey_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-m4-t3-fixture-key", "--execute", wrongConfirmFlag }, ConfigWithDeleteFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DeleteM4T3FixtureKey_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-m4-t3-fixture-key", "--execute", "--confirm-delete-m4-t3-fixture-key" },
+            ConfigWithDeleteFixtureTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // delete-already-deleted-key (M3) NUNCA autoriza delete-m4-t3-fixture-key,
+    // y viceversa.
+    [Fact]
+    public void Prepare_DeleteAlreadyDeletedKey_ConfirmDeleteM4T3FixtureKey_DoesNotAuthorize()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "delete-already-deleted-key", "--execute", "--confirm-delete-m4-t3-fixture-key" }, ConfigWithTargets());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // create-qr-static-deleted-key (M4-T3-B final) tampoco se autoriza con
+    // ninguna de las dos confirmaciones nuevas, y viceversa.
+    [Theory]
+    [InlineData("--confirm-create-m4-t3-deleted-fixture-key")]
+    [InlineData("--confirm-delete-m4-t3-fixture-key")]
+    public void Prepare_CreateQrStaticDeletedKey_M4T3PrepConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-static-deleted-key", "--execute", wrongConfirmFlag }, ConfigWithDeletedKeyTarget());
         Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
     }
 }

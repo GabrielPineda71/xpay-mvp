@@ -2654,7 +2654,7 @@ public class HarnessAppEndToEndTests
             [PassportOptions.EnvBaseUrl] = BaseUrl,
             [PassportOptions.EnvClientId] = "synthetic-key",
             [PassportOptions.EnvClientSecret] = "synthetic-secret",
-            [HarnessTargetConfig.EnvNewKeyId] = RealDeletedKeyId,
+            [HarnessTargetConfig.EnvQrDeletedKeyId] = RealDeletedKeyId,
             [HarnessTargetConfig.EnvCustomerId] = RealM4T3CustomerId,
         })
         .Build();
@@ -3299,6 +3299,229 @@ public class HarnessAppEndToEndTests
             Assert.Equal(0, handler.CallCount);
             Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-B-KEY-RECOVERY")));
             Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-492 — preparación de la llave desechable de M4-T3-B, flujo
+    // completo real vía HarnessApp.RunAsync. Reutiliza LocalFakeHandler
+    // (mismo shape de respuesta Create Key que M4-T3-A/M3-T1) y
+    // LocalFakeDeleteHandler/BuildDeleteDependencies (mismo shape 204 No
+    // Content que M3-T5) — ninguno nuevo, ninguno modificado.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration CreateDeletedFixtureE2EConfig() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvAccountId] = RealAccountId,
+        })
+        .Build();
+
+    private const string RealDeletedFixtureKeyId = "SYNTH-E2E-DELETED-FIXTURE-KEY-should-be-fingerprinted-only";
+
+    private static IConfiguration DeleteFixtureE2EConfig() => new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvQrDeletedKeyId] = RealDeletedFixtureKeyId,
+        })
+        .Build();
+
+    [Fact]
+    public async Task CreateM4T3DeletedFixtureKeyDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeHandler();
+            var config = CreateDeletedFixtureE2EConfig();
+            var dependencies = BuildDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-m4-t3-deleted-fixture-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-B-KEY-PREP-CREATE")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateM4T3DeletedFixtureKeyExecute_FullPath_ProducesExactlyOneHttpCall_AndEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeHandler();
+            var config = CreateDeletedFixtureE2EConfig();
+            var dependencies = BuildDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-m4-t3-deleted-fixture-key", "--execute", "--confirm-create-m4-t3-deleted-fixture-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T3-B-KEY-PREP-CREATE"), "evidence-*.json");
+            Assert.Single(files);
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("M4-T3-B-KEY-PREP-CREATE", doc.RootElement.GetProperty("case_id").GetString());
+
+            Assert.DoesNotContain(RealAccountId, json);
+            Assert.DoesNotContain(RealKeyValue, json);
+            Assert.DoesNotContain(RealAccountId, output.ToString());
+            Assert.DoesNotContain(RealKeyValue, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateM4T3DeletedFixtureKeyExecute_WithCreateKeyConfirmation_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeHandler();
+            var config = CreateDeletedFixtureE2EConfig();
+            var dependencies = BuildDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-m4-t3-deleted-fixture-key", "--execute", "--confirm-create-key" },
+                config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-B-KEY-PREP-CREATE")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteM4T3FixtureKeyDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeDeleteHandler();
+            var config = DeleteFixtureE2EConfig();
+            var dependencies = BuildDeleteDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "delete-m4-t3-fixture-key" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-B-KEY-PREP-DELETE")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+            Assert.DoesNotContain(RealDeletedFixtureKeyId, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteM4T3FixtureKeyExecute_FullPath_ProducesExactlyOneHttpCall_AndEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeDeleteHandler();
+            var config = DeleteFixtureE2EConfig();
+            var dependencies = BuildDeleteDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "delete-m4-t3-fixture-key", "--execute", "--confirm-delete-m4-t3-fixture-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            Assert.Null(handler.LastRequestBody);
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T3-B-KEY-PREP-DELETE"), "evidence-*.json");
+            Assert.Single(files);
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("M4-T3-B-KEY-PREP-DELETE", doc.RootElement.GetProperty("case_id").GetString());
+
+            Assert.DoesNotContain(RealDeletedFixtureKeyId, json);
+            Assert.DoesNotContain(RealDeletedFixtureKeyId, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteM4T3FixtureKeyExecute_WithDeleteKeyConfirmation_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeDeleteHandler();
+            var config = DeleteFixtureE2EConfig();
+            var dependencies = BuildDeleteDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "delete-m4-t3-fixture-key", "--execute", "--confirm-delete-key" },
+                config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T3-B-KEY-PREP-DELETE")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // create-qr-static-deleted-key (M4-T3-B final) sigue apuntando
+    // EXCLUSIVAMENTE a PASSPORT_TEST_QR_DELETED_KEY_ID tras XPAY-492 — y el
+    // key_id de la llave desechable creada/eliminada en esta preparación es
+    // el mismo que finalmente consumiría ese comando (identidad, no
+    // ejecutado aquí).
+    [Fact]
+    public async Task CreateQrStaticDeletedKeyExecute_UsesOnlyQrDeletedKeyId_AfterM4T3PrepIntroduced()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = DeletedKeyE2EConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static-deleted-key", "--execute", "--confirm-create-qr-static-deleted-key" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            using var bodyDoc = JsonDocument.Parse(handler.LastRequestBody!);
+            Assert.Equal(RealDeletedKeyId, bodyDoc.RootElement.GetProperty("key_id").GetString());
+            Assert.NotEqual(RealDeletedFixtureKeyId, bodyDoc.RootElement.GetProperty("key_id").GetString());
         }
         finally
         {

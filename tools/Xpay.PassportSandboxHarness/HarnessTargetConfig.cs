@@ -56,7 +56,8 @@ public sealed record HarnessTargetConfig(
     bool BrebKeyValuePresent,
     bool QrKeyIdPresent,
     bool QrDecodeDataFilePathPresent,
-    bool QrSuspendedKeyIdPresent)
+    bool QrSuspendedKeyIdPresent,
+    bool QrDeletedKeyIdPresent)
 {
     public const string EnvAccountId   = "PASSPORT_TEST_ACCOUNT_ID";
     public const string EnvNewKeyType  = "PASSPORT_TEST_NEW_KEY_TYPE";
@@ -111,6 +112,26 @@ public sealed record HarnessTargetConfig(
     // (llave DELETED de M3, target exclusivo de M4-T3-B) — ver
     // AllPresentForCreateQrStaticSuspendedKey.
     public const string EnvQrSuspendedKeyId = "PASSPORT_TEST_QR_SUSPENDED_KEY_ID";
+
+    // XPAY-492 — target DEDICADO de create-qr-static-deleted-key (M4-T3-B),
+    // reemplaza a PASSPORT_TEST_NEW_KEY_ID como fuente de este subcaso.
+    // Motivo: XPAY-487/488/490/491 confirmaron que tanto
+    // PASSPORT_TEST_NEW_KEY_ID como PASSPORT_TEST_NEW_KEY_VALUE quedaron
+    // contaminados (ambos coinciden hoy con la llave ACTIVA de M4-T1/T2) y
+    // que el key_id/key_value histórico de M3 no es recuperable localmente
+    // — ni siquiera vía List Keys (XPAY-490 lo confirmó con una llamada
+    // real). Dirección decidió abandonar la reutilización de esa llave
+    // histórica: M4-T3-B usa en adelante una llave DESECHABLE dedicada,
+    // creada y eliminada específicamente para este subcaso (ver
+    // create-m4-t3-deleted-fixture-key/delete-m4-t3-fixture-key abajo). Su
+    // key_id real vivirá, cuando exista, EXCLUSIVAMENTE en
+    // ~/.passport-sandbox.env bajo este nombre nuevo — nunca hardcodeado,
+    // nunca derivado de PASSPORT_TEST_NEW_KEY_ID/_VALUE (los valores
+    // contaminados). PROHIBIDO cualquier fallback hacia
+    // PASSPORT_TEST_NEW_KEY_ID (llave M3 contaminada/abandonada),
+    // PASSPORT_TEST_QR_KEY_ID (llave ACTIVA protegida) o
+    // PASSPORT_TEST_QR_SUSPENDED_KEY_ID (target exclusivo de M4-T3-A).
+    public const string EnvQrDeletedKeyId = "PASSPORT_TEST_QR_DELETED_KEY_ID";
 
     public bool AllPresentForCreateKey  => AccountIdPresent && NewKeyTypePresent && NewKeyValuePresent;
 
@@ -168,12 +189,14 @@ public sealed record HarnessTargetConfig(
     // hacia la llave deleted de M3-T3-B.
     public bool AllPresentForCreateQrStaticSuspendedKey => QrSuspendedKeyIdPresent && CustomerIdPresent;
 
-    // XPAY-471 — target de create-qr-static-deleted-key (M4-T3-B):
-    // PASSPORT_TEST_NEW_KEY_ID (llave DELETED de M3, usada ÚNICAMENTE como
-    // referencia histórica, nunca mutada) + PASSPORT_TEST_CUSTOMER_ID
-    // (customer_id VÁLIDO — lo único deliberadamente incorrecto en M4-T3 es
-    // el target de M4-T3-C, no éste).
-    public bool AllPresentForCreateQrStaticDeletedKey => NewKeyIdPresent && CustomerIdPresent;
+    // XPAY-492 (reemplaza el criterio original de XPAY-471) — target de
+    // create-qr-static-deleted-key (M4-T3-B): PASSPORT_TEST_QR_DELETED_KEY_ID
+    // (llave desechable dedicada de M4-T3-B, nunca la histórica de M3,
+    // contaminada/abandonada) + PASSPORT_TEST_CUSTOMER_ID (customer_id
+    // VÁLIDO — lo único deliberadamente incorrecto en M4-T3 es el target de
+    // M4-T3-C, no éste). DELIBERADAMENTE NewKeyIdPresent YA NO forma parte
+    // de esta condición — sin fallback hacia la llave M3 contaminada.
+    public bool AllPresentForCreateQrStaticDeletedKey => QrDeletedKeyIdPresent && CustomerIdPresent;
 
     // XPAY-471 — target de create-qr-static-invalid-customer (M4-T3-C):
     // ÚNICAMENTE PASSPORT_TEST_QR_KEY_ID (llave ACTIVA protegida, usada
@@ -214,6 +237,26 @@ public sealed record HarnessTargetConfig(
     public bool AllPresentForRecoverDeletedKeyId =>
         AccountIdPresent && NewKeyTypePresent && NewKeyValuePresent;
 
+    // XPAY-492 — target de create-m4-t3-deleted-fixture-key (preparación,
+    // paso 1, de M4-T3-B): ÚNICAMENTE PASSPORT_TEST_ACCOUNT_ID — mismo
+    // criterio exacto que create-m4-t3-suspended-fixture-key (XPAY-474):
+    // key_type es constante BCODE, key_value se genera internamente
+    // (DisposableBcodeGenerator, reutilizado sin cambios), nunca desde el
+    // entorno; esta operación CREA una llave, no depende de ninguna
+    // existente.
+    public bool AllPresentForCreateM4T3DeletedFixtureKey => AccountIdPresent;
+
+    // XPAY-492 — target de delete-m4-t3-fixture-key (preparación, paso 2,
+    // de M4-T3-B): ÚNICAMENTE PASSPORT_TEST_QR_DELETED_KEY_ID — la misma
+    // variable que create-m4-t3-deleted-fixture-key deja pendiente de
+    // configuración manual tras su ejecución real, y que
+    // create-qr-static-deleted-key (M4-T3-B final) ya consume.
+    // DELIBERADAMENTE ni NewKeyIdPresent ni QrKeyIdPresent ni
+    // QrSuspendedKeyIdPresent forman parte de esta condición — sin
+    // fallback hacia la llave M3 contaminada, la llave ACTIVA protegida, ni
+    // la llave suspendida de M4-T3-A.
+    public bool AllPresentForDeleteM4T3FixtureKey => QrDeletedKeyIdPresent;
+
     public static HarnessTargetConfig FromConfiguration(IConfiguration configuration) => new(
         AccountIdPresent:    !string.IsNullOrWhiteSpace(configuration[EnvAccountId]),
         NewKeyTypePresent:   !string.IsNullOrWhiteSpace(configuration[EnvNewKeyType]),
@@ -224,7 +267,8 @@ public sealed record HarnessTargetConfig(
         BrebKeyValuePresent: !string.IsNullOrWhiteSpace(configuration[EnvBrebKeyValue]),
         QrKeyIdPresent:      !string.IsNullOrWhiteSpace(configuration[EnvQrKeyId]),
         QrDecodeDataFilePathPresent: !string.IsNullOrWhiteSpace(configuration[EnvQrDecodeDataFilePath]),
-        QrSuspendedKeyIdPresent:     !string.IsNullOrWhiteSpace(configuration[EnvQrSuspendedKeyId]));
+        QrSuspendedKeyIdPresent:     !string.IsNullOrWhiteSpace(configuration[EnvQrSuspendedKeyId]),
+        QrDeletedKeyIdPresent:       !string.IsNullOrWhiteSpace(configuration[EnvQrDeletedKeyId]));
 
     // Único formato de impresión permitido — jamás el valor (y, para
     // EnvQrDecodeDataFilePath, ni siquiera la ruta — sólo AVAILABLE/MISSING,
@@ -241,5 +285,6 @@ public sealed record HarnessTargetConfig(
         yield return $"{EnvQrKeyId}={(QrKeyIdPresent ? "AVAILABLE" : "MISSING")}";
         yield return $"{EnvQrDecodeDataFilePath}={(QrDecodeDataFilePathPresent ? "AVAILABLE" : "MISSING")}";
         yield return $"{EnvQrSuspendedKeyId}={(QrSuspendedKeyIdPresent ? "AVAILABLE" : "MISSING")}";
+        yield return $"{EnvQrDeletedKeyId}={(QrDeletedKeyIdPresent ? "AVAILABLE" : "MISSING")}";
     }
 }

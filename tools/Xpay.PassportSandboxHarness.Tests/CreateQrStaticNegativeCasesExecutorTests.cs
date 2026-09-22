@@ -205,19 +205,22 @@ public class CreateQrStaticNegativeCasesExecutorTests
     // M4-T3-B — Deleted Key
     // ══════════════════════════════════════════════════════════════════════
 
-    private const string SyntheticDeletedKeyId = "synthetic-deleted-new-key-id-001";
+    private const string SyntheticDeletedFixtureKeyId = "synthetic-deleted-fixture-key-id-001";
 
     private static IConfiguration DeletedKeyConfig(
-        string? newKeyId = SyntheticDeletedKeyId, string? customerId = SyntheticCustomerId)
+        string? qrDeletedKeyId = SyntheticDeletedFixtureKeyId, string? customerId = SyntheticCustomerId,
+        string? newKeyId = null, string? newKeyValue = null)
     {
         var dict = new Dictionary<string, string?>();
-        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        if (qrDeletedKeyId is not null) dict[HarnessTargetConfig.EnvQrDeletedKeyId] = qrDeletedKeyId;
         if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
+        if (newKeyId is not null) dict[HarnessTargetConfig.EnvNewKeyId] = newKeyId;
+        if (newKeyValue is not null) dict[HarnessTargetConfig.EnvNewKeyValue] = newKeyValue;
         return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
     }
 
     [Fact]
-    public async Task DeletedKey_Success_CallsOnlyCreateQrCodeAsync_ExactlyOnce_UsesNewKeyIdOnly()
+    public async Task DeletedKey_Success_CallsOnlyCreateQrCodeAsync_ExactlyOnce_UsesQrDeletedKeyIdOnly()
     {
         var client = new FakeQrClient();
 
@@ -226,7 +229,7 @@ public class CreateQrStaticNegativeCasesExecutorTests
 
         Assert.Equal(1, client.CreateQrCodeCallCount);
         Assert.Equal(0, client.DecodeQrCodeCallCount);
-        Assert.Equal(SyntheticDeletedKeyId, client.LastRequest!.KeyId);
+        Assert.Equal(SyntheticDeletedFixtureKeyId, client.LastRequest!.KeyId);
         Assert.Equal(SyntheticCustomerId, client.LastRequest.CustomerId);
         AssertStaticContractShape(client.LastRequest);
         Assert.Equal(KeyOperationOutcome.Success, result.Outcome);
@@ -234,13 +237,33 @@ public class CreateQrStaticNegativeCasesExecutorTests
         Assert.Equal("POST /v1/qrcodes", result.Evidence.Operation);
     }
 
+    // Regresión CRÍTICA (XPAY-492): incluso si PASSPORT_TEST_NEW_KEY_ID/
+    // PASSPORT_TEST_NEW_KEY_VALUE (la llave histórica de M3, hoy
+    // contaminada/abandonada) están presentes, el executor JAMÁS los usa —
+    // sólo PASSPORT_TEST_QR_DELETED_KEY_ID.
     [Fact]
-    public async Task DeletedKey_MissingNewKeyId_IsLocalBlocked_NeverCallsClient()
+    public async Task DeletedKey_Success_NeverUsesContaminatedM3Key_EvenWhenPresent()
+    {
+        const string contaminatedKeyId    = "synthetic-contaminated-m3-key-id-should-never-be-used";
+        const string contaminatedKeyValue = "0099999999";
+        var client = new FakeQrClient();
+
+        await CreateQrStaticDeletedKeyExecutor.ExecuteAsync(
+            DeletedKeyConfig(newKeyId: contaminatedKeyId, newKeyValue: contaminatedKeyValue),
+            client, CommitSha(), FixedTime);
+
+        Assert.Equal(SyntheticDeletedFixtureKeyId, client.LastRequest!.KeyId);
+        Assert.NotEqual(contaminatedKeyId, client.LastRequest.KeyId);
+    }
+
+    [Fact]
+    public async Task DeletedKey_MissingQrDeletedKeyId_IsLocalBlocked_NeverCallsClient_NoFallback()
     {
         var client = new FakeQrClient();
 
         var result = await CreateQrStaticDeletedKeyExecutor.ExecuteAsync(
-            DeletedKeyConfig(newKeyId: null), client, CommitSha(), FixedTime);
+            DeletedKeyConfig(qrDeletedKeyId: null, newKeyId: "synthetic-contaminated-m3-key-id"),
+            client, CommitSha(), FixedTime);
 
         Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
         Assert.Equal(0, client.CreateQrCodeCallCount);
@@ -277,7 +300,7 @@ public class CreateQrStaticNegativeCasesExecutorTests
     [Fact]
     public async Task DeletedKey_EvidenceNeverContainsRawIdentifiers()
     {
-        const string realKeyId      = "REAL-DELETED-KEY-ID-must-never-appear-0000003";
+        const string realKeyId      = "REAL-DELETED-FIXTURE-KEY-ID-must-never-appear-0000003";
         const string realCustomerId = "REAL-CUSTOMER-ID-must-never-appear-0000004";
         var client = new FakeQrClient(response: new PassportQrCodeResponse
         {
@@ -286,7 +309,7 @@ public class CreateQrStaticNegativeCasesExecutorTests
         });
 
         var result = await CreateQrStaticDeletedKeyExecutor.ExecuteAsync(
-            DeletedKeyConfig(newKeyId: realKeyId, customerId: realCustomerId), client, CommitSha(), FixedTime);
+            DeletedKeyConfig(qrDeletedKeyId: realKeyId, customerId: realCustomerId), client, CommitSha(), FixedTime);
 
         var evidenceJson = System.Text.Json.JsonSerializer.Serialize(result.Evidence);
         Assert.DoesNotContain(realKeyId, evidenceJson);
