@@ -1,0 +1,63 @@
+{
+  "module_case": "M4-T6",
+  "description": "Casos de error de QR dinámico (clave suspendida, eliminada, customer_id inválido)",
+  "environment": "Passport Sandbox",
+  "technical_status": "COMPLETE",
+  "review_status": "PENDING_PASSPORT_REVIEW",
+
+  "real_executions_total": 3,
+  "retry_count": 0,
+
+  "cases": {
+    "A": {
+      "case_id": "M4-T6-A",
+      "condition": "SUSPENDED_KEY",
+      "source_evidence_file": "docs/certificacion/passport-breb/M4-T6-A/evidence-2026-09-23T11-44-15Z.json",
+      "request_accepted": true,
+      "status": "ACTIVE",
+      "type": "DYNAMIC",
+      "evidence_sha256": "d4d9589a31f8b911bbae231dac2fea6b47a98a024aa337e8a85ed70c552b3400",
+      "repeat_required": false
+    },
+    "B": {
+      "case_id": "M4-T6-B",
+      "condition": "DELETED_KEY",
+      "source_evidence_file": "docs/certificacion/passport-breb/M4-T6-B/evidence-2026-09-23T11-48-35Z.json",
+      "request_accepted": false,
+      "observed_http_status": 404,
+      "safe_error_code": "resource_not_found",
+      "safe_error_message": "key not found.",
+      "evidence_sha256": "b7fd2746e97a37910f762eb8def625d6ab2fa4b4a78c40868130d1c0ba772326",
+      "repeat_required": false
+    },
+    "C": {
+      "case_id": "M4-T6-C",
+      "condition": "INVALID_CUSTOMER_ID",
+      "customer_id_kind": "MALFORMED_UUID_SYNTHETIC",
+      "source_evidence_file": "docs/certificacion/passport-breb/M4-T6-C/evidence-2026-09-23T11-54-02Z.json",
+      "request_accepted": false,
+      "observed_http_status": 400,
+      "safe_error_code": "invalid_parameter_value",
+      "safe_error_message": "UUID version 4 expected",
+      "evidence_sha256": "20edf1521718a7d6943d9a96b1bdfc255ae9500ddd42ed774970e03fb8ad6cb9",
+      "repeat_required": false
+    }
+  },
+
+  "static_comparison": {
+    "note": "Los tres resultados DYNAMIC coinciden empíricamente con sus contrapartes STATIC ya certificadas en M4-T3 (A: QR ACTIVE; B: HTTP 404 resource_not_found; C: HTTP 400 invalid_parameter_value). Esto se documenta como observación factual — no como una regla universal de Passport ni como garantía para casos futuros no probados.",
+    "m4_t6_a_vs_m4_t3_a": "COINCIDE (ambos: Create QR aceptado, status ACTIVE)",
+    "m4_t6_b_vs_m4_t3_b": "COINCIDE (ambos: HTTP 404, resource_not_found, \"key not found.\")",
+    "m4_t6_c_vs_m4_t3_c": "COINCIDE (ambos: HTTP 400, invalid_parameter_value, \"UUID version 4 expected\")"
+  },
+
+  "operations_not_performed": {
+    "decode": true,
+    "payment": true,
+    "resolve": true,
+    "key_create": true,
+    "key_delete": true,
+    "key_suspend": true,
+    "key_update": true
+  }
+}
