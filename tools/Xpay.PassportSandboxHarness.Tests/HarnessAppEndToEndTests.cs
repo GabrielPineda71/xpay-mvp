@@ -3676,4 +3676,198 @@ public class HarnessAppEndToEndTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-517 — M4-T5 (Decode QR Code DINÁMICO), flujo completo real vía
+    // HarnessApp.RunAsync. Reutiliza EXCLUSIVAMENTE un artefacto privado
+    // M4-T4 sintético ya preparado — nunca ejecuta create-qr-dynamic aquí.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private sealed class LocalFakeDecodeQrDynamicHandler : HttpMessageHandler
+    {
+        public int CallCount { get; private set; }
+        public HttpRequestMessage? LastRequest { get; private set; }
+        public string? LastRequestBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            LastRequest = request;
+            LastRequestBody = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    { "status": "ACTIVE", "type": "DYNAMIC", "channel": "MPOS",
+                      "amount": { "value": "10000.00", "currency": "COP" },
+                      "vat": { "vat_type": "FIXED", "vat_value": "100.00", "vat_base_value": "100.00" },
+                      "inc": { "inc_type": "FIXED", "inc_value": "10.00" },
+                      "qr_code_reference": "SYNM4T5E2EREF01",
+                      "tip": { "tip_type": "FIXED", "tip_value": "100.00" } }
+                    """,
+                    System.Text.Encoding.UTF8, "application/json"),
+            };
+        }
+    }
+
+    // Escribe un artefacto privado M4-T4 SINTÉTICO (nunca un valor real de
+    // M4-T4 histórico) en un directorio temporal fuera del repo, y devuelve
+    // la config M4-T5 completa (QrKeyId/CustomerId/ambos destinos privados)
+    // + las dos rutas (para limpieza en `finally`).
+    private static (IConfiguration Config, string M4T4Dir, string M4T5Dir) FullDecodeQrDynamicConfig()
+    {
+        var m4T4Dir = NewTempDir();
+        var m4T5Dir = NewTempDir();
+
+        var m4T4Artifact = new Dictionary<string, object?>
+        {
+            ["case_id"] = "M4-T4",
+            ["backend_commit_sha"] = "synthetic-e2e-commit-sha-0000000000000000000000000000000000000000",
+            ["key_id_fingerprint"] = Fingerprint.Compute(RealQrKeyId),
+            ["customer_id_fingerprint"] = Fingerprint.Compute(RealQrCustomerId),
+            ["status"] = "ACTIVE",
+            ["type"] = "DYNAMIC",
+            ["qr_id_fingerprint"] = "SYNM4T5E2EQRIDFP",
+            ["qr_code_reference_received"] = "SYNM4T5E2EREF01",
+            ["qr_code_data"] = "00020101synthetic-e2e-m4t4-qr-code-data-for-m4t5-decode6304WXYZ",
+            ["qr_code_image"] = "synthetic-e2e-base64-image",
+        };
+        File.WriteAllText(
+            Path.Combine(m4T4Dir, "M4-T4-2026-01-01T00-00-00Z.private.json"),
+            JsonSerializer.Serialize(m4T4Artifact, new JsonSerializerOptions { WriteIndented = true }));
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [PassportOptions.EnvBaseUrl] = BaseUrl,
+                [PassportOptions.EnvClientId] = "synthetic-key",
+                [PassportOptions.EnvClientSecret] = "synthetic-secret",
+                [HarnessTargetConfig.EnvQrKeyId] = RealQrKeyId,
+                [HarnessTargetConfig.EnvCustomerId] = RealQrCustomerId,
+                [M4T4PrivateCapture.EnvPrivateCaptureDir] = m4T4Dir,
+                [M4T5PrivateCapture.EnvPrivateCaptureDir] = m4T5Dir,
+            })
+            .Build();
+
+        return (config, m4T4Dir, m4T5Dir);
+    }
+
+    [Fact]
+    public async Task DecodeQrDynamicDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        var (config, m4T4Dir, m4T5Dir) = FullDecodeQrDynamicConfig();
+        try
+        {
+            var handler = new LocalFakeDecodeQrDynamicHandler();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "decode-qr-dynamic" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T5")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+            Directory.Delete(m4T4Dir, recursive: true);
+            Directory.Delete(m4T5Dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DecodeQrDynamicExecute_FullPath_ProducesExactlyOneHttpCall_AndEvidence()
+    {
+        var dir = NewTempDir();
+        var (config, m4T4Dir, m4T5Dir) = FullDecodeQrDynamicConfig();
+        try
+        {
+            var handler = new LocalFakeDecodeQrDynamicHandler();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "decode-qr-dynamic", "--execute", "--confirm-decode-qr-dynamic" },
+                config, dependencies, output);
+
+            // Exactamente 1 llamada HTTP, POST /v1/qrcodes/decode.
+            Assert.Equal(1, handler.CallCount);
+            Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+            Assert.Equal("/v1/qrcodes/decode", handler.LastRequest.RequestUri!.AbsolutePath);
+
+            // El body enviado lleva el qr_code_data del artefacto M4-T4 —
+            // NUNCA impreso aquí, sólo comparado.
+            using var bodyDoc = JsonDocument.Parse(handler.LastRequestBody!);
+            Assert.Equal(
+                "00020101synthetic-e2e-m4t4-qr-code-data-for-m4t5-decode6304WXYZ",
+                bodyDoc.RootElement.GetProperty("qr_code_data").GetString());
+
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T5"), "evidence-*.json");
+            Assert.Single(files);
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("M4-T5", doc.RootElement.GetProperty("case_id").GetString());
+            Assert.Equal("PASS", doc.RootElement.GetProperty("result").GetString());
+
+            var responseSanitized = doc.RootElement.GetProperty("response_sanitized");
+            Assert.True(responseSanitized.GetProperty("qr_code_reference_match_m4_t4").GetBoolean());
+            Assert.True(responseSanitized.GetProperty("amount_value_matches_expected").GetBoolean());
+            Assert.True(responseSanitized.GetProperty("amount_currency_matches_expected").GetBoolean());
+            Assert.True(responseSanitized.GetProperty("vat_present").GetBoolean());
+            Assert.True(responseSanitized.GetProperty("inc_present").GetBoolean());
+            Assert.True(responseSanitized.GetProperty("private_artifact_captured").GetBoolean());
+
+            // Nunca el qr_code_data/qr_code_reference/tip crudos en la
+            // evidencia versionable.
+            Assert.DoesNotContain("00020101synthetic-e2e-m4t4-qr-code-data", json);
+            Assert.DoesNotContain("SYNM4T5E2EREF01", json);
+            Assert.DoesNotContain("tip_value", json);
+
+            // El JSON crudo (con tip, no modelado por el DTO) SÍ quedó
+            // preservado privadamente, fuera del árbol de evidencia.
+            var privateFiles = Directory.GetFiles(m4T5Dir, "*.private.json");
+            Assert.Single(privateFiles);
+            using var privateDoc = JsonDocument.Parse(File.ReadAllText(privateFiles[0]));
+            var tip = privateDoc.RootElement.GetProperty("raw_response").GetProperty("tip");
+            Assert.Equal("100.00", tip.GetProperty("tip_value").GetString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+            Directory.Delete(m4T4Dir, recursive: true);
+            Directory.Delete(m4T5Dir, recursive: true);
+        }
+    }
+
+    // decode-qr-dynamic (M4-T5) nunca invoca create-qr-dynamic/create-qr-static
+    // ni ningún otro comando — regresión de aislamiento.
+    [Fact]
+    public async Task DecodeQrDynamicExecute_WithCreateQrDynamicConfirmation_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        var (config, m4T4Dir, m4T5Dir) = FullDecodeQrDynamicConfig();
+        try
+        {
+            var handler = new LocalFakeDecodeQrDynamicHandler();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "decode-qr-dynamic", "--execute", "--confirm-create-qr-dynamic" },
+                config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T5")));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+            Directory.Delete(m4T4Dir, recursive: true);
+            Directory.Delete(m4T5Dir, recursive: true);
+        }
+    }
 }

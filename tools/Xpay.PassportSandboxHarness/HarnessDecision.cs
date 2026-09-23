@@ -76,6 +76,10 @@ public enum HarnessCommand
     // XPAY-506 — M4-T4 (Create QR Code DINÁMICO). Comando positivo
     // independiente de todos los anteriores.
     CreateQrDynamic,
+    // XPAY-517 — M4-T5 (Decode QR Code DINÁMICO), reutiliza EXCLUSIVAMENTE
+    // el QR ya creado en M4-T4 (nunca crea un QR nuevo). Comando
+    // independiente de create-qr-dynamic y de decode-qr-static.
+    DecodeQrDynamic,
 }
 
 public static class HarnessDecision
@@ -124,6 +128,8 @@ public static class HarnessDecision
     public const string CommandDeleteM4T3FixtureKey        = "delete-m4-t3-fixture-key";
     // XPAY-506 — M4-T4: Create QR Code DINÁMICO.
     public const string CommandCreateQrDynamic = "create-qr-dynamic";
+    // XPAY-517 — M4-T5: Decode QR Code DINÁMICO.
+    public const string CommandDecodeQrDynamic = "decode-qr-dynamic";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -173,6 +179,10 @@ public static class HarnessDecision
     // autorizada por ninguna otra bandera de confirmación (incluida
     // --confirm-create-qr-static).
     public const string FlagConfirmCreateQrDynamic = "--confirm-create-qr-dynamic";
+    // XPAY-517 — exclusiva de decode-qr-dynamic; no autoriza ni es
+    // autorizada por ninguna otra bandera de confirmación (incluida
+    // --confirm-create-qr-dynamic/--confirm-decode-qr-static).
+    public const string FlagConfirmDecodeQrDynamic = "--confirm-decode-qr-dynamic";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -198,6 +208,7 @@ public static class HarnessDecision
             CommandCreateM4T3DeletedFixtureKey   => HarnessCommand.CreateM4T3DeletedFixtureKey,
             CommandDeleteM4T3FixtureKey          => HarnessCommand.DeleteM4T3FixtureKey,
             CommandCreateQrDynamic               => HarnessCommand.CreateQrDynamic,
+            CommandDecodeQrDynamic               => HarnessCommand.DecodeQrDynamic,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -242,6 +253,7 @@ public static class HarnessDecision
             HarnessCommand.CreateM4T3DeletedFixtureKey   => FlagConfirmCreateM4T3DeletedFixtureKey,
             HarnessCommand.DeleteM4T3FixtureKey          => FlagConfirmDeleteM4T3FixtureKey,
             HarnessCommand.CreateQrDynamic                => FlagConfirmCreateQrDynamic,
+            HarnessCommand.DecodeQrDynamic                => FlagConfirmDecodeQrDynamic,
             _                                      => null,
         };
 

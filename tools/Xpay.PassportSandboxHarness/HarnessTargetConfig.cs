@@ -188,6 +188,18 @@ public sealed record HarnessTargetConfig(
     // PASSPORT_TEST_QR_DELETED_KEY_ID (M4-T3-B).
     public bool AllPresentForCreateQrDynamic => QrKeyIdPresent && CustomerIdPresent;
 
+    // XPAY-517 — target de decode-qr-dynamic (M4-T5): MISMOS dos targets
+    // que create-qr-dynamic (PASSPORT_TEST_QR_KEY_ID + PASSPORT_TEST_CUSTOMER_ID)
+    // — aquí QrKeyId se usa ÚNICAMENTE para el chequeo de identidad contra
+    // el artefacto privado de M4-T4 (nunca se envía en el request de
+    // Decode, que sólo lleva customer_id + qr_code_data). Los destinos
+    // privados (lectura del artefacto M4-T4, escritura del artefacto
+    // propio de M4-T5) se validan exclusivamente dentro de
+    // DecodeQrDynamicExecutor.ExecuteAsync — mismo criterio ya establecido
+    // para PASSPORT_TEST_M4_T4_PRIVATE_CAPTURE_DIR (XPAY-508): nunca
+    // forman parte de este chequeo de presencia genérico de dry-run.
+    public bool AllPresentForDecodeQrDynamic => QrKeyIdPresent && CustomerIdPresent;
+
     // XPAY-465 — target de decode-qr-static (M4-T2): la RUTA al archivo
     // local privado con el qr_code_data real, + customer_id. Sin fallback a
     // ningún otro dato (nunca deriva qr_code_data de PASSPORT_TEST_NEW_KEY_ID/

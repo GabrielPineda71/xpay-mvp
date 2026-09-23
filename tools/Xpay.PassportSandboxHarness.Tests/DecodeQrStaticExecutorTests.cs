@@ -58,6 +58,10 @@ public class DecodeQrStaticExecutorTests
                 QrCodeReference = "SYNM4T2REF01",
             });
         }
+
+        public Task<(PassportDecodeQrCodeResponse? Response, string? RawResponseJson)> DecodeQrCodeWithRawCaptureAsync(
+            PassportDecodeQrCodeRequest request, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("DecodeQrCodeWithRawCaptureAsync NUNCA debe invocarse desde decode-qr-static (M4-T2) — exclusivo de decode-qr-dynamic (M4-T5).");
     }
 
     private const string SyntheticCustomerId = "synthetic-decode-customer-id-001";

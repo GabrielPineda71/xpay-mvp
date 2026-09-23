@@ -1759,6 +1759,98 @@ public class HarnessOrchestratorTests
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // XPAY-517 — decode-qr-dynamic (M4-T5): mismo par de targets que
+    // create-qr-dynamic (PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID)
+    // a nivel de Prepare/dry-run — los destinos privados (artefacto M4-T4/
+    // captura propia M4-T5) se validan exclusivamente dentro de
+    // DecodeQrDynamicExecutor.ExecuteAsync, nunca aquí.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration ConfigWithDecodeQrDynamicTarget(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? qrKeyId = ValidTargetKeyId, string? customerId = ValidCustomerId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (qrKeyId is not null) dict[HarnessTargetConfig.EnvQrKeyId] = qrKeyId;
+        if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrDynamicNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "decode-qr-dynamic" }, ConfigWithDecodeQrDynamicTarget());
+        Assert.Equal(HarnessCommand.DecodeQrDynamic, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrDynamic_MissingQrKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-dynamic" }, ConfigWithDecodeQrDynamicTarget(qrKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrDynamic_MissingCustomerId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-dynamic" }, ConfigWithDecodeQrDynamicTarget(customerId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrDynamic_ExecuteWithoutConfirm_ReturnsAbortedMissingConfirmation()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-dynamic", "--execute" }, ConfigWithDecodeQrDynamicTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-qr-dynamic")]
+    [InlineData("--confirm-decode-qr-static")]
+    [InlineData("--confirm-create-qr-static")]
+    public void Prepare_DecodeQrDynamic_OtherConfirmations_DoNotAuthorize(string wrongConfirmFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-dynamic", "--execute", wrongConfirmFlag }, ConfigWithDecodeQrDynamicTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_DecodeQrDynamic_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "decode-qr-dynamic", "--execute", "--confirm-decode-qr-dynamic" },
+            ConfigWithDecodeQrDynamicTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    // --confirm-decode-qr-dynamic NUNCA autoriza create-qr-dynamic, y viceversa.
+    [Fact]
+    public void Prepare_CreateQrDynamic_ConfirmDecodeQrDynamic_DoesNotAuthorize()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic", "--execute", "--confirm-decode-qr-dynamic" }, ConfigWithDecodeQrDynamicTarget());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("create-key")]
+    [InlineData("decode-qr-static")]
+    public void Prepare_OtherCommands_ConfirmDecodeQrDynamic_DoesNotAuthorize(string otherCommand)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { otherCommand, "--execute", "--confirm-decode-qr-dynamic" }, ConfigWithTargets());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // XPAY-492 — preparación de la llave desechable de M4-T3-B: dos
     // operaciones INDEPENDIENTES entre sí y de cualquier otro comando
     // (Create/Delete Fixture Key), target/confirmación completamente

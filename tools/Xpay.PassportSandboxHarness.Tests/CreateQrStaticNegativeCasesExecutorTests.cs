@@ -57,6 +57,10 @@ public class CreateQrStaticNegativeCasesExecutorTests
             DecodeQrCodeCallCount++;
             throw new InvalidOperationException("DecodeQrCodeAsync NUNCA debe invocarse desde los subcasos M4-T3.");
         }
+
+        public Task<(PassportDecodeQrCodeResponse? Response, string? RawResponseJson)> DecodeQrCodeWithRawCaptureAsync(
+            PassportDecodeQrCodeRequest request, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("DecodeQrCodeWithRawCaptureAsync NUNCA debe invocarse desde los subcasos M4-T3.");
     }
 
     private static readonly DateTime FixedTime = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);

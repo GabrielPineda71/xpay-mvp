@@ -235,6 +235,24 @@ public static class HarnessApp
                 output.WriteLine("note=M4-T4: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-506)");
                 return;
 
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrDynamic:
+                // XPAY-517 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID en este
+                // modo, y mucho menos resuelve/abre el artefacto privado de
+                // M4-T4 — eso sólo ocurre en ReadyToExecute, dentro de
+                // DecodeQrDynamicExecutor. No se construye ningún
+                // PassportDecodeQrCodeRequest, no se obtiene token, no hay
+                // HTTP, no hay evidencia.
+                output.WriteLine("case=M4-T5 (Decode QR Code — DINÁMICO, reutiliza el QR de M4-T4)");
+                output.WriteLine("endpoint=POST /v1/qrcodes/decode");
+                output.WriteLine("mutating=NO (read-only, decodifica un QR ya existente)");
+                output.WriteLine("requires=--execute --confirm-decode-qr-dynamic");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T5: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-517)");
+                return;
+
             case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrStatic:
                 // XPAY-465 — NUNCA lee los valores reales de
                 // PASSPORT_TEST_CUSTOMER_ID/PASSPORT_TEST_QR_DECODE_DATA_FILE
@@ -609,6 +627,30 @@ public static class HarnessApp
                 var dynamicPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
                 output.WriteLine($"result={execution.Evidence!.Result}");
                 output.WriteLine($"evidence_path={dynamicPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.DecodeQrDynamic:
+            {
+                var execution = await DecodeQrDynamicExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-517 — un bloqueo LOCAL (target ausente, artefacto
+                    // privado M4-T4 ausente/no coincidente, destino privado
+                    // M4-T5 inválido, commit SHA no resoluble) NUNCA escribe
+                    // evidence.json. `Detail` nunca incluye rutas privadas
+                    // ni material crudo.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m4T5Path = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m4T5Path}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 return;
             }

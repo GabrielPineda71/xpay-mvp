@@ -46,9 +46,149 @@ public sealed class PassportHttpClient : IPassportHttpClient
         _logger            = logger;
     }
 
+    // XPAY-517 — límite de tamaño DEDICADO para el body exitoso capturado
+    // por PostWithRawCaptureAsync — deliberadamente SEPARADO de
+    // PassportErrorBodySanitizer.MaxBodyLengthForDiagnosticsBytes (4096,
+    // pensado para diagnóstico de ERROR, un propósito distinto). 64KB es
+    // ampliamente suficiente para una respuesta de Decode QR Code (sin
+    // campo qr_code_image) y no afecta a ningún otro endpoint: este límite
+    // SÓLO se aplica dentro de PostWithRawCaptureAsync, nunca dentro de
+    // SendAsync/PostAsync (usados por todos los demás consumidores).
+    public const int RawCaptureMaxSuccessBodyLengthBytes = 65536;
+
     public Task<TResponse?> PostAsync<TRequest, TResponse>(
         string relativePath, TRequest body, CancellationToken cancellationToken = default)
         => SendAsync<TRequest, TResponse>(HttpMethod.Post, relativePath, body, cancellationToken);
+
+    // XPAY-517 — implementación COMPLETAMENTE SEPARADA de SendAsync: no la
+    // invoca, no comparte código con ella, no modifica su comportamiento.
+    // Duplica deliberadamente la porción de auth/transporte/manejo de
+    // errores (mismo criterio ya usado en el resto de la integración:
+    // seguridad de los consumidores productivos existentes por encima de
+    // DRY) para que SendAsync/PostAsync permanezcan bit-a-bit idénticos a
+    // como estaban antes de XPAY-517 — cero riesgo de regresión para
+    // Keys/Customers/Payments/Create QR/Decode QR (vía PostAsync).
+    public async Task<(TResponse? Response, string? RawResponseJson)> PostWithRawCaptureAsync<TRequest, TResponse>(
+        string relativePath, TRequest body, CancellationToken cancellationToken = default)
+    {
+        var options = PassportOptions.FromConfiguration(_configuration, out _);
+
+        if (string.IsNullOrWhiteSpace(options.BaseUrl))
+            throw new PassportConfigurationException(
+                "PASSPORT_BASE_URL ausente — no se puede construir la URL de destino.");
+
+        if (!Uri.TryCreate(CombineBaseAndPath(options.BaseUrl!, relativePath), UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new PassportConfigurationException("PASSPORT_BASE_URL no es una URL http/https absoluta válida.");
+        }
+
+        var accessToken = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+
+        var client = _httpClientFactory.CreateClient();
+
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(options.TimeoutSeconds));
+        using var linkedCts  = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, uri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        if (body is not null)
+            request.Content = JsonContent.Create(body);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("passport.http: timeout de transporte tras {Timeout}s (raw capture).", options.TimeoutSeconds);
+            throw new PassportTransportException("Timeout de conexión con Passport.");
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning("passport.http: fallo de conexión (raw capture). ExceptionType={Type}", ex.GetType().Name);
+            throw new PassportTransportException("Error de conexión con Passport.");
+        }
+
+        using (response)
+        {
+            var status = (int)response.StatusCode;
+
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                _logger.LogWarning("passport.http: rechazo de autorización HTTP {Status} (raw capture).", status);
+                throw new PassportAuthenticationException($"Passport rechazó la solicitud (HTTP {status}).");
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var rawErrorBody = await ReadBoundedBodyAsync(
+                        response.Content,
+                        PassportErrorBodySanitizer.MaxBodyLengthForDiagnosticsBytes,
+                        linkedCts.Token)
+                    .ConfigureAwait(false);
+                var diagnostics = PassportErrorBodySanitizer.Extract(rawErrorBody);
+
+                _logger.LogWarning(
+                    "passport.http: respuesta de error HTTP {Status} (raw capture). safe_error_code={SafeErrorCode}",
+                    status, diagnostics.SafeErrorCode ?? "(none)");
+
+                throw new PassportTransportException(
+                    $"Passport respondió con error HTTP {status}.",
+                    statusCode: status,
+                    safeErrorCode: diagnostics.SafeErrorCode,
+                    safeErrorMessage: diagnostics.SafeErrorMessage);
+            }
+
+            if (response.Content.Headers.ContentLength is 0)
+                return (default, null);
+
+            // XPAY-517 — a diferencia de SendAsync (ReadFromJsonAsync directo
+            // desde el stream), aquí se lee el body COMPLETO como texto
+            // ACOTADO primero (reutilizando ReadBoundedBodyAsync, ya
+            // existente), y LUEGO se deserializa desde ese mismo texto — el
+            // texto crudo queda disponible para el llamador (nunca impreso
+            // ni logueado por esta clase). Si el body excede el límite, se
+            // descarta por completo (nunca un fragmento) y Response queda
+            // null — mismo criterio fail-closed que ReadBoundedBodyAsync ya
+            // aplica a diagnóstico de error.
+            string? rawBody;
+            try
+            {
+                rawBody = await ReadBoundedBodyAsync(
+                        response.Content, RawCaptureMaxSuccessBodyLengthBytes, linkedCts.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            if (rawBody is null)
+            {
+                _logger.LogWarning("passport.http: respuesta exitosa excede el límite de captura cruda o es ilegible.");
+                return (default, null);
+            }
+
+            try
+            {
+                var typed = JsonSerializer.Deserialize<TResponse>(rawBody, JsonOpts);
+                return (typed, rawBody);
+            }
+            catch (JsonException)
+            {
+                _logger.LogWarning("passport.http: respuesta ilegible (raw capture).");
+                throw new PassportProtocolException("Respuesta de Passport no interpretable.");
+            }
+        }
+    }
 
     public Task<TResponse?> GetAsync<TResponse>(
         string relativePath, CancellationToken cancellationToken = default)
