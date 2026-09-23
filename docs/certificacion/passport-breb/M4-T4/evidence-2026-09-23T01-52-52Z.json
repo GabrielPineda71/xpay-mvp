@@ -1,0 +1,18 @@
+{
+  "case_id": "M4-T4",
+  "executed_at_utc": "2026-09-23T01:52:52Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "899b3da40eccf4b50aa16a920212d8515d9e61fe",
+  "operation": "POST /v1/qrcodes",
+  "http_status": null,
+  "result": "FAIL",
+  "request_sanitized": {},
+  "response_sanitized": {
+    "observed_http_status": 400,
+    "error_code": "invalid_parameter_value",
+    "error_message": "amount is invalid."
+  },
+  "automated_test_reference": null,
+  "notes": "PASSPORT_HTTP_FAILURE: Passport respondi\u00F3 con error HTTP 400.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
