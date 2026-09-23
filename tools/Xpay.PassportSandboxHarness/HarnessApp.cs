@@ -76,6 +76,8 @@ public static class HarnessApp
                 output.WriteLine("     create-qr-dynamic-invalid-customer [--execute --confirm-create-qr-dynamic-invalid-customer]");
                 output.WriteLine("     create-breb-payment-cert           [--execute --confirm-create-breb-payment-cert]");
                 output.WriteLine("     retrieve-breb-payment-cert         [--execute --confirm-retrieve-breb-payment-cert]");
+                output.WriteLine("     create-m5-customer-b                [--execute --confirm-create-m5-customer-b]");
+                output.WriteLine("     create-m5-account-b                 [--execute --confirm-create-m5-account-b]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -337,6 +339,42 @@ public static class HarnessApp
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 output.WriteLine("note=payment_id proviene EXCLUSIVAMENTE del artefacto privado M5-PAYMENT-CREATE — nunca hardcoded, nunca histórico");
                 output.WriteLine("note=M5-PAYMENT-RETRIEVE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-529)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateM5CustomerB:
+                // XPAY-531 — NUNCA lee PASSPORT_TEST_M5_CUSTOMER_B_FIXTURE_FILE
+                // en este modo, y mucho menos su CONTENIDO — eso sólo ocurre
+                // en ReadyToExecute, dentro de CreateM5CustomerBExecutor. No
+                // se construye ningún PassportLinkMerchantRequest, no se
+                // obtiene token, no hay HTTP. Aislado de todo servicio de
+                // producto XPAY — llamada directa harness ->
+                // IPassportCustomerAccountClient -> Passport.
+                output.WriteLine("case=M5-T1-A (Create/Link Customer B — infraestructura de certificación)");
+                output.WriteLine("endpoint=POST /v1/customers/business/link");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-531)");
+                output.WriteLine("requires=--execute --confirm-create-m5-customer-b");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=Customer B es un cliente SINTÉTICO dedicado a certificación — nunca el Customer A ni datos de identificación reales");
+                output.WriteLine("note=M5-T1-A: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-531)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateM5AccountB:
+                // XPAY-531 — NUNCA lee PASSPORT_TEST_M5_ACCOUNT_B_ACCOUNT_NUMBER
+                // ni resuelve/abre el artefacto privado de Customer B (M5-T1-A)
+                // en este modo — eso sólo ocurre en ReadyToExecute, dentro de
+                // CreateM5AccountBExecutor.
+                output.WriteLine("case=M5-T1-B (Create/Link Account B — infraestructura de certificación)");
+                output.WriteLine("endpoint=POST /v1/accounts/link");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-531)");
+                output.WriteLine("requires=--execute --confirm-create-m5-account-b");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=customer_id proviene EXCLUSIVAMENTE del artefacto privado M5-T1-A — nunca hardcoded, nunca Customer A, nunca un argumento CLI");
+                output.WriteLine("note=account_number NUNCA es PASSPORT_ACCOUNT_ID (la cuenta operativa de XPAY) — Account B no es la cuenta operativa");
+                output.WriteLine("note=M5-T1-B: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-531)");
                 return;
 
             case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrStatic:
@@ -841,6 +879,54 @@ public static class HarnessApp
                 output.WriteLine($"result={execution.Evidence!.Result}");
                 output.WriteLine($"evidence_path={m5RetrievePath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateM5CustomerB:
+            {
+                var execution = await CreateM5CustomerBExecutor
+                    .ExecuteAsync(configuration, dependencies.CustomerAccountClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-531 — un bloqueo LOCAL (fixture ausente/incompleta,
+                    // destino privado inválido, commit SHA no resoluble)
+                    // NUNCA escribe evidence.json. `Detail` nunca incluye
+                    // datos de identificación ni rutas privadas.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m5CustomerBPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m5CustomerBPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateM5AccountB:
+            {
+                var execution = await CreateM5AccountBExecutor
+                    .ExecuteAsync(configuration, dependencies.CustomerAccountClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-531 — un bloqueo LOCAL (account_number ausente,
+                    // artefacto privado Customer B ausente/no válido, destino
+                    // privado Account B inválido, commit SHA no resoluble)
+                    // NUNCA escribe evidence.json. `Detail` nunca incluye
+                    // valores crudos ni rutas privadas.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m5AccountBPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m5AccountBPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=Account B NO se asume equivalente a la cuenta operativa de XPAY, ni account_id_B se usará automáticamente como Payment.account_id");
                 return;
             }
 

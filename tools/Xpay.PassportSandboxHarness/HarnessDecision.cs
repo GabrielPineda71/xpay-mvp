@@ -92,6 +92,14 @@ public enum HarnessCommand
     // M1-M4 los autoriza, y viceversa.
     CreateBrebPaymentCert,
     RetrieveBrebPaymentCert,
+    // XPAY-531 — M5-T1 (Create/Link Customer B + Account B), infraestructura
+    // de certificación. Comandos independientes entre sí y de todos los
+    // anteriores — mismo criterio de no-conflación. NINGUNA confirmación
+    // M1-M4/M5-Payment los autoriza, y viceversa. Account B debe ejecutarse
+    // DESPUÉS de Customer B (obtiene customer_id exclusivamente de su
+    // artefacto privado) pero cada uno conserva su propia bandera.
+    CreateM5CustomerB,
+    CreateM5AccountB,
 }
 
 public static class HarnessDecision
@@ -150,6 +158,9 @@ public static class HarnessDecision
     // Bre-B Payment.
     public const string CommandCreateBrebPaymentCert   = "create-breb-payment-cert";
     public const string CommandRetrieveBrebPaymentCert = "retrieve-breb-payment-cert";
+    // XPAY-531 — M5-T1: Create/Link Customer B + Account B.
+    public const string CommandCreateM5CustomerB = "create-m5-customer-b";
+    public const string CommandCreateM5AccountB  = "create-m5-account-b";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -212,6 +223,11 @@ public static class HarnessDecision
     // ninguna otra bandera de confirmación (incluidas las de M1-M4).
     public const string FlagConfirmCreateBrebPaymentCert   = "--confirm-create-breb-payment-cert";
     public const string FlagConfirmRetrieveBrebPaymentCert = "--confirm-retrieve-breb-payment-cert";
+    // XPAY-531 — exclusivas de M5-T1 Customer B/Account B; ninguna autoriza
+    // ni es autorizada por ninguna otra bandera de confirmación (incluidas
+    // las de M5 Payment).
+    public const string FlagConfirmCreateM5CustomerB = "--confirm-create-m5-customer-b";
+    public const string FlagConfirmCreateM5AccountB  = "--confirm-create-m5-account-b";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -243,6 +259,8 @@ public static class HarnessDecision
             CommandCreateQrDynamicInvalidCustomer => HarnessCommand.CreateQrDynamicInvalidCustomer,
             CommandCreateBrebPaymentCert   => HarnessCommand.CreateBrebPaymentCert,
             CommandRetrieveBrebPaymentCert => HarnessCommand.RetrieveBrebPaymentCert,
+            CommandCreateM5CustomerB => HarnessCommand.CreateM5CustomerB,
+            CommandCreateM5AccountB  => HarnessCommand.CreateM5AccountB,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -293,6 +311,8 @@ public static class HarnessDecision
             HarnessCommand.CreateQrDynamicInvalidCustomer => FlagConfirmCreateQrDynamicInvalidCustomer,
             HarnessCommand.CreateBrebPaymentCert   => FlagConfirmCreateBrebPaymentCert,
             HarnessCommand.RetrieveBrebPaymentCert => FlagConfirmRetrieveBrebPaymentCert,
+            HarnessCommand.CreateM5CustomerB => FlagConfirmCreateM5CustomerB,
+            HarnessCommand.CreateM5AccountB  => FlagConfirmCreateM5AccountB,
             _                                      => null,
         };
 
