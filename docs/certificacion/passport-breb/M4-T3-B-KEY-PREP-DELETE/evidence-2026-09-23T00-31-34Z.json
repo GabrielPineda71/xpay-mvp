@@ -1,0 +1,16 @@
+{
+  "case_id": "M4-T3-B-KEY-PREP-DELETE",
+  "executed_at_utc": "2026-09-23T00:31:34Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "7d7bdcbdd0fa471af7b814a35695bad36216f53c",
+  "operation": "DELETE /v1/keys/{key_id}",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "key_id_fingerprint": "8A15DB69E7E0"
+  },
+  "response_sanitized": {},
+  "automated_test_reference": null,
+  "notes": "M4-T3-B-KEY-PREP-DELETE: llave desechable eliminada. El key_id_fingerprint de este registro debe coincidir con el de M4-T3-B-KEY-PREP-CREATE \u2014 misma llave, ciclo Create\u2192Delete completo.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
