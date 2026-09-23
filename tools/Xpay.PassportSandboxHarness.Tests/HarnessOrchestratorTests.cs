@@ -1851,6 +1851,176 @@ public class HarnessOrchestratorTests
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // XPAY-522 — M4-T6, tres subcasos negativos DYNAMIC. Cada uno con
+    // target/confirmación exclusivos — ninguno autoriza a los otros dos,
+    // ni a M4-T3/M4-T4/M4-T5, y viceversa (XPAY-522 §17).
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration ConfigWithM4T6Target(
+        string? baseUrl = ValidSandboxUrl, string? apiKey = "synthetic-key", string? apiSecret = "synthetic-secret",
+        string? qrKeyId = ValidTargetKeyId, string? qrSuspendedKeyId = ValidTargetKeyId,
+        string? qrDeletedKeyId = ValidTargetKeyId, string? customerId = ValidCustomerId)
+    {
+        var dict = new Dictionary<string, string?>();
+        if (baseUrl is not null) dict[PassportOptions.EnvBaseUrl] = baseUrl;
+        if (apiKey is not null) dict[PassportOptions.EnvClientId] = apiKey;
+        if (apiSecret is not null) dict[PassportOptions.EnvClientSecret] = apiSecret;
+        if (qrKeyId is not null) dict[HarnessTargetConfig.EnvQrKeyId] = qrKeyId;
+        if (qrSuspendedKeyId is not null) dict[HarnessTargetConfig.EnvQrSuspendedKeyId] = qrSuspendedKeyId;
+        if (qrDeletedKeyId is not null) dict[HarnessTargetConfig.EnvQrDeletedKeyId] = qrDeletedKeyId;
+        if (customerId is not null) dict[HarnessTargetConfig.EnvCustomerId] = customerId;
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    // ── M4-T6-A (suspended) ──────────────────────────────────────────────
+
+    [Fact]
+    public void Prepare_CreateQrDynamicSuspendedNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "create-qr-dynamic-suspended" }, ConfigWithM4T6Target());
+        Assert.Equal(HarnessCommand.CreateQrDynamicSuspendedKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrDynamicSuspended_MissingSuspendedKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-suspended" }, ConfigWithM4T6Target(qrSuspendedKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrDynamicSuspended_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-suspended", "--execute", "--confirm-create-qr-dynamic-suspended" },
+            ConfigWithM4T6Target());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-qr-dynamic-deleted")]
+    [InlineData("--confirm-create-qr-dynamic-invalid-customer")]
+    [InlineData("--confirm-create-qr-dynamic")]
+    [InlineData("--confirm-create-qr-static-suspended-key")]
+    public void Prepare_CreateQrDynamicSuspended_OtherConfirmations_DoNotAuthorize(string wrongFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-suspended", "--execute", wrongFlag }, ConfigWithM4T6Target());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_OtherCommands_ConfirmCreateQrDynamicSuspended_DoesNotAuthorize()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-deleted", "--execute", "--confirm-create-qr-dynamic-suspended" },
+            ConfigWithM4T6Target());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // ── M4-T6-B (deleted) ────────────────────────────────────────────────
+
+    [Fact]
+    public void Prepare_CreateQrDynamicDeletedNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(new[] { "create-qr-dynamic-deleted" }, ConfigWithM4T6Target());
+        Assert.Equal(HarnessCommand.CreateQrDynamicDeletedKey, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrDynamicDeleted_MissingDeletedKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-deleted" }, ConfigWithM4T6Target(qrDeletedKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrDynamicDeleted_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-deleted", "--execute", "--confirm-create-qr-dynamic-deleted" },
+            ConfigWithM4T6Target());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-qr-dynamic-suspended")]
+    [InlineData("--confirm-create-qr-dynamic-invalid-customer")]
+    public void Prepare_CreateQrDynamicDeleted_OtherConfirmations_DoNotAuthorize(string wrongFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-deleted", "--execute", wrongFlag }, ConfigWithM4T6Target());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // ── M4-T6-C (invalid customer) ───────────────────────────────────────
+
+    [Fact]
+    public void Prepare_CreateQrDynamicInvalidCustomerNoFlags_ReturnsDryRun()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-invalid-customer" }, ConfigWithM4T6Target());
+        Assert.Equal(HarnessCommand.CreateQrDynamicInvalidCustomer, decision.Command);
+        Assert.Equal(HarnessOrchestrator.Outcome.DryRun, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrDynamicInvalidCustomer_MissingActiveKeyId_ReturnsAbortedTargetMissing()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-invalid-customer" }, ConfigWithM4T6Target(qrKeyId: null));
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedTargetMissing, decision.Outcome);
+    }
+
+    [Fact]
+    public void Prepare_CreateQrDynamicInvalidCustomer_ExecuteAndConfirm_ReturnsReadyToExecute()
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-invalid-customer", "--execute", "--confirm-create-qr-dynamic-invalid-customer" },
+            ConfigWithM4T6Target());
+        Assert.Equal(HarnessOrchestrator.Outcome.ReadyToExecute, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("--confirm-create-qr-dynamic-suspended")]
+    [InlineData("--confirm-create-qr-dynamic-deleted")]
+    [InlineData("--confirm-create-qr-static-invalid-customer")]
+    public void Prepare_CreateQrDynamicInvalidCustomer_OtherConfirmations_DoNotAuthorize(string wrongFlag)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { "create-qr-dynamic-invalid-customer", "--execute", wrongFlag }, ConfigWithM4T6Target());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // ── M4-T3/M4-T4 confirmations must never authorize any M4-T6 command ──
+
+    [Theory]
+    [InlineData("create-qr-dynamic-suspended")]
+    [InlineData("create-qr-dynamic-deleted")]
+    [InlineData("create-qr-dynamic-invalid-customer")]
+    public void Prepare_M4T6Commands_ConfirmCreateQrStaticSuspendedKey_DoesNotAuthorize(string command)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { command, "--execute", "--confirm-create-qr-static-suspended-key" }, ConfigWithM4T6Target());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    [Theory]
+    [InlineData("create-qr-dynamic-suspended")]
+    [InlineData("create-qr-dynamic-deleted")]
+    [InlineData("create-qr-dynamic-invalid-customer")]
+    public void Prepare_M4T6Commands_ConfirmCreateQrDynamic_DoesNotAuthorize(string command)
+    {
+        var decision = HarnessOrchestrator.Prepare(
+            new[] { command, "--execute", "--confirm-create-qr-dynamic" }, ConfigWithM4T6Target());
+        Assert.Equal(HarnessOrchestrator.Outcome.AbortedMissingConfirmation, decision.Outcome);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // XPAY-492 — preparación de la llave desechable de M4-T3-B: dos
     // operaciones INDEPENDIENTES entre sí y de cualquier otro comando
     // (Create/Delete Fixture Key), target/confirmación completamente

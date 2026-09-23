@@ -64,6 +64,9 @@ public static class HarnessApp
                 output.WriteLine("     create-m4-t3-deleted-fixture-key   [--execute --confirm-create-m4-t3-deleted-fixture-key]");
                 output.WriteLine("     delete-m4-t3-fixture-key           [--execute --confirm-delete-m4-t3-fixture-key]");
                 output.WriteLine("     create-qr-dynamic                  [--execute --confirm-create-qr-dynamic]");
+                output.WriteLine("     create-qr-dynamic-suspended        [--execute --confirm-create-qr-dynamic-suspended]");
+                output.WriteLine("     create-qr-dynamic-deleted          [--execute --confirm-create-qr-dynamic-deleted]");
+                output.WriteLine("     create-qr-dynamic-invalid-customer [--execute --confirm-create-qr-dynamic-invalid-customer]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -251,6 +254,45 @@ public static class HarnessApp
                 output.WriteLine("result=DRY_RUN");
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 output.WriteLine("note=M4-T5: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-517)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrDynamicSuspendedKey:
+                // XPAY-522 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_QR_SUSPENDED_KEY_ID/PASSPORT_TEST_CUSTOMER_ID
+                // en este modo, y mucho menos calcula/compara ningún
+                // fingerprint — eso sólo ocurre en ReadyToExecute, dentro
+                // de CreateQrDynamicSuspendedKeyExecutor. No se construye
+                // ningún request, no se obtiene token, no hay HTTP.
+                output.WriteLine("case=M4-T6-A (Create QR Code DYNAMIC — llave Bre-B suspendida)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-522)");
+                output.WriteLine("requires=--execute --confirm-create-qr-dynamic-suspended");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T6-A: DYNAMIC_EXPECTED_RESULT=UNKNOWN_UNTIL_REAL_EXECUTION (histórico STATIC produjo QR ACTIVE — Gustavo confirmó que el rechazo ocurre en Payment, no en Create QR; esto NO se extrapola automáticamente a DYNAMIC)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrDynamicDeletedKey:
+                output.WriteLine("case=M4-T6-B (Create QR Code DYNAMIC — llave Bre-B eliminada)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-522)");
+                output.WriteLine("requires=--execute --confirm-create-qr-dynamic-deleted");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T6-B: DYNAMIC_EXPECTED_RESULT=UNKNOWN_UNTIL_REAL_EXECUTION (histórico STATIC produjo HTTP 404 resource_not_found — contexto histórico, no expectativa contractual codificada para DYNAMIC)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrDynamicInvalidCustomer:
+                output.WriteLine("case=M4-T6-C (Create QR Code DYNAMIC — customer_id incorrecto)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-522)");
+                output.WriteLine("requires=--execute --confirm-create-qr-dynamic-invalid-customer");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T6-C: DYNAMIC_EXPECTED_RESULT=UNKNOWN_UNTIL_REAL_EXECUTION (histórico STATIC produjo HTTP 400 invalid_parameter_value \"UUID version 4 expected\" — contexto histórico, no expectativa contractual codificada para DYNAMIC)");
                 return;
 
             case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrStatic:
@@ -651,6 +693,66 @@ public static class HarnessApp
                 var m4T5Path = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
                 output.WriteLine($"result={execution.Evidence!.Result}");
                 output.WriteLine($"evidence_path={m4T5Path}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrDynamicSuspendedKey:
+            {
+                var execution = await CreateQrDynamicSuspendedKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-522 — un bloqueo LOCAL (target ausente, fingerprint
+                    // no coincidente con la fixture suspendida histórica,
+                    // commit SHA no resoluble) NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m4T6APath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m4T6APath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrDynamicDeletedKey:
+            {
+                var execution = await CreateQrDynamicDeletedKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m4T6BPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m4T6BPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrDynamicInvalidCustomer:
+            {
+                var execution = await CreateQrDynamicInvalidCustomerExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m4T6CPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m4T6CPath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 return;
             }

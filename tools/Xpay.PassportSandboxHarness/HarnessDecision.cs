@@ -80,6 +80,12 @@ public enum HarnessCommand
     // el QR ya creado en M4-T4 (nunca crea un QR nuevo). Comando
     // independiente de create-qr-dynamic y de decode-qr-static.
     DecodeQrDynamic,
+    // XPAY-522 — M4-T6 (casos de error de QR DYNAMIC), tres subcasos
+    // INDEPENDIENTES entre sí y de todos los anteriores — mismo criterio
+    // de no-conflación ya aplicado a cada par de comandos anterior.
+    CreateQrDynamicSuspendedKey,
+    CreateQrDynamicDeletedKey,
+    CreateQrDynamicInvalidCustomer,
 }
 
 public static class HarnessDecision
@@ -130,6 +136,10 @@ public static class HarnessDecision
     public const string CommandCreateQrDynamic = "create-qr-dynamic";
     // XPAY-517 — M4-T5: Decode QR Code DINÁMICO.
     public const string CommandDecodeQrDynamic = "decode-qr-dynamic";
+    // XPAY-522 — M4-T6: tres subcasos negativos de QR DINÁMICO.
+    public const string CommandCreateQrDynamicSuspendedKey    = "create-qr-dynamic-suspended";
+    public const string CommandCreateQrDynamicDeletedKey      = "create-qr-dynamic-deleted";
+    public const string CommandCreateQrDynamicInvalidCustomer = "create-qr-dynamic-invalid-customer";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -183,6 +193,11 @@ public static class HarnessDecision
     // autorizada por ninguna otra bandera de confirmación (incluida
     // --confirm-create-qr-dynamic/--confirm-decode-qr-static).
     public const string FlagConfirmDecodeQrDynamic = "--confirm-decode-qr-dynamic";
+    // XPAY-522 — tres banderas exclusivas de M4-T6, ninguna autoriza a
+    // ninguna otra (ni entre sí, ni hacia M4-T3/M4-T4/M4-T5), y viceversa.
+    public const string FlagConfirmCreateQrDynamicSuspendedKey    = "--confirm-create-qr-dynamic-suspended";
+    public const string FlagConfirmCreateQrDynamicDeletedKey      = "--confirm-create-qr-dynamic-deleted";
+    public const string FlagConfirmCreateQrDynamicInvalidCustomer = "--confirm-create-qr-dynamic-invalid-customer";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -209,6 +224,9 @@ public static class HarnessDecision
             CommandDeleteM4T3FixtureKey          => HarnessCommand.DeleteM4T3FixtureKey,
             CommandCreateQrDynamic               => HarnessCommand.CreateQrDynamic,
             CommandDecodeQrDynamic               => HarnessCommand.DecodeQrDynamic,
+            CommandCreateQrDynamicSuspendedKey    => HarnessCommand.CreateQrDynamicSuspendedKey,
+            CommandCreateQrDynamicDeletedKey      => HarnessCommand.CreateQrDynamicDeletedKey,
+            CommandCreateQrDynamicInvalidCustomer => HarnessCommand.CreateQrDynamicInvalidCustomer,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -254,6 +272,9 @@ public static class HarnessDecision
             HarnessCommand.DeleteM4T3FixtureKey          => FlagConfirmDeleteM4T3FixtureKey,
             HarnessCommand.CreateQrDynamic                => FlagConfirmCreateQrDynamic,
             HarnessCommand.DecodeQrDynamic                => FlagConfirmDecodeQrDynamic,
+            HarnessCommand.CreateQrDynamicSuspendedKey    => FlagConfirmCreateQrDynamicSuspendedKey,
+            HarnessCommand.CreateQrDynamicDeletedKey      => FlagConfirmCreateQrDynamicDeletedKey,
+            HarnessCommand.CreateQrDynamicInvalidCustomer => FlagConfirmCreateQrDynamicInvalidCustomer,
             _                                      => null,
         };
 

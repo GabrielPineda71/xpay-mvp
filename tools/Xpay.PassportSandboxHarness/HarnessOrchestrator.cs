@@ -54,6 +54,9 @@ public static class HarnessOrchestrator
                                     or HarnessCommand.DeleteM4T3FixtureKey
                                     or HarnessCommand.CreateQrDynamic
                                     or HarnessCommand.DecodeQrDynamic
+                                    or HarnessCommand.CreateQrDynamicSuspendedKey
+                                    or HarnessCommand.CreateQrDynamicDeletedKey
+                                    or HarnessCommand.CreateQrDynamicInvalidCustomer
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -138,6 +141,25 @@ public static class HarnessOrchestrator
         if (command == HarnessCommand.DecodeQrDynamic && targetConfig is not null && !targetConfig.AllPresentForDecodeQrDynamic)
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Target de decode-qr-dynamic incompleto — PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        // XPAY-522 — M4-T6, tres subcasos negativos DYNAMIC. El fingerprint
+        // fail-closed adicional (contra la fixture histórica esperada) se
+        // valida exclusivamente dentro de cada executor — aquí sólo se
+        // verifica presencia, mismo criterio que M4-T3.
+        if (command == HarnessCommand.CreateQrDynamicSuspendedKey && targetConfig is not null
+            && !targetConfig.AllPresentForCreateQrDynamicSuspendedKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-dynamic-suspended incompleto — PASSPORT_TEST_QR_SUSPENDED_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        if (command == HarnessCommand.CreateQrDynamicDeletedKey && targetConfig is not null
+            && !targetConfig.AllPresentForCreateQrDynamicDeletedKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-dynamic-deleted incompleto — PASSPORT_TEST_QR_DELETED_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        if (command == HarnessCommand.CreateQrDynamicInvalidCustomer && targetConfig is not null
+            && !targetConfig.AllPresentForCreateQrDynamicInvalidCustomer)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-dynamic-invalid-customer incompleto — PASSPORT_TEST_QR_KEY_ID ausente.");
 
         // XPAY-465 — decode-qr-static (M4-T2): target propio
         // (PASSPORT_TEST_QR_DECODE_DATA_FILE + PASSPORT_TEST_CUSTOMER_ID) —

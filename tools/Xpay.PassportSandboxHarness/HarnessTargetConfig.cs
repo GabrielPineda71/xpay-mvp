@@ -200,6 +200,16 @@ public sealed record HarnessTargetConfig(
     // forman parte de este chequeo de presencia genérico de dry-run.
     public bool AllPresentForDecodeQrDynamic => QrKeyIdPresent && CustomerIdPresent;
 
+    // XPAY-522 — targets de los tres subcasos M4-T6 (negativos DYNAMIC).
+    // Mismos targets ya existentes de M4-T3, reutilizados sin cambio — el
+    // fingerprint fail-closed adicional se valida exclusivamente dentro de
+    // cada executor (nunca aquí), mismo criterio que el resto del harness.
+    public bool AllPresentForCreateQrDynamicSuspendedKey => QrSuspendedKeyIdPresent && CustomerIdPresent;
+    public bool AllPresentForCreateQrDynamicDeletedKey => QrDeletedKeyIdPresent && CustomerIdPresent;
+    // M4-T6-C: customer_id SIEMPRE sintético (InvalidCustomerIdGenerator),
+    // nunca leído del entorno — mismo criterio que M4-T3-C.
+    public bool AllPresentForCreateQrDynamicInvalidCustomer => QrKeyIdPresent;
+
     // XPAY-465 — target de decode-qr-static (M4-T2): la RUTA al archivo
     // local privado con el qr_code_data real, + customer_id. Sin fallback a
     // ningún otro dato (nunca deriva qr_code_data de PASSPORT_TEST_NEW_KEY_ID/

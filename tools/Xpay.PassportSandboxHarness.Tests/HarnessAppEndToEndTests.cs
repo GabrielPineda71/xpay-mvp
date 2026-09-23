@@ -3870,4 +3870,117 @@ public class HarnessAppEndToEndTests
             Directory.Delete(m4T5Dir, recursive: true);
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-522 — M4-T6 (casos de error de QR DYNAMIC), a nivel de
+    // HarnessApp.RunAsync. Cubre exclusivamente dry-run (§12/§19 — cero
+    // HTTP, cero OAuth) y aislamiento cruzado entre comandos (§17). La
+    // ejecución real (--execute) queda fuera de alcance de XPAY-522.
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static IConfiguration FullM4T6Config()
+    {
+        var dict = new Dictionary<string, string?>
+        {
+            [PassportOptions.EnvBaseUrl] = BaseUrl,
+            [PassportOptions.EnvClientId] = "synthetic-key",
+            [PassportOptions.EnvClientSecret] = "synthetic-secret",
+            [HarnessTargetConfig.EnvQrKeyId] = RealQrKeyId,
+            [HarnessTargetConfig.EnvQrSuspendedKeyId] = "SYNTH-E2E-SUSPENDED-KEY-ID",
+            [HarnessTargetConfig.EnvQrDeletedKeyId] = "SYNTH-E2E-DELETED-KEY-ID",
+            [HarnessTargetConfig.EnvCustomerId] = RealQrCustomerId,
+        };
+        return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
+    }
+
+    [Theory]
+    [InlineData("create-qr-dynamic-suspended")]
+    [InlineData("create-qr-dynamic-deleted")]
+    [InlineData("create-qr-dynamic-invalid-customer")]
+    public async Task M4T6DryRun_NoHttpCall_NoEvidenceFile(string command)
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullM4T6Config();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { command }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T6-A")));
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T6-B")));
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T6-C")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+            Assert.Contains("UNKNOWN_UNTIL_REAL_EXECUTION", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("create-qr-dynamic-suspended", "--confirm-create-qr-dynamic-deleted")]
+    [InlineData("create-qr-dynamic-suspended", "--confirm-create-qr-dynamic-invalid-customer")]
+    [InlineData("create-qr-dynamic-deleted", "--confirm-create-qr-dynamic-suspended")]
+    [InlineData("create-qr-dynamic-deleted", "--confirm-create-qr-dynamic-invalid-customer")]
+    [InlineData("create-qr-dynamic-invalid-customer", "--confirm-create-qr-dynamic-suspended")]
+    [InlineData("create-qr-dynamic-invalid-customer", "--confirm-create-qr-dynamic-deleted")]
+    [InlineData("create-qr-dynamic-suspended", "--confirm-create-qr-dynamic")]
+    [InlineData("create-qr-dynamic-deleted", "--confirm-create-qr-static-deleted-key")]
+    public async Task M4T6Execute_WithWrongConfirmation_Aborted_NoHttpCall(string command, string wrongFlag)
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullM4T6Config();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { command, "--execute", wrongFlag }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // create-qr-dynamic (M4-T4)/decode-qr-dynamic (M4-T5) siguen sin
+    // cambios tras introducir M4-T6 — misma disciplina ya probada en
+    // XPAY-474/492/517 para otros comandos nuevos junto a los ya existentes.
+    [Fact]
+    public async Task CreateQrDynamicExecute_StillWorks_AfterM4T6Introduced()
+    {
+        var dir = NewTempDir();
+        var privateCaptureDir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig(m4T4PrivateCaptureDir: privateCaptureDir);
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-dynamic", "--execute", "--confirm-create-qr-dynamic" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            using var bodyDoc = JsonDocument.Parse(handler.LastRequestBody!);
+            Assert.Equal("DYNAMIC", bodyDoc.RootElement.GetProperty("type").GetString());
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T4"), "evidence-*.json");
+            Assert.Single(files);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+            Directory.Delete(privateCaptureDir, recursive: true);
+        }
+    }
 }
