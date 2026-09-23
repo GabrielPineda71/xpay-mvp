@@ -3528,4 +3528,132 @@ public class HarnessAppEndToEndTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // XPAY-506 — M4-T4 (Create QR Code DINÁMICO), flujo completo real vía
+    // HarnessApp.RunAsync. Reutiliza LocalFakeQrHandler/BuildQrDependencies/
+    // FullQrConfig (mismos targets exactos que M4-T1) — ninguno nuevo.
+    // ══════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task CreateQrDynamicDryRun_NoHttpCall_NoEvidenceFile()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(new[] { "create-qr-dynamic" }, config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T4")));
+            Assert.Contains("result=DRY_RUN", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateQrDynamicExecute_FullPath_ProducesExactlyOneHttpCall_AndEvidence()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-dynamic", "--execute", "--confirm-create-qr-dynamic" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+
+            using var bodyDoc = JsonDocument.Parse(handler.LastRequestBody!);
+            Assert.Equal("DYNAMIC", bodyDoc.RootElement.GetProperty("type").GetString());
+            Assert.False(bodyDoc.RootElement.TryGetProperty("amount", out _));
+            Assert.False(bodyDoc.RootElement.TryGetProperty("additional_info", out _));
+            Assert.True(bodyDoc.RootElement.TryGetProperty("vat", out _));
+            Assert.True(bodyDoc.RootElement.TryGetProperty("inc", out _));
+            Assert.True(bodyDoc.RootElement.TryGetProperty("tip", out _));
+            Assert.True(bodyDoc.RootElement.TryGetProperty("qr_code_reference", out _));
+
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T4"), "evidence-*.json");
+            Assert.Single(files);
+            var json = File.ReadAllText(files[0]);
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("M4-T4", doc.RootElement.GetProperty("case_id").GetString());
+
+            Assert.DoesNotContain(RealQrKeyId, json);
+            Assert.DoesNotContain(RealQrCustomerId, json);
+            Assert.DoesNotContain(RealQrKeyId, output.ToString());
+            Assert.DoesNotContain(RealQrCustomerId, output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task CreateQrDynamicExecute_WithCreateQrStaticConfirmation_Aborted_NoHttpCall()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-dynamic", "--execute", "--confirm-create-qr-static" },
+                config, dependencies, output);
+
+            Assert.Equal(0, handler.CallCount);
+            Assert.False(Directory.Exists(Path.Combine(dir, "M4-T4")));
+            Assert.Contains("result=ABORTED", output.ToString());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    // create-qr-static (M4-T1) sigue sin cambios tras introducir M4-T4 —
+    // misma disciplina ya probada en XPAY-474/492 para otros comandos
+    // nuevos junto a los ya existentes.
+    [Fact]
+    public async Task CreateQrStaticExecute_StillWorks_AfterCreateQrDynamicIntroduced()
+    {
+        var dir = NewTempDir();
+        try
+        {
+            var handler = new LocalFakeQrHandler();
+            var config = FullQrConfig();
+            var dependencies = BuildQrDependencies(handler, dir, config);
+            var output = new StringWriter();
+
+            await HarnessApp.RunAsync(
+                new[] { "create-qr-static", "--execute", "--confirm-create-qr-static" },
+                config, dependencies, output);
+
+            Assert.Equal(1, handler.CallCount);
+            using var bodyDoc = JsonDocument.Parse(handler.LastRequestBody!);
+            Assert.Equal("STATIC", bodyDoc.RootElement.GetProperty("type").GetString());
+            var files = Directory.GetFiles(Path.Combine(dir, "M4-T1"), "evidence-*.json");
+            Assert.Single(files);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

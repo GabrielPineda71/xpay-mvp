@@ -52,6 +52,7 @@ public static class HarnessOrchestrator
                                     or HarnessCommand.RecoverDeletedKeyId
                                     or HarnessCommand.CreateM4T3DeletedFixtureKey
                                     or HarnessCommand.DeleteM4T3FixtureKey
+                                    or HarnessCommand.CreateQrDynamic
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -119,6 +120,15 @@ public static class HarnessOrchestrator
         if (command == HarnessCommand.CreateQrStatic && targetConfig is not null && !targetConfig.AllPresentForCreateQrStatic)
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Target de create-qr-static incompleto — PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        // XPAY-506 — create-qr-dynamic (M4-T4): target propio (mismos dos
+        // targets que create-qr-static) — ver
+        // HarnessTargetConfig.AllPresentForCreateQrDynamic. Misma
+        // prohibición de fallback hacia PASSPORT_TEST_NEW_KEY_ID/_VALUE,
+        // PASSPORT_TEST_QR_SUSPENDED_KEY_ID o PASSPORT_TEST_QR_DELETED_KEY_ID.
+        if (command == HarnessCommand.CreateQrDynamic && targetConfig is not null && !targetConfig.AllPresentForCreateQrDynamic)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-dynamic incompleto — PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
 
         // XPAY-465 — decode-qr-static (M4-T2): target propio
         // (PASSPORT_TEST_QR_DECODE_DATA_FILE + PASSPORT_TEST_CUSTOMER_ID) —

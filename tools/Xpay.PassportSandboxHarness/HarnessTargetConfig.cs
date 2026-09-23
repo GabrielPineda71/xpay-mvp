@@ -176,6 +176,18 @@ public sealed record HarnessTargetConfig(
     // dedicado que prueba exactamente este escenario).
     public bool AllPresentForCreateQrStatic => QrKeyIdPresent && CustomerIdPresent;
 
+    // XPAY-506 — target de create-qr-dynamic (M4-T4): MISMOS dos targets
+    // exactos que create-qr-static (M4-T1) — PASSPORT_TEST_QR_KEY_ID +
+    // PASSPORT_TEST_CUSTOMER_ID. Propiedad dedicada (no se reutiliza
+    // AllPresentForCreateQrStatic) siguiendo el mismo criterio ya aplicado
+    // a cada comando del harness — un target propio y nombrado por
+    // comando, aunque hoy sea idéntico a otro, para poder evolucionar cada
+    // uno de forma independiente sin acoplar dos comandos por accidente.
+    // Sin fallback hacia PASSPORT_TEST_NEW_KEY_ID/_VALUE (contaminadas),
+    // PASSPORT_TEST_QR_SUSPENDED_KEY_ID (M4-T3-A) ni
+    // PASSPORT_TEST_QR_DELETED_KEY_ID (M4-T3-B).
+    public bool AllPresentForCreateQrDynamic => QrKeyIdPresent && CustomerIdPresent;
+
     // XPAY-465 — target de decode-qr-static (M4-T2): la RUTA al archivo
     // local privado con el qr_code_data real, + customer_id. Sin fallback a
     // ningún otro dato (nunca deriva qr_code_data de PASSPORT_TEST_NEW_KEY_ID/
