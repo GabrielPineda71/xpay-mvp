@@ -30,6 +30,14 @@ namespace Xpay.PassportSandboxHarness;
 // Tras un éxito real, escribe ahí (nunca en el repositorio, nunca en
 // evidence.json) el material crudo que el Anexo exige como evidencia
 // visual/payload — ver M4T4PrivateCapture para la justificación completa.
+//
+// XPAY-512 — el primer intento real (XPAY-510) fue rechazado por Passport
+// (HTTP 400, "amount is invalid.") por enviar DYNAMIC sin amount. Se
+// agrega amount con el valor oficial confirmado en el ejemplo Postman de
+// Passport ("QR Codes / Create Dynamic QR Code") — ver
+// CertificationAmountValue/CertificationAmountCurrency abajo. Ningún otro
+// cambio de payload: no se copian otros campos de ese mismo ejemplo
+// (p. ej. additional_info) sin evidencia propia de que M4-T4 los necesite.
 public static class CreateQrDynamicExecutor
 {
     // XPAY-506 — mismos valores de certificación YA usados y aceptados por
@@ -45,6 +53,19 @@ public static class CreateQrDynamicExecutor
     private const string CertificationVatBaseValue = "100.00";
     private const string CertificationIncValue     = "10.00";
     private const string CertificationTipValue     = "100.00";
+
+    // XPAY-512 — valor oficial confirmado directamente en el workspace
+    // "Passport PaaS for Developers" (Postman), request "QR Codes / Create
+    // Dynamic QR Code": el Body de ejemplo mostrado por Passport para ESE
+    // request específico incluye amount = {"value": "10000.00", "currency":
+    // "COP"}. A diferencia de vat/inc/tip (confirmados por respuesta
+    // funcional real de Passport en M4-T1), este valor proviene del
+    // ejemplo oficial de Passport, no de un intercambio propio — se adopta
+    // deliberadamente SOLO amount de ese ejemplo (XPAY-512 §3): ningún otro
+    // campo del Body de ejemplo (p. ej. additional_info) se incorpora aquí
+    // sin evidencia propia de que M4-T4 lo necesite.
+    private const string CertificationAmountValue    = "10000.00";
+    private const string CertificationAmountCurrency = "COP";
 
     public static async Task<KeyOperationResult> ExecuteAsync(
         IConfiguration configuration,
@@ -118,27 +139,30 @@ public static class CreateQrDynamicExecutor
                 $"No se pudo resolver el commit SHA del backend: {ex.Message}");
         }
 
-        // XPAY-506 — M4-T4: type=DYNAMIC. Payload MÍNIMO y determinista,
+        // XPAY-506 — M4-T4: type=DYNAMIC. Payload mínimo y determinista,
         // sustentado ÚNICAMENTE por el contrato ya confirmado en
         // PassportQrClient.Validate() (XPAY-505 auditó exactamente estas
         // reglas):
         //   - vat: REQUERIDO cuando type=DYNAMIC (a diferencia de STATIC,
         //     donde es opcional) — SIEMPRE se envía aquí.
-        //   - amount: deliberadamente AUSENTE — sigue siendo opcional para
-        //     DYNAMIC (un QR dinámico sin monto predefinido es un escenario
-        //     válido y estructuralmente más simple); no existe en este
-        //     repositorio ningún valor de "amount" de certificación ya
-        //     confirmado/empírico que reutilizar, y esta implementación
-        //     NO inventa uno sin respaldo (XPAY-506 §5).
-        //   - inc: al no haber amount, la regla "inc requerido si amount
-        //     está presente" no aplica — se envía de todas formas,
-        //     reutilizando el mismo valor ya confirmado para M4-T1, para
-        //     mantener el payload lo más cercano posible a un shape ya
-        //     validado por Passport, cambiando ÚNICAMENTE el campo `type`.
-        //   - tip: mismo criterio que inc.
+        //   - amount: XPAY-512 — PRESENTE. El primer intento real (XPAY-510)
+        //     lo omitió deliberadamente (ningún valor de certificación
+        //     confirmado disponible entonces — XPAY-506 §5) y Passport
+        //     respondió HTTP 400 "amount is invalid.". Se agrega ahora el
+        //     valor oficial (ver CertificationAmountValue arriba) tomado
+        //     ÚNICAMENTE de amount en el ejemplo Postman de Passport para
+        //     este request — ningún otro campo de ese ejemplo (p. ej.
+        //     additional_info) se incorpora sin evidencia propia (XPAY-512
+        //     §3).
+        //   - inc: REQUERIDO ahora que amount está presente en DYNAMIC
+        //     (regla ya confirmada por PassportQrClient.Validate() —
+        //     XPAY-511 §5/§7) — ya se enviaba sin cambios, mismo valor ya
+        //     confirmado para M4-T1.
+        //   - tip: mismo criterio que inc — sin cambios.
         //   - additional_info: deliberadamente AUSENTE — opcional en ambos
         //     tipos; M4-T1 tampoco lo envía en su versión vigente
-        //     (XPAY-458).
+        //     (XPAY-458); XPAY-512 §3 prohíbe explícitamente agregarlo
+        //     sólo porque aparece en el ejemplo oficial de Passport.
         //   - channel=MPOS: mismo valor ya confirmado funcional para M4-T1.
         //   - qr_code_reference: QrCodeReferenceGenerator (XPAY-458),
         //     fresca y única por ejecución — nunca reutilizada entre
@@ -153,6 +177,10 @@ public static class CreateQrDynamicExecutor
                 VatType: PassportQrVatType.FIXED,
                 VatValue: CertificationVatValue,
                 VatBaseValue: CertificationVatBaseValue),
+            Amount = new PassportQrAmountRequest(CertificationAmountValue)
+            {
+                Currency = CertificationAmountCurrency,
+            },
             Inc = new PassportQrIncRequest(
                 IncType: PassportQrVatType.FIXED,
                 IncValue: CertificationIncValue),

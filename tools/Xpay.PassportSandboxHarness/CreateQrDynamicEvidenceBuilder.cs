@@ -17,9 +17,11 @@ namespace Xpay.PassportSandboxHarness;
 //   - amount_present / vat_present / inc_present / tip_present (request):
 //     booleanos únicamente, nunca valores literales de vat_type/vat_value/
 //     etc. M4-T4 siempre debe registrar vat_present=true (contrato
-//     DYNAMIC) y amount_present=false (decisión de payload mínimo de este
-//     caso, XPAY-506 §5) — ambos verificables por cualquier revisor sin
-//     inspeccionar código.
+//     DYNAMIC). amount_present=false describió el primer intento (XPAY-506
+//     §5, payload mínimo sin valor de certificación confirmado); desde
+//     XPAY-512, amount_present=true (valor oficial del ejemplo Postman de
+//     Passport) — ambos estados verificables por cualquier revisor sin
+//     inspeccionar código, comparando esta evidencia entre intentos.
 //   - qr_code_reference (request/response): SOLO fingerprint.
 //   - id (response, qr id remoto): SOLO fingerprint, etiquetado
 //     EXPLÍCITAMENTE `qr_id_fingerprint` — nunca conflatado con

@@ -5,16 +5,17 @@ using Xunit;
 
 namespace Xpay.PassportSandboxHarness.Tests;
 
-// XPAY-506/508 — prueba, a nivel de CreateQrDynamicExecutor (sin red), que
-// M4-T4 invoca ÚNICAMENTE IPassportQrClient.CreateQrCodeAsync exactamente
-// una vez (nunca DecodeQrCodeAsync ni ningún método de IPassportKeyClient —
-// esta clase ni siquiera recibe una instancia de ese cliente), que el
-// request construido es type=DYNAMIC con vat SIEMPRE presente (contrato) y
-// amount deliberadamente ausente, que ningún identificador crudo
-// (key_id/customer_id/qr_code_data/qr_code_image) sale jamás hacia la
-// evidencia versionable, y (XPAY-508) que la captura privada del material
-// crudo es FAIL-CLOSED, opt-in explícito, y nunca escribe dentro del
-// "repositorio" (simulado con una raíz sintética por test). Mirror
+// XPAY-506/508/512 — prueba, a nivel de CreateQrDynamicExecutor (sin red),
+// que M4-T4 invoca ÚNICAMENTE IPassportQrClient.CreateQrCodeAsync
+// exactamente una vez (nunca DecodeQrCodeAsync ni ningún método de
+// IPassportKeyClient — esta clase ni siquiera recibe una instancia de ese
+// cliente), que el request construido es type=DYNAMIC con vat SIEMPRE
+// presente (contrato) y (desde XPAY-512) amount SIEMPRE presente con el
+// valor oficial del ejemplo Postman de Passport, que ningún identificador
+// crudo (key_id/customer_id/qr_code_data/qr_code_image) sale jamás hacia
+// la evidencia versionable, y (XPAY-508) que la captura privada del
+// material crudo es FAIL-CLOSED, opt-in explícito, y nunca escribe dentro
+// del "repositorio" (simulado con una raíz sintética por test). Mirror
 // estructural de CreateQrStaticExecutorTests.cs (M4-T1).
 public class CreateQrDynamicExecutorTests
 {
@@ -141,7 +142,14 @@ public class CreateQrDynamicExecutorTests
         Assert.Equal(PassportQrType.DYNAMIC, sent.Type);
         Assert.Equal(PassportQrChannel.MPOS, sent.Channel);
 
-        Assert.Null(sent.Amount);
+        // XPAY-512 — amount ahora SIEMPRE presente (valor oficial del
+        // ejemplo Postman de Passport, "QR Codes / Create Dynamic QR
+        // Code"); additional_info sigue deliberadamente ausente — XPAY-512
+        // §3 prohíbe copiar ese campo del mismo ejemplo sin evidencia
+        // propia de que M4-T4 lo necesite.
+        Assert.NotNull(sent.Amount);
+        Assert.Equal("10000.00", sent.Amount!.Value);
+        Assert.Equal("COP", sent.Amount.Currency);
         Assert.Null(sent.AdditionalInfo);
 
         Assert.NotNull(sent.Vat);
@@ -262,7 +270,9 @@ public class CreateQrDynamicExecutorTests
 
         using var doc = System.Text.Json.JsonDocument.Parse(evidenceJson);
         var requestSanitized = doc.RootElement.GetProperty("request_sanitized");
-        Assert.False(requestSanitized.GetProperty("amount_present").GetBoolean());
+        // XPAY-512 — amount ahora SIEMPRE presente en DYNAMIC; sólo el
+        // booleano se registra en evidencia, nunca el valor/moneda crudos.
+        Assert.True(requestSanitized.GetProperty("amount_present").GetBoolean());
         Assert.False(requestSanitized.GetProperty("additional_info_present").GetBoolean());
         Assert.True(requestSanitized.GetProperty("vat_present").GetBoolean());
         Assert.True(requestSanitized.GetProperty("inc_present").GetBoolean());

@@ -3584,7 +3584,13 @@ public class HarnessAppEndToEndTests
 
             using var bodyDoc = JsonDocument.Parse(handler.LastRequestBody!);
             Assert.Equal("DYNAMIC", bodyDoc.RootElement.GetProperty("type").GetString());
-            Assert.False(bodyDoc.RootElement.TryGetProperty("amount", out _));
+            // XPAY-512 — amount ahora SIEMPRE presente (valor oficial del
+            // ejemplo Postman de Passport); additional_info sigue
+            // deliberadamente ausente (XPAY-512 §3: no copiar ese campo del
+            // mismo ejemplo sin evidencia propia).
+            Assert.True(bodyDoc.RootElement.TryGetProperty("amount", out var amountElement));
+            Assert.Equal("10000.00", amountElement.GetProperty("value").GetString());
+            Assert.Equal("COP", amountElement.GetProperty("currency").GetString());
             Assert.False(bodyDoc.RootElement.TryGetProperty("additional_info", out _));
             Assert.True(bodyDoc.RootElement.TryGetProperty("vat", out _));
             Assert.True(bodyDoc.RootElement.TryGetProperty("inc", out _));
