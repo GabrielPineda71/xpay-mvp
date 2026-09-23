@@ -25,7 +25,14 @@ public static class HarnessApp
         // deliberadamente: todo llamador (Program.cs real, y cada test que
         // construye Dependencies) debe proveerlo explícitamente, igual que
         // los demás clientes.
-        IPassportQrClient QrClient);
+        IPassportQrClient QrClient,
+        // XPAY-529 — M5 (Payment): mismo stack HTTP/OAuth subyacente,
+        // cliente tipado ya existente (PassportPaymentClient, XPAY-373,
+        // usado en producción por BrebPaymentService) — este harness NUNCA
+        // pasa por BrebPaymentService; construye requests directamente y
+        // llama a este cliente, igual que QrClient/KeyClient. Nullable NO
+        // se usa deliberadamente, mismo criterio que los demás.
+        IPassportPaymentClient PaymentClient);
 
     public static async Task RunAsync(
         string[] args, IConfiguration configuration, Dependencies dependencies, TextWriter output)
@@ -67,6 +74,8 @@ public static class HarnessApp
                 output.WriteLine("     create-qr-dynamic-suspended        [--execute --confirm-create-qr-dynamic-suspended]");
                 output.WriteLine("     create-qr-dynamic-deleted          [--execute --confirm-create-qr-dynamic-deleted]");
                 output.WriteLine("     create-qr-dynamic-invalid-customer [--execute --confirm-create-qr-dynamic-invalid-customer]");
+                output.WriteLine("     create-breb-payment-cert           [--execute --confirm-create-breb-payment-cert]");
+                output.WriteLine("     retrieve-breb-payment-cert         [--execute --confirm-retrieve-breb-payment-cert]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -293,6 +302,41 @@ public static class HarnessApp
                 output.WriteLine("result=DRY_RUN");
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 output.WriteLine("note=M4-T6-C: DYNAMIC_EXPECTED_RESULT=UNKNOWN_UNTIL_REAL_EXECUTION (histórico STATIC produjo HTTP 400 invalid_parameter_value \"UUID version 4 expected\" — contexto histórico, no expectativa contractual codificada para DYNAMIC)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateBrebPaymentCert:
+                // XPAY-529 — NUNCA lee PASSPORT_ACCOUNT_ID/
+                // PASSPORT_TEST_M5_PAYMENT_RESOLUTION_ID/
+                // PASSPORT_TEST_M5_PAYMENT_AMOUNT_VALUE en este modo — esas
+                // sólo se leen dentro de CreateBrebPaymentCertificationExecutor,
+                // en ReadyToExecute. No se construye ningún
+                // PassportCreatePaymentRequest, no se obtiene token, no hay
+                // HTTP. Aislado de BrebPaymentService/Wallet/ledger por diseño
+                // — ver CreateBrebPaymentCertificationExecutor.
+                output.WriteLine("case=M5-PAYMENT-CREATE (Create Bre-B Payment — infraestructura de certificación)");
+                output.WriteLine("endpoint=POST /v1/payments/breb");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-529)");
+                output.WriteLine("requires=--execute --confirm-create-breb-payment-cert");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=Aislado de BrebPaymentService/PassportBrebRetiro/Wallet/ledger — llamada directa harness -> IPassportPaymentClient -> Passport");
+                output.WriteLine("note=M5-PAYMENT-CREATE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-529)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.RetrieveBrebPaymentCert:
+                // XPAY-529 — NUNCA resuelve/abre el artefacto privado de
+                // M5-PAYMENT-CREATE en este modo — eso sólo ocurre en
+                // ReadyToExecute, dentro de RetrieveBrebPaymentCertificationExecutor.
+                output.WriteLine("case=M5-PAYMENT-RETRIEVE (Retrieve Bre-B Payment — infraestructura de certificación)");
+                output.WriteLine("endpoint=GET /v1/payments/{payment_id}");
+                output.WriteLine("mutating=NO (read-only, consulta un payment ya existente)");
+                output.WriteLine("requires=--execute --confirm-retrieve-breb-payment-cert");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=payment_id proviene EXCLUSIVAMENTE del artefacto privado M5-PAYMENT-CREATE — nunca hardcoded, nunca histórico");
+                output.WriteLine("note=M5-PAYMENT-RETRIEVE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-529)");
                 return;
 
             case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrStatic:
@@ -753,6 +797,49 @@ public static class HarnessApp
                 var m4T6CPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
                 output.WriteLine($"result={execution.Evidence!.Result}");
                 output.WriteLine($"evidence_path={m4T6CPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateBrebPaymentCert:
+            {
+                var execution = await CreateBrebPaymentCertificationExecutor
+                    .ExecuteAsync(configuration, dependencies.PaymentClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-529 — un bloqueo LOCAL (PASSPORT_ACCOUNT_ID/
+                    // resolution_id/amount ausente, resolución vencida,
+                    // destino privado inválido, commit SHA no resoluble)
+                    // NUNCA escribe evidence.json. `Detail` nunca incluye
+                    // valores crudos ni rutas privadas.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m5CreatePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m5CreatePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.RetrieveBrebPaymentCert:
+            {
+                var execution = await RetrieveBrebPaymentCertificationExecutor
+                    .ExecuteAsync(configuration, dependencies.PaymentClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m5RetrievePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m5RetrievePath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 return;
             }

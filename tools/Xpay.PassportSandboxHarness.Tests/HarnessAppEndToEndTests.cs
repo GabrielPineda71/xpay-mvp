@@ -82,7 +82,8 @@ public class HarnessAppEndToEndTests
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
             EvidenceBaseDirectory: evidenceDir,
-            QrClient: new PassportQrClient(httpClient));
+            QrClient: new PassportQrClient(httpClient),
+            PaymentClient: new PassportPaymentClient(httpClient));
     }
 
     private static string NewTempDir()
@@ -362,7 +363,8 @@ public class HarnessAppEndToEndTests
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
             EvidenceBaseDirectory: evidenceDir,
-            QrClient: new PassportQrClient(httpClient));
+            QrClient: new PassportQrClient(httpClient),
+            PaymentClient: new PassportPaymentClient(httpClient));
     }
 
     // Test end-to-end obligatorio (XPAY-326 §9): exactamente 1 llamada HTTP
@@ -623,7 +625,8 @@ public class HarnessAppEndToEndTests
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
             EvidenceBaseDirectory: evidenceDir,
-            QrClient: new PassportQrClient(httpClient));
+            QrClient: new PassportQrClient(httpClient),
+            PaymentClient: new PassportPaymentClient(httpClient));
     }
 
     // Test end-to-end obligatorio (XPAY-332 §11.H/I/J): exactamente 1
@@ -889,7 +892,8 @@ public class HarnessAppEndToEndTests
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
             EvidenceBaseDirectory: evidenceDir,
-            QrClient: new PassportQrClient(httpClient));
+            QrClient: new PassportQrClient(httpClient),
+            PaymentClient: new PassportPaymentClient(httpClient));
     }
 
     // Test end-to-end obligatorio (XPAY-334 §11.H/I/J/L/M/N): exactamente 1
@@ -1451,7 +1455,8 @@ public class HarnessAppEndToEndTests
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
             EvidenceBaseDirectory: evidenceDir,
-            QrClient: new PassportQrClient(httpClient));
+            QrClient: new PassportQrClient(httpClient),
+            PaymentClient: new PassportPaymentClient(httpClient));
     }
 
     // Tests K/L/N/O/P/Q/R/S — end-to-end obligatorio: exactamente 1 POST
@@ -1732,7 +1737,8 @@ public class HarnessAppEndToEndTests
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
             EvidenceBaseDirectory: evidenceDir,
-            QrClient: new PassportQrClient(httpClient));
+            QrClient: new PassportQrClient(httpClient),
+            PaymentClient: new PassportPaymentClient(httpClient));
     }
 
     // ── create-key-missing ──────────────────────────────────────────────
@@ -2128,7 +2134,8 @@ public class HarnessAppEndToEndTests
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
             EvidenceBaseDirectory: evidenceDir,
-            QrClient: new PassportQrClient(httpClient));
+            QrClient: new PassportQrClient(httpClient),
+            PaymentClient: new PassportPaymentClient(httpClient));
     }
 
     [Fact]
@@ -3195,7 +3202,8 @@ public class HarnessAppEndToEndTests
             KeyClient: new PassportKeyClient(httpClient),
             CommitShaProvider: new FixedCommitShaProvider("synthetic-e2e-commit-sha-0000000000000000000000000000000000000000"),
             EvidenceBaseDirectory: evidenceDir,
-            QrClient: new PassportQrClient(httpClient));
+            QrClient: new PassportQrClient(httpClient),
+            PaymentClient: new PassportPaymentClient(httpClient));
     }
 
     [Fact]

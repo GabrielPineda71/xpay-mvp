@@ -86,6 +86,12 @@ public enum HarnessCommand
     CreateQrDynamicSuspendedKey,
     CreateQrDynamicDeletedKey,
     CreateQrDynamicInvalidCustomer,
+    // XPAY-529 — M5 (Create/Retrieve Bre-B Payment, infraestructura de
+    // certificación). Comandos independientes entre sí y de todos los
+    // anteriores — mismo criterio de no-conflación. NINGUNA confirmación
+    // M1-M4 los autoriza, y viceversa.
+    CreateBrebPaymentCert,
+    RetrieveBrebPaymentCert,
 }
 
 public static class HarnessDecision
@@ -140,6 +146,10 @@ public static class HarnessDecision
     public const string CommandCreateQrDynamicSuspendedKey    = "create-qr-dynamic-suspended";
     public const string CommandCreateQrDynamicDeletedKey      = "create-qr-dynamic-deleted";
     public const string CommandCreateQrDynamicInvalidCustomer = "create-qr-dynamic-invalid-customer";
+    // XPAY-529 — M5: infraestructura de certificación Create/Retrieve
+    // Bre-B Payment.
+    public const string CommandCreateBrebPaymentCert   = "create-breb-payment-cert";
+    public const string CommandRetrieveBrebPaymentCert = "retrieve-breb-payment-cert";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -198,6 +208,10 @@ public static class HarnessDecision
     public const string FlagConfirmCreateQrDynamicSuspendedKey    = "--confirm-create-qr-dynamic-suspended";
     public const string FlagConfirmCreateQrDynamicDeletedKey      = "--confirm-create-qr-dynamic-deleted";
     public const string FlagConfirmCreateQrDynamicInvalidCustomer = "--confirm-create-qr-dynamic-invalid-customer";
+    // XPAY-529 — exclusivas de M5; ninguna autoriza ni es autorizada por
+    // ninguna otra bandera de confirmación (incluidas las de M1-M4).
+    public const string FlagConfirmCreateBrebPaymentCert   = "--confirm-create-breb-payment-cert";
+    public const string FlagConfirmRetrieveBrebPaymentCert = "--confirm-retrieve-breb-payment-cert";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -227,6 +241,8 @@ public static class HarnessDecision
             CommandCreateQrDynamicSuspendedKey    => HarnessCommand.CreateQrDynamicSuspendedKey,
             CommandCreateQrDynamicDeletedKey      => HarnessCommand.CreateQrDynamicDeletedKey,
             CommandCreateQrDynamicInvalidCustomer => HarnessCommand.CreateQrDynamicInvalidCustomer,
+            CommandCreateBrebPaymentCert   => HarnessCommand.CreateBrebPaymentCert,
+            CommandRetrieveBrebPaymentCert => HarnessCommand.RetrieveBrebPaymentCert,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -275,6 +291,8 @@ public static class HarnessDecision
             HarnessCommand.CreateQrDynamicSuspendedKey    => FlagConfirmCreateQrDynamicSuspendedKey,
             HarnessCommand.CreateQrDynamicDeletedKey      => FlagConfirmCreateQrDynamicDeletedKey,
             HarnessCommand.CreateQrDynamicInvalidCustomer => FlagConfirmCreateQrDynamicInvalidCustomer,
+            HarnessCommand.CreateBrebPaymentCert   => FlagConfirmCreateBrebPaymentCert,
+            HarnessCommand.RetrieveBrebPaymentCert => FlagConfirmRetrieveBrebPaymentCert,
             _                                      => null,
         };
 
