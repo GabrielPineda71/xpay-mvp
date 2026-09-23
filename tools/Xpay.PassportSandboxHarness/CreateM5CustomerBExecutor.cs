@@ -13,15 +13,35 @@ namespace Xpay.PassportSandboxHarness;
 // IPassportPaymentClient.
 //
 // Config LEÍDA EXCLUSIVAMENTE AQUÍ (nunca en dry-run):
+//   - M5CustomerBPrivateCapture.EnvPrivateCaptureDir — FAIL-CLOSED antes de
+//     HTTP, mismo criterio que M4T4PrivateCapture/M5PaymentPrivateCapture:
+//     sin destino privado válido, nunca se gasta la única llamada real
+//     autorizada. Leído PRIMERO (XPAY-533) — es una ruta de configuración,
+//     no PII, y se necesita para el no-repeat guard antes de tocar nada
+//     sensible.
 //   - PASSPORT_TEST_M5_CUSTOMER_B_FIXTURE_FILE — ruta a un archivo JSON
 //     PRIVADO (fuera del repo, ver M5CustomerBFixture) con los datos del
 //     Customer B sintético a certificar. Nunca un customer real, nunca
 //     datos de identificación reales hardcodeados en este repositorio
 //     (XPAY-531 §7). Su ausencia bloquea localmente.
-//   - M5CustomerBPrivateCapture.EnvPrivateCaptureDir — FAIL-CLOSED antes de
-//     HTTP, mismo criterio que M4T4PrivateCapture/M5PaymentPrivateCapture:
-//     sin destino privado válido, nunca se gasta la única llamada real
-//     autorizada.
+//
+// XPAY-533 — ORDEN DE GUARDS (documentado explícitamente, ver §6 del
+// ticket): destino privado válido -> EnsureDirectory -> ADQUIRIR LOCK DE
+// EJECUCIÓN -> NO-REPEAT GUARD (¿ya existe un artefacto M5-T1-A válido?) ->
+// ruta de fixture presente -> LEER/PARSEAR fixture (aquí se carga PII por
+// primera vez) -> campos requeridos -> commit SHA -> LinkMerchantAsync. El
+// no-repeat guard corre ANTES de leer cualquier dato de identificación —
+// si el caso ya fue ejecutado, se bloquea sin procesar la fixture.
+//
+// El lock se libera en TODOS los caminos de salida ANTERIORES a la llamada
+// Passport, y también tras una excepción capturada (falla clara, sin
+// ambigüedad). Tras una respuesta EXITOSA de Passport, el lock SÓLO se
+// libera si el artefacto privado se escribió correctamente
+// (privateArtifactCaptured==true) — si la escritura falla, o el proceso
+// muere antes de completarla, el lock queda huérfano deliberadamente: eso
+// fuerza MANUAL_RECONCILIATION_REQUIRED en vez de permitir que una futura
+// ejecución vuelva a llamar a Passport sin certeza de si Customer B ya fue
+// creado (XPAY-533 §10).
 public static class CreateM5CustomerBExecutor
 {
     public const string EnvFixtureFile = "PASSPORT_TEST_M5_CUSTOMER_B_FIXTURE_FILE";
@@ -38,19 +58,10 @@ public static class CreateM5CustomerBExecutor
         ArgumentNullException.ThrowIfNull(customerAccountClient);
         ArgumentNullException.ThrowIfNull(commitShaProvider);
 
-        // Guard #1 — ruta a la fixture privada.
-        var fixtureFilePath = configuration[EnvFixtureFile];
-        if (string.IsNullOrWhiteSpace(fixtureFilePath))
-        {
-            return new(KeyOperationOutcome.LocalBlocked, null,
-                $"{EnvFixtureFile} ausente al momento de intentar Create Customer B (M5-T1-A). " +
-                "No se realizó ninguna llamada a Passport.");
-        }
-
-        // Guard #2 — destino privado de captura, FAIL-CLOSED antes de HTTP
-        // (mismo criterio XPAY-508/517/529). Se valida ANTES de leer/parsear
-        // la fixture para no gastar trabajo si el destino ya es inválido.
         var repositoryRoot = repositoryRootOverride ?? Directory.GetCurrentDirectory();
+
+        // Guard #1 — destino privado de captura, FAIL-CLOSED antes de HTTP
+        // y antes de cualquier PII (mismo criterio XPAY-508/517/529).
         var privateCaptureDirRaw = configuration[M5CustomerBPrivateCapture.EnvPrivateCaptureDir];
         var captureValidation = M5CustomerBPrivateCapture.Validate(privateCaptureDirRaw, repositoryRoot);
         if (captureValidation != M5CustomerBPrivateCapture.ValidationOutcome.Valid)
@@ -60,9 +71,91 @@ public static class CreateM5CustomerBExecutor
                 "No se realizó ninguna llamada a Passport.");
         }
 
-        // Guard #3 — la fixture debe existir y ser JSON válido con todos los
+        string privateCaptureDirFullPath;
+        try
+        {
+            privateCaptureDirFullPath = Path.GetFullPath(privateCaptureDirRaw!, repositoryRoot);
+            M5CustomerBPrivateCapture.EnsureDirectory(privateCaptureDirFullPath);
+        }
+        catch (Exception ex)
+        {
+            return new(KeyOperationOutcome.LocalBlocked, null,
+                $"No se pudo preparar el destino privado de captura M5 Customer B: {ex.Message}");
+        }
+
+        // Guard #2 — reserva de ejecución (XPAY-533 §9). Cierra la ventana
+        // de carrera: si otra ejecución concurrente ya sostiene el lock (o
+        // uno quedó huérfano tras un crash anterior), se bloquea sin llamar
+        // a Passport y sin siquiera intentar el no-repeat guard.
+        var lockOutcome = M5CustomerBPrivateCapture.TryAcquireLock(privateCaptureDirFullPath, out var lockFilePath);
+        if (lockOutcome != M5CustomerBPrivateCapture.LockAcquisitionOutcome.Acquired)
+        {
+            return new(KeyOperationOutcome.LocalBlocked, null,
+                "No se pudo adquirir la reserva de ejecución de Customer B (M5-T1-A) — " +
+                "ya existe un lock activo (ejecución concurrente en curso, o pendiente de reconciliación manual " +
+                "tras un intento previo interrumpido). No se realizó ninguna llamada a Passport.");
+        }
+
+        // Guard #3 — no-repeat guard (XPAY-533 §2/§3/§4). Reutiliza
+        // M5CustomerBArtifactReader (mismo módulo que Account B usa para
+        // leer el customer_id) sobre el propio directorio.
+        var (repeatOutcome, repeatArtifact) = M5CustomerBArtifactReader.Resolve(privateCaptureDirFullPath);
+        switch (repeatOutcome)
+        {
+            case M5CustomerBArtifactReader.ResolutionOutcome.Found when repeatArtifact is not null && M5CustomerBArtifactReader.IsValid(repeatArtifact):
+                // Caso B — ya existe una ejecución exitosa previa del mismo
+                // caso. NUNCA se imprime el customer_id crudo ni la ruta.
+                M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
+                return new(KeyOperationOutcome.LocalBlocked, null,
+                    "LOCAL_BLOCKED_ALREADY_EXECUTED: ya existe un artefacto privado válido de Customer B (M5-T1-A) " +
+                    "de una ejecución previa exitosa. No se realizó ninguna llamada a Passport.");
+
+            case M5CustomerBArtifactReader.ResolutionOutcome.Found:
+                // Caso C/D — el artefacto existe pero no pasa IsValid
+                // (case_id inesperado, o customer_id vacío/ausente). Nunca
+                // se asume "no artifact" ni se ignora — fail-closed.
+                M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
+                return new(KeyOperationOutcome.LocalBlocked, null,
+                    "LOCAL_BLOCKED: existe un artefacto privado en el directorio de Customer B (M5-T1-A) con " +
+                    "formato o case_id inesperado — requiere revisión manual antes de continuar. " +
+                    "No se realizó ninguna llamada a Passport.");
+
+            case M5CustomerBArtifactReader.ResolutionOutcome.MultipleArtifactsFound:
+                // Caso E — ambigüedad, nunca se selecciona automáticamente.
+                M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
+                return new(KeyOperationOutcome.LocalBlocked, null,
+                    "LOCAL_BLOCKED_AMBIGUOUS: se encontró más de un artefacto privado en el directorio de " +
+                    "Customer B (M5-T1-A) — requiere revisión manual antes de continuar. " +
+                    "No se realizó ninguna llamada a Passport.");
+
+            case M5CustomerBArtifactReader.ResolutionOutcome.Unreadable:
+                // Caso C — malformado/ilegible, fail-closed.
+                M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
+                return new(KeyOperationOutcome.LocalBlocked, null,
+                    "LOCAL_BLOCKED: el directorio de Customer B (M5-T1-A) contiene un artefacto privado " +
+                    "ilegible/malformado — requiere revisión manual antes de continuar. " +
+                    "No se realizó ninguna llamada a Passport.");
+
+            case M5CustomerBArtifactReader.ResolutionOutcome.DirectoryMissing:
+            case M5CustomerBArtifactReader.ResolutionOutcome.NoArtifactFound:
+                // Caso A — sin artefacto previo, se continúa con normalidad.
+                break;
+        }
+
+        // Guard #4 — ruta a la fixture privada.
+        var fixtureFilePath = configuration[EnvFixtureFile];
+        if (string.IsNullOrWhiteSpace(fixtureFilePath))
+        {
+            M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
+            return new(KeyOperationOutcome.LocalBlocked, null,
+                $"{EnvFixtureFile} ausente al momento de intentar Create Customer B (M5-T1-A). " +
+                "No se realizó ninguna llamada a Passport.");
+        }
+
+        // Guard #5 — la fixture debe existir y ser JSON válido con todos los
         // campos requeridos presentes. Fallo aquí bloquea localmente —
         // nunca se sustituye con un valor por defecto ni se completa a medias.
+        // Este es el primer punto donde se carga PII en memoria.
         M5CustomerBFixture fixture;
         try
         {
@@ -70,6 +163,7 @@ public static class CreateM5CustomerBExecutor
             var parsed = JsonSerializer.Deserialize<M5CustomerBFixture>(json);
             if (parsed is null)
             {
+                M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
                 return new(KeyOperationOutcome.LocalBlocked, null,
                     $"La fixture de Customer B ({EnvFixtureFile}) no pudo deserializarse. " +
                     "No se realizó ninguna llamada a Passport.");
@@ -78,6 +172,7 @@ public static class CreateM5CustomerBExecutor
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
+            M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
             return new(KeyOperationOutcome.LocalBlocked, null,
                 $"No se pudo leer la fixture de Customer B ({EnvFixtureFile}): {ex.Message}. " +
                 "No se realizó ninguna llamada a Passport.");
@@ -95,21 +190,10 @@ public static class CreateM5CustomerBExecutor
             || string.IsNullOrWhiteSpace(fixture.Address.PostCode)
             || string.IsNullOrWhiteSpace(fixture.Address.Country))
         {
+            M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
             return new(KeyOperationOutcome.LocalBlocked, null,
                 $"La fixture de Customer B ({EnvFixtureFile}) está incompleta — faltan campos requeridos. " +
                 "No se realizó ninguna llamada a Passport.");
-        }
-
-        string privateCaptureDirFullPath;
-        try
-        {
-            privateCaptureDirFullPath = Path.GetFullPath(privateCaptureDirRaw!, repositoryRoot);
-            M5CustomerBPrivateCapture.EnsureDirectory(privateCaptureDirFullPath);
-        }
-        catch (Exception ex)
-        {
-            return new(KeyOperationOutcome.LocalBlocked, null,
-                $"No se pudo preparar el destino privado de captura M5 Customer B: {ex.Message}");
         }
 
         string commitSha;
@@ -119,6 +203,7 @@ public static class CreateM5CustomerBExecutor
         }
         catch (Exception ex)
         {
+            M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
             return new(KeyOperationOutcome.LocalBlocked, null,
                 $"No se pudo resolver el commit SHA del backend: {ex.Message}");
         }
@@ -147,8 +232,15 @@ public static class CreateM5CustomerBExecutor
             // RetrieveCustomerAsync ni ningún otro cliente Passport.
             var response = await customerAccountClient.LinkMerchantAsync(request).ConfigureAwait(false);
 
+            // XPAY-533 §10 — ventana de crash: si el proceso muere entre
+            // esta línea y la siguiente, el lock queda huérfano
+            // deliberadamente (ver comentario de clase). El lock SÓLO se
+            // libera si el artefacto se capturó con éxito.
             var privateArtifactCaptured = TryWritePrivateArtifact(
                 privateCaptureDirFullPath, commitSha, executedAtUtc, response);
+
+            if (privateArtifactCaptured)
+                M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
 
             var evidence = CreateM5CustomerBEvidenceBuilder.BuildSuccess(
                 request, response, httpStatus: null, commitSha, executedAtUtc, automatedTestReference,
@@ -157,6 +249,11 @@ public static class CreateM5CustomerBExecutor
         }
         catch (Exception ex) when (ex is PassportAuthenticationException or PassportTransportException or PassportProtocolException)
         {
+            // Falla clara y sin ambigüedad — Passport no creó el recurso.
+            // Seguro liberar el lock: una futura ejecución deliberada puede
+            // reintentar sin riesgo de duplicado.
+            M5CustomerBPrivateCapture.ReleaseLock(lockFilePath);
+
             var (httpStatus, safeErrorCode, safeErrorMessage) = ex is PassportTransportException pte
                 ? (pte.StatusCode, pte.SafeErrorCode, pte.SafeErrorMessage)
                 : (null, null, null);

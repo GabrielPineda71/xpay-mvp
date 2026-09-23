@@ -106,4 +106,52 @@ public static class M5AccountBPrivateCapture
         var chars = value.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '-').ToArray();
         return new string(chars);
     }
+
+    // XPAY-533 §9/§10 — mismo mecanismo de reserva de ejecución que
+    // M5CustomerBPrivateCapture.TryAcquireLock/ReleaseLock — ver esa clase
+    // para el razonamiento completo. Nombre de archivo distinto
+    // (m5-t1-b.execution.lock) — nunca colisiona con el lock de Customer B,
+    // ni siquiera si ambos directorios coincidieran por error de
+    // configuración del operador.
+    public const string LockFileName = "m5-t1-b.execution.lock";
+
+    public enum LockAcquisitionOutcome
+    {
+        Acquired,
+        AlreadyHeld,
+        Failed,
+    }
+
+    public static LockAcquisitionOutcome TryAcquireLock(string validatedFullDirectoryPath, out string lockFilePath)
+    {
+        lockFilePath = Path.Combine(validatedFullDirectoryPath, LockFileName);
+        try
+        {
+            using var stream = new FileStream(lockFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            var bytes = System.Text.Encoding.UTF8.GetBytes(
+                DateTime.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            stream.Write(bytes, 0, bytes.Length);
+            return LockAcquisitionOutcome.Acquired;
+        }
+        catch (IOException)
+        {
+            return LockAcquisitionOutcome.AlreadyHeld;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return LockAcquisitionOutcome.Failed;
+        }
+    }
+
+    public static void ReleaseLock(string lockFilePath)
+    {
+        try
+        {
+            if (File.Exists(lockFilePath))
+                File.Delete(lockFilePath);
+        }
+        catch
+        {
+        }
+    }
 }

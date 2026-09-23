@@ -113,4 +113,77 @@ public static class M5CustomerBPrivateCapture
         var chars = value.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '-').ToArray();
         return new string(chars);
     }
+
+    // XPAY-533 §9 — reserva de ejecución local, atómica, FUERA del repo
+    // (vive en el mismo directorio de captura privada). Cierra la ventana de
+    // carrera entre "no existe artefacto todavía" y "Passport ya fue
+    // llamado": dos procesos del harness NUNCA pueden superar ambos el
+    // chequeo de repetición y llamar a Passport al mismo tiempo, porque
+    // sólo uno de los dos puede crear este archivo (FileMode.CreateNew es
+    // atómico a nivel de sistema operativo — falla si el archivo ya existe).
+    //
+    // Nombre FIJO (no incluye timestamp): sólo puede existir UNA reserva
+    // activa por caso a la vez, deliberadamente — a diferencia de los
+    // artefactos ".private.json" (que sí incluyen timestamp para permitir
+    // múltiples ejecuciones legítimas a lo largo del tiempo).
+    //
+    // XPAY-533 §10 — el lock se libera EXPLÍCITAMENTE sólo cuando el
+    // executor sabe con certeza que ya no hay ambigüedad (antes de llamar a
+    // Passport, o después de una respuesta de Passport ya capturada
+    // localmente). Un lock que sobrevive (proceso muerto a mitad de un
+    // intento real) es comportamiento DESEADO: fuerza
+    // MANUAL_RECONCILIATION_REQUIRED en vez de permitir un reintento
+    // automático silencioso que podría duplicar el recurso en Passport.
+    public const string LockFileName = "m5-t1-a.execution.lock";
+
+    public enum LockAcquisitionOutcome
+    {
+        Acquired,
+        AlreadyHeld,
+        Failed,
+    }
+
+    public static LockAcquisitionOutcome TryAcquireLock(string validatedFullDirectoryPath, out string lockFilePath)
+    {
+        lockFilePath = Path.Combine(validatedFullDirectoryPath, LockFileName);
+        try
+        {
+            using var stream = new FileStream(lockFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            // Contenido NO sensible — sólo un timestamp, útil para que un
+            // operador humano diagnostique manualmente un lock huérfano.
+            // NUNCA se escribe aquí ningún ID/dato de la fixture.
+            var bytes = System.Text.Encoding.UTF8.GetBytes(
+                DateTime.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            stream.Write(bytes, 0, bytes.Length);
+            return LockAcquisitionOutcome.Acquired;
+        }
+        catch (IOException)
+        {
+            // Ya existe — otra ejecución concurrente lo sostiene, o quedó
+            // huérfano tras un crash previo. Ambos casos exigen
+            // MANUAL_RECONCILIATION_REQUIRED — nunca se borra
+            // automáticamente aquí.
+            return LockAcquisitionOutcome.AlreadyHeld;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return LockAcquisitionOutcome.Failed;
+        }
+    }
+
+    // Best-effort DELIBERADO (mismo criterio que Write de artefactos): un
+    // fallo al liberar NUNCA debe enmascarar el resultado real ya obtenido
+    // de Passport. Un lock que no pudo borrarse queda como huérfano — misma
+    // semántica de "exige reconciliación manual" que un crash.
+    public static void ReleaseLock(string lockFilePath)
+    {
+        try
+        {
+            if (File.Exists(lockFilePath))
+                File.Delete(lockFilePath);
+        }
+        catch
+        {
+        }
+    }
 }

@@ -678,4 +678,392 @@ public class M5CustomerAccountBExecutorTests
         var customerDirFiles = Directory.GetFiles(customerDir, "*.private.json");
         Assert.Single(customerDirFiles); // sólo el artefacto original de Customer B, nunca uno de Account B
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    // XPAY-533 — NO-REPEAT GUARDS (Customer B / Account B) — §11/§12
+    // ══════════════════════════════════════════════════════════════════
+
+    private static void WriteRawArtifactFile(string dir, string fileName, string content)
+    {
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, fileName), content);
+    }
+
+    // ---------- Customer B repeat guard ----------
+
+    [Fact]
+    public async Task CustomerB_NoPriorArtifact_RepeatGuardPasses_ReachesNextPrecheck()
+    {
+        // Sin artefacto previo, el guard de repetición debe dejar pasar la
+        // ejecución hasta el siguiente precheck (aquí, éxito completo —
+        // demuestra que el no-repeat guard no bloquea falsos positivos).
+        var config = CreateCustomerBConfig();
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateCustomerB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.Success, result.Outcome);
+        Assert.Equal(1, client.LinkMerchantCallCount);
+    }
+
+    [Fact]
+    public async Task CustomerB_ValidPriorArtifact_Blocked_ClientCallsZero()
+    {
+        var captureDir = PrepareCustomerBArtifactDir();
+        var config = CreateCustomerBConfig(privateCaptureDir: captureDir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateCustomerB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.LinkMerchantCallCount);
+        Assert.Contains("ALREADY_EXECUTED", result.Detail);
+    }
+
+    [Fact]
+    public async Task CustomerB_MalformedArtifact_Blocked_ClientCallsZero()
+    {
+        var dir = NewTempDir("xpay-m5-customer-b-malformed");
+        M5CustomerBPrivateCapture.EnsureDirectory(dir);
+        WriteRawArtifactFile(dir, "M5-T1-A-bad.private.json", "not-valid-json{{{");
+        var config = CreateCustomerBConfig(privateCaptureDir: dir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateCustomerB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.LinkMerchantCallCount);
+    }
+
+    [Fact]
+    public async Task CustomerB_PriorArtifactWrongCaseId_Blocked_ClientCallsZero()
+    {
+        var dir = PrepareCustomerBArtifactDir(caseId: "M4-T4"); // reutiliza el helper existente con case_id ajeno
+        var config = CreateCustomerBConfig(privateCaptureDir: dir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateCustomerB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.LinkMerchantCallCount);
+        Assert.DoesNotContain("ALREADY_EXECUTED", result.Detail);
+    }
+
+    [Fact]
+    public async Task CustomerB_MultiplePriorArtifacts_Blocked_ClientCallsZero()
+    {
+        var dir = PrepareCustomerBArtifactDir();
+        var second = new Dictionary<string, object?>
+        {
+            ["case_id"] = "M5-T1-A",
+            ["captured_at_utc"] = "2026-01-02T00:00:00Z",
+            ["backend_commit_sha"] = "synthetic-sha-2",
+            ["customer_id"] = "synthetic-customer-b-id-002",
+        };
+        M5CustomerBPrivateCapture.Write(dir, "M5-T1-A", "2026-01-02T00-00-00Z", second);
+
+        var config = CreateCustomerBConfig(privateCaptureDir: dir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateCustomerB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.LinkMerchantCallCount);
+        Assert.Contains("AMBIGUOUS", result.Detail);
+    }
+
+    [Fact]
+    public async Task CustomerB_RepeatBlocked_DetailNeverContainsRawCustomerId()
+    {
+        var captureDir = PrepareCustomerBArtifactDir(customerId: "synthetic-customer-b-id-should-never-leak");
+        var config = CreateCustomerBConfig(privateCaptureDir: captureDir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateCustomerB(config, client);
+
+        Assert.DoesNotContain("synthetic-customer-b-id-should-never-leak", result.Detail);
+        Assert.DoesNotContain(captureDir, result.Detail ?? string.Empty);
+    }
+
+    [Fact]
+    public void CustomerB_DryRun_NeverReachesReadyToExecute_WithoutExecuteFlag()
+    {
+        // El no-repeat guard sólo participa en ReadyToExecute — confirmamos
+        // que sin --execute, la decisión nunca sale de DryRun (por lo tanto
+        // HarnessApp jamás invoca a CreateM5CustomerBExecutor.ExecuteAsync;
+        // el bloque DryRun correspondiente en HarnessApp.cs es texto
+        // estático puro — ver inspección de código).
+        var action = HarnessDecision.Decide(new[] { HarnessDecision.CommandCreateM5CustomerB }, out _);
+        Assert.Equal(HarnessAction.DryRun, action);
+    }
+
+    [Fact]
+    public void CustomerB_M1ThroughM4ConfirmFlags_NeverAuthorizeExecute()
+    {
+        // Banderas de confirmación de otros comandos (M1-M4/M5-Payment)
+        // nunca satisfacen la confirmación exclusiva de create-m5-customer-b.
+        var action = HarnessDecision.Decide(
+            new[] { HarnessDecision.CommandCreateM5CustomerB, HarnessDecision.FlagExecute, HarnessDecision.FlagConfirmCreateKey },
+            out var abortReason);
+        Assert.Equal(HarnessAction.Aborted, action);
+        Assert.NotNull(abortReason);
+    }
+
+    [Fact]
+    public async Task CustomerB_LockAlreadyHeld_Blocked_ClientCallsZero()
+    {
+        var dir = NewTempDir("xpay-m5-customer-b-lock-held");
+        M5CustomerBPrivateCapture.EnsureDirectory(dir);
+        var lockOutcome = M5CustomerBPrivateCapture.TryAcquireLock(dir, out var lockPath);
+        Assert.Equal(M5CustomerBPrivateCapture.LockAcquisitionOutcome.Acquired, lockOutcome);
+
+        var config = CreateCustomerBConfig(privateCaptureDir: dir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateCustomerB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.LinkMerchantCallCount);
+        Assert.True(File.Exists(lockPath)); // el lock preexistente NUNCA se borra por otro proceso
+    }
+
+    [Fact]
+    public async Task CustomerB_SuccessfulExecution_LockReleased_NoResidualLockFile()
+    {
+        var dir = NewTempDir("xpay-m5-customer-b-lock-release");
+        var config = CreateCustomerBConfig(privateCaptureDir: dir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateCustomerB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.Success, result.Outcome);
+        var lockPath = Path.Combine(Path.GetFullPath(dir, SyntheticRepoRoot), M5CustomerBPrivateCapture.LockFileName);
+        Assert.False(File.Exists(lockPath));
+    }
+
+    [Fact]
+    public async Task CustomerB_PassportFailure_LockReleased_SafeToRetryLater()
+    {
+        var dir = NewTempDir("xpay-m5-customer-b-lock-release-failure");
+        var config = CreateCustomerBConfig(privateCaptureDir: dir);
+        var client = new FakeCustomerAccountClient(throwOnLinkMerchant: true);
+
+        var result = await ExecuteCreateCustomerB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.PassportFailure, result.Outcome);
+        var lockPath = Path.Combine(Path.GetFullPath(dir, SyntheticRepoRoot), M5CustomerBPrivateCapture.LockFileName);
+        Assert.False(File.Exists(lockPath));
+    }
+
+    [Fact]
+    public async Task CustomerB_ConcurrentAttempts_AtMostOneReachesPassport()
+    {
+        // Prueba de concurrencia REAL (no simulada): dos ExecuteAsync
+        // concurrentes sobre el MISMO directorio de captura y la MISMA
+        // fixture válida. El lock atómico (FileMode.CreateNew) debe
+        // garantizar que como máximo uno de los dos alcance a Passport.
+        var dir = NewTempDir("xpay-m5-customer-b-concurrency");
+        var config = CreateCustomerBConfig(privateCaptureDir: dir);
+        var client = new FakeCustomerAccountClient();
+
+        var results = await Task.WhenAll(
+            ExecuteCreateCustomerB(config, client),
+            ExecuteCreateCustomerB(config, client));
+
+        Assert.True(client.LinkMerchantCallCount <= 1,
+            $"Se esperaba como máximo 1 llamada real concurrente, se observaron {client.LinkMerchantCallCount}.");
+        Assert.Contains(results, r => r.Outcome == KeyOperationOutcome.LocalBlocked);
+    }
+
+    // ---------- Account B repeat guard ----------
+
+    [Fact]
+    public async Task AccountB_NoPriorArtifact_RepeatGuardPasses_ReachesNextPrecheck()
+    {
+        var config = CreateAccountBConfig();
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateAccountB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.Success, result.Outcome);
+        Assert.Equal(1, client.LinkAccountCallCount);
+    }
+
+    // Escribe un artefacto privado Account B "crudo" (fuera del helper
+    // TryWritePrivateArtifact) para simular estados que el executor real
+    // nunca produciría por sí mismo (malformado, case_id ajeno).
+    private static string PrepareAccountBArtifactDir(string caseId = "M5-T1-B", string? accountId = "synthetic-account-b-id-001")
+    {
+        var dir = NewTempDir("xpay-m5-account-b-artifact-dir");
+        M5AccountBPrivateCapture.EnsureDirectory(dir);
+        var content = new Dictionary<string, object?>
+        {
+            ["case_id"] = caseId,
+            ["captured_at_utc"] = "2026-01-01T00:00:00Z",
+            ["backend_commit_sha"] = "synthetic-sha",
+            ["customer_id"] = "synthetic-customer-b-id-001",
+            ["account_id"] = accountId,
+        };
+        M5AccountBPrivateCapture.Write(dir, caseId, "2026-01-01T00-00-00Z", content);
+        return dir;
+    }
+
+    [Fact]
+    public async Task AccountB_ValidPriorArtifact_Blocked_ClientCallsZero()
+    {
+        var accountDir = PrepareAccountBArtifactDir();
+        var config = CreateAccountBConfig(accountCaptureDir: accountDir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateAccountB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.LinkAccountCallCount);
+        Assert.Contains("ALREADY_EXECUTED", result.Detail);
+    }
+
+    [Fact]
+    public async Task AccountB_MalformedArtifact_Blocked_ClientCallsZero()
+    {
+        var dir = NewTempDir("xpay-m5-account-b-malformed");
+        M5AccountBPrivateCapture.EnsureDirectory(dir);
+        WriteRawArtifactFile(dir, "M5-T1-B-bad.private.json", "not-valid-json{{{");
+        var config = CreateAccountBConfig(accountCaptureDir: dir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateAccountB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.LinkAccountCallCount);
+    }
+
+    [Fact]
+    public async Task AccountB_PriorArtifactWrongCaseId_Blocked_ClientCallsZero()
+    {
+        var dir = PrepareAccountBArtifactDir(caseId: "M4-T4");
+        var config = CreateAccountBConfig(accountCaptureDir: dir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateAccountB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.LinkAccountCallCount);
+        Assert.DoesNotContain("ALREADY_EXECUTED", result.Detail);
+    }
+
+    [Fact]
+    public async Task AccountB_MultiplePriorArtifacts_Blocked_ClientCallsZero()
+    {
+        var dir = PrepareAccountBArtifactDir();
+        var second = new Dictionary<string, object?>
+        {
+            ["case_id"] = "M5-T1-B",
+            ["captured_at_utc"] = "2026-01-02T00:00:00Z",
+            ["backend_commit_sha"] = "synthetic-sha-2",
+            ["customer_id"] = "synthetic-customer-b-id-001",
+            ["account_id"] = "synthetic-account-b-id-002",
+        };
+        M5AccountBPrivateCapture.Write(dir, "M5-T1-B", "2026-01-02T00-00-00Z", second);
+
+        var config = CreateAccountBConfig(accountCaptureDir: dir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateAccountB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.LinkAccountCallCount);
+        Assert.Contains("AMBIGUOUS", result.Detail);
+    }
+
+    [Fact]
+    public async Task AccountB_RepeatBlocked_DetailNeverContainsRawIds()
+    {
+        var accountDir = PrepareAccountBArtifactDir(accountId: "synthetic-account-b-id-should-never-leak");
+        var config = CreateAccountBConfig(accountCaptureDir: accountDir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateAccountB(config, client);
+
+        Assert.DoesNotContain("synthetic-account-b-id-should-never-leak", result.Detail);
+        Assert.DoesNotContain(accountDir, result.Detail ?? string.Empty);
+    }
+
+    [Fact]
+    public void AccountB_DryRun_NeverReachesReadyToExecute_WithoutExecuteFlag()
+    {
+        var action = HarnessDecision.Decide(new[] { HarnessDecision.CommandCreateM5AccountB }, out _);
+        Assert.Equal(HarnessAction.DryRun, action);
+    }
+
+    [Fact]
+    public void AccountB_M1ThroughM4ConfirmFlags_NeverAuthorizeExecute()
+    {
+        var action = HarnessDecision.Decide(
+            new[] { HarnessDecision.CommandCreateM5AccountB, HarnessDecision.FlagExecute, HarnessDecision.FlagConfirmCreateQrStatic },
+            out var abortReason);
+        Assert.Equal(HarnessAction.Aborted, action);
+        Assert.NotNull(abortReason);
+    }
+
+    [Fact]
+    public async Task AccountB_LockAlreadyHeld_Blocked_ClientCallsZero()
+    {
+        var dir = NewTempDir("xpay-m5-account-b-lock-held");
+        M5AccountBPrivateCapture.EnsureDirectory(dir);
+        var lockOutcome = M5AccountBPrivateCapture.TryAcquireLock(dir, out var lockPath);
+        Assert.Equal(M5AccountBPrivateCapture.LockAcquisitionOutcome.Acquired, lockOutcome);
+
+        var config = CreateAccountBConfig(accountCaptureDir: dir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateAccountB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.LocalBlocked, result.Outcome);
+        Assert.Equal(0, client.LinkAccountCallCount);
+        Assert.True(File.Exists(lockPath));
+    }
+
+    [Fact]
+    public async Task AccountB_SuccessfulExecution_LockReleased_NoResidualLockFile()
+    {
+        var accountDir = NewTempDir("xpay-m5-account-b-lock-release");
+        var config = CreateAccountBConfig(accountCaptureDir: accountDir);
+        var client = new FakeCustomerAccountClient();
+
+        var result = await ExecuteCreateAccountB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.Success, result.Outcome);
+        var lockPath = Path.Combine(Path.GetFullPath(accountDir, SyntheticRepoRoot), M5AccountBPrivateCapture.LockFileName);
+        Assert.False(File.Exists(lockPath));
+    }
+
+    [Fact]
+    public async Task AccountB_PassportFailure_LockReleased_SafeToRetryLater()
+    {
+        var accountDir = NewTempDir("xpay-m5-account-b-lock-release-failure");
+        var config = CreateAccountBConfig(accountCaptureDir: accountDir);
+        var client = new FakeCustomerAccountClient(throwOnLinkAccount: true);
+
+        var result = await ExecuteCreateAccountB(config, client);
+
+        Assert.Equal(KeyOperationOutcome.PassportFailure, result.Outcome);
+        var lockPath = Path.Combine(Path.GetFullPath(accountDir, SyntheticRepoRoot), M5AccountBPrivateCapture.LockFileName);
+        Assert.False(File.Exists(lockPath));
+    }
+
+    [Fact]
+    public async Task AccountB_ConcurrentAttempts_AtMostOneReachesPassport()
+    {
+        var accountDir = NewTempDir("xpay-m5-account-b-concurrency");
+        var config = CreateAccountBConfig(accountCaptureDir: accountDir);
+        var client = new FakeCustomerAccountClient();
+
+        var results = await Task.WhenAll(
+            ExecuteCreateAccountB(config, client),
+            ExecuteCreateAccountB(config, client));
+
+        Assert.True(client.LinkAccountCallCount <= 1,
+            $"Se esperaba como máximo 1 llamada real concurrente, se observaron {client.LinkAccountCallCount}.");
+        Assert.Contains(results, r => r.Outcome == KeyOperationOutcome.LocalBlocked);
+    }
 }

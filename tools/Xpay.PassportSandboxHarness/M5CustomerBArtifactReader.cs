@@ -9,6 +9,17 @@ namespace Xpay.PassportSandboxHarness;
 // un argumento CLI, nunca de un valor hardcodeado, nunca del Customer A ni
 // de un customer histórico. Este módulo NUNCA escribe, sólo abre el
 // artefacto en memoria.
+//
+// XPAY-533 — reutilizado ADEMÁS por el propio CreateM5CustomerBExecutor
+// como no-repeat guard, sobre su propio directorio de captura, ANTES de
+// llamar a LinkMerchantAsync (ver M5AccountBArtifactReader para el mismo
+// patrón aplicado a Account B). El formato privado actual (ver
+// CreateM5CustomerBExecutor.TryWritePrivateArtifact) SÓLO se escribe
+// DESPUÉS de una respuesta 2xx con customer_id no vacío
+// (RequireCustomerId ya lo garantiza aguas arriba) — por lo tanto CUALQUIER
+// artefacto que pase IsValid representa, inequívocamente, una ejecución
+// previa ACEPTADA por Passport; el formato actual no puede producir un
+// artefacto que represente un intento fallido o no aceptado (XPAY-533 §3.F).
 public static class M5CustomerBArtifactReader
 {
     public enum ResolutionOutcome
