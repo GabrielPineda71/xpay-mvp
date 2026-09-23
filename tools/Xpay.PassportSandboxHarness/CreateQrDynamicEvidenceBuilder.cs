@@ -31,6 +31,12 @@ namespace Xpay.PassportSandboxHarness;
 //     Esto satisface el requisito de evidencia del Anexo ("Imagen del QR +
 //     payload") de forma auditable y sanitizada: demuestra que Passport
 //     efectivamente devolvió una imagen/payload, sin reproducirlos.
+//   - private_artifact_captured (XPAY-508): booleano NO sensible que
+//     indica si, además de esta evidencia sanitizada, el material crudo
+//     quedó preservado en el destino privado fuera del repositorio
+//     (M4T4PrivateCapture). NUNCA se registra la ruta privada configurada
+//     — sólo este indicador — para no filtrar información local del
+//     operador.
 public static class CreateQrDynamicEvidenceBuilder
 {
     public const string CaseId    = "M4-T4";
@@ -42,7 +48,8 @@ public static class CreateQrDynamicEvidenceBuilder
         int? httpStatus,
         string commitSha,
         DateTime executedAtUtc,
-        string? automatedTestReference)
+        string? automatedTestReference,
+        bool privateArtifactCaptured)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(response);
@@ -77,6 +84,7 @@ public static class CreateQrDynamicEvidenceBuilder
             ["key_id_fingerprint"]        = Fingerprint.Compute(response.KeyId),
             ["customer_id_fingerprint"]   = Fingerprint.Compute(response.CustomerId),
             ["qr_code_reference_fingerprint"] = Fingerprint.Compute(response.QrCodeReference),
+            ["private_artifact_captured"] = privateArtifactCaptured,
         };
 
         return new EvidenceRecord(

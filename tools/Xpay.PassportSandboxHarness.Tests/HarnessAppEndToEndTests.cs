@@ -2091,7 +2091,8 @@ public class HarnessAppEndToEndTests
     // null` + `includeStaleNewKeyId: true` reproduce exactamente el
     // escenario de "no fallback": PASSPORT_TEST_NEW_KEY_ID presente,
     // PASSPORT_TEST_QR_KEY_ID ausente.
-    private static IConfiguration FullQrConfig(string? qrKeyId = RealQrKeyId, bool includeStaleNewKeyId = false)
+    private static IConfiguration FullQrConfig(
+        string? qrKeyId = RealQrKeyId, bool includeStaleNewKeyId = false, string? m4T4PrivateCaptureDir = null)
     {
         var dict = new Dictionary<string, string?>
         {
@@ -2102,6 +2103,10 @@ public class HarnessAppEndToEndTests
         };
         if (qrKeyId is not null) dict[HarnessTargetConfig.EnvQrKeyId] = qrKeyId;
         if (includeStaleNewKeyId) dict[HarnessTargetConfig.EnvNewKeyId] = "synthetic-deleted-m3-key-id";
+        // XPAY-508 — sólo create-qr-dynamic (M4-T4) exige este destino; los
+        // demás comandos QR (M4-T1/T3) lo ignoran por completo, así que es
+        // seguro dejarlo ausente por defecto para no afectarlos.
+        if (m4T4PrivateCaptureDir is not null) dict[M4T4PrivateCapture.EnvPrivateCaptureDir] = m4T4PrivateCaptureDir;
         return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
     }
 
@@ -3562,10 +3567,11 @@ public class HarnessAppEndToEndTests
     public async Task CreateQrDynamicExecute_FullPath_ProducesExactlyOneHttpCall_AndEvidence()
     {
         var dir = NewTempDir();
+        var privateCaptureDir = NewTempDir(); // XPAY-508 — fuera del repo real (bajo el temp del SO), como exige la validación.
         try
         {
             var handler = new LocalFakeQrHandler();
-            var config = FullQrConfig();
+            var config = FullQrConfig(m4T4PrivateCaptureDir: privateCaptureDir);
             var dependencies = BuildQrDependencies(handler, dir, config);
             var output = new StringWriter();
 
@@ -3590,15 +3596,23 @@ public class HarnessAppEndToEndTests
             var json = File.ReadAllText(files[0]);
             using var doc = JsonDocument.Parse(json);
             Assert.Equal("M4-T4", doc.RootElement.GetProperty("case_id").GetString());
+            Assert.True(doc.RootElement.GetProperty("response_sanitized").GetProperty("private_artifact_captured").GetBoolean());
 
             Assert.DoesNotContain(RealQrKeyId, json);
             Assert.DoesNotContain(RealQrCustomerId, json);
             Assert.DoesNotContain(RealQrKeyId, output.ToString());
             Assert.DoesNotContain(RealQrCustomerId, output.ToString());
+            Assert.DoesNotContain(privateCaptureDir, output.ToString());
+
+            // XPAY-508 — el material crudo SÍ quedó preservado, pero fuera
+            // del árbol de evidencia versionable (dir), en privateCaptureDir.
+            var privateFiles = Directory.GetFiles(privateCaptureDir, "*.private.json");
+            Assert.Single(privateFiles);
         }
         finally
         {
             Directory.Delete(dir, recursive: true);
+            Directory.Delete(privateCaptureDir, recursive: true);
         }
     }
 
