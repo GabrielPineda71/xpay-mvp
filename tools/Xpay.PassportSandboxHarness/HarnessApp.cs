@@ -78,6 +78,7 @@ public static class HarnessApp
                 output.WriteLine("     retrieve-breb-payment-cert         [--execute --confirm-retrieve-breb-payment-cert]");
                 output.WriteLine("     create-m5-customer-b                [--execute --confirm-create-m5-customer-b]");
                 output.WriteLine("     create-m5-account-b                 [--execute --confirm-create-m5-account-b]");
+                output.WriteLine("     resolve-key-m5-t2                   [--execute --confirm-resolve-key-m5-t2]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -375,6 +376,25 @@ public static class HarnessApp
                 output.WriteLine("note=customer_id proviene EXCLUSIVAMENTE del artefacto privado M5-T1-A — nunca hardcoded, nunca Customer A, nunca un argumento CLI");
                 output.WriteLine("note=account_number NUNCA es PASSPORT_ACCOUNT_ID (la cuenta operativa de XPAY) — Account B no es la cuenta operativa");
                 output.WriteLine("note=M5-T1-B: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-531)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.ResolveKeyM5T2:
+                // XPAY-545 — NUNCA lee PASSPORT_TEST_CUSTOMER_ID/
+                // PASSPORT_TEST_BREB_KEY_TYPE/PASSPORT_TEST_BREB_KEY ni
+                // M5PaymentPrivateCapture.EnvPrivateCaptureDir en este modo,
+                // y mucho menos resuelve/abre ningún artefacto privado —
+                // eso sólo ocurre en ReadyToExecute, dentro de
+                // M5ResolveExecutor. No se construye ningún request, no se
+                // obtiene token, no hay HTTP.
+                output.WriteLine("case=M5-T2-RESOLVE (Resolve Key — dedicado a certificación Payment B->A)");
+                output.WriteLine("endpoint=POST /v1/resolve-key");
+                output.WriteLine("mutating=NO (read-only, resuelve la misma llave KEY_A ya usada desde M3-T2)");
+                output.WriteLine("requires=--execute --confirm-resolve-key-m5-t2");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=Independiente de M3-T2 (congelado/ACCEPTED) — evidencia propia bajo case_id=M5-T2-RESOLVE, nunca escrita en docs/certificacion/passport-breb/M3-T2/");
+                output.WriteLine("note=M5-T2-RESOLVE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-545)");
                 return;
 
             case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrStatic:
@@ -927,6 +947,32 @@ public static class HarnessApp
                 output.WriteLine($"evidence_path={m5AccountBPath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 output.WriteLine("note=Account B NO se asume equivalente a la cuenta operativa de XPAY, ni account_id_B se usará automáticamente como Payment.account_id");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.ResolveKeyM5T2:
+            {
+                var execution = await M5ResolveExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-545 — un bloqueo LOCAL (destino privado inválido,
+                    // lock ya sostenido, resolución previa vigente/no
+                    // consumida, target de KEY_A ausente, commit SHA no
+                    // resoluble) NUNCA escribe evidence.json. `Detail` nunca
+                    // incluye resolution_id/customer_id/key_value ni rutas
+                    // privadas.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m5ResolvePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m5ResolvePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=resolution_id crudo preservado EXCLUSIVAMENTE en el artefacto privado — nunca impreso, nunca en evidence.json");
                 return;
             }
 

@@ -100,6 +100,10 @@ public enum HarnessCommand
     // artefacto privado) pero cada uno conserva su propia bandera.
     CreateM5CustomerB,
     CreateM5AccountB,
+    // XPAY-545 — M5-T2-RESOLVE: Resolve Key dedicado a la certificación de
+    // Payment B->A, independiente de M3-T2 (congelado/ACCEPTED) y de todos
+    // los anteriores — mismo criterio de no-conflación.
+    ResolveKeyM5T2,
 }
 
 public static class HarnessDecision
@@ -161,6 +165,8 @@ public static class HarnessDecision
     // XPAY-531 — M5-T1: Create/Link Customer B + Account B.
     public const string CommandCreateM5CustomerB = "create-m5-customer-b";
     public const string CommandCreateM5AccountB  = "create-m5-account-b";
+    // XPAY-545 — M5-T2-RESOLVE.
+    public const string CommandResolveKeyM5T2 = "resolve-key-m5-t2";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -228,6 +234,9 @@ public static class HarnessDecision
     // las de M5 Payment).
     public const string FlagConfirmCreateM5CustomerB = "--confirm-create-m5-customer-b";
     public const string FlagConfirmCreateM5AccountB  = "--confirm-create-m5-account-b";
+    // XPAY-545 — exclusiva de M5-T2-RESOLVE; ninguna otra bandera de
+    // confirmación la autoriza, incluida --confirm-resolve-key (M3-T2).
+    public const string FlagConfirmResolveKeyM5T2 = "--confirm-resolve-key-m5-t2";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -261,6 +270,7 @@ public static class HarnessDecision
             CommandRetrieveBrebPaymentCert => HarnessCommand.RetrieveBrebPaymentCert,
             CommandCreateM5CustomerB => HarnessCommand.CreateM5CustomerB,
             CommandCreateM5AccountB  => HarnessCommand.CreateM5AccountB,
+            CommandResolveKeyM5T2    => HarnessCommand.ResolveKeyM5T2,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -313,6 +323,7 @@ public static class HarnessDecision
             HarnessCommand.RetrieveBrebPaymentCert => FlagConfirmRetrieveBrebPaymentCert,
             HarnessCommand.CreateM5CustomerB => FlagConfirmCreateM5CustomerB,
             HarnessCommand.CreateM5AccountB  => FlagConfirmCreateM5AccountB,
+            HarnessCommand.ResolveKeyM5T2    => FlagConfirmResolveKeyM5T2,
             _                                      => null,
         };
 

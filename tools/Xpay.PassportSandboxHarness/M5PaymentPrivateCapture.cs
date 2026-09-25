@@ -119,4 +119,53 @@ public static class M5PaymentPrivateCapture
         var chars = value.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '-').ToArray();
         return new string(chars);
     }
+
+    // XPAY-545 — reserva de ejecución para M5-T2 Resolve (mismo mecanismo
+    // ya probado en M5CustomerBPrivateCapture/M5AccountBPrivateCapture,
+    // XPAY-533 — ver esa clase para el razonamiento completo). Nombre de
+    // lock DEDICADO a Resolve ("m5-t2-resolve.execution.lock") — nunca
+    // colisiona con un futuro lock de Create/Retrieve Payment sobre este
+    // MISMO directorio compartido (XPAY-545 §3 decidió reutilizar este
+    // directorio en vez de crear una variable de entorno nueva).
+    public const string ResolveLockFileName = "m5-t2-resolve.execution.lock";
+
+    public enum LockAcquisitionOutcome
+    {
+        Acquired,
+        AlreadyHeld,
+        Failed,
+    }
+
+    public static LockAcquisitionOutcome TryAcquireResolveLock(string validatedFullDirectoryPath, out string lockFilePath)
+    {
+        lockFilePath = Path.Combine(validatedFullDirectoryPath, ResolveLockFileName);
+        try
+        {
+            using var stream = new FileStream(lockFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            var bytes = System.Text.Encoding.UTF8.GetBytes(
+                DateTime.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture));
+            stream.Write(bytes, 0, bytes.Length);
+            return LockAcquisitionOutcome.Acquired;
+        }
+        catch (IOException)
+        {
+            return LockAcquisitionOutcome.AlreadyHeld;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return LockAcquisitionOutcome.Failed;
+        }
+    }
+
+    public static void ReleaseResolveLock(string lockFilePath)
+    {
+        try
+        {
+            if (File.Exists(lockFilePath))
+                File.Delete(lockFilePath);
+        }
+        catch
+        {
+        }
+    }
 }
