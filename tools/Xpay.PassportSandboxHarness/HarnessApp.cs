@@ -79,6 +79,7 @@ public static class HarnessApp
                 output.WriteLine("     create-m5-customer-b                [--execute --confirm-create-m5-customer-b]");
                 output.WriteLine("     create-m5-account-b                 [--execute --confirm-create-m5-account-b]");
                 output.WriteLine("     resolve-key-m5-t2                   [--execute --confirm-resolve-key-m5-t2]");
+                output.WriteLine("     configure-m5-payment-resolution     [--execute --confirm-configure-m5-payment-resolution]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -395,6 +396,23 @@ public static class HarnessApp
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 output.WriteLine("note=Independiente de M3-T2 (congelado/ACCEPTED) — evidencia propia bajo case_id=M5-T2-RESOLVE, nunca escrita en docs/certificacion/passport-breb/M3-T2/");
                 output.WriteLine("note=M5-T2-RESOLVE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-545)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.ConfigureM5PaymentResolution:
+                // XPAY-546 — NUNCA resuelve/abre el artefacto privado
+                // M5-T2-RESOLVE en este modo, ni el archivo de entorno real
+                // — eso sólo ocurre en ReadyToExecute, dentro de
+                // ConfigureM5PaymentResolutionExecutor. Operación puramente
+                // LOCAL — NUNCA llama a Passport, en ningún modo.
+                output.WriteLine("case=CONFIGURE-M5-PAYMENT-RESOLUTION (transferencia LOCAL de resolution_id a env)");
+                output.WriteLine("endpoint=NINGUNO — operación 100% local de archivos, nunca llama a Passport");
+                output.WriteLine("mutating=YES (modifica ~/.passport-sandbox.env — nunca Passport, nunca el repo)");
+                output.WriteLine("requires=--execute --confirm-configure-m5-payment-resolution");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO passport_calls=0");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (este comando NUNCA genera evidence.json — no es una llamada Passport)");
+                output.WriteLine("note=Única fuente autorizada: el artefacto privado M5-T2-RESOLVE ya capturado — nunca argumento CLI, nunca stdin, nunca evidencia sanitizada");
+                output.WriteLine("note=CONFIGURE-M5-PAYMENT-RESOLUTION: IMPLEMENTED_OFFLINE (XPAY-546)");
                 return;
 
             case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrStatic:
@@ -973,6 +991,29 @@ public static class HarnessApp
                 output.WriteLine($"evidence_path={m5ResolvePath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 output.WriteLine("note=resolution_id crudo preservado EXCLUSIVAMENTE en el artefacto privado — nunca impreso, nunca en evidence.json");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.ConfigureM5PaymentResolution:
+            {
+                // XPAY-546 — operación 100% local, NUNCA llama a Passport.
+                // Por eso NO pasa por EvidenceWriter (no hay evidencia de
+                // certificación que generar) — se imprime el resultado
+                // directamente. `Detail`/resultado NUNCA incluyen el
+                // resolution_id, ninguna ruta privada completa, ni el
+                // contenido del archivo de entorno.
+                var result = ConfigureM5PaymentResolutionExecutor.Execute(
+                    configuration, repositoryRootAbsolutePath: Directory.GetCurrentDirectory());
+
+                if (result.Outcome == ConfigureM5PaymentResolutionExecutor.Outcome.LocalBlocked)
+                {
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={result.Detail}");
+                    return;
+                }
+
+                output.WriteLine("result=TRANSFERRED");
+                output.WriteLine("note=PASSPORT_TEST_M5_PAYMENT_RESOLUTION_ID configurado desde el artefacto privado M5-T2-RESOLVE — valor nunca impreso");
+                output.WriteLine("note=Backup privado creado antes de escribir; artefacto original nunca modificado; marcador de consumo separado escrito");
                 return;
             }
 

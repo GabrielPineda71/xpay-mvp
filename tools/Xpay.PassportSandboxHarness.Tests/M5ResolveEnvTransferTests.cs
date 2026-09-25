@@ -198,4 +198,76 @@ public class M5ResolveEnvTransferTests
 
         Assert.Equal(M5ResolveEnvTransfer.TransferOutcome.EnvFileNotFound, outcome);
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    // XPAY-546 §7 — CRASH ORDERING: env escrito vs marcador de consumo.
+    // ══════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void CrashBetweenEnvWriteAndMarker_LeavesEnvConfigured_MarkerAbsent_StillSafeToBlockRepeat()
+    {
+        var captureDir = NewTempDir("xpay-m5-resolve-crash-ordering");
+        PrepareValidArtifact(captureDir, "fake-resolution-id-crash-window");
+        var envPath = PrepareFakeEnvFile();
+        var backupDir = NewTempDir("xpay-m5-resolve-crash-ordering-backup");
+
+        M5ResolveEnvTransfer.TestOnlyAfterEnvWriteBeforeMarkerHook = () =>
+            throw new InvalidOperationException("Crash simulado — justo después de escribir env, antes del marcador.");
+        try
+        {
+            var outcome = M5ResolveEnvTransfer.TryTransfer(captureDir, envPath, backupDir, FixedTime, out _);
+
+            // El "crash" se clasifica como Failed — pero lo crítico es el
+            // ESTADO que deja, no la clasificación del resultado.
+            Assert.Equal(M5ResolveEnvTransfer.TransferOutcome.Failed, outcome);
+
+            // 1. El env YA quedó correctamente configurado (paso 4 ya
+            //    había completado antes de que el hook simulara el crash).
+            var envContent = File.ReadAllText(envPath);
+            Assert.Contains("PASSPORT_TEST_M5_PAYMENT_RESOLUTION_ID=fake-resolution-id-crash-window", envContent);
+
+            // 2. El marcador de consumo NO existe — nunca se llegó a escribir.
+            var markers = Directory.GetFiles(captureDir, M5ResolveArtifactReader.ConsumedPrefix + "*");
+            Assert.Empty(markers);
+
+            // 3. Esto es SEGURO: el no-repeat guard sigue bloqueando un
+            //    nuevo Resolve (nunca produce el estado inseguro "consumido
+            //    pero no configurado" — produce el opuesto benigno:
+            //    "configurado pero técnicamente no marcado consumido",
+            //    que sigue bloqueando, nunca permite una repetición
+            //    accidental).
+            var (readOutcome, artifact) = M5ResolveArtifactReader.Resolve(captureDir);
+            Assert.Equal(M5ResolveArtifactReader.ResolutionOutcome.Found, readOutcome);
+            Assert.True(M5ResolveArtifactReader.IsBlockingForRepeat(captureDir, artifact!, FixedTime));
+        }
+        finally
+        {
+            M5ResolveEnvTransfer.TestOnlyAfterEnvWriteBeforeMarkerHook = null;
+        }
+    }
+
+    [Fact]
+    public void HookNeverInvoked_OnEarlyBlockedOutcomes()
+    {
+        // El hook sólo debe dispararse tras un env write real — nunca en
+        // caminos LocalBlocked tempranos (sin artefacto, env ya con valor, etc.).
+        var invoked = false;
+        M5ResolveEnvTransfer.TestOnlyAfterEnvWriteBeforeMarkerHook = () => invoked = true;
+        try
+        {
+            var captureDir = NewTempDir("xpay-m5-resolve-hook-not-invoked");
+            Directory.CreateDirectory(captureDir); // sin artefacto
+            var envPath = PrepareFakeEnvFile();
+            var backupDir = NewTempDir("xpay-m5-resolve-hook-not-invoked-backup");
+
+            var outcome = M5ResolveEnvTransfer.TryTransfer(captureDir, envPath, backupDir, FixedTime, out _);
+
+            Assert.Equal(M5ResolveEnvTransfer.TransferOutcome.NoArtifactFound, outcome);
+            Assert.False(invoked);
+        }
+        finally
+        {
+            M5ResolveEnvTransfer.TestOnlyAfterEnvWriteBeforeMarkerHook = null;
+        }
+    }
 }

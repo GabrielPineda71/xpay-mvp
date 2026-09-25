@@ -104,6 +104,11 @@ public enum HarnessCommand
     // Payment B->A, independiente de M3-T2 (congelado/ACCEPTED) y de todos
     // los anteriores — mismo criterio de no-conflación.
     ResolveKeyM5T2,
+    // XPAY-546 — transferencia LOCAL (nunca llama a Passport) del
+    // resolution_id real ya capturado privadamente hacia
+    // PASSPORT_TEST_M5_PAYMENT_RESOLUTION_ID. Independiente de todos los
+    // anteriores.
+    ConfigureM5PaymentResolution,
 }
 
 public static class HarnessDecision
@@ -167,6 +172,8 @@ public static class HarnessDecision
     public const string CommandCreateM5AccountB  = "create-m5-account-b";
     // XPAY-545 — M5-T2-RESOLVE.
     public const string CommandResolveKeyM5T2 = "resolve-key-m5-t2";
+    // XPAY-546 — transferencia LOCAL del resolution_id a env.
+    public const string CommandConfigureM5PaymentResolution = "configure-m5-payment-resolution";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -237,6 +244,8 @@ public static class HarnessDecision
     // XPAY-545 — exclusiva de M5-T2-RESOLVE; ninguna otra bandera de
     // confirmación la autoriza, incluida --confirm-resolve-key (M3-T2).
     public const string FlagConfirmResolveKeyM5T2 = "--confirm-resolve-key-m5-t2";
+    // XPAY-546 — exclusiva de configure-m5-payment-resolution.
+    public const string FlagConfirmConfigureM5PaymentResolution = "--confirm-configure-m5-payment-resolution";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -271,6 +280,7 @@ public static class HarnessDecision
             CommandCreateM5CustomerB => HarnessCommand.CreateM5CustomerB,
             CommandCreateM5AccountB  => HarnessCommand.CreateM5AccountB,
             CommandResolveKeyM5T2    => HarnessCommand.ResolveKeyM5T2,
+            CommandConfigureM5PaymentResolution => HarnessCommand.ConfigureM5PaymentResolution,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -324,6 +334,7 @@ public static class HarnessDecision
             HarnessCommand.CreateM5CustomerB => FlagConfirmCreateM5CustomerB,
             HarnessCommand.CreateM5AccountB  => FlagConfirmCreateM5AccountB,
             HarnessCommand.ResolveKeyM5T2    => FlagConfirmResolveKeyM5T2,
+            HarnessCommand.ConfigureM5PaymentResolution => FlagConfirmConfigureM5PaymentResolution,
             _                                      => null,
         };
 

@@ -37,6 +37,13 @@ public static class M5ResolveEnvTransfer
 
     public const string EnvResolutionIdKey = "PASSPORT_TEST_M5_PAYMENT_RESOLUTION_ID";
 
+    // XPAY-546 §7 — seam SÓLO para tests: permite verificar/forzar una
+    // interrupción justo entre "env ya escrito" (paso 4) y "marcador de
+    // consumo escrito" (paso 5), para probar directamente que ese orden
+    // nunca produce el estado inseguro "consumido pero no configurado" —
+    // en producción esto SIEMPRE es null y no cambia ningún comportamiento.
+    public static Action? TestOnlyAfterEnvWriteBeforeMarkerHook { private get; set; }
+
     public static TransferOutcome TryTransfer(
         string privateCaptureDirFullPath,
         string envFilePath,
@@ -132,6 +139,11 @@ public static class M5ResolveEnvTransfer
                 {
                 }
             }
+
+            // XPAY-546 §7 — punto exacto de la ventana auditada: env YA
+            // escrito, marcador de consumo TODAVÍA no. En producción este
+            // hook es siempre null (no-op).
+            TestOnlyAfterEnvWriteBeforeMarkerHook?.Invoke();
 
             // Paso 5 — marcador de consumo, NUNCA modifica el artefacto original.
             WriteConsumedMarker(privateCaptureDirFullPath, artifact, nowUtc);
