@@ -63,6 +63,9 @@ propio**, conforme a la instrucción del ticket: no impidieron aislar XPAY-594.
 
 ### Trazabilidad — limitación declarada
 
+**Actualizado por XPAY-596: el commit ya existe — `285f5ac`. Ver §9.** Lo que sigue
+describe la situación en el momento del despliegue.
+
 `COMMIT_PERFORMED=NO` · `PUSH_PERFORMED=NO`. El despliegue es por paquete zip desde una
 compilación local, mecanismo establecido del repositorio, que **no requiere commit**, y el
 ticket sólo lo autorizaba si fuera necesario. Consecuencia: **QA ejecuta código que aún no
@@ -93,7 +96,8 @@ Verificada por **nombre**, nunca por valor.
 | App Setting | Estado |
 |---|---|
 | `PASSPORT_WEBHOOK_SECRET` | **Presente y con valor** — preexistía |
-| `PASSPORT_WEBHOOK_SIGNATURE_MODE` | **Configurado en `OBSERVE`** por este ticket |
+| `PASSPORT_WEBHOOK_SIGNATURE_MODE` | **`ENFORCE`** desde el cierre de XPAY-596. Estuvo en
+`OBSERVE` entre el 2026-09-30T02:12Z y 12:35Z — ver §9 y §10 |
 | `PASSPORT_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS` | Ausente → default de XPAY, 300 s |
 
 ### El secreto no se regeneró — y por qué
@@ -230,3 +234,165 @@ referenciar un SHA.
 No contiene secretos, tokens, firmas, cuerpos de webhook, identificadores reales de pago,
 cuentas bancarias ni PII. Los únicos valores citados son nombres de recurso, nombres de
 variable, códigos HTTP y el identificador de despliegue de Azure.
+
+
+---
+
+## 9. Actualización XPAY-596 — trazabilidad cerrada, hardening BLOQUEADO
+
+**Fecha:** 2026-09-30 (UTC)
+
+### Trazabilidad: cerrada
+
+```
+COMMIT_PERFORMED=YES
+COMMIT_SHA=285f5acf4b1239d2f8e6bec526bffd0107841c69
+PUSH_PERFORMED=NO
+```
+
+Commit exclusivo del alcance Passport T6/T7: **18 archivos, 3134 inserciones**, ningún
+archivo ajeno. Incluye la implementación, sus seis archivos de pruebas, el registro de DI en
+`Program.cs` y los tres documentos de certificación (contrato, implementación y este mismo
+despliegue).
+
+`DEPLOYED_CODE_MATCHES_COMMIT=YES`, verificado por fechas de modificación: todos los fuentes
+del alcance se modificaron entre 01:01Z y 01:10Z del 2026-09-30, y el despliegue se ejecutó
+a las 02:13:24Z del mismo día. Ningún archivo compilado cambió después. **QA ejecuta
+exactamente el código de `285f5ac`**, y la evidencia T6/T7 ya puede referenciar un SHA.
+
+El árbol de trabajo conserva intactos los tres cambios preexistentes y ajenos a este frente
+(`docs/WALLET_CAJA_CUADRE_FASE_70.4_DISENO.md`,
+`tools/Xpay.PassportSandboxHarness/HarnessApp.cs`, `HarnessDecision.cs`). No se descartaron
+ni se incluyeron.
+
+Escaneos previos al commit, todos sobre el diff staged: sin secretos, sin claves privadas,
+sin cabeceras de autorización, sin JWT, sin bin/obj, sin `.env`, sin alcance de
+MiDecisor/DataCrédito/Cartera/frontend. `PASSPORT_WEBHOOK_SECRET` aparece únicamente como
+**nombre** de variable en cinco lugares, nunca con valor. El único correo del diff es
+`sintetico@example.test`, sintético y en un TLD reservado para pruebas.
+
+### Hardening: NO aplicado — la cuenta de Azure está deshabilitada
+
+```
+SIGNATURE_MODE_BEFORE = OBSERVE
+SIGNATURE_MODE_AFTER  = OBSERVE   (sin cambio: el intento falló)
+QA_HARDENING_APPLIED  = NO
+```
+
+El intento de fijar `PASSPORT_WEBHOOK_SIGNATURE_MODE=ENFORCE` falló. La causa es externa al
+proyecto:
+
+```
+AADSTS50057: The user account is disabled.
+```
+
+La cuenta con la que la CLI de Azure estaba autenticada quedó **deshabilitada** en el
+directorio. `az account show` seguía mostrando una sesión válida porque lee estado
+cacheado en local; toda operación real contra Azure falla en la adquisición del token.
+
+Consecuencias, dichas sin rodeos:
+
+- El cambio **no se aplicó**. La autenticación falla **antes** de cualquier escritura, así
+  que no hubo modificación parcial. No es verificable desde aquí hasta que se restablezca
+  el acceso.
+- **La exposición declarada en §4 sigue viva.** QA continúa con acceso `Allow all` y en modo
+  `OBSERVE`, de modo que un POST sin firma a `/api/passport/webhook` sería aceptado y
+  persistido en `passport_webhook_events` con `signature_valid = 0`. El impacto sigue siendo
+  de auditoría y no financiero —sólo inserta, no mueve dinero, no altera datos existentes—,
+  pero es una vía de escritura pública que no aporta nada mientras el callback no esté
+  registrado.
+- `PASSPORT_WEBHOOK_SECRET` **no fue leído, ni impreso, ni derivado, ni modificado**. Sigue
+  presente e intacto.
+- **No se tocaron las restricciones de acceso** (`QA_ACCESS_RESTRICTIONS_MODIFIED=NO`), ni
+  ninguna otra App Setting.
+
+El App Service no se vio afectado por el estado de la cuenta: se verificó por HTTP que QA
+sigue sano (`/health` → `200 Healthy`) y que la ruta del webhook sigue publicada
+(`GET /api/passport/webhook` → `405`). No se envió ningún POST.
+
+### Estado consolidado
+
+```
+CALLBACK_REGISTERED=NO
+WEBHOOK_POST_REQUESTS=0
+WEBHOOK_PERSISTENCE_TRIGGERED=NO
+PASSPORT_API_CALLS=0
+FINANCIAL_OPERATIONS=0
+NEW_PAYMENTS=0
+PRODUCTION_MODIFIED=NO
+MIDECISOR_MODIFIED=NO
+DEPLOY_PERFORMED=NO
+```
+
+`READY_FOR_CALLBACK_REGISTRATION=NO` **hasta que se restablezca el acceso a Azure y el modo
+quede en `ENFORCE`**, o se decida explícitamente registrar el callback aceptando la
+exposición de `OBSERVE`.
+
+
+---
+
+## 10. Cierre de XPAY-596 — hardening APLICADO
+
+**Fecha:** 2026-09-30 (UTC)
+
+El bloqueo descrito en §9 se resolvió: se reautenticó la CLI de Azure con la misma
+cuenta del operador, que volvió a estar habilitada. Antes se ejecutó `az logout` para
+descartar la sesión cacheada que informaba un estado válido inexistente.
+
+```
+SIGNATURE_MODE_BEFORE = OBSERVE
+SIGNATURE_MODE_AFTER  = ENFORCE
+QA_HARDENING_APPLIED  = YES
+```
+
+Verificaciones del alcance del cambio:
+
+| Comprobación | Resultado |
+|---|---|
+| `PASSPORT_WEBHOOK_SIGNATURE_MODE` | `ENFORCE` |
+| `PASSPORT_WEBHOOK_SECRET` | Presente y no vacío — **no leído, no impreso, no derivado, no modificado** |
+| App Settings relacionados con el webhook | Exactamente dos, los dos esperados |
+| Total de App Settings | 36 — ninguno añadido ni eliminado por este paso |
+| Restricciones de acceso | `Allow all`, **sin tocar** |
+| `GET /health` | `200 Healthy` tras el reinicio que provoca el cambio de configuración |
+| `GET /api/passport/webhook` | `405` — ruta publicada, sigue siendo POST-only |
+
+La escritura se hizo con `--output none` y la salida redirigida, de modo que en ningún
+momento se volcó la configuración con valores.
+
+### Efecto sobre la exposición
+
+La vía de escritura pública no autenticada descrita en §4 y §9 **queda cerrada**. Con
+`ENFORCE`, una entrega sin firma válida recibe **401** y **no se persiste**. El acceso al App
+Service sigue siendo `Allow all` —no se modificó, conforme al ticket—, pero eso ya no permite
+insertar eventos.
+
+Ventana de exposición registrada para auditoría: entre el 2026-09-30T02:12Z (cuando se fijó
+`OBSERVE`) y el 2026-09-30T12:35Z (cuando se fijó `ENFORCE`). En ese intervalo no se envió
+ningún POST desde XPAY, y el callback nunca estuvo registrado en Passport, por lo que no se
+esperaba ninguna entrega legítima.
+
+### Estado consolidado
+
+```
+COMMIT_SHA=285f5acf4b1239d2f8e6bec526bffd0107841c69
+DEPLOYED_CODE_MATCHES_COMMIT=YES
+PUSH_PERFORMED=NO
+SIGNATURE_MODE=ENFORCE
+CALLBACK_REGISTERED=NO
+WEBHOOK_POST_REQUESTS=0
+WEBHOOK_PERSISTENCE_TRIGGERED=NO
+PASSPORT_API_CALLS=0
+FINANCIAL_OPERATIONS=0
+READY_FOR_CALLBACK_REGISTRATION=YES
+```
+
+> **Actualización XPAY-598:** no hizo falta registrar nada. El webhook **ya existía y
+> estaba activo** en Passport Sandbox, apuntando exactamente a esta URL, con Delivery
+> Mode `Retry` y los cuatro eventos `payment.inbound.*` seleccionados. No se modificó.
+> Ver `M5-T6-T7-CALLBACK-REGISTRO-SANDBOX.md` §7.
+
+Nota para el registro del callback: con `ENFORCE` activo, si Passport **no** firma las
+entregas en Sandbox, la primera entrega recibirá 401 y Passport reintentará hasta 12 veces.
+Si eso ocurre, la reacción correcta es pasar a `OBSERVE` en ese momento —no antes— y dejarlo
+declarado en la evidencia de T6/T7.
