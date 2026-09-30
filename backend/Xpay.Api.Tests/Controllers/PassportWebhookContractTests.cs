@@ -170,6 +170,58 @@ public class PassportWebhookContractTests
         Assert.Contains("IdBrebRetiro         = null", sinComentarios);
     }
 
+    // --- XPAY-602 — el soporte de lotes no abrió ninguna vía financiera ----
+
+    [Fact]
+    public void ProcessDeliveryAsync_ExisteYDelegaEnElPipelineYaProbado()
+    {
+        var m = typeof(PassportWebhookService).GetMethod(nameof(PassportWebhookService.ProcessDeliveryAsync));
+        Assert.NotNull(m);
+
+        // Delega en ProcessAsync — no reimplementa la lógica de un evento.
+        var sinComentarios = QuitarComentarios(FuenteServicio());
+        Assert.Contains("ProcessDeliveryAsync", sinComentarios);
+        Assert.Contains("await ProcessAsync(rawBody, payload, signatureValid, cancellationToken)", sinComentarios);
+    }
+
+    [Fact]
+    public void ElSoporteDeLotes_NoIntroduceDependenciasNiRutasFinancieras()
+    {
+        // Las mismas prohibiciones de XPAY-594 siguen vigentes sobre el código
+        // ya modificado por XPAY-602: si el soporte de lotes hubiera abierto
+        // una vía a Wallet/Ledger/retiros, este test fallaría.
+        foreach (var fuente in new[] { FuenteServicio(), FuenteController() })
+        {
+            var sinComentarios = QuitarComentarios(fuente);
+            foreach (var prohibido in new[]
+                     {
+                         "ApplyPassportPaymentStatusAsync", "BrebPaymentStateMachine",
+                         "BrebPaymentService", "WalletMovimientos", "LedgerMovimientos",
+                         "PassportBrebRetiros", "IPassportHttpClient", "IPassportPaymentClient",
+                     })
+                Assert.DoesNotContain(prohibido, sinComentarios);
+        }
+
+        var tipos = typeof(PassportWebhookService).GetConstructors().Single()
+            .GetParameters().Select(x => x.ParameterType).ToArray();
+        Assert.DoesNotContain(typeof(BrebPaymentService), tipos);
+    }
+
+    [Fact]
+    public void ElControllerRechazaLotesEstructuralmenteInvalidos_AntesDeProcesar()
+    {
+        var sinComentarios = QuitarComentarios(FuenteController());
+
+        // Fail-closed: Invalid -> BadRequest, y sólo después se procesa.
+        Assert.Contains("PassportWebhookDeliveryShape.Invalid", sinComentarios);
+        Assert.Contains("BadRequest", sinComentarios);
+        Assert.Contains("PassportWebhookDeliveryShape.EmptyBatch", sinComentarios);
+        Assert.True(
+            sinComentarios.IndexOf("PassportWebhookDeliveryShape.Invalid", StringComparison.Ordinal)
+            < sinComentarios.IndexOf("ProcessDeliveryAsync", StringComparison.Ordinal),
+            "La validación estructural debe preceder al procesamiento.");
+    }
+
     private static string QuitarComentarios(string fuente)
     {
         var sb = new System.Text.StringBuilder(fuente.Length);

@@ -41,6 +41,24 @@ public sealed record PassportWebhookPayload(
         PassportInboundEventClassifier.IsInbound(Kind) && HasPaymentId;
 }
 
+/// <summary>
+/// XPAY-602 — forma de una entrega de webhook de Passport.
+/// </summary>
+public enum PassportWebhookDeliveryShape
+{
+    /// <summary>No es JSON, la raíz no es objeto ni array, o algún elemento del array no es objeto.</summary>
+    Invalid,
+
+    /// <summary>Raíz objeto: un único evento — comportamiento original.</summary>
+    SingleEvent,
+
+    /// <summary>Raíz array con uno o más objetos.</summary>
+    Batch,
+
+    /// <summary>Raíz array sin elementos.</summary>
+    EmptyBatch,
+}
+
 public static class PassportWebhookPayloadParser
 {
     /// <summary>
@@ -50,6 +68,31 @@ public static class PassportWebhookPayloadParser
     public static bool TryParse(string rawBody, out PassportWebhookPayload payload)
     {
         payload = default!;
+        var shape = TryParseDelivery(rawBody, out var payloads);
+        if (shape != PassportWebhookDeliveryShape.SingleEvent) return false;
+        payload = payloads[0];
+        return true;
+    }
+
+    /// <summary>
+    /// XPAY-602 — determina la FORMA de la entrega y proyecta sus eventos.
+    ///
+    /// Passport Sandbox entrega, en la práctica, LOTES con raíz JSON Array —
+    /// contrario a los ejemplos de objeto único de su documentación. Se
+    /// verificó con tráfico real en XPAY-601: 36 entregas con firma válida
+    /// cuyos cuerpos el canonicalizador parseó sin problema, pero que el parser
+    /// rechazó por exigir una raíz de tipo objeto.
+    ///
+    /// POLÍTICA FAIL-CLOSED: la validación estructural de TODOS los elementos
+    /// ocurre ANTES de proyectar cualquiera. Si un solo elemento no es un
+    /// objeto, se devuelve <see cref="PassportWebhookDeliveryShape.Invalid"/>
+    /// con la lista vacía — nunca un lote a medias.
+    /// </summary>
+    public static PassportWebhookDeliveryShape TryParseDelivery(
+        string rawBody, out IReadOnlyList<PassportWebhookPayload> payloads)
+    {
+        payloads = Array.Empty<PassportWebhookPayload>();
+
         JsonDocument doc;
         try
         {
@@ -57,14 +100,49 @@ public static class PassportWebhookPayloadParser
         }
         catch (JsonException)
         {
-            return false;
+            return PassportWebhookDeliveryShape.Invalid;
         }
 
         using (doc)
         {
             var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object) return false;
 
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                payloads = new[] { ParseElement(root) };
+                return PassportWebhookDeliveryShape.SingleEvent;
+            }
+
+            if (root.ValueKind != JsonValueKind.Array)
+                return PassportWebhookDeliveryShape.Invalid;
+
+            // Pre-validación estructural completa del lote.
+            var elements = new List<JsonElement>();
+            foreach (var el in root.EnumerateArray())
+            {
+                if (el.ValueKind != JsonValueKind.Object)
+                    return PassportWebhookDeliveryShape.Invalid;
+                elements.Add(el);
+            }
+
+            if (elements.Count == 0)
+                return PassportWebhookDeliveryShape.EmptyBatch;
+
+            var parsed = new List<PassportWebhookPayload>(elements.Count);
+            foreach (var el in elements) parsed.Add(ParseElement(el));
+            payloads = parsed;
+            return PassportWebhookDeliveryShape.Batch;
+        }
+    }
+
+    /// <summary>
+    /// Proyecta UN evento. Es el mismo pipeline lógico que ya se usaba para la
+    /// raíz de objeto único: el soporte de lotes no lo altera, sólo lo invoca
+    /// por elemento.
+    /// </summary>
+    private static PassportWebhookPayload ParseElement(JsonElement root)
+    {
+        {
             // El nombre de evento viene en el campo "Event" — con E MAYÚSCULA,
             // según los ejemplos oficiales. Se acepta también "event" por
             // tolerancia, sin depender de ello.
@@ -97,7 +175,7 @@ public static class PassportWebhookPayloadParser
                 amountCurrency = Str(amt, "currency");
             }
 
-            payload = new PassportWebhookPayload(
+            return new PassportWebhookPayload(
                 EventName:              eventName,
                 Kind:                   PassportInboundEventClassifier.Classify(eventName),
                 PaymentId:              Str(root, "payment_id"),
@@ -114,8 +192,6 @@ public static class PassportWebhookPayloadParser
                 ErrorDescription:       errDesc,
                 AmountValue:            amountValue,
                 AmountCurrency:         amountCurrency);
-
-            return true;
         }
     }
 

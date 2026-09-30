@@ -237,6 +237,126 @@ public sealed class PassportWebhookServiceIdempotencyTests
         finally { await LimpiarAsync(cs, pid); }
     }
 
+    // =======================================================================
+    // XPAY-602 — entregas en LOTE (raíz array). Misma clave de idempotencia
+    // por evento: (event_type, passport_payment_id).
+    // =======================================================================
+
+    private static string RawBatch(string paymentId, params (string Evento, string Status)[] eventos)
+        => "[" + string.Join(",", eventos.Select(e => RawInbound(paymentId, e.Evento, e.Status))) + "]";
+
+    private static async Task<IReadOnlyList<PassportWebhookProcessOutcome>> ProcesarLoteAsync(
+        XpayDbContext ctx, string raw)
+    {
+        var shape = PassportWebhookPayloadParser.TryParseDelivery(raw, out var payloads);
+        Assert.Equal(PassportWebhookDeliveryShape.Batch, shape);
+        return await Servicio(ctx).ProcessDeliveryAsync(raw, payloads, signatureValid: true);
+    }
+
+    // Caso 4 — received -> confirmed -> settled del MISMO payment_id en un solo
+    // lote: son tres entregas legítimamente distintas y las tres se procesan.
+    [Fact]
+    public async Task Caso04_LoteConTresEstadosDelMismoPago_ProcesaLosTres()
+    {
+        if (!TryConnString(out var cs)) return;
+        var pid = NuevoPaymentId();
+        try
+        {
+            await using var ctx = NuevoContexto(cs);
+            var raw = RawBatch(pid,
+                (PassportInboundEventClassifier.EventInboundReceived,  "PROCESSING"),
+                (PassportInboundEventClassifier.EventInboundConfirmed, "CONFIRMED"),
+                (PassportInboundEventClassifier.EventInboundSettled,   "SETTLED"));
+
+            var r = await ProcesarLoteAsync(ctx, raw);
+
+            Assert.Equal(3, r.Count);
+            Assert.All(r, x => Assert.Equal(PassportWebhookProcessResult.Processed, x.Result));
+            Assert.Equal(3, (await Filas(ctx, pid)).Count);
+            Assert.All(await Filas(ctx, pid), f => { Assert.True(f.Processed); Assert.Null(f.IdBrebRetiro); });
+        }
+        finally { await LimpiarAsync(cs, pid); }
+    }
+
+    // Caso 5 — el MISMO (event_type, payment_id) repetido DENTRO del lote:
+    // el primero se procesa, el segundo es duplicado idempotente.
+    [Fact]
+    public async Task Caso05_DuplicadoExactoDentroDelLote_EsIdempotente()
+    {
+        if (!TryConnString(out var cs)) return;
+        var pid = NuevoPaymentId();
+        try
+        {
+            await using var ctx = NuevoContexto(cs);
+            var raw = RawBatch(pid,
+                (PassportInboundEventClassifier.EventInboundReceived, "PROCESSING"),
+                (PassportInboundEventClassifier.EventInboundReceived, "PROCESSING"));
+
+            var r = await ProcesarLoteAsync(ctx, raw);
+
+            Assert.Equal(2, r.Count);
+            Assert.Equal(PassportWebhookProcessResult.Processed, r[0].Result);
+            Assert.Equal(PassportWebhookProcessResult.Duplicate, r[1].Result);
+            Assert.Single(await Filas(ctx, pid));
+        }
+        finally { await LimpiarAsync(cs, pid); }
+    }
+
+    // Caso 13 — reintento del MISMO lote completo (Delivery Mode=Retry):
+    // ninguna fila nueva, todo duplicado.
+    [Fact]
+    public async Task Caso13_ReintentoDelMismoLote_NoDuplicaFilas()
+    {
+        if (!TryConnString(out var cs)) return;
+        var pid = NuevoPaymentId();
+        try
+        {
+            await using var ctx = NuevoContexto(cs);
+            var raw = RawBatch(pid,
+                (PassportInboundEventClassifier.EventInboundReceived,  "PROCESSING"),
+                (PassportInboundEventClassifier.EventInboundConfirmed, "CONFIRMED"));
+
+            var primera = await ProcesarLoteAsync(ctx, raw);
+            var reintento = await ProcesarLoteAsync(ctx, raw);
+
+            Assert.All(primera,  x => Assert.Equal(PassportWebhookProcessResult.Processed, x.Result));
+            Assert.All(reintento, x => Assert.Equal(PassportWebhookProcessResult.Duplicate, x.Result));
+            Assert.Equal(2, (await Filas(ctx, pid)).Count);
+        }
+        finally { await LimpiarAsync(cs, pid); }
+    }
+
+    // Caso 6 (parte DB) — salientes dentro del lote: se registran para
+    // auditoría, NO se procesan y no producen ningún efecto financiero.
+    [Fact]
+    public async Task Caso06_SalientesEnElLote_SeRegistranSinProcesar()
+    {
+        if (!TryConnString(out var cs)) return;
+        var pid = NuevoPaymentId();
+        try
+        {
+            await using var ctx = NuevoContexto(cs);
+            var raw = RawBatch(pid,
+                (PassportInboundEventClassifier.EventInboundReceived, "PROCESSING"),
+                ("payment.outbound.settled", "SETTLED"),
+                ("payment.outbound.confirmed", "CONFIRMED"));
+
+            var r = await ProcesarLoteAsync(ctx, raw);
+
+            Assert.Equal(PassportWebhookProcessResult.Processed,  r[0].Result);
+            Assert.Equal(PassportWebhookProcessResult.NotInbound, r[1].Result);
+            Assert.Equal(PassportWebhookProcessResult.NotInbound, r[2].Result);
+
+            var filas = await Filas(ctx, pid);
+            Assert.Equal(3, filas.Count);
+            Assert.Equal(1, filas.Count(f => f.Processed));
+            // Caso 15 — ningún evento del lote se correlaciona con un retiro,
+            // así que no existe vía por la que tocar Wallet/Ledger/breb_retiros.
+            Assert.All(filas, f => Assert.Null(f.IdBrebRetiro));
+        }
+        finally { await LimpiarAsync(cs, pid); }
+    }
+
     // --- Utilidades ---------------------------------------------------------
 
     private static string NuevoPaymentId() => "xpay594-" + Guid.NewGuid().ToString("N")[..20];

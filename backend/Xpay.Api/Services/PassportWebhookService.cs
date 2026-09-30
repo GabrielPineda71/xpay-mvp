@@ -58,6 +58,38 @@ public class PassportWebhookService
     }
 
     /// <summary>
+    /// XPAY-602 — procesa una entrega que puede traer UNO o VARIOS eventos.
+    ///
+    /// Passport entrega lotes con raíz JSON Array (verificado con tráfico real
+    /// en XPAY-601). Cada elemento se procesa con <see cref="ProcessAsync"/> —
+    /// el MISMO pipeline ya probado para un evento suelto—, de modo que la
+    /// clasificación, la sanitización y la idempotencia por
+    /// (event_type, passport_payment_id) se aplican POR EVENTO.
+    ///
+    /// La validación estructural del lote completo ya ocurrió en el parser
+    /// (fail-closed), así que aquí no puede llegar un lote a medias.
+    ///
+    /// Si un elemento lanza, la excepción se propaga: el controller responde
+    /// 500 y Passport reintenta. Los elementos ya registrados quedan
+    /// protegidos por su propia idempotencia, así que el reintento no los
+    /// duplica.
+    /// </summary>
+    public async Task<IReadOnlyList<PassportWebhookProcessOutcome>> ProcessDeliveryAsync(
+        string rawBody,
+        IReadOnlyList<PassportWebhookPayload> payloads,
+        bool signatureValid,
+        CancellationToken cancellationToken = default)
+    {
+        var outcomes = new List<PassportWebhookProcessOutcome>(payloads.Count);
+        foreach (var payload in payloads)
+        {
+            outcomes.Add(await ProcessAsync(rawBody, payload, signatureValid, cancellationToken)
+                .ConfigureAwait(false));
+        }
+        return outcomes;
+    }
+
+    /// <summary>
     /// Procesa una entrega ya autenticada (o explícitamente observada en
     /// Sandbox). El cuerpo crudo se usa sólo para calcular el hash y la
     /// proyección sanitizada: NUNCA se persiste ni se registra.

@@ -86,7 +86,12 @@ public class PassportWebhookController : ControllerBase
             return Unauthorized(new { received = true, processed = false });
         }
 
-        if (!PassportWebhookPayloadParser.TryParse(rawBody, out var payload))
+        // XPAY-602 — la entrega puede traer un objeto único o un LOTE con raíz
+        // array. La validación estructural del lote completo es fail-closed y
+        // ocurre aquí, antes de persistir cualquier elemento.
+        var shape = PassportWebhookPayloadParser.TryParseDelivery(rawBody, out var payloads);
+
+        if (shape == PassportWebhookDeliveryShape.Invalid)
         {
             _audit.LogSensitiveAction(HttpContext, "PASSPORT_WEBHOOK_PAYLOAD_UNPARSEABLE",
                 new { bodyLen = rawBody.Length });
@@ -94,20 +99,32 @@ public class PassportWebhookController : ControllerBase
             return BadRequest(new { received = true, processed = false });
         }
 
+        if (shape == PassportWebhookDeliveryShape.EmptyBatch)
+        {
+            // Lote estructuralmente válido pero sin eventos: no hay nada que
+            // procesar y reintentarlo sería inútil, así que se acepta con 200.
+            _audit.LogSensitiveAction(HttpContext, "PASSPORT_WEBHOOK_EMPTY_BATCH",
+                new { bodyLen = rawBody.Length });
+
+            return Ok(new { received = true, processed = false, result = "EmptyBatch", events = 0 });
+        }
+
         _audit.LogSensitiveAction(HttpContext, "PASSPORT_WEBHOOK_RECEIVED",
             new
             {
-                evento         = payload.EventName,
-                kind           = payload.Kind.ToString(),
+                shape          = shape.ToString(),
+                events         = payloads.Count,
+                eventos        = string.Join(",", payloads.Select(p => p.EventName)),
+                kinds          = string.Join(",", payloads.Select(p => p.Kind.ToString())),
                 signatureValid = signature.SignatureValid,
                 outcome        = signature.Outcome.ToString(),
             });
 
-        PassportWebhookProcessOutcome outcome;
+        IReadOnlyList<PassportWebhookProcessOutcome> outcomes;
         try
         {
-            outcome = await _service.ProcessAsync(
-                rawBody, payload, signature.SignatureValid, cancellationToken);
+            outcomes = await _service.ProcessDeliveryAsync(
+                rawBody, payloads, signature.SignatureValid, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -115,15 +132,22 @@ public class PassportWebhookController : ControllerBase
                 new { error = ex.GetType().Name });
 
             // 500 provoca el reintento documentado de Passport, que es
-            // exactamente lo deseado ante un fallo transitorio.
+            // exactamente lo deseado ante un fallo transitorio. Los elementos ya
+            // registrados están protegidos por su idempotencia individual.
             return StatusCode(500, new { received = true, processed = false });
         }
 
+        var processed  = outcomes.Count(o => o.Result == PassportWebhookProcessResult.Processed);
+        var duplicates = outcomes.Count(o => o.Result == PassportWebhookProcessResult.Duplicate);
+
         return Ok(new
         {
-            received  = true,
-            processed = outcome.Result == PassportWebhookProcessResult.Processed,
-            result    = outcome.Result.ToString(),
+            received   = true,
+            processed  = processed > 0,
+            events     = outcomes.Count,
+            processedCount = processed,
+            duplicateCount = duplicates,
+            results    = outcomes.Select(o => o.Result.ToString()).ToArray(),
         });
     }
 }
