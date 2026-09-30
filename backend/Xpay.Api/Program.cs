@@ -150,6 +150,26 @@ builder.Services.AddSingleton<
     Xpay.Api.Integrations.Passport.PassportPaymentClient>();
 builder.Services.AddScoped<Xpay.Api.Services.BrebPaymentService>();
 
+// XPAY-594 — M5-T6/T7: recepción del webhook de pago ENTRANTE de Passport
+// (pago hacia una llave XPAY o un QR). Componentes propios, sin acoplar KYC.
+//
+// AISLAMIENTO FINANCIERO: PassportWebhookService sólo escribe
+// passport_webhook_events. No llama ApplyPassportPaymentStatusAsync, no toca
+// Wallet/Ledger/breb_retiros, no usa BrebPaymentStateMachine y no realiza
+// ninguna llamada a la API de Passport — no depende de IPassportHttpClient.
+//
+// Fail-closed: sin PASSPORT_WEBHOOK_SECRET configurado, toda entrega se
+// considera no válida; y PASSPORT_WEBHOOK_SIGNATURE_MODE cae en ENFORCE ante
+// cualquier valor no reconocido, de modo que un modo permisivo nunca se
+// obtiene por omisión. Ninguna de las dos variables está configurada en ningún
+// ambiente todavía, y el callback NO está registrado en el Dashboard de
+// Passport: ninguna entrega real es posible hasta que se autorice
+// explícitamente en un ticket futuro.
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.Passport.IPassportWebhookSignatureValidator,
+    Xpay.Api.Integrations.Passport.PassportWebhookSignatureValidator>();
+builder.Services.AddScoped<Xpay.Api.Services.PassportWebhookService>();
+
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.
 var configuredOrigins = builder.Configuration
