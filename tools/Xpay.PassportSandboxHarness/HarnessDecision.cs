@@ -109,6 +109,56 @@ public enum HarnessCommand
     // PASSPORT_TEST_M5_PAYMENT_RESOLUTION_ID. Independiente de todos los
     // anteriores.
     ConfigureM5PaymentResolution,
+    // XPAY-570 — M5-T5-MISSING-AMOUNT (negative testing de Create Payment):
+    // nunca llega a Passport (bloqueo LOCAL garantizado por diseño — ver
+    // CreatePaymentMissingAmountExecutor). Independiente de todos los
+    // anteriores, incluido CreateBrebPaymentCert.
+    CreatePaymentMissingAmount,
+    // XPAY-571 — M5-T5-MISSING-ACCOUNT (negative testing de Create Payment,
+    // campo invertido respecto a XPAY-570): nunca llega a Passport (bloqueo
+    // LOCAL garantizado por diseño — ver CreatePaymentMissingAccountExecutor).
+    // Independiente de todos los anteriores.
+    CreatePaymentMissingAccount,
+    // XPAY-572 — M5-T5-INVALID-RESOLUTION: A DIFERENCIA de MissingAmount/
+    // MissingAccount, ESTE comando SÍ realiza una llamada HTTP real a
+    // Passport (resolution_id sintético, nunca vacío — el guard productivo
+    // de AccountId/Amount no dispara). Repeat guard PERMANENTE propio (ver
+    // CreatePaymentInvalidResolutionExecutor) — nunca se ejecuta dos veces.
+    // Independiente de todos los anteriores, incluido CreateBrebPaymentCert.
+    CreatePaymentInvalidResolution,
+    // XPAY-575 — FASE 1 (Create Key) de un fixture NUEVO y desechable para
+    // M5-T5-D (suspended key). NUNCA suspende/activa/elimina/resuelve —
+    // ÚNICAMENTE Create Key. Repeat guard PERMANENTE propio. Independiente
+    // de create-key (M3) y de create-m4-t3-suspended-fixture-key (M4).
+    CreateM5T5SuspendedKeyFixture,
+    // XPAY-576 — FASE 2 (Suspend Key) del MISMO fixture creado en
+    // XPAY-575, leído exclusivamente desde su private capture. NUNCA
+    // Create/Resolve/Payment/Delete. Repeat guard PERMANENTE propio,
+    // independiente del de XPAY-575. Independiente de suspend-key (M3) y
+    // de suspend-m4-t3-fixture-key (M4).
+    SuspendM5T5FixtureKey,
+    // XPAY-577 — FASE 3 (Resolve real) y EJECUCIÓN FINAL de M5-T5-D.
+    // Exige correlación Create->Suspend válida (XPAY-575->XPAY-576) antes
+    // de HTTP. NUNCA Create/Suspend/Payment/Retrieve/Delete/Reactivate.
+    // Repeat guard PERMANENTE propio.
+    ResolveM5T5SuspendedKey,
+    // XPAY-613 — FASE A (PREP-CREATE) de un fixture NUEVO y desechable para
+    // M5-T5-E (deleted key). NUNCA elimina/suspende/activa/resuelve —
+    // ÚNICAMENTE Create Key. Repeat guard PERMANENTE propio. Independiente
+    // de create-key (M3), de create-m4-t3-deleted-fixture-key (M4) y de
+    // create-m5-t5-suspended-fixture (M5-T5-D).
+    CreateM5T5DeletedKeyFixture,
+    // XPAY-613 — FASE B (PREP-DELETE) del MISMO fixture creado en la Fase A,
+    // leído exclusivamente desde su private capture. Operación IRREVERSIBLE.
+    // NUNCA Create/Suspend/Activate/Resolve/Payment. Repeat guard PERMANENTE
+    // propio, independiente del de la Fase A. Independiente de delete-key
+    // (M3-T5) y de delete-m4-t3-fixture-key (M4).
+    DeleteM5T5FixtureKey,
+    // XPAY-613 — FASE C (RESOLVE-DELETED) y EJECUCIÓN FINAL de M5-T5-E.
+    // Exige correlación Create->Delete válida (Fase A -> Fase B) antes de
+    // HTTP. NUNCA Create/Suspend/Delete/Payment/Retrieve/Reactivate. Repeat
+    // guard PERMANENTE propio.
+    ResolveM5T5DeletedKey,
 }
 
 public static class HarnessDecision
@@ -174,6 +224,25 @@ public static class HarnessDecision
     public const string CommandResolveKeyM5T2 = "resolve-key-m5-t2";
     // XPAY-546 — transferencia LOCAL del resolution_id a env.
     public const string CommandConfigureM5PaymentResolution = "configure-m5-payment-resolution";
+    // XPAY-570 — M5-T5-MISSING-AMOUNT (Create Payment negativo).
+    public const string CommandCreatePaymentMissingAmount = "create-payment-missing-amount";
+    // XPAY-571 — M5-T5-MISSING-ACCOUNT (Create Payment negativo).
+    public const string CommandCreatePaymentMissingAccount = "create-payment-missing-account";
+    // XPAY-572 — M5-T5-INVALID-RESOLUTION (Create Payment negativo, ÚNICA
+    // llamada real de este trío de subcasos M5-T5).
+    public const string CommandCreatePaymentInvalidResolution = "create-payment-invalid-resolution";
+    // XPAY-575 — Fase 1 (Create Key) del fixture nuevo de M5-T5-D.
+    public const string CommandCreateM5T5SuspendedKeyFixture = "create-m5-t5-suspended-fixture";
+    // XPAY-576 — Fase 2 (Suspend Key) del mismo fixture.
+    public const string CommandSuspendM5T5FixtureKey = "suspend-m5-t5-fixture";
+    // XPAY-577 — Fase 3 (Resolve real), ejecución final de M5-T5-D.
+    public const string CommandResolveM5T5SuspendedKey = "resolve-m5-t5-suspended-key";
+    // XPAY-613 — Fase A (Create Key) del fixture nuevo de M5-T5-E.
+    public const string CommandCreateM5T5DeletedKeyFixture = "create-m5-t5-deleted-fixture";
+    // XPAY-613 — Fase B (Delete Key, irreversible) del mismo fixture.
+    public const string CommandDeleteM5T5FixtureKey = "delete-m5-t5-fixture";
+    // XPAY-613 — Fase C (Resolve real), ejecución final de M5-T5-E.
+    public const string CommandResolveM5T5DeletedKey = "resolve-m5-t5-deleted-key";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -246,6 +315,24 @@ public static class HarnessDecision
     public const string FlagConfirmResolveKeyM5T2 = "--confirm-resolve-key-m5-t2";
     // XPAY-546 — exclusiva de configure-m5-payment-resolution.
     public const string FlagConfirmConfigureM5PaymentResolution = "--confirm-configure-m5-payment-resolution";
+    // XPAY-570 — exclusiva de create-payment-missing-amount.
+    public const string FlagConfirmCreatePaymentMissingAmount = "--confirm-create-payment-missing-amount";
+    // XPAY-571 — exclusiva de create-payment-missing-account.
+    public const string FlagConfirmCreatePaymentMissingAccount = "--confirm-create-payment-missing-account";
+    // XPAY-572 — exclusiva de create-payment-invalid-resolution.
+    public const string FlagConfirmCreatePaymentInvalidResolution = "--confirm-create-payment-invalid-resolution";
+    // XPAY-575 — exclusiva de create-m5-t5-suspended-fixture.
+    public const string FlagConfirmCreateM5T5SuspendedKeyFixture = "--confirm-create-m5-t5-suspended-fixture";
+    // XPAY-576 — exclusiva de suspend-m5-t5-fixture.
+    public const string FlagConfirmSuspendM5T5FixtureKey = "--confirm-suspend-m5-t5-fixture";
+    // XPAY-577 — exclusiva de resolve-m5-t5-suspended-key.
+    public const string FlagConfirmResolveM5T5SuspendedKey = "--confirm-resolve-m5-t5-suspended-key";
+    // XPAY-613 — exclusiva de create-m5-t5-deleted-fixture.
+    public const string FlagConfirmCreateM5T5DeletedKeyFixture = "--confirm-create-m5-t5-deleted-fixture";
+    // XPAY-613 — exclusiva de delete-m5-t5-fixture.
+    public const string FlagConfirmDeleteM5T5FixtureKey = "--confirm-delete-m5-t5-fixture";
+    // XPAY-613 — exclusiva de resolve-m5-t5-deleted-key.
+    public const string FlagConfirmResolveM5T5DeletedKey = "--confirm-resolve-m5-t5-deleted-key";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -281,6 +368,15 @@ public static class HarnessDecision
             CommandCreateM5AccountB  => HarnessCommand.CreateM5AccountB,
             CommandResolveKeyM5T2    => HarnessCommand.ResolveKeyM5T2,
             CommandConfigureM5PaymentResolution => HarnessCommand.ConfigureM5PaymentResolution,
+            CommandCreatePaymentMissingAmount   => HarnessCommand.CreatePaymentMissingAmount,
+            CommandCreatePaymentMissingAccount  => HarnessCommand.CreatePaymentMissingAccount,
+            CommandCreatePaymentInvalidResolution => HarnessCommand.CreatePaymentInvalidResolution,
+            CommandCreateM5T5SuspendedKeyFixture  => HarnessCommand.CreateM5T5SuspendedKeyFixture,
+            CommandSuspendM5T5FixtureKey          => HarnessCommand.SuspendM5T5FixtureKey,
+            CommandResolveM5T5SuspendedKey        => HarnessCommand.ResolveM5T5SuspendedKey,
+            CommandCreateM5T5DeletedKeyFixture    => HarnessCommand.CreateM5T5DeletedKeyFixture,
+            CommandDeleteM5T5FixtureKey           => HarnessCommand.DeleteM5T5FixtureKey,
+            CommandResolveM5T5DeletedKey          => HarnessCommand.ResolveM5T5DeletedKey,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -335,6 +431,15 @@ public static class HarnessDecision
             HarnessCommand.CreateM5AccountB  => FlagConfirmCreateM5AccountB,
             HarnessCommand.ResolveKeyM5T2    => FlagConfirmResolveKeyM5T2,
             HarnessCommand.ConfigureM5PaymentResolution => FlagConfirmConfigureM5PaymentResolution,
+            HarnessCommand.CreatePaymentMissingAmount   => FlagConfirmCreatePaymentMissingAmount,
+            HarnessCommand.CreatePaymentMissingAccount  => FlagConfirmCreatePaymentMissingAccount,
+            HarnessCommand.CreatePaymentInvalidResolution => FlagConfirmCreatePaymentInvalidResolution,
+            HarnessCommand.CreateM5T5SuspendedKeyFixture  => FlagConfirmCreateM5T5SuspendedKeyFixture,
+            HarnessCommand.SuspendM5T5FixtureKey          => FlagConfirmSuspendM5T5FixtureKey,
+            HarnessCommand.ResolveM5T5SuspendedKey        => FlagConfirmResolveM5T5SuspendedKey,
+            HarnessCommand.CreateM5T5DeletedKeyFixture    => FlagConfirmCreateM5T5DeletedKeyFixture,
+            HarnessCommand.DeleteM5T5FixtureKey           => FlagConfirmDeleteM5T5FixtureKey,
+            HarnessCommand.ResolveM5T5DeletedKey          => FlagConfirmResolveM5T5DeletedKey,
             _                                      => null,
         };
 

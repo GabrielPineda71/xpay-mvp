@@ -1,0 +1,42 @@
+{
+  "case_id": "M5-T5-DELETED-KEY",
+  "executed_at_utc": "2026-10-01T02:05:06Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "fd0b65426020122d942725b2f893628fea05e963",
+  "operation": "POST /v1/resolve-key",
+  "http_status": null,
+  "result": "FAIL",
+  "request_sanitized": {
+    "fixture_create_completed": true,
+    "fixture_delete_completed": true,
+    "fixture_key_id_fingerprint": "1FB4B0E9F2B3",
+    "fixture_key_value_fingerprint": "A0989C54075F",
+    "key_type": "BCODE",
+    "historical_fixture_not_used": true,
+    "active_0268_not_used": true,
+    "m5_t5_d_fixture_not_used": true
+  },
+  "response_sanitized": {
+    "passport_response_received": true,
+    "observed_http_status": 404,
+    "safe_error_code": "generic_error",
+    "safe_error_message": null,
+    "resolution_returned": false,
+    "deletion_signal_confirmed": true,
+    "retry_count": 0,
+    "oauth_real_token_requests": 1,
+    "create_key_real_calls": 0,
+    "suspend_key_real_calls": 0,
+    "activate_key_real_calls": 0,
+    "delete_key_real_calls": 0,
+    "list_keys_real_calls": 0,
+    "resolve_real_calls": 1,
+    "payment_real_calls": 0,
+    "retrieve_real_calls": 0,
+    "repeat_guard_consumed": true,
+    "certification_case_result": "EXPECTED_PROVIDER_REJECTION"
+  },
+  "automated_test_reference": null,
+  "notes": "PASSPORT_HTTP_FAILURE: Resolve rechazado por Passport contra la key eliminada (fixture creado en la Fase A, eliminado y reconocido con 204 en la Fase B antes de esta llamada) \u2014 ESTE ES EL RESULTADO ESPERADO Y DESEADO de M5-T5-E, no un fallo del harness. Interpretaci\u00F3n de certificaci\u00F3n final pendiente de Passport.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

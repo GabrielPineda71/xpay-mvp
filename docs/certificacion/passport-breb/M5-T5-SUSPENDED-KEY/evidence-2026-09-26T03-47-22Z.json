@@ -1,0 +1,40 @@
+{
+  "case_id": "M5-T5-SUSPENDED-KEY",
+  "executed_at_utc": "2026-09-26T03:47:22Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "d209d5baf2e3032c938c4127009f03533bbd2275",
+  "operation": "POST /v1/resolve-key",
+  "http_status": null,
+  "result": "FAIL",
+  "request_sanitized": {
+    "fixture_create_completed": true,
+    "fixture_suspend_completed": true,
+    "fixture_key_id_fingerprint": "0326AFB905CB",
+    "fixture_key_value_fingerprint": "816264C840B0",
+    "key_type": "BCODE",
+    "historical_fixture_not_used": true,
+    "active_0268_not_used": true
+  },
+  "response_sanitized": {
+    "passport_response_received": true,
+    "observed_http_status": 400,
+    "safe_error_code": "generic_error",
+    "safe_error_message": "Key operation rejected: Key has been suspended by the Client. (U805)",
+    "resolution_returned": false,
+    "current_suspension_confirmed": true,
+    "retry_count": 0,
+    "oauth_real_token_requests": 1,
+    "create_key_real_calls": 0,
+    "suspend_key_real_calls": 0,
+    "resolve_real_calls": 1,
+    "payment_real_calls": 0,
+    "retrieve_real_calls": 0,
+    "delete_key_real_calls": 0,
+    "reactivate_key_real_calls": 0,
+    "repeat_guard_consumed": true,
+    "certification_case_result": "EXPECTED_PROVIDER_REJECTION"
+  },
+  "automated_test_reference": null,
+  "notes": "PASSPORT_HTTP_FAILURE: Resolve rechazado por Passport contra la key suspendida (fixture XPAY-575 creado, XPAY-576 suspendido y confirmado SUSPENDED antes de esta llamada) \u2014 ESTE ES EL RESULTADO ESPERADO Y DESEADO de M5-T5-D, no un fallo del harness. Interpretaci\u00F3n de certificaci\u00F3n final pendiente de Passport.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
