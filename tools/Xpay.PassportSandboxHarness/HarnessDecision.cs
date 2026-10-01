@@ -159,6 +159,12 @@ public enum HarnessCommand
     // HTTP. NUNCA Create/Suspend/Delete/Payment/Retrieve/Reactivate. Repeat
     // guard PERMANENTE propio.
     ResolveM5T5DeletedKey,
+    // XPAY-619 — M5-T5-C: único Payment con monto por encima del umbral
+    // certificable del Anexo (>12.000.000 COP), esperando rechazo de
+    // Passport. Repeat guard PERMANENTE propio, consumido ANTES del HTTP.
+    // NUNCA Resolve/Retrieve/mutación de llaves. Independiente del Payment
+    // positivo (M5-PAYMENT-CREATE) y de los otros negativos de pago.
+    CreatePaymentOverLimit,
 }
 
 public static class HarnessDecision
@@ -243,6 +249,8 @@ public static class HarnessDecision
     public const string CommandDeleteM5T5FixtureKey = "delete-m5-t5-fixture";
     // XPAY-613 — Fase C (Resolve real), ejecución final de M5-T5-E.
     public const string CommandResolveM5T5DeletedKey = "resolve-m5-t5-deleted-key";
+    // XPAY-619 — M5-T5-C (exceso de límite de monto).
+    public const string CommandCreatePaymentOverLimit = "create-payment-over-limit";
 
     public const string FlagExecute              = "--execute";
     public const string FlagConfirmCreateCustomer = "--confirm-create-customer";
@@ -333,6 +341,9 @@ public static class HarnessDecision
     public const string FlagConfirmDeleteM5T5FixtureKey = "--confirm-delete-m5-t5-fixture";
     // XPAY-613 — exclusiva de resolve-m5-t5-deleted-key.
     public const string FlagConfirmResolveM5T5DeletedKey = "--confirm-resolve-m5-t5-deleted-key";
+    // XPAY-619 — exclusiva de create-payment-over-limit. Ninguna otra flag
+    // del harness autoriza este caso, y ésta no autoriza ningún otro.
+    public const string FlagConfirmCreatePaymentOverLimit = "--confirm-create-payment-over-limit";
 
     public static HarnessCommand ParseCommand(string[] args) =>
         args.Length == 0 ? HarnessCommand.Unknown :
@@ -377,6 +388,7 @@ public static class HarnessDecision
             CommandCreateM5T5DeletedKeyFixture    => HarnessCommand.CreateM5T5DeletedKeyFixture,
             CommandDeleteM5T5FixtureKey           => HarnessCommand.DeleteM5T5FixtureKey,
             CommandResolveM5T5DeletedKey          => HarnessCommand.ResolveM5T5DeletedKey,
+            CommandCreatePaymentOverLimit         => HarnessCommand.CreatePaymentOverLimit,
             _                              => HarnessCommand.Unknown,
         };
 
@@ -440,6 +452,7 @@ public static class HarnessDecision
             HarnessCommand.CreateM5T5DeletedKeyFixture    => FlagConfirmCreateM5T5DeletedKeyFixture,
             HarnessCommand.DeleteM5T5FixtureKey           => FlagConfirmDeleteM5T5FixtureKey,
             HarnessCommand.ResolveM5T5DeletedKey          => FlagConfirmResolveM5T5DeletedKey,
+            HarnessCommand.CreatePaymentOverLimit         => FlagConfirmCreatePaymentOverLimit,
             _                                      => null,
         };
 

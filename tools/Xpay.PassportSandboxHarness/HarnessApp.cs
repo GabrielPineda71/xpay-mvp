@@ -89,6 +89,7 @@ public static class HarnessApp
                 output.WriteLine("     create-m5-t5-deleted-fixture        [--execute --confirm-create-m5-t5-deleted-fixture]");
                 output.WriteLine("     delete-m5-t5-fixture                [--execute --confirm-delete-m5-t5-fixture]");
                 output.WriteLine("     resolve-m5-t5-deleted-key           [--execute --confirm-resolve-m5-t5-deleted-key]");
+                output.WriteLine("     create-payment-over-limit           [--execute --confirm-create-payment-over-limit]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -573,6 +574,28 @@ public static class HarnessApp
                 output.WriteLine("note=Repeat guard PERMANENTE propio de esta Fase C — a lo sumo UNA ejecución real (XPAY-613)");
                 output.WriteLine("note=Exige correlación Create->Delete confirmada (Fase A -> Fase B) antes de cualquier HTTP");
                 output.WriteLine("note=NUNCA Payment — este comando no puede alcanzar IPassportPaymentClient bajo ninguna circunstancia");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreatePaymentOverLimit:
+                // XPAY-619 — en dry-run NUNCA se lee la captura privada de
+                // Resolve, nunca se verifica el repeat guard real y nunca se
+                // escribe su marcador — eso sólo ocurre en ReadyToExecute,
+                // dentro de CreatePaymentOverLimitExecutor. Las únicas
+                // validaciones que se muestran aquí son las PURAS (monto),
+                // seguras de evaluar sin credenciales ni artefactos.
+                output.WriteLine("case=M5-T5-OVER-LIMIT (M5-T5-C — Payment por encima del umbral certificable del Anexo)");
+                output.WriteLine("endpoint=POST /v1/payments/breb");
+                output.WriteLine("mutating=YES FINANCIAL (llamada real a la API de pagos — se ESPERA rechazo por exceso de monto)");
+                output.WriteLine($"amount_value={CreatePaymentOverLimitExecutor.CertificationAmountValue} currency=COP");
+                output.WriteLine($"annex_threshold_cop=12000000.00 amount_above_threshold={CreatePaymentOverLimitExecutor.ValidateAmount(CreatePaymentOverLimitExecutor.CertificationAmountValue, "COP") == CreatePaymentOverLimitExecutor.AmountValidation.Valid}");
+                output.WriteLine("requires=--execute --confirm-create-payment-over-limit");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia ni se consume el repeat guard en este modo)");
+                output.WriteLine("note=Repeat guard PERMANENTE propio, consumido ANTES del HTTP — a lo sumo UNA ejecución real (XPAY-619)");
+                output.WriteLine("note=Exige una resolución NUEVA, no consumida y vigente con margen, leída SOLO de la captura privada de resolve-key-m5-t2");
+                output.WriteLine("note=NUNCA Resolve, NUNCA Retrieve, NUNCA mutación de llaves — este comando no puede alcanzar IPassportKeyClient");
+                output.WriteLine("note=Si Passport ACEPTA el pago: T5_C_RESULT=INCONCLUSIVE, se detiene, no hay segundo Payment ni Retrieve");
                 return;
 
             case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrStatic:
@@ -1430,6 +1453,40 @@ public static class HarnessApp
                     output.WriteLine("note=M5-T5-DELETED-KEY: UNEXPECTED_RESOLVE_SUCCESS — requiere revisión inmediata del director");
                 else
                     output.WriteLine("note=M5-T5-DELETED-KEY: rechazo esperado de Passport confirmado (EXPECTED_PROVIDER_REJECTION) — M5-T5-E técnicamente documentado");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreatePaymentOverLimit:
+            {
+                var execution = await CreatePaymentOverLimitExecutor
+                    .ExecuteAsync(configuration, dependencies.PaymentClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-619 — bloqueo operativo GENUINO (destino privado
+                    // inválido, repeat guard ya consumido, monto que no pasa
+                    // la validación local, cuenta operativa ausente,
+                    // resolución ausente/ambigua/ilegible/inválida/consumida/
+                    // vencida/no correlacionada con la llave positiva, fallo
+                    // al escribir el marcador, o commit SHA no resoluble) —
+                    // NUNCA escribe evidence.json y NUNCA llama a Passport.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                // Outcome.PassportFailure (rechazo, con o sin señal de
+                // límite) u Outcome.Success (aceptación inesperada): ambos
+                // representan una respuesta REAL de Passport y ambos
+                // escriben evidence.json — éste es el JSON de certificación
+                // de M5-T5-C (case_id="M5-T5-OVER-LIMIT").
+                var overLimitPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={overLimitPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine($"limit_rejection={execution.Evidence.ResponseSanitized["limit_rejection"] ?? "UNKNOWN"}");
+                output.WriteLine($"t5_c_result={execution.Evidence.ResponseSanitized["t5_c_result"]}");
+                output.WriteLine($"note={execution.Detail}");
                 return;
             }
 
