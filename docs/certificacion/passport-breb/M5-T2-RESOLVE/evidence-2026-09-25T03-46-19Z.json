@@ -1,0 +1,29 @@
+{
+  "case_id": "M5-T2-RESOLVE",
+  "executed_at_utc": "2026-09-25T03:46:19Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "9fbecc26d75d981e74e78a75d118695303ffd5f9",
+  "operation": "POST /v1/resolve-key",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "customer_id_fingerprint": "99A710894D3B",
+    "key_type": "BCODE",
+    "key_value_fingerprint": "74C5BD33149D"
+  },
+  "response_sanitized": {
+    "request_executed": true,
+    "request_accepted": true,
+    "resolution_id_fingerprint": "F8D35D06AD7D",
+    "owner_present": true,
+    "participant_present": true,
+    "account_present": true,
+    "expires_at_present": true,
+    "private_artifact_captured": true,
+    "retry_count": 0,
+    "resolve_calls": 1
+  },
+  "automated_test_reference": null,
+  "notes": "Dedicado a certificaci\u00F3n M5-T2 (Payment B-\u003EA) \u2014 case_id distinto de M3-T2 a prop\u00F3sito; M3-T2 permanece congelado/ACCEPTED.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
