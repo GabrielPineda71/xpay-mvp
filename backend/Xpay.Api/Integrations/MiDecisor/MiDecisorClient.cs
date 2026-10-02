@@ -55,11 +55,16 @@ public sealed class MiDecisorClient : IMiDecisorClient
         ArgumentNullException.ThrowIfNull(request);
 
         // ── 1. Validación LOCAL — sin token, sin HTTP.
-        var tipoXpay = (request.TipoIdentificacion ?? string.Empty).Trim();
-        var numero   = (request.NumeroIdentificacion ?? string.Empty).Trim();
-        var apellido = (request.ApellidoRazonSocial ?? string.Empty).Trim();
+        //    XPAY-647: el request ya trae el CÓDIGO MiDecisor (contrato de
+        //    alambre de MiDecisorConsultaRequest). La traducción tipo XPAY →
+        //    código vive SÓLO en PersonaMiDecisorRequestMapper; aquí únicamente
+        //    se verifica que el código sea uno de Persona Natural. Un tipo XPAY
+        //    ("CC") o un código PJ ("2"/"3") se rechazan — sin contrato dual.
+        var tipoCodigo = (request.TipoIdentificacion ?? string.Empty).Trim();
+        var numero     = (request.NumeroIdentificacion ?? string.Empty).Trim();
+        var apellido   = (request.ApellidoRazonSocial ?? string.Empty).Trim();
 
-        if (!TipoDocumentoMiDecisorMapper.TryMapPersonaNatural(tipoXpay, out var tipoCodigo))
+        if (!TipoDocumentoMiDecisorMapper.MapeosPersonaNatural.Values.Contains(tipoCodigo))
             throw new MiDecisorRequestValidationException(
                 "Tipo de identificación no soportado para Persona Natural.");
 

@@ -18,7 +18,7 @@ public class MiDecisorClientTests
     };
 
     private static MiDecisorConsultaRequest ValidRequest() =>
-        new(TipoIdentificacion: "CC", NumeroIdentificacion: "1234567", ApellidoRazonSocial: "Rodriguez");
+        new(TipoIdentificacion: "1", NumeroIdentificacion: "1234567", ApellidoRazonSocial: "Rodriguez");
 
     private static MiDecisorClient CreateClient(
         FakeHttpMessageHandler handler,
@@ -110,7 +110,7 @@ public class MiDecisorClientTests
     }
 
     [Fact]
-    public async Task Query_RequestJsonFieldNamesExact_AndMapsType()
+    public async Task Query_RequestJsonFieldNamesExact_AndSendsTypeCodeVerbatim()
     {
         var handler = new FakeHttpMessageHandler(
             () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, AcceptedWithRisk()));
@@ -119,7 +119,7 @@ public class MiDecisorClientTests
         await client.ConsultarPersonaNaturalAsync(ValidRequest());
 
         var body = handler.LastRequestBody!;
-        Assert.Contains("\"tipoIdentificacion\":\"1\"", body);   // CC → "1"
+        Assert.Contains("\"tipoIdentificacion\":\"1\"", body);   // código recibido, sin re-traducir
         Assert.Contains("\"numeroIdentificacion\":\"1234567\"", body);
         Assert.Contains("\"apellidoRazonSocial\":\"Rodriguez\"", body);
         Assert.DoesNotContain(FakeMiDecisorTokenProvider.SyntheticToken, body);
@@ -332,13 +332,22 @@ public class MiDecisorClientTests
         var client = CreateClient(handler, ValidConfig(), token);
 
         await Assert.ThrowsAsync<MiDecisorRequestValidationException>(() =>
-            client.ConsultarPersonaNaturalAsync(new("CC", numero, "Rodriguez")));
+            client.ConsultarPersonaNaturalAsync(new("1", numero, "Rodriguez")));
         Assert.Equal(0, handler.CallCount);
         Assert.Equal(0, token.CallCount);
     }
 
-    [Fact]
-    public async Task UnsupportedDocumentType_ThrowsRequestValidation_NoHttpNoToken()
+    // XPAY-647: el cliente recibe CÓDIGOS MiDecisor. Códigos PJ ("2" NIT,
+    // "3" PJE), códigos inexistentes y tipos XPAY sin traducir ("CC", "NIT")
+    // se rechazan — no hay contrato dual.
+    [Theory]
+    [InlineData("2")]
+    [InlineData("3")]
+    [InlineData("0")]
+    [InlineData("")]
+    [InlineData("CC")]
+    [InlineData("NIT")]
+    public async Task UnsupportedDocumentType_ThrowsRequestValidation_NoHttpNoToken(string tipoIdentificacion)
     {
         var handler = new FakeHttpMessageHandler(
             () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, AcceptedWithRisk()));
@@ -346,7 +355,7 @@ public class MiDecisorClientTests
         var client = CreateClient(handler, ValidConfig(), token);
 
         await Assert.ThrowsAsync<MiDecisorRequestValidationException>(() =>
-            client.ConsultarPersonaNaturalAsync(new("NIT", "1234567", "Rodriguez")));
+            client.ConsultarPersonaNaturalAsync(new(tipoIdentificacion, "1234567", "Rodriguez")));
         Assert.Equal(0, handler.CallCount);
         Assert.Equal(0, token.CallCount);
     }
@@ -361,7 +370,7 @@ public class MiDecisorClientTests
         var client = CreateClient(handler, ValidConfig(), new FakeMiDecisorTokenProvider());
 
         await Assert.ThrowsAsync<MiDecisorRequestValidationException>(() =>
-            client.ConsultarPersonaNaturalAsync(new("CC", "1234567", apellido)));
+            client.ConsultarPersonaNaturalAsync(new("1", "1234567", apellido)));
         Assert.Equal(0, handler.CallCount);
     }
 
@@ -372,7 +381,7 @@ public class MiDecisorClientTests
             () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, AcceptedWithRisk()));
         var client = CreateClient(handler, ValidConfig(), new FakeMiDecisorTokenProvider());
 
-        var r = await client.ConsultarPersonaNaturalAsync(new("CC", "1234567", "Núñez-Peña"));
+        var r = await client.ConsultarPersonaNaturalAsync(new("1", "1234567", "Núñez-Peña"));
 
         Assert.Equal(1, handler.CallCount);
         Assert.Equal("ACCEPTED", r.EstadoEnvelope);
