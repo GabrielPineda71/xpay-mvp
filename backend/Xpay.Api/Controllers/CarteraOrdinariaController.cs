@@ -236,9 +236,11 @@ public class CarteraOrdinariaController(
     // RECIBIDA→CONSULTANDO_RIESGO del servicio de consulta, el no-auto-retry tras
     // ENVIO_INCIERTO y los guards YaConsumido/YaDecidido/YaMaterializado
     // downstream. Por eso NO se exige Idempotency-Key (repetir la llamada es
-    // seguro e idempotente). Con la DI actual la barrera de autorización
-    // (AutorizacionConsultaRiesgoNoDisponible) impide alcanzar MiDecisor: el
-    // consentimiento durable capturado NO basta.
+    // seguro e idempotente). Con la DI actual la barrera de autorización es el
+    // gate QA (AutorizacionConsultaRiesgoQaGate): sin configuración QA impide
+    // alcanzar MiDecisor y el consentimiento durable capturado NO basta. Con
+    // STOP_AFTER_CONSULTA activo el orquestador devuelve DetenidaTrasConsulta
+    // (solicitud en EN_EVALUACION, sin decisión ni cupo).
     [Authorize(Policy = "KycAprobado")]
     [HttpPost("solicitudes/{idSolicitud:long}/iniciar-evaluacion")]
     public async Task<IActionResult> IniciarEvaluacion(long idSolicitud)
@@ -257,17 +259,7 @@ public class CarteraOrdinariaController(
         audit.LogSensitiveAction(HttpContext, "CARTERA_EVALUACION_RESULTADO",
             new { idSolicitud, idUsuario, resultado = r.Resultado.ToString(), estado = r.EstadoSolicitud, correlationId });
 
-        var mensaje = r.Resultado switch
-        {
-            OrquestacionEvaluacionEstado.AutorizacionNoDisponible =>
-                "No pudimos completar la evaluación. La solicitud requiere revisión.",
-            OrquestacionEvaluacionEstado.DatosPersonaInsuficientes =>
-                "No pudimos completar la evaluación con la información disponible. La solicitud requiere revisión.",
-            OrquestacionEvaluacionEstado.RequiereReconciliacion =>
-                "La evaluación quedó en un estado que requiere revisión.",
-            _ when r.RequiereRevisionManual => "Tu solicitud pasó a revisión manual.",
-            _ => "Evaluación procesada.",
-        };
+        var mensaje = MensajeIniciarEvaluacion(r);
 
         return Ok(new IniciarEvaluacionResponse(
             idSolicitud,
@@ -278,6 +270,24 @@ public class CarteraOrdinariaController(
             r.RequiereRevisionManual,
             mensaje));
     }
+
+    // Mensaje de IniciarEvaluacion por resultado del orquestador. Extraído
+    // (XPAY-656) para poder probarlo sin construir el controller; mismo mapeo
+    // que antes más DetenidaTrasConsulta.
+    internal static string MensajeIniciarEvaluacion(OrquestacionEvaluacionResultado r) => r.Resultado switch
+    {
+        OrquestacionEvaluacionEstado.AutorizacionNoDisponible =>
+            "No pudimos completar la evaluación. La solicitud requiere revisión.",
+        OrquestacionEvaluacionEstado.DatosPersonaInsuficientes =>
+            "No pudimos completar la evaluación con la información disponible. La solicitud requiere revisión.",
+        OrquestacionEvaluacionEstado.RequiereReconciliacion =>
+            "La evaluación quedó en un estado que requiere revisión.",
+        // XPAY-656 — stop de orquestación: sin decisión crediticia ni cupo.
+        OrquestacionEvaluacionEstado.DetenidaTrasConsulta =>
+            "Evaluación detenida después de la consulta de riesgo y antes de la decisión crediticia.",
+        _ when r.RequiereRevisionManual => "Tu solicitud pasó a revisión manual.",
+        _ => "Evaluación procesada.",
+    };
 
     // ── USUARIO: Estado de una solicitud de cupo (M2.4d) ──────────────────
     // Proyección segura: nunca expone provider raw, P0, score crudo,

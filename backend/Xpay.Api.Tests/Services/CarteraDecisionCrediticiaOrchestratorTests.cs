@@ -3,6 +3,7 @@ using Xpay.Api.Common;
 using Xpay.Api.Integrations.MiDecisor;
 using Xpay.Api.Models;
 using Xpay.Api.Services;
+using Xpay.Api.Tests.Integrations.MiDecisor;
 using Xunit;
 
 namespace Xpay.Api.Tests.Services;
@@ -22,12 +23,17 @@ public sealed class CarteraDecisionCrediticiaOrchestratorTests
     private sealed class FakeReader : ICarteraSolicitudEvaluacionReader
     {
         public CarteraSolicitudEvaluacionSnapshot? Snapshot { get; set; }
+        // XPAY-656: si se asigna, cada lectura deriva el snapshot del estado
+        // durable simulado (p. ej. del store de consulta tras finalizar).
+        public Func<CarteraSolicitudEvaluacionSnapshot?>? SnapshotDinamico { get; set; }
         public int Calls { get; private set; }
 
         public Task<CarteraSolicitudEvaluacionSnapshot?> LeerAsync(
             long idSolicitud, long idUsuario, CancellationToken cancellationToken = default)
         {
             Calls++;
+            if (SnapshotDinamico is not null)
+                Snapshot = SnapshotDinamico();
             if (Snapshot is null || Snapshot.IdUsuario != idUsuario)
                 return Task.FromResult<CarteraSolicitudEvaluacionSnapshot?>(null);
             return Task.FromResult<CarteraSolicitudEvaluacionSnapshot?>(Snapshot);
@@ -96,7 +102,7 @@ public sealed class CarteraDecisionCrediticiaOrchestratorTests
         FakeDecision Decision,
         FakeMaterializacion Materializacion);
 
-    private static Rig Crear(string estado, bool autoriza = false, Persona? persona = null)
+    private static Rig Crear(string estado, bool autoriza = false, Persona? persona = null, string? stopAfterConsulta = null)
     {
         var reader  = new FakeReader { Snapshot = Snap(estado) };
         var client  = new FakeMiDecisorClient(new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "853", "ALTA", "A", "1", 0) { HttpStatus = 200 });
@@ -112,8 +118,15 @@ public sealed class CarteraDecisionCrediticiaOrchestratorTests
         var decision = new FakeDecision();
         var mat = new FakeMaterializacion();
 
+        // XPAY-656: sin stopAfterConsulta la configuración queda vacía →
+        // STOP_AFTER_CONSULTA inactivo (comportamiento histórico).
+        var config = new Dictionary<string, string?>();
+        if (stopAfterConsulta is not null)
+            config[MiDecisorQaGateConfig.EnvStopAfterConsulta] = stopAfterConsulta;
+
         var orq = new CarteraDecisionCrediticiaOrchestrator(
             reader, svc, consumo, decision, mat,
+            new FakeConfiguration(config),
             NullLogger<CarteraDecisionCrediticiaOrchestrator>.Instance);
 
         return new Rig(orq, reader, client, rStore, consumo, decision, mat);
@@ -320,5 +333,77 @@ public sealed class CarteraDecisionCrediticiaOrchestratorTests
         Assert.Equal(0, r.Client.CallCount);
         Assert.Equal(0, r.Consumo.Calls);
         Assert.Equal(0, r.Decision.Calls);
+    }
+
+    // XPAY-656 ── stop activo desde EN_EVALUACION ───────────────────────
+    [Fact]
+    public async Task EnEvaluacion_stopActivo_detenidaSinConsumoDecisionNiCupo()
+    {
+        var r = Crear(CarteraSolicitudCupoEstados.EnEvaluacion, stopAfterConsulta: "true");
+
+        var res = await r.Orq.EvaluarAsync(IdSolicitud, IdUsuario, "corr");
+
+        Assert.Equal(OrquestacionEvaluacionEstado.DetenidaTrasConsulta, res.Resultado);
+        Assert.Equal(CarteraSolicitudCupoEstados.EnEvaluacion, res.EstadoSolicitud);
+        Assert.Equal(CarteraSolicitudCupoEstados.EnEvaluacion, r.Reader.Snapshot!.EstadoSolicitud);
+        Assert.Equal("PENDIENTE", res.DecisionCrediticia);
+        Assert.Null(res.MontoAprobado);
+        Assert.Null(res.IdCupoOrdinario);
+        Assert.Equal(0, r.Consumo.Calls);
+        Assert.Equal(0, r.Decision.Calls);
+        Assert.Equal(0, r.Materializacion.Calls);
+        Assert.Equal(0, r.Client.CallCount);
+        Assert.Equal(0, r.RiesgoStore.IniciarCalls);
+        Assert.Equal(0, r.RiesgoStore.MarcarCalls);
+        Assert.Equal(0, r.RiesgoStore.FinalizarCalls);
+    }
+
+    // XPAY-656 ── stop no exacto → comportamiento histórico ─────────────
+    // La semántica estricta completa está en AutorizacionConsultaRiesgoQaGateTests;
+    // aquí sólo se comprueba que el orquestador no se detiene sin "true" exacto.
+    [Theory]
+    [InlineData("false")]
+    [InlineData("True")]
+    public async Task EnEvaluacion_stopNoExacto_continuaConsumoYDecision(string valor)
+    {
+        var r = Crear(CarteraSolicitudCupoEstados.EnEvaluacion, stopAfterConsulta: valor);
+        r.Decision.OnCall = () =>
+        {
+            r.Reader.Snapshot = Snap(CarteraSolicitudCupoEstados.Rechazada, "RECHAZADA", 0m, T0.UtcDateTime);
+            return Task.CompletedTask;
+        };
+
+        var res = await r.Orq.EvaluarAsync(IdSolicitud, IdUsuario, "corr");
+
+        Assert.NotEqual(OrquestacionEvaluacionEstado.DetenidaTrasConsulta, res.Resultado);
+        Assert.Equal(1, r.Consumo.Calls);
+        Assert.Equal(1, r.Decision.Calls);
+        Assert.Equal(CarteraSolicitudCupoEstados.Rechazada, res.EstadoSolicitud);
+    }
+
+    // XPAY-656 ── flujo completo offline: RECIBIDA → consulta → EN_EVALUACION → stop ─
+    [Fact]
+    public async Task Recibida_consultaUtil_stopActivo_detenidaTrasUnaSolaConsulta()
+    {
+        var r = Crear(CarteraSolicitudCupoEstados.Recibida, autoriza: true, stopAfterConsulta: "true");
+        // El reader refleja el estado que el store de consulta dejó al finalizar.
+        r.Reader.SnapshotDinamico = () => r.RiesgoStore.UltimoOutcome is { } o
+            ? Snap(o.EstadoSolicitudFinal)
+            : Snap(CarteraSolicitudCupoEstados.Recibida);
+
+        var res = await r.Orq.EvaluarAsync(IdSolicitud, IdUsuario, "corr");
+
+        Assert.Equal(1, r.Client.CallCount);
+        Assert.Equal(1, r.RiesgoStore.IniciarCalls);
+        Assert.Equal(1, r.RiesgoStore.FinalizarCalls);
+        Assert.Equal(CarteraConsultaRiesgoResultados.Aceptada, r.RiesgoStore.UltimoOutcome!.ResultadoTecnico);
+        Assert.Equal(OrquestacionEvaluacionEstado.DetenidaTrasConsulta, res.Resultado);
+        Assert.Equal(CarteraSolicitudCupoEstados.EnEvaluacion, res.EstadoSolicitud);
+        Assert.Equal("PENDIENTE", res.DecisionCrediticia);
+        Assert.Null(res.MontoAprobado);
+        Assert.Null(res.IdCupoOrdinario);
+        Assert.Equal(0, r.Consumo.Calls);
+        Assert.Equal(0, r.Decision.Calls);
+        Assert.Equal(0, r.Materializacion.Calls);
     }
 }

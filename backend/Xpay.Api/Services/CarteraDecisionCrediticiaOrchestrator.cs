@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Xpay.Api.Common;
 using Xpay.Api.Integrations.MiDecisor;
@@ -17,11 +18,17 @@ namespace Xpay.Api.Services;
 // transición pendiente. NUNCA usa excepciones como mecanismo normal para
 // decidir qué fase ya ocurrió — consulta el estado explícitamente.
 //
-// NO ACTIVA EL PROVEEDOR: con la DI actual, IConsultaRiesgoAutorizacion es el
-// stub AutorizacionConsultaRiesgoNoDisponible (devuelve false). En el pre-flight
-// de CarteraConsultaRiesgoService eso lanza InvalidOperationException ANTES de
-// TX-A y ANTES de cualquier llamada HTTP → aquí se traduce a
-// AutorizacionNoDisponible (fail-closed, sin proveedor, sin avanzar estado).
+// AUTORIZACIÓN: con la DI actual, IConsultaRiesgoAutorizacion es el gate QA
+// AutorizacionConsultaRiesgoQaGate (XPAY-656), que sin configuración QA devuelve
+// false. En el pre-flight de CarteraConsultaRiesgoService eso lanza
+// InvalidOperationException ANTES de TX-A y ANTES de cualquier llamada HTTP →
+// aquí se traduce a AutorizacionNoDisponible (fail-closed, sin proveedor, sin
+// avanzar estado).
+//
+// STOP_AFTER_CONSULTA (XPAY-656): si MiDecisorQaGateConfig.StopAfterConsultaActivo
+// es true, al llegar a EN_EVALUACION el orquestador se detiene ANTES del consumo
+// y devuelve DetenidaTrasConsulta. Es un stop de orquestación: no escribe en la
+// base, no crea estados persistidos y deja la solicitud en EN_EVALUACION.
 //
 // Ante una invariante durable (consumo/decisión/materialización) la excepción se
 // PROPAGA (fail-closed, sin auto-repair) → ErrorHandlingMiddleware responde 500
@@ -52,6 +59,10 @@ public enum OrquestacionEvaluacionEstado
     Terminal,
     // Estado no accionable por el orquestador (p. ej. VALIDANDO) — sin cambios.
     SinCambio,
+    // XPAY-656 — STOP_AFTER_CONSULTA activo: la solicitud está en EN_EVALUACION
+    // y el orquestador se detuvo ANTES del consumo. Sin consumo, sin decisión,
+    // sin cupo y sin escrituras; el estado persistido sigue en EN_EVALUACION.
+    DetenidaTrasConsulta,
 }
 
 public sealed record OrquestacionEvaluacionResultado(
@@ -72,6 +83,7 @@ public sealed class CarteraDecisionCrediticiaOrchestrator(
     ICarteraResultadoRiesgoConsumo consumo,
     ICarteraDecisionCrediticia decision,
     ICarteraMaterializacionCupo materializacion,
+    IConfiguration configuration,
     ILogger<CarteraDecisionCrediticiaOrchestrator> logger)
     : ICarteraDecisionCrediticiaOrchestrator
 {
@@ -118,6 +130,15 @@ public sealed class CarteraDecisionCrediticiaOrchestrator(
 
                 case CarteraSolicitudCupoEstados.EnEvaluacion:
                 {
+                    // XPAY-656 — stop de orquestación ANTES del consumo: sin
+                    // consumo, decisión ni cupo; sin escrituras.
+                    if (MiDecisorQaGateConfig.StopAfterConsultaActivo(configuration))
+                    {
+                        logger.LogInformation(
+                            "m2.4d: STOP_AFTER_CONSULTA activo — evaluación detenida en EN_EVALUACION antes del consumo.");
+                        return Resultado(OrquestacionEvaluacionEstado.DetenidaTrasConsulta, snap);
+                    }
+
                     var cons = await consumo.ConsumirResultadoRiesgoAsync(idSolicitud, snap.NumeroIntento, cancellationToken)
                         .ConfigureAwait(false);
                     if (cons == ResultadoConsumoRiesgo.NoElegible)
@@ -187,7 +208,7 @@ public sealed class CarteraDecisionCrediticiaOrchestrator(
         catch (InvalidOperationException ex) when (string.Equals(ex.Message, MsgAutorizacionNoDisponible, StringComparison.Ordinal))
         {
             logger.LogInformation(
-                "m2.4d: autorización de consulta de riesgo no disponible (stub fail-closed) — 0 llamadas al proveedor (idSolicitud={IdSolicitud}).",
+                "m2.4d: autorización de consulta de riesgo no disponible (gate QA fail-closed) — 0 llamadas al proveedor (idSolicitud={IdSolicitud}).",
                 idSolicitud);
             var snap = await reader.LeerAsync(idSolicitud, idUsuario, cancellationToken).ConfigureAwait(false);
             return Resultado(OrquestacionEvaluacionEstado.AutorizacionNoDisponible, snap);
