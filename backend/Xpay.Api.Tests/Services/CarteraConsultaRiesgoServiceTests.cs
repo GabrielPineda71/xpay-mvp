@@ -29,8 +29,8 @@ public class CarteraConsultaRiesgoServiceTests
         string estado = "RECIBIDA", Persona? persona = null, long idUsuario = IdUsuario)
         => new(IdSolicitud, idUsuario, 3, estado, persona ?? PersonaValida());
 
-    private static MiDecisorResultado ResAceptada(bool? conInformacion = true, string score = "853")
-        => new("ACCEPTED", "202 ACCEPTED", conInformacion, score, "ALTA", "A", "13809492", 2);
+    private static MiDecisorResultado ResAceptada(bool? conInformacion = true, string score = "853", int? httpStatus = 200)
+        => new("ACCEPTED", "202 ACCEPTED", conInformacion, score, "ALTA", "A", "13809492", 2) { HttpStatus = httpStatus };
 
     private static CarteraConsultaRiesgoService CrearSvc(
         FakeCarteraConsultaRiesgoStore store,
@@ -183,6 +183,59 @@ public class CarteraConsultaRiesgoServiceTests
         Assert.Equal("Rodriguez", client.LastRequest.ApellidoRazonSocial);
     }
 
+    // 8b ── XPAY-650: el HTTP status persistido es el que observó el cliente,
+    // no un 200 fijo. content.status ("202 ACCEPTED") NO lo determina.
+    [Theory]
+    [InlineData(200)]
+    [InlineData(202)]
+    public async Task AcceptedResult_PersistsRealHttpStatus(int httpStatus)
+    {
+        var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
+        var client = new FakeMiDecisorClient(ResAceptada(conInformacion: true, httpStatus: httpStatus));
+        var svc = CrearSvc(store, true, client);
+
+        var r = await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
+
+        Assert.Equal(CarteraConsultaRiesgoResultados.Aceptada, r.ResultadoTecnico);
+        Assert.Equal(1, client.CallCount);
+        Assert.Equal(httpStatus, store.UltimoOutcome!.HttpStatusObservado);
+        Assert.Equal("202 ACCEPTED", store.UltimoOutcome.ContentStatusObservado);
+    }
+
+    // 8c ── XPAY-652: un resultado ACCEPTED sin HTTP status funcional (null o
+    // distinto de 200/202) falla cerrado como ERROR_PROTOCOLO: el intento se
+    // finaliza, pero NUNCA como éxito y sin persistir ningún crudo.
+    [Theory]
+    [InlineData(null)]
+    [InlineData(201)]
+    public async Task AcceptedResult_WithoutFunctionalHttpStatus_FailsClosedAsProtocolError(int? httpStatus)
+    {
+        var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
+        var client = new FakeMiDecisorClient(ResAceptada(conInformacion: true, httpStatus: httpStatus));
+        var svc = CrearSvc(store, true, client);
+
+        var r = await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
+
+        Assert.Equal(CarteraSolicitudCupoEstados.ErrorProveedor, r.EstadoSolicitud);
+        Assert.Equal(CarteraConsultaRiesgoResultados.ErrorProtocolo, r.ResultadoTecnico);
+        Assert.False(r.EsResultadoUtil);
+        Assert.Equal(1, client.CallCount);
+        Assert.Equal(1, store.FinalizarCalls);
+
+        var o = store.UltimoOutcome!;
+        Assert.Equal(CarteraSolicitudCupoEstados.ErrorProveedor, o.EstadoSolicitudFinal);
+        Assert.False(o.EsResultadoUtil);
+        Assert.Null(o.HttpStatusObservado);
+        Assert.Null(o.ContentStatusObservado);
+        Assert.Null(o.ConInformacion);
+        Assert.Null(o.ScoreRaw);
+        Assert.Null(o.ViabilidadRaw);
+        Assert.Null(o.RatingRecaudosRaw);
+        Assert.Null(o.MontoSugeridoRaw);
+        Assert.Null(o.AlertasCount);
+        Assert.Null(o.P0ProviderRawJson);
+    }
+
     // 9 ─────────────────────────────────────────────────────────────────────
     [Fact]
     public async Task AcceptedConInformacionFalse_MapsSinInformacion()
@@ -205,7 +258,7 @@ public class CarteraConsultaRiesgoServiceTests
     {
         var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "-", null, null, "-", 0));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "-", null, null, "-", 0) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client);
 
         var r = await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
@@ -459,7 +512,7 @@ public class CarteraConsultaRiesgoServiceTests
     {
         var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "853", "ALTA", "A", "13809492", 2));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "853", "ALTA", "A", "13809492", 2) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client);
 
         await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
@@ -479,7 +532,7 @@ public class CarteraConsultaRiesgoServiceTests
     {
         var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", false, "-", null, null, "0", 0));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", false, "-", null, null, "0", 0) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client);
 
         await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
@@ -500,7 +553,7 @@ public class CarteraConsultaRiesgoServiceTests
     {
         var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", null, null, null, null, null, 0));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", null, null, null, null, null, 0) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client);
 
         await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
@@ -518,7 +571,7 @@ public class CarteraConsultaRiesgoServiceTests
     {
         var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "", "MEDIA", "B", "", 1));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "", "MEDIA", "B", "", 1) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client);
 
         await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
@@ -549,7 +602,7 @@ public class CarteraConsultaRiesgoServiceTests
     {
         var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, new string('9', 21), "ALTA", "A", "100", 0));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, new string('9', 21), "ALTA", "A", "100", 0) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client);
 
         var r = await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
@@ -569,7 +622,7 @@ public class CarteraConsultaRiesgoServiceTests
     {
         var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "800", "ALTA", "A", new string('1', 21), 0));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "800", "ALTA", "A", new string('1', 21), 0) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client);
 
         var r = await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
@@ -584,7 +637,7 @@ public class CarteraConsultaRiesgoServiceTests
     {
         var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "800", new string('A', 11), "A", "100", 0));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "800", new string('A', 11), "A", "100", 0) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client);
 
         var r = await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
@@ -599,7 +652,7 @@ public class CarteraConsultaRiesgoServiceTests
     {
         var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "800", "ALTA", "ABC", "100", 0));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "800", "ALTA", "ABC", "100", 0) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client);
 
         var r = await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
@@ -617,7 +670,7 @@ public class CarteraConsultaRiesgoServiceTests
         var monto20 = new string('1', 20);
         var via10   = new string('A', 10);
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, score20, via10, "AB", monto20, 3));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, score20, via10, "AB", monto20, 3) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client);
 
         var r = await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
@@ -668,7 +721,7 @@ public class CarteraConsultaRiesgoServiceTests
         var store = new FakeCarteraConsultaRiesgoStore { Contexto = Ctx() };
         var overlong = new string('7', 25);
         var client = new FakeMiDecisorClient(
-            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, overlong, "ALTA", "A", "100", 0));
+            new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, overlong, "ALTA", "A", "100", 0) { HttpStatus = 200 });
         var svc = CrearSvc(store, true, client, logger);
 
         await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");

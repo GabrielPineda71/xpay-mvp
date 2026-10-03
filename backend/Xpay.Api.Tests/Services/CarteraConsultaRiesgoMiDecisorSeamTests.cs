@@ -41,7 +41,8 @@ public class CarteraConsultaRiesgoMiDecisorSeamTests
         """;
 
     private static (CarteraConsultaRiesgoService Svc, FakeCarteraConsultaRiesgoStore Store,
-        FakeHttpMessageHandler Handler, FakeMiDecisorTokenProvider Token) Crear(string tipoDocumento)
+        FakeHttpMessageHandler Handler, FakeMiDecisorTokenProvider Token) Crear(
+            string tipoDocumento, HttpStatusCode httpStatus = HttpStatusCode.OK)
     {
         var store = new FakeCarteraConsultaRiesgoStore
         {
@@ -49,7 +50,7 @@ public class CarteraConsultaRiesgoMiDecisorSeamTests
                 IdSolicitud, IdUsuario, 3, CarteraSolicitudCupoEstados.Recibida, PersonaFicticia(tipoDocumento)),
         };
         var handler = new FakeHttpMessageHandler(
-            () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, AcceptedWithRisk()));
+            () => FakeHttpMessageHandler.Json(httpStatus, AcceptedWithRisk()));
         var token = new FakeMiDecisorTokenProvider();
         var client = new MiDecisorClient(
             new FakeHttpClientFactory(handler),
@@ -70,10 +71,14 @@ public class CarteraConsultaRiesgoMiDecisorSeamTests
         return (svc, store, handler, token);
     }
 
-    [Fact]
-    public async Task PersonaCC_ThroughRealClient_SendsTipoIdentificacion1()
+    // XPAY-652: el mismo flujo con HTTP 200 y con HTTP 202 real; el status
+    // persistido es el observado por el cliente, no content.status.
+    [Theory]
+    [InlineData(HttpStatusCode.OK, 200)]
+    [InlineData(HttpStatusCode.Accepted, 202)]
+    public async Task PersonaCC_ThroughRealClient_SendsTipoIdentificacion1(HttpStatusCode httpStatus, int esperado)
     {
-        var (svc, store, handler, token) = Crear("CC");
+        var (svc, store, handler, token) = Crear("CC", httpStatus);
 
         var r = await svc.EjecutarConsultaRiesgoAsync(IdSolicitud, IdUsuario, "corr");
 
@@ -87,6 +92,12 @@ public class CarteraConsultaRiesgoMiDecisorSeamTests
         Assert.Equal(CarteraSolicitudCupoEstados.EnEvaluacion, r.EstadoSolicitud);
         Assert.Equal(CarteraConsultaRiesgoResultados.Aceptada, r.ResultadoTecnico);
         Assert.True(store.FinalizoConExito);
+
+        var o = store.UltimoOutcome!;
+        Assert.Equal(CarteraSolicitudCupoEstados.EnEvaluacion, o.EstadoSolicitudFinal);
+        Assert.Equal(CarteraConsultaRiesgoResultados.Aceptada, o.ResultadoTecnico);
+        Assert.Equal(esperado, o.HttpStatusObservado);
+        Assert.Equal("202 ACCEPTED", o.ContentStatusObservado);
     }
 
     // Un tipo XPAY no soportado (Persona Jurídica / desconocido) sigue fallando

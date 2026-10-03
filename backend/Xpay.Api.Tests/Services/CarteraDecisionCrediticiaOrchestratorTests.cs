@@ -99,7 +99,7 @@ public sealed class CarteraDecisionCrediticiaOrchestratorTests
     private static Rig Crear(string estado, bool autoriza = false, Persona? persona = null)
     {
         var reader  = new FakeReader { Snapshot = Snap(estado) };
-        var client  = new FakeMiDecisorClient(new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "853", "ALTA", "A", "1", 0));
+        var client  = new FakeMiDecisorClient(new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "853", "ALTA", "A", "1", 0) { HttpStatus = 200 });
         var rStore  = new FakeCarteraConsultaRiesgoStore
         {
             Contexto = new ConsultaRiesgoContexto(IdSolicitud, IdUsuario, 3, estado, persona ?? PersonaValida()),

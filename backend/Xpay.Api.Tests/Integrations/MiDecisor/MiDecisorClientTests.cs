@@ -237,6 +237,10 @@ public class MiDecisorClientTests
     [InlineData((HttpStatusCode)429)]
     [InlineData(HttpStatusCode.InternalServerError)]
     [InlineData(HttpStatusCode.BadGateway)]
+    // XPAY-650: sólo 200/202 son funcionales; el resto de 2xx/3xx sigue fail-closed.
+    [InlineData(HttpStatusCode.Created)]
+    [InlineData(HttpStatusCode.NoContent)]
+    [InlineData(HttpStatusCode.Found)]
     public async Task NonAuthErrorStatus_ThrowsTransport_NoRetry(HttpStatusCode code)
     {
         var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(code, "irrelevant"));
@@ -244,6 +248,59 @@ public class MiDecisorClientTests
 
         await Assert.ThrowsAsync<MiDecisorTransportException>(() => client.ConsultarPersonaNaturalAsync(ValidRequest()));
         Assert.Equal(1, handler.CallCount);
+    }
+
+    // ── D2. XPAY-650 — HTTP 200 vs 202 real ───────────────────────────────
+    [Theory]
+    [InlineData(HttpStatusCode.OK, 200)]
+    [InlineData(HttpStatusCode.Accepted, 202)]
+    public async Task AcceptedEnvelope_On200Or202_IsProcessed_WithRealHttpStatus(HttpStatusCode code, int expected)
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(code, AcceptedWithRisk()));
+        var token = new FakeMiDecisorTokenProvider();
+        var client = CreateClient(handler, ValidConfig(), token);
+
+        var r = await client.ConsultarPersonaNaturalAsync(ValidRequest());
+
+        Assert.Equal(expected, r.HttpStatus);
+        Assert.Equal("ACCEPTED", r.EstadoEnvelope);
+        Assert.Equal("202 ACCEPTED", r.ContentStatus);   // campo del body, independiente del HTTP
+        Assert.True(r.ConInformacion);
+        Assert.Equal("853", r.ScoreRaw);
+        Assert.Equal(2, r.AlertasCount);
+        Assert.Equal(1, handler.CallCount);   // sin polling, sin retry
+        Assert.Equal(1, token.CallCount);
+    }
+
+    // 202 a nivel transporte NO vuelve éxito un envelope inválido: mismas
+    // reglas de protocolo que en 200.
+    [Theory]
+    [InlineData("no-json")]
+    [InlineData("""{"status":"WEIRD","content":{}}""")]
+    [InlineData("""{"status":"ACCEPTED","content":null}""")]
+    [InlineData("""{"status":"ACCEPTED","content":{"status":"202 ACCEPTED"}}""")]
+    public async Task Http202_InvalidEnvelope_ThrowsProtocol_NoRetry(string body)
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.Accepted, body));
+        var token = new FakeMiDecisorTokenProvider();
+        var client = CreateClient(handler, ValidConfig(), token);
+
+        await Assert.ThrowsAsync<MiDecisorProtocolException>(() => client.ConsultarPersonaNaturalAsync(ValidRequest()));
+        Assert.Equal(1, handler.CallCount);
+        Assert.Equal(1, token.CallCount);
+    }
+
+    [Fact]
+    public async Task Http202_PreconditionFailed_ThrowsQueryRejected_NoRetry()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(
+            HttpStatusCode.Accepted, """{"status":"PRECONDITION_FAILED","content":null}"""));
+        var token = new FakeMiDecisorTokenProvider();
+        var client = CreateClient(handler, ValidConfig(), token);
+
+        await Assert.ThrowsAsync<MiDecisorQueryRejectedException>(() => client.ConsultarPersonaNaturalAsync(ValidRequest()));
+        Assert.Equal(1, handler.CallCount);
+        Assert.Equal(1, token.CallCount);
     }
 
     [Theory]
