@@ -422,7 +422,19 @@ public class CarteraOrdinariaController(
     [HttpPost("confirmar-avance-wallet")]
     public async Task<IActionResult> ConfirmarAvanceWallet([FromBody] SimularUtilizacionRequest req)
     {
-        try { return Ok(await svc.ConfirmarAvanceWalletAsync(req, IdUsuarioActual)); }
+        // XPAY-712 - Idempotency-Key obligatoria (mismo patrón que QrController.Pagar).
+        if (!TryGetIdempotencyKey(out var idempotencyKey, out var idempotencyError))
+            return BadRequest(new { error = idempotencyError });
+
+        try
+        {
+            var r = await svc.ConfirmarAvanceWalletAsync(req, IdUsuarioActual, idempotencyKey);
+            if (r.Replayed)
+                Response.Headers["Idempotent-Replayed"] = "true";
+            return Ok(r.Data);
+        }
+        catch (IdempotencyConflictException ex) { return Conflict(new { error = ex.Message }); }
+        catch (IdempotencyUnavailableException ex) { return StatusCode(503, new { error = ex.Message }); }
         catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
         catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }

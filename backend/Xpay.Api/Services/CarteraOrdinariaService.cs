@@ -269,17 +269,46 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
     }
 
     // ── Confirmación real: AVANCE_WALLET ────────────────────────────────
-    public async Task<ConfirmacionUtilizacionDto> ConfirmarAvanceWalletAsync(SimularUtilizacionRequest req, long idUsuario)
+    // XPAY-712 - idempotencia durable, mismo patrón que PagoQrService.
+    public async Task<IdempotentOperationResult<ConfirmacionUtilizacionDto>> ConfirmarAvanceWalletAsync(
+        SimularUtilizacionRequest req,
+        long idUsuario,
+        Guid idempotencyKey)
     {
         if (!string.Equals(req.TipoUtilizacion, "AVANCE_WALLET", StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("Solo se puede confirmar utilización de tipo AVANCE_WALLET en esta fase");
+
+        const string endpoint = IdempotencyEndpoints.CarteraAvanceWallet;
+        var requestHash = IdempotencyHashHelper.ComputeAvanceWalletHash(
+            idUsuario,
+            req.TipoUtilizacion,
+            req.ValorCapital,
+            req.PlazoMeses,
+            req.Frecuencia);
 
         // Todo lo que sigue se lee y revalida dentro de la transacción — nunca se confía en
         // valores ya calculados por el cliente (simulación previa), solo en TipoUtilizacion/
         // ValorCapital/PlazoMeses/Frecuencia como entrada cruda a recalcular en el servidor.
         await using var tx = await db.Database.BeginTransactionAsync();
+        var rolledBack = false;
         try
         {
+            // XPAY-712 - reserva EN_PROCESO, primera escritura de la transacción.
+            var idem = IdempotencyStore.NuevaReserva(idUsuario, endpoint, idempotencyKey, requestHash);
+            db.WalletIdempotencias.Add(idem);
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex) when (SqlExceptionHelper.IsUniqueViolation(ex))
+            {
+                await tx.RollbackAsync();
+                rolledBack = true;
+                db.ChangeTracker.Clear();
+                return await IdempotencyStore.ResolverReplayAsync<ConfirmacionUtilizacionDto>(
+                    db, idUsuario, endpoint, idempotencyKey, requestHash);
+            }
+
             var param = await GetParametroValidadoAsync(req);
 
             // ── Lock pesimista sobre el cupo del usuario ────────────────────
@@ -439,6 +468,26 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
             cupo.CupoUsado = cupo.CupoUsado + req.ValorCapital;
             cupo.UpdatedAt = now;
 
+            // XPAY-712 - respuesta ORIGINAL del desembolso (se persiste abajo).
+            var resultado = new ConfirmacionUtilizacionDto(
+                IdUtilizacion:       utilizacion.IdUtilizacion,
+                TipoUtilizacion:     utilizacion.TipoUtilizacion,
+                ValorCapital:        utilizacion.ValorCapital,
+                Estado:              utilizacion.Estado,
+                FechaDesembolso:     now,
+                NuevoSaldoWallet:    saldoDespues,
+                NuevoCupoDisponible: cupo.CupoAprobado - cupo.CupoUsado,
+                Cuotas:              cuotasSimuladas);
+
+            var respuestaJson = System.Text.Json.JsonSerializer.Serialize(resultado);
+            if (respuestaJson.Length > 1000)
+                throw new InvalidOperationException(
+                    "La respuesta del desembolso excede el límite de almacenamiento de idempotencia.");
+            IdempotencyStore.MarcarCompletada(idem, httpStatus: 200,
+                idRecurso: utilizacion.IdUtilizacion,
+                idTransaccionLedger: ledgerTx.IdTransaccionLedger,
+                respuestaJson);
+
             await db.SaveChangesAsync();
 
             var totalD = movimientos.Where(m => m.Naturaleza == "D").Sum(m => m.Valor);
@@ -448,19 +497,12 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
 
             await tx.CommitAsync();
 
-            return new ConfirmacionUtilizacionDto(
-                IdUtilizacion:       utilizacion.IdUtilizacion,
-                TipoUtilizacion:     utilizacion.TipoUtilizacion,
-                ValorCapital:        utilizacion.ValorCapital,
-                Estado:              utilizacion.Estado,
-                FechaDesembolso:     utilizacion.FechaDesembolso!.Value,
-                NuevoSaldoWallet:    saldoDespues,
-                NuevoCupoDisponible: cupo.CupoAprobado - cupo.CupoUsado,
-                Cuotas:              cuotasSimuladas);
+            return new IdempotentOperationResult<ConfirmacionUtilizacionDto>(resultado, Replayed: false);
         }
         catch
         {
-            await tx.RollbackAsync();
+            if (!rolledBack)
+                await tx.RollbackAsync();
             throw;
         }
     }

@@ -7,4 +7,6 @@ public static class IdempotencyEndpoints
 {
     public const string WalletsTransferencia = "wallets.transferencia";
     public const string QrPagar = "qr.pagar";
+    // XPAY-712 - desembolso de cupo ordinario a la wallet (AVANCE_WALLET).
+    public const string CarteraAvanceWallet = "cartera.avance_wallet";
 }

@@ -37,6 +37,19 @@ public static class IdempotencyHashHelper
             ["descripcion"] = NormalizarTexto(descripcion),
         });
 
+    // XPAY-712 - desembolso AVANCE_WALLET. idUsuario lo resuelve el servidor
+    // desde el JWT; tipo/monto/plazo/frecuencia son la intencion del cliente.
+    public static byte[] ComputeAvanceWalletHash(long idUsuario, string tipoUtilizacion, decimal valorCapital, int plazoMeses, string? frecuencia) =>
+        ComputeHash(new SortedDictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["op"] = "cartera.avance_wallet.v1",
+            ["idUsuario"] = idUsuario,
+            ["tipoUtilizacion"] = NormalizarTexto(tipoUtilizacion)?.ToUpperInvariant(),
+            ["valorCapital"] = NormalizarValor(valorCapital),
+            ["plazoMeses"] = plazoMeses,
+            ["frecuencia"] = NormalizarTexto(frecuencia)?.ToUpperInvariant(),
+        });
+
     // Formato invariante, dos decimales fijos — evita que variaciones de
     // cultura/formato produzcan hashes distintos para el mismo valor.
     private static string NormalizarValor(decimal valor) => valor.ToString("F2", CultureInfo.InvariantCulture);
