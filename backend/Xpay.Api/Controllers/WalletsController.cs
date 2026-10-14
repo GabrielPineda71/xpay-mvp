@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
@@ -122,6 +123,8 @@ public class WalletsController : ControllerBase
     // Restringido a administración — ver docs/security/FASE_71.2_E_B_AUTORIZACION_IDOR.md.
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     [HttpPost("{idWallet:long}/recarga-manual")]
+    // XPAY-717 - inexistente (404) en cualquier ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> RecargarManual(long idWallet, [FromBody] RecargaWalletRequest request)
     {
         _audit.LogSensitiveAction(HttpContext, "WALLET_MANUAL_RECHARGE_ATTEMPT",

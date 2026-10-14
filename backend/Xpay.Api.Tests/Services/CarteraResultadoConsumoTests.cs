@@ -747,7 +747,6 @@ public sealed class CarteraResultadoConsumoSqlTests
         {
             IdUsuario          = usuario.IdUsuario,
             IdPersona          = persona.IdPersona,
-            MontoSolicitado    = 500_000m,
             EstadoSolicitud    = o.EstadoSolicitud,
             DecisionCrediticia = "PENDIENTE",
             IdPoliticaAplicada = idPolitica,

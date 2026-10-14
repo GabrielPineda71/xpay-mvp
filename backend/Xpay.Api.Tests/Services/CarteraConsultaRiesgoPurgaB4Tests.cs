@@ -712,7 +712,7 @@ public sealed class CarteraConsultaRiesgoPurgaB4Tests
 
         var solicitud = new CarteraSolicitudCupo
         {
-            IdUsuario = usuario.IdUsuario, IdPersona = persona.IdPersona, MontoSolicitado = 500_000m,
+            IdUsuario = usuario.IdUsuario, IdPersona = persona.IdPersona,
             EstadoSolicitud = o.EstadoSolicitud, DecisionCrediticia = o.DecisionCrediticia,
             CodigoMotivoDecision = o.CodigoMotivoDecision, FechaDecision = o.FechaDecision,
             IdPoliticaAplicada = idPolitica, CupoMinimoAplicado = 0m, CupoMaximoAplicado = 1_000_000m,

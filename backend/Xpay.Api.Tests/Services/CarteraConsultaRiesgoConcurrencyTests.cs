@@ -265,7 +265,6 @@ public sealed class CarteraConsultaRiesgoConcurrencyTests
         {
             IdUsuario          = usuario.IdUsuario,
             IdPersona          = persona.IdPersona,
-            MontoSolicitado    = 500_000m,
             EstadoSolicitud    = CarteraSolicitudCupoEstados.Recibida,
             DecisionCrediticia = "PENDIENTE",
             IdPoliticaAplicada = idPolitica,

@@ -3,6 +3,7 @@ using Xpay.Api.Common;
 using Xpay.Api.Integrations.MiDecisor;
 using Xpay.Api.Models;
 using Xpay.Api.Services;
+using Xpay.Api.Tests.Common;
 using Xpay.Api.Tests.Integrations.MiDecisor;
 using Xunit;
 
@@ -102,7 +103,9 @@ public sealed class CarteraDecisionCrediticiaOrchestratorTests
         FakeDecision Decision,
         FakeMaterializacion Materializacion);
 
-    private static Rig Crear(string estado, bool autoriza = false, Persona? persona = null, string? stopAfterConsulta = null)
+    // XPAY-717: ambiente "QA" por defecto conserva el comportamiento histórico del stop.
+    private static Rig Crear(string estado, bool autoriza = false, Persona? persona = null, string? stopAfterConsulta = null,
+        string ambiente = "QA")
     {
         var reader  = new FakeReader { Snapshot = Snap(estado) };
         var client  = new FakeMiDecisorClient(new MiDecisorResultado("ACCEPTED", "202 ACCEPTED", true, "853", "ALTA", "A", "1", 0) { HttpStatus = 200 });
@@ -127,6 +130,7 @@ public sealed class CarteraDecisionCrediticiaOrchestratorTests
         var orq = new CarteraDecisionCrediticiaOrchestrator(
             reader, svc, consumo, decision, mat,
             new FakeConfiguration(config),
+            AmbienteXpayTests.Ambiente(ambiente),
             NullLogger<CarteraDecisionCrediticiaOrchestrator>.Instance);
 
         return new Rig(orq, reader, client, rStore, consumo, decision, mat);
@@ -405,5 +409,27 @@ public sealed class CarteraDecisionCrediticiaOrchestratorTests
         Assert.Equal(0, r.Consumo.Calls);
         Assert.Equal(0, r.Decision.Calls);
         Assert.Equal(0, r.Materializacion.Calls);
+    }
+
+    // XPAY-717 ── en ambiente productivo STOP_AFTER_CONSULTA se ignora ──────
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    [InlineData("Desconocido")]
+    public async Task EnEvaluacion_stopActivo_enAmbienteProductivo_noSeDetiene(string ambiente)
+    {
+        var r = Crear(CarteraSolicitudCupoEstados.EnEvaluacion, stopAfterConsulta: "true", ambiente: ambiente);
+        r.Decision.OnCall = () =>
+        {
+            r.Reader.Snapshot = Snap(CarteraSolicitudCupoEstados.Rechazada, "RECHAZADA", 0m, T0.UtcDateTime);
+            return Task.CompletedTask;
+        };
+
+        var res = await r.Orq.EvaluarAsync(IdSolicitud, IdUsuario, "corr");
+
+        Assert.NotEqual(OrquestacionEvaluacionEstado.DetenidaTrasConsulta, res.Resultado);
+        Assert.Equal(1, r.Consumo.Calls);
+        Assert.Equal(1, r.Decision.Calls);
+        Assert.Equal(CarteraSolicitudCupoEstados.Rechazada, res.EstadoSolicitud);
     }
 }

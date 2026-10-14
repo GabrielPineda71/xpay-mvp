@@ -5,7 +5,6 @@ public class CarteraSolicitudCupo
     public long      IdSolicitud                      { get; set; }
     public long      IdUsuario                         { get; set; }
     public long      IdPersona                         { get; set; }
-    public decimal   MontoSolicitado                   { get; set; }
     public string    EstadoSolicitud                   { get; set; } = string.Empty;
     public string    DecisionCrediticia                { get; set; } = "PENDIENTE";
     public decimal?  MontoAprobado                     { get; set; }

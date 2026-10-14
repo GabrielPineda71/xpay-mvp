@@ -498,7 +498,6 @@ public sealed class CarteraAsignarCupoConcurrencyTests
             {
                 IdUsuario = u.IdUsuario,
                 IdPersona = u.IdPersona,
-                MontoSolicitado = 500_000m,
                 EstadoSolicitud = "APROBADA_PENDIENTE_CUPO",
                 DecisionCrediticia = "APROBADA",
                 MontoAprobado = montoAprobado,

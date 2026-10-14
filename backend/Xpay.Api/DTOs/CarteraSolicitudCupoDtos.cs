@@ -6,10 +6,10 @@ namespace Xpay.Api.DTOs;
 // se derivarán del contexto autenticado (no del body) en una etapa
 // posterior; esa derivación NO se implementa aquí.
 
-// El cliente sólo envía el monto solicitado. La Idempotency-Key llegará
-// posteriormente por header HTTP `Idempotency-Key` (GUID), nunca en el body.
-public record SolicitarCupoRequest(
-    decimal MontoSolicitado);
+// XPAY-676B — solicitar-cupo NO tiene body: el cliente solicita ser evaluado
+// para obtener un cupo, no elige ni solicita un monto. XPAY determina el cupo
+// con CarteraDecisionEngine + CarteraPolicyParameters.Vigente(). La
+// Idempotency-Key llega por header HTTP `Idempotency-Key` (GUID).
 
 // Proyección expuesta al cliente para una solicitud de cupo. NO expone
 // score observado ni su threshold, edad, snapshot interno de política,
@@ -17,7 +17,6 @@ public record SolicitarCupoRequest(
 // del proveedor, correlación interna ni detalles técnicos del intento.
 public record SolicitudCupoResponse(
     long      IdSolicitud,
-    decimal   MontoSolicitado,
     string    EstadoSolicitud,
     string    DecisionCrediticia,
     decimal?  MontoAprobado,

@@ -1,5 +1,6 @@
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
 using Xpay.Api.Models;
@@ -11,12 +12,20 @@ namespace Xpay.Api.Services;
 // mínimo USUARIO_FINAL — sin documento, sin nombre, sin Wallet, sin JWT.
 // Ver database/032_persona_identidad_verificada.sql y
 // database/033_persona_nombre_nullable.sql (nullability ya aplicada en QA).
-public class RegistroInicialService(XpayDbContext db)
+public class RegistroInicialService(XpayDbContext db, IAmbienteXpay ambiente)
 {
     private const long IdUnidadNegocio = 1;
 
+    // XPAY-717 - mensaje genérico: no revela reserva ni ambiente.
+    internal const string MensajeUsuarioNoDisponible = "El nombre de usuario no está disponible.";
+
     public async Task<RegistroInicialResultDto> RegistrarAsync(RegistroInicialRequest request)
     {
+        // XPAY-717 - nombres "qa.*" reservados en ambiente productivo. Antes de
+        // cualquier transacción o lectura: sin efectos en BD.
+        if (!NombreUsuarioReservado.PermiteCrear(request.Usuario, ambiente))
+            throw new InvalidOperationException(MensajeUsuarioNoDisponible);
+
         await using var transaction = await db.Database.BeginTransactionAsync();
         try
         {

@@ -128,6 +128,16 @@ jobs:
             -i database/038_cartera_consumo_resultado_riesgo.sql
           echo "Migración 038 revalidada (segunda ejecución OK)."
 
+          # XPAY-676B — la migración 045 es idempotente por diseño (monto_solicitado
+          # NULL sólo si aún es NOT NULL; CHECK recreado sólo si conserva la
+          # definición legada; fila ACTIVA de política alineada sólo si difiere).
+          # Se reejecuta contra la misma BD efímera con los mismos flags (-b -C)
+          # para probar esa reentrancia.
+          echo "--- Revalidando migración 045 (segunda ejecución — prueba de idempotencia/reentrancia) ---"
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/045_cartera_solicitud_sin_monto_y_politica_aplicada.sql
+          echo "Migración 045 revalidada (segunda ejecución OK)."
+
       - name: dotnet restore
         run: dotnet restore backend/Xpay.Api/Xpay.Api.csproj
 

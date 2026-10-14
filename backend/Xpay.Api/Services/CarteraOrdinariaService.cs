@@ -119,28 +119,6 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
         return row is null ? null : ToPoliticaDto(row);
     }
 
-    public async Task<PoliticaCreditoDto> UpsertPoliticaAsync(UpsertPoliticaCreditoRequest req, long idUsuario)
-    {
-        var row = await db.CarteraPoliticasCredito
-            .Where(x => x.Estado == "ACTIVO")
-            .OrderByDescending(x => x.VigenteDesde)
-            .FirstOrDefaultAsync();
-        if (row is null)
-        {
-            row = new CarteraPoliticaCredito { CreatedAt = DateTime.UtcNow, CreatedByUsuario = idUsuario, VigenteDesde = DateTime.UtcNow };
-            db.CarteraPoliticasCredito.Add(row);
-        }
-        row.ScoreDatacreditoMinimo = req.ScoreDatacreditoMinimo;
-        row.RequiereVeriff         = req.RequiereVeriff;
-        row.CupoMinimo             = req.CupoMinimo;
-        row.CupoMaximo             = req.CupoMaximo;
-        row.EdadMinima             = req.EdadMinima;
-        row.EdadMaxima             = req.EdadMaxima;
-        row.UpdatedAt              = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-        return ToPoliticaDto(row);
-    }
-
     // ── Cupos ordinarios (admin) ────────────────────────────────────────
     public async Task<List<CupoOrdinarioDto>> GetCuposAsync()
     {
@@ -1100,11 +1078,8 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
     public async Task<SolicitudCupoResponse> CrearSolicitudCupoAsync(
         long idUsuario,
         Guid idempotencyKey,
-        decimal montoSolicitado,
         string correlationId)
     {
-        if (montoSolicitado <= 0)
-            throw new ArgumentException("El monto solicitado debe ser mayor a cero");
         if (idempotencyKey == Guid.Empty)
             throw new ArgumentException("Idempotency-Key inválido");
         if (string.IsNullOrWhiteSpace(correlationId))
@@ -1138,9 +1113,9 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
                     .FirstOrDefaultAsync(s => s.IdSolicitud == intentoPrevio.IdSolicitud)
                     ?? throw new InvalidOperationException("Intento de solicitud sin solicitud asociada — inconsistencia de datos.");
                 // Sólo es replay válido si la Idempotency-Key pertenece a ESTE
-                // usuario y al MISMO request (mismo monto). Si no, es conflicto
-                // de dominio y no se expone ningún dato de la solicitud previa.
-                var respuestaReplay = ReplayValidadoOConflicto(solicitudPrevia, idUsuario, montoSolicitado);
+                // usuario (el request no tiene parámetros funcionales). Si no,
+                // es conflicto y no se expone ningún dato de la solicitud previa.
+                var respuestaReplay = ReplayValidadoOConflicto(solicitudPrevia, idUsuario);
                 await tx.CommitAsync();
                 return respuestaReplay;
             }
@@ -1154,6 +1129,8 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
                 ?? throw new KeyNotFoundException("Persona asociada no encontrada");
 
             // ── Política activa (mismo criterio que GetPoliticaVigenteAsync) ─
+            // XPAY-676B — sólo aporta id_politica_aplicada (FK de trazabilidad).
+            // Sus valores NO gobiernan el motor y NO se copian como aplicados.
             var politica = await db.CarteraPoliticasCredito
                 .Where(x => x.Estado == "ACTIVO")
                 .OrderByDescending(x => x.VigenteDesde)
@@ -1166,22 +1143,25 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
             if (yaTieneActiva)
                 throw new InvalidOperationException("Ya tienes una solicitud de cupo en curso");
 
+            // ── Política efectivamente aplicada (XPAY-676B) ────────────────
+            // Misma fuente que usa CarteraDecisionEngine en la decisión.
+            var politicaAplicada = CarteraPoliticaAplicada.Vigente();
+
             // ── Inserción atómica: solicitud + primer intento PRE-CALL ─────
             var solicitud = new CarteraSolicitudCupo
             {
                 IdUsuario                      = idUsuario,
                 IdPersona                      = persona.IdPersona,
-                MontoSolicitado                = montoSolicitado,
                 EstadoSolicitud                = CarteraSolicitudCupoEstados.Recibida,
                 DecisionCrediticia             = CarteraDecisionCrediticia.Pendiente,
                 MontoAprobado                  = null,
                 CodigoMotivoDecision           = null,
                 IdPoliticaAplicada             = politica.IdPolitica,
-                ScoreDatacreditoMinimoAplicado = politica.ScoreDatacreditoMinimo,
-                CupoMinimoAplicado             = politica.CupoMinimo,
-                CupoMaximoAplicado             = politica.CupoMaximo,
-                EdadMinimaAplicada             = politica.EdadMinima,
-                EdadMaximaAplicada             = politica.EdadMaxima,
+                ScoreDatacreditoMinimoAplicado = politicaAplicada.ScoreDatacreditoMinimo,
+                CupoMinimoAplicado             = politicaAplicada.CupoMinimo,
+                CupoMaximoAplicado             = politicaAplicada.CupoMaximo,
+                EdadMinimaAplicada             = politicaAplicada.EdadMinimaElegible,
+                EdadMaximaAplicada             = politicaAplicada.EdadMaximaElegible,
                 EdadCalculadaAlMomento         = null,  // decisión 016 — no se calcula en PRE-CALL
                 ScoreObservado                 = null,
                 EstadoScore                    = null,
@@ -1235,9 +1215,9 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
                 var solicitudGanadora = await db.CarteraSolicitudesCupo
                     .FirstOrDefaultAsync(s => s.IdSolicitud == intentoGanador.IdSolicitud)
                     ?? throw new InvalidOperationException("Intento de solicitud sin solicitud asociada — inconsistencia de datos.");
-                // Mismas comprobaciones que el pre-check: ownership + monto. Un
-                // usuario distinto o un monto distinto es conflicto, nunca replay.
-                return ReplayValidadoOConflicto(solicitudGanadora, idUsuario, montoSolicitado);
+                // Misma comprobación que el pre-check: ownership. Un usuario
+                // distinto es conflicto, nunca replay.
+                return ReplayValidadoOConflicto(solicitudGanadora, idUsuario);
             }
             // No hay intento con esta key → la violación fue del índice filtrado
             // de solicitud activa por usuario (u otra UNIQUE): conflicto de
@@ -1255,17 +1235,15 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
     // como replay. Reglas (ETAPA 3 — hardening 017):
     //   - debe pertenecer al MISMO usuario (ownership) — si no, la key se usó
     //     para otra solicitud: conflicto, sin exponer nada de la ajena;
-    //   - debe corresponder al MISMO request — como SolicitarCupoRequest sólo
-    //     lleva MontoSolicitado, basta comparar ese campo (sin request hash).
-    // El mensaje de conflicto nunca incluye idUsuario, IdSolicitud, monto ni
-    // dato personal de la solicitud previa.
-    private static SolicitudCupoResponse ReplayValidadoOConflicto(
-        CarteraSolicitudCupo solicitudPrevia, long idUsuario, decimal montoSolicitado)
+    //   - XPAY-676B: el request no tiene parámetros funcionales (no hay monto),
+    //     así que la misma key del mismo usuario identifica el mismo request.
+    // El mensaje de conflicto nunca incluye idUsuario, IdSolicitud ni dato
+    // personal de la solicitud previa.
+    internal static SolicitudCupoResponse ReplayValidadoOConflicto(
+        CarteraSolicitudCupo solicitudPrevia, long idUsuario)
     {
         if (solicitudPrevia.IdUsuario != idUsuario)
             throw new InvalidOperationException("Idempotency-Key ya utilizada para otra solicitud.");
-        if (solicitudPrevia.MontoSolicitado != montoSolicitado)
-            throw new InvalidOperationException("Idempotency-Key ya utilizada con parámetros diferentes.");
         return ToSolicitudResponse(solicitudPrevia);
     }
 
@@ -1444,7 +1422,6 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
     // rating, monto sugerido, correlationId ni detalle técnico del intento.
     private static SolicitudCupoResponse ToSolicitudResponse(CarteraSolicitudCupo s) => new(
         s.IdSolicitud,
-        s.MontoSolicitado,
         s.EstadoSolicitud,
         s.DecisionCrediticia,
         s.MontoAprobado,

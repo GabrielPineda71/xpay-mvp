@@ -34,7 +34,8 @@ namespace Xpay.Api.Integrations.MiDecisor;
 public sealed class AutorizacionConsultaRiesgoQaGate(
     IConsultaRiesgoAutorizacion autorizacionDurable,
     IConfiguration configuration,
-    ILogger<AutorizacionConsultaRiesgoQaGate> logger)
+    ILogger<AutorizacionConsultaRiesgoQaGate> logger,
+    IQaClienteRiesgoStore? qaClienteStore = null)
     : IConsultaRiesgoAutorizacion
 {
     // Expuesto sólo para verificar el wiring de DI en tests.
@@ -43,6 +44,13 @@ public sealed class AutorizacionConsultaRiesgoQaGate(
     public async Task<bool> TieneAutorizacionVigenteAsync(
         long idUsuario, long idSolicitud, CancellationToken cancellationToken = default)
     {
+        // XPAY-702 - modo explicito: rama QA_CLIENT_FULL_FLOW (o rechazo).
+        // Sin modo: rama heredada XPAY-656 sin cambios.
+        var modo = configuration[MiDecisorQaGateConfig.EnvGateMode];
+        if (!string.IsNullOrEmpty(modo))
+            return await AutorizarClienteQaAsync(modo, idUsuario, idSolicitud, cancellationToken)
+                .ConfigureAwait(false);
+
         if (!MiDecisorQaGateConfig.TryLeerSolicitudPermitida(configuration, out var permitida))
         {
             logger.LogInformation("midecisor.qagate: no hay solicitud QA permitida configurada; no autorizado.");
@@ -67,6 +75,68 @@ public sealed class AutorizacionConsultaRiesgoQaGate(
             .TieneAutorizacionVigenteAsync(idUsuario, idSolicitud, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    // XPAY-702 - modo QA_CLIENT_FULL_FLOW. Autoriza SOLO si: el modo es
+    // exactamente QA_CLIENT_FULL_FLOW; STOP vale exactamente "false"; el
+    // usuario tiene la doble marca persistente SIMULACION_QA; el usuario no
+    // tiene ninguna consulta real previa; y el consentimiento durable es
+    // valido. Errores de lectura del store: no autorizado (fail-closed).
+    private async Task<bool> AutorizarClienteQaAsync(
+        string modo, long idUsuario, long idSolicitud, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(modo, MiDecisorQaGateConfig.ModoClienteQaFullFlow, StringComparison.Ordinal))
+        {
+            logger.LogWarning("midecisor.qagate: modo QA desconocido; no autorizado.");
+            return false;
+        }
+
+        if (!MiDecisorQaGateConfig.StopAfterConsultaInactivoExplicito(configuration))
+        {
+            logger.LogWarning("midecisor.qagate: modo cliente QA exige STOP=false; no autorizado.");
+            return false;
+        }
+
+        if (qaClienteStore is null)
+        {
+            logger.LogWarning("midecisor.qagate: store de cliente QA no disponible; no autorizado.");
+            return false;
+        }
+
+        bool esClienteQa;
+        int consultasPrevias;
+        try
+        {
+            esClienteQa = await qaClienteStore
+                .EsClienteQaPreparadoAsync(idUsuario, cancellationToken)
+                .ConfigureAwait(false);
+            consultasPrevias = esClienteQa
+                ? await qaClienteStore
+                    .ContarConsultasRealesAsync(idUsuario, cancellationToken)
+                    .ConfigureAwait(false)
+                : 0;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("midecisor.qagate: error leyendo marcas de cliente QA; no autorizado.");
+            return false;
+        }
+
+        if (!esClienteQa)
+        {
+            logger.LogInformation("midecisor.qagate: el usuario no es cliente QA preparado; no autorizado.");
+            return false;
+        }
+
+        if (consultasPrevias > 0)
+        {
+            logger.LogWarning("midecisor.qagate: el cliente QA ya tiene una consulta real; no autorizado.");
+            return false;
+        }
+
+        return await autorizacionDurable
+            .TieneAutorizacionVigenteAsync(idUsuario, idSolicitud, cancellationToken)
+            .ConfigureAwait(false);
+    }
 }
 
 // XPAY-656 — claves e interpretación ESTRICTA de la configuración QA para la
@@ -78,6 +148,22 @@ public static class MiDecisorQaGateConfig
 
     // Único valor que activa el stop. Comparación ordinal exacta.
     public const string ValorStopActivo = "true";
+
+    // XPAY-702 - modo del gate. Ausente o vacio: modo heredado (allowlist por
+    // solicitud + STOP "true"). "QA_CLIENT_FULL_FLOW": cliente QA con doble
+    // marca SIMULACION_QA. Cualquier otro valor: no autorizado.
+    public const string EnvGateMode           = "MIDECISOR_QA_GATE_MODE";
+    public const string ModoClienteQaFullFlow = "QA_CLIENT_FULL_FLOW";
+
+    // En QA_CLIENT_FULL_FLOW el STOP debe valer exactamente "false".
+    public const string ValorStopInactivo = "false";
+
+    public static bool StopAfterConsultaInactivoExplicito(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var raw = configuration[EnvStopAfterConsulta];
+        return string.Equals(raw, ValorStopInactivo, StringComparison.Ordinal);
+    }
 
     // Exactamente UN id: sólo dígitos ASCII (NumberStyles.None: sin signo,
     // espacios, separadores de miles ni listas) y mayor que cero.

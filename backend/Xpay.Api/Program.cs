@@ -34,6 +34,13 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<UsuarioAdminService>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<KycService>();
+// XPAY-669 — preparación QA de identidad de prueba (fail-closed por configuración).
+builder.Services.AddScoped<IQaIdentidadPruebaStore, QaIdentidadPruebaStore>();
+builder.Services.AddScoped<QaIdentidadPruebaService>();
+// XPAY-702 - alta de cliente de prueba QA (fail-closed por configuracion).
+builder.Services.AddScoped<QaClientePruebaService>();
+// XPAY-717 - frontera central QA/PROD (lista cerrada Development/QA/Test).
+builder.Services.AddSingleton<IAmbienteXpay, AmbienteXpay>();
 builder.Services.AddScoped<BrebService>();
 builder.Services.AddScoped<LibranzaService>();
 builder.Services.AddScoped<LibranzaEmpleadosService>();
@@ -427,9 +434,11 @@ var enableSecurityHeaders = builder.Configuration.GetValue("SecurityHeaders:Enab
 if (enableSecurityHeaders)
     app.UseMiddleware<SecurityHeadersMiddleware>();
 
-// Swagger — habilitado por config (ApiDocs:EnableSwagger) o por defecto solo en Development
-var enableSwaggerConfig = builder.Configuration.GetValue<bool?>("ApiDocs:EnableSwagger");
-var enableSwagger       = enableSwaggerConfig ?? app.Environment.IsDevelopment();
+// Swagger — XPAY-717: sólo en ambiente no productivo (frontera central IAmbienteXpay).
+// En productivo ninguna configuración lo reactiva; ver Common/ApiDocsPolicy.cs.
+var enableSwaggerConfig = builder.Configuration.GetValue<bool?>(ApiDocsPolicy.ClaveEnableSwagger);
+var enableSwagger       = ApiDocsPolicy.SwaggerHabilitado(
+    app.Services.GetRequiredService<IAmbienteXpay>(), enableSwaggerConfig);
 
 if (enableSwagger)
 {

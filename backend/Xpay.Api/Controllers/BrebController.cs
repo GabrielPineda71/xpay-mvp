@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -269,6 +270,8 @@ public class BrebController : ControllerBase
     // ──────────────────────────────────────────────────────────────────────
     [HttpPost("api/breb/admin/retiros/{id:long}/confirmar")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - flujo simulado (solo CREADO): inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> ConfirmarRetiro(long id)
     {
         if (!TryGetIdUsuario(out var adminId))
@@ -293,6 +296,8 @@ public class BrebController : ControllerBase
     // ──────────────────────────────────────────────────────────────────────
     [HttpPost("api/breb/admin/retiros/{id:long}/liquidar")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - flujo simulado (solo CONFIRMADO): inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> LiquidarRetiro(long id)
     {
         if (!TryGetIdUsuario(out var adminId))
@@ -317,6 +322,8 @@ public class BrebController : ControllerBase
     // ──────────────────────────────────────────────────────────────────────
     [HttpPost("api/breb/admin/retiros/{id:long}/rechazar")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - flujo simulado (solo CREADO/CONFIRMADO): inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> RechazarRetiro(long id, [FromBody] RechazarRetiroRequest request)
     {
         if (!TryGetIdUsuario(out var adminId))
@@ -360,6 +367,8 @@ public class BrebController : ControllerBase
     // ──────────────────────────────────────────────────────────────────────
     [HttpPost("api/breb/admin/simular-validacion-llave")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - validación simulada sin Passport: inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> SimularValidacionLlave([FromBody] SimularValidacionLlaveRequest request)
     {
         if (!TryGetIdUsuario(out var idUsuario))
@@ -441,6 +450,8 @@ public class BrebController : ControllerBase
     [HttpPost("api/breb/retiros/simular")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]
+    // XPAY-717 - retiro simulado (CREADO, sin Passport): inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> SimularRetiro([FromBody] SimularRetiroRequest request)
     {
         if (!TryGetIdPersona(out var idPersona) || !TryGetIdUsuario(out var idUsuario))
@@ -471,6 +482,8 @@ public class BrebController : ControllerBase
     // ──────────────────────────────────────────────────────────────────────
     [HttpPost("api/breb/retiros/simular/comercio")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO,COMERCIO")]
+    // XPAY-717 - retiro simulado (CREADO, sin Passport): inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> SimularRetiroComercio([FromBody] SimularRetiroRequest request)
     {
         if (!TryGetIdUsuario(out var idUsuario))

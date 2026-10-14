@@ -58,14 +58,6 @@ public record PoliticaCreditoDto(
     DateTime VigenteDesde,
     DateTime? VigenteHasta);
 
-public record UpsertPoliticaCreditoRequest(
-    int?    ScoreDatacreditoMinimo,
-    bool    RequiereVeriff,
-    decimal CupoMinimo,
-    decimal CupoMaximo,
-    int     EdadMinima,
-    int     EdadMaxima);
-
 // ── Cupos ordinarios ───────────────────────────────────────────────────
 public record CupoOrdinarioDto(
     long    IdCupo,

@@ -599,4 +599,181 @@ public sealed class CarteraDecisionEngineTests
         Assert.Equal(2025, CarteraEvaluationContext.DesdeConsultaRaw("2025", "5").QueryAnio);
         Assert.Equal(5, CarteraEvaluationContext.DesdeConsultaRaw("2025", "05").QueryMes);
     }
+
+    // XPAY-676B — CarteraPoliticaAplicada copia 18–65 como rango elegible
+    // automático; se ata aquí al comportamiento real del gate 3 del motor.
+    [Fact]
+    public void PoliticaAplicada_edad_coincide_con_el_gate_de_edad_del_motor()
+    {
+        Assert.Equal(18, CarteraPoliticaAplicada.EdadElegibleMinima);
+        Assert.Equal(65, CarteraPoliticaAplicada.EdadElegibleMaxima);
+        Assert.Equal(CarteraDecisionCrediticia.Aprobada, Eval(new Snap { RangoEdadId = "18-21" }).Decision);
+        Assert.Equal(CarteraDecisionCrediticia.Aprobada, Eval(new Snap { RangoEdadId = "56-65" }).Decision);
+        Assert.NotEqual(CarteraDecisionCrediticia.Aprobada, Eval(new Snap { RangoEdadId = "66" }).Decision);
+    }
+
+    // XPAY-698 - ventana de comportamiento = 6 meses consecutivos MAS RECIENTES
+    // reportados por el proveedor (ya no anclada a M-1 de la consulta).
+    private static (string, string?)[] MesesHasta(int a, int m, int n, string comp)
+    {
+        var l = new List<(string, string?)>();
+        for (var i = 0; i < n; i++)
+        {
+            l.Insert(0, ($"{a}-{m}", comp));
+            if (m == 1) { m = 12; a--; } else { m--; }
+        }
+        return l.ToArray();
+    }
+
+    [Fact]
+    public void Xpay698_A_Cedula1_equivalente_vector_hasta_julio_consulta_octubre()
+    {
+        var s = new Snap
+        {
+            Score = 791, Viabilidad = "MEDIA", Rating = "B",
+            TipoDoc = "C\u00c9DULA DE CIUDADAN\u00cdA",
+            EstadoDocDb = "Vigente", EstadoDocId = null,
+            RangoEdadDb = "46-55", RangoEdadId = null,
+            VectorJson = VectorJson(MesesHasta(2026, 7, 12, "N")), VectorCount = 12,
+        };
+        var r = Eval(s, new CarteraEvaluationContext(2026, 10));
+
+        Assert.DoesNotContain(CarteraMotivoDecision.InformacionInsuficiente, r.MotivosOrdenados);
+        Assert.Equal(CarteraDecisionCrediticia.Aprobada, r.Decision);
+        var raw = P.BandaS4Base * P.FactorViabilidadMedia * P.FactorRatingB
+                * P.FactorComportamientoPeorN * P.FactorEdadElegible;
+        var esperado = Math.Min(Math.Ceiling(raw / P.RedondeoUnidad) * P.RedondeoUnidad, P.CupoMaximo);
+        Assert.Equal(esperado, r.MontoAprobado);
+    }
+
+    [Fact]
+    public void Xpay698_B_Exactamente6_consecutivos_N_desfasados_Aprobada()
+    {
+        var v = VectorJson(MesesHasta(2026, 5, 6, "N"));
+        var r = Eval(new Snap { VectorJson = v, VectorCount = 6 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.Aprobada, r.Decision);
+        Assert.Equal(700_000m, r.MontoAprobado);
+    }
+
+    [Fact]
+    public void Xpay698_C_MasDe6_usa_solo_los_6_mas_recientes()
+    {
+        // 2026-1 = "1" queda fuera de la ventana 2026-2..2026-7; dentro de ella
+        // habria dado factor 0.90 (630000) en vez de 1.00 (700000).
+        var v = VectorJson(new[] { ("2026-1", (string?)"1") }.Concat(MesesHasta(2026, 7, 6, "N")).ToArray());
+        var r = Eval(new Snap { Score = 801, VectorJson = v, VectorCount = 7 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.Aprobada, r.Decision);
+        Assert.Equal(700_000m, r.MontoAprobado);
+    }
+
+    [Fact]
+    public void Xpay698_D_Menos6_InformacionInsuficiente()
+    {
+        var v = VectorJson(MesesHasta(2026, 7, 5, "N"));
+        var r = Eval(new Snap { VectorJson = v, VectorCount = 5 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.NoDecidible, r.Decision);
+        Assert.Equal(new[] { CarteraMotivoDecision.InformacionInsuficiente }, r.MotivosOrdenados);
+    }
+
+    [Fact]
+    public void Xpay698_E1_UltimoMesReportado_1_Rechazo_UltimoMesNoAlDia()
+    {
+        var l = MesesHasta(2026, 7, 6, "N");
+        l[^1] = ("2026-7", "1");
+        var r = Eval(new Snap { VectorJson = VectorJson(l), VectorCount = 6 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.Rechazada, r.Decision);
+        Assert.Equal(new[] { CarteraMotivoDecision.ComportamientoPagoUltimoMesNoAlDia }, r.MotivosOrdenados);
+    }
+
+    [Fact]
+    public void Xpay698_E2_Peor_3_en_ventana_Rechazo_Insuficiente()
+    {
+        var l = MesesHasta(2026, 7, 6, "N");
+        l[1] = ("2026-3", "3");
+        var r = Eval(new Snap { VectorJson = VectorJson(l), VectorCount = 6 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.Rechazada, r.Decision);
+        Assert.Equal(CarteraMotivoDecision.ComportamientoPagoInsuficiente, r.MotivoPrimario);
+    }
+
+    [Fact]
+    public void Xpay698_E3_Peor_1_en_ventana_factor_0_90()
+    {
+        var l = MesesHasta(2026, 7, 6, "N");
+        l[2] = ("2026-4", "1");
+        var r = Eval(new Snap { Score = 801, VectorJson = VectorJson(l), VectorCount = 6 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.Aprobada, r.Decision);
+        Assert.Equal(630_000m, r.MontoAprobado);
+    }
+
+    [Fact]
+    public void Xpay698_F_NoN_antiguo_fuera_de_ventana_no_afecta()
+    {
+        var antiguos = new[] { ("2025-12", (string?)"D"), ("2026-1", (string?)"3") };
+        var v = VectorJson(antiguos.Concat(MesesHasta(2026, 7, 6, "N")).ToArray());
+        var r = Eval(new Snap { VectorJson = v, VectorCount = 8 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.Aprobada, r.Decision);
+        Assert.Equal(700_000m, r.MontoAprobado);
+    }
+
+    [Fact]
+    public void Xpay698_G1_FueraDeOrden_ventana_por_anioMes_no_por_posicion()
+    {
+        var v = VectorJson(("2026-7", "N"), ("2025-12", "3"), ("2026-3", "N"), ("2026-6", "N"),
+                           ("2026-2", "N"), ("2026-1", "D"), ("2026-5", "N"), ("2026-4", "N"));
+        var r = Eval(new Snap { VectorJson = v, VectorCount = 8 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.Aprobada, r.Decision);
+        Assert.Equal(700_000m, r.MontoAprobado);
+    }
+
+    [Fact]
+    public void Xpay698_G2_FueraDeOrden_mas_reciente_en_primera_posicion_cuenta_como_ultimo()
+    {
+        var v = VectorJson(("2026-7", "2"), ("2026-2", "N"), ("2026-3", "N"),
+                           ("2026-4", "N"), ("2026-5", "N"), ("2026-6", "N"));
+        var r = Eval(new Snap { VectorJson = v, VectorCount = 6 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.Rechazada, r.Decision);
+        Assert.Equal(new[]
+        {
+            CarteraMotivoDecision.ComportamientoPagoUltimoMesNoAlDia,
+            CarteraMotivoDecision.ComportamientoPagoInsuficiente,
+        }, r.MotivosOrdenados);
+    }
+
+    [Fact]
+    public void Xpay698_H_Hueco_en_ventana_InformacionInsuficiente_sin_buscar_N_dispersos()
+    {
+        // 2025-6..2026-7 sin 2026-5: hay muchos N anteriores, pero la ventana
+        // 2026-2..2026-7 tiene un hueco -> fail-closed.
+        var v = VectorJson(MesesHasta(2026, 7, 14, "N").Where(e => e.Item1 != "2026-5").ToArray());
+        var r = Eval(new Snap { VectorJson = v, VectorCount = 13 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.NoDecidible, r.Decision);
+        Assert.Equal(new[] { CarteraMotivoDecision.InformacionInsuficiente }, r.MotivosOrdenados);
+    }
+
+    [Fact]
+    public void Xpay698_I1_MesDeConsulta_participa_como_periodo_mas_reciente()
+    {
+        var v = VectorJson(MesesHasta(2026, 9, 6, "N"));
+        var r = Eval(new Snap { VectorJson = v, VectorCount = 6 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.Aprobada, r.Decision);
+    }
+
+    [Fact]
+    public void Xpay698_I2_MesDeConsulta_no_N_es_el_ultimo_mes_evaluado()
+    {
+        var l = MesesHasta(2026, 9, 6, "N");
+        l[^1] = ("2026-9", "1");
+        var r = Eval(new Snap { VectorJson = VectorJson(l), VectorCount = 6 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.Rechazada, r.Decision);
+        Assert.Equal(new[] { CarteraMotivoDecision.ComportamientoPagoUltimoMesNoAlDia }, r.MotivosOrdenados);
+    }
+
+    [Fact]
+    public void Xpay698_J_MesPosterior_a_consulta_InformacionInsuficiente()
+    {
+        var v = VectorJson(MesesHasta(2026, 10, 6, "N"));
+        var r = Eval(new Snap { VectorJson = v, VectorCount = 6 }, new CarteraEvaluationContext(2026, 9));
+        Assert.Equal(CarteraDecisionCrediticia.NoDecidible, r.Decision);
+        Assert.Equal(new[] { CarteraMotivoDecision.InformacionInsuficiente }, r.MotivosOrdenados);
+    }
 }

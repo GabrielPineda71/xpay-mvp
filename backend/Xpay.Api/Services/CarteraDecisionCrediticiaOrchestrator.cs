@@ -29,6 +29,8 @@ namespace Xpay.Api.Services;
 // es true, al llegar a EN_EVALUACION el orquestador se detiene ANTES del consumo
 // y devuelve DetenidaTrasConsulta. Es un stop de orquestación: no escribe en la
 // base, no crea estados persistidos y deja la solicitud en EN_EVALUACION.
+// XPAY-717: el stop SÓLO tiene efecto si IAmbienteXpay permite mecanismos no
+// productivos; en ambiente productivo se ignora por completo.
 //
 // Ante una invariante durable (consumo/decisión/materialización) la excepción se
 // PROPAGA (fail-closed, sin auto-repair) → ErrorHandlingMiddleware responde 500
@@ -84,6 +86,7 @@ public sealed class CarteraDecisionCrediticiaOrchestrator(
     ICarteraDecisionCrediticia decision,
     ICarteraMaterializacionCupo materializacion,
     IConfiguration configuration,
+    IAmbienteXpay ambiente,
     ILogger<CarteraDecisionCrediticiaOrchestrator> logger)
     : ICarteraDecisionCrediticiaOrchestrator
 {
@@ -131,8 +134,10 @@ public sealed class CarteraDecisionCrediticiaOrchestrator(
                 case CarteraSolicitudCupoEstados.EnEvaluacion:
                 {
                     // XPAY-656 — stop de orquestación ANTES del consumo: sin
-                    // consumo, decisión ni cupo; sin escrituras.
-                    if (MiDecisorQaGateConfig.StopAfterConsultaActivo(configuration))
+                    // consumo, decisión ni cupo; sin escrituras. XPAY-717: sólo
+                    // en ambiente no productivo.
+                    if (ambiente.PermiteMecanismosNoProductivos
+                        && MiDecisorQaGateConfig.StopAfterConsultaActivo(configuration))
                     {
                         logger.LogInformation(
                             "m2.4d: STOP_AFTER_CONSULTA activo — evaluación detenida en EN_EVALUACION antes del consumo.");

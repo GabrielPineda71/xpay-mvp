@@ -6,6 +6,7 @@ using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.Integrations.MiDecisor;
 using Xpay.Api.Services;
+using Xpay.Api.Tests.Common;
 using Xpay.Api.Tests.Integrations.MiDecisor;
 using Xunit;
 
@@ -59,6 +60,8 @@ public sealed class CarteraRiesgoRuntimeWiringTests
     public async Task Resuelve_QaGate_con_durable_interna_y_sin_config_no_autoriza()
     {
         var services = Wired();
+        // XPAY-717: el gate QA sólo se cablea en ambiente no productivo.
+        services.AddSingleton(AmbienteXpayTests.Ambiente("QA"));
         services.AddSingleton<IConfiguration>(new FakeConfiguration(new Dictionary<string, string?>()));
         services.AddSingleton(typeof(ILogger<>), typeof(CapturingLogger<>));
         // Cadena ficticia: el contexto se construye pero nunca abre conexión.
@@ -78,6 +81,78 @@ public sealed class CarteraRiesgoRuntimeWiringTests
         // El wiring de riesgo no registra el cliente MiDecisor: la barrera de
         // autorización no tiene camino al proveedor.
         Assert.Null(scope.ServiceProvider.GetService<IMiDecisorClient>());
+    }
+
+    // ── XPAY-717 — frontera QA/PROD en el wiring ──────────────────────────
+    // Ambiente productivo (o sin autoridad registrada) → gate productivo con la
+    // durable concreta interna. Aunque estén TODAS las variables QA, sin
+    // MIDECISOR_PRODUCTION_ENABLED no autoriza y no abre la BD.
+    private static ServiceProvider ProveedorConVariablesQa(IAmbienteXpay? ambiente)
+    {
+        var services = Wired();
+        if (ambiente is not null)
+            services.AddSingleton(ambiente);
+        services.AddSingleton<IConfiguration>(new FakeConfiguration(new Dictionary<string, string?>
+        {
+            [MiDecisorQaGateConfig.EnvAllowedSolicitudId] = "1",
+            [MiDecisorQaGateConfig.EnvStopAfterConsulta]  = "true",
+            [MiDecisorQaGateConfig.EnvGateMode]           = MiDecisorQaGateConfig.ModoClienteQaFullFlow,
+        }));
+        services.AddSingleton(typeof(ILogger<>), typeof(CapturingLogger<>));
+        // Cadena ficticia: el contexto se construye pero nunca abre conexión.
+        services.AddDbContext<XpayDbContext>(o =>
+            o.UseSqlServer("Server=xpay717.invalid;Database=none;Encrypt=false;Connect Timeout=1"));
+        return services.BuildServiceProvider();
+    }
+
+    [Theory]
+    [InlineData("Production")]
+    [InlineData("Staging")]
+    [InlineData("qa")]
+    public async Task Ambiente_productivo_resuelve_gate_productivo_y_variables_QA_no_autorizan(string nombre)
+    {
+        await using var provider = ProveedorConVariablesQa(AmbienteXpayTests.Ambiente(nombre));
+        await using var scope = provider.CreateAsyncScope();
+
+        var gate = Assert.IsType<AutorizacionConsultaRiesgoProduccion>(
+            scope.ServiceProvider.GetRequiredService<IConsultaRiesgoAutorizacion>());
+
+        Assert.IsType<AutorizacionConsultaRiesgoDurable>(gate.AutorizacionDurable);
+        Assert.False(await gate.TieneAutorizacionVigenteAsync(1, 1));
+    }
+
+    [Fact]
+    public async Task Sin_autoridad_de_ambiente_resuelve_gate_productivo_fail_closed()
+    {
+        await using var provider = ProveedorConVariablesQa(ambiente: null);
+        await using var scope = provider.CreateAsyncScope();
+
+        var gate = Assert.IsType<AutorizacionConsultaRiesgoProduccion>(
+            scope.ServiceProvider.GetRequiredService<IConsultaRiesgoAutorizacion>());
+
+        Assert.False(await gate.TieneAutorizacionVigenteAsync(1, 1));
+    }
+
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("QA")]
+    [InlineData("Test")]
+    public async Task Ambiente_no_productivo_conserva_gate_QA(string nombre)
+    {
+        await using var provider = ProveedorConVariablesQa(AmbienteXpayTests.Ambiente(nombre));
+        await using var scope = provider.CreateAsyncScope();
+
+        Assert.IsType<AutorizacionConsultaRiesgoQaGate>(
+            scope.ServiceProvider.GetRequiredService<IConsultaRiesgoAutorizacion>());
+    }
+
+    [Fact]
+    public void Store_productivo_registrado_scoped()
+    {
+        var store = Assert.Single(Wired(), d => d.ServiceType == typeof(IRiesgoProduccionStore));
+
+        Assert.Equal(typeof(RiesgoProduccionStore), store.ImplementationType);
+        Assert.Equal(ServiceLifetime.Scoped, store.Lifetime);
     }
 
     [Fact]

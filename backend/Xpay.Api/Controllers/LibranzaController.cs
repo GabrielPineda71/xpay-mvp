@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -318,6 +319,8 @@ public class LibranzaController : ControllerBase
     }
 
     [HttpGet("api/libranza/admin/convenios/{id:long}/cortes-demo")]
+    // XPAY-717 - inexistente (404) en cualquier ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> GetCortesDemoAsync(long id, [FromQuery] string? fecha)
     {
         DateOnly f = string.IsNullOrWhiteSpace(fecha)

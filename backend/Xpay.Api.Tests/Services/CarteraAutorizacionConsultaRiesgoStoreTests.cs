@@ -463,7 +463,7 @@ public sealed class CarteraAutorizacionConsultaRiesgoStoreTests
     private static CarteraSolicitudCupo NuevaSolicitud(long idUsuario, long idPersona, long idPolitica, DateTime ahora, string sufijo)
         => new()
         {
-            IdUsuario = idUsuario, IdPersona = idPersona, MontoSolicitado = 500_000m,
+            IdUsuario = idUsuario, IdPersona = idPersona,
             EstadoSolicitud = CarteraSolicitudCupoEstados.Recibida,
             DecisionCrediticia = CarteraDecisionCrediticia.Pendiente,
             IdPoliticaAplicada = idPolitica, CupoMinimoAplicado = 0m, CupoMaximoAplicado = 1_000_000m,

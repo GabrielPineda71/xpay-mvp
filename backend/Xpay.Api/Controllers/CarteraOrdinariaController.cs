@@ -59,7 +59,6 @@ public class CarteraOrdinariaController(
     {
         "Ya tienes una solicitud de cupo en curso",
         "Idempotency-Key ya utilizada para otra solicitud.",
-        "Idempotency-Key ya utilizada con parámetros diferentes.",
         "Hay otra solicitud de cupo en proceso para este usuario. Intenta de nuevo en unos segundos.",
     };
 
@@ -120,8 +119,17 @@ public class CarteraOrdinariaController(
 
     [HttpPut("admin/politica")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
-    public async Task<IActionResult> UpsertPolitica([FromBody] UpsertPoliticaCreditoRequest req)
-        => Ok(await svc.UpsertPoliticaAsync(req, IdUsuarioActual));
+    // XPAY-676B — fail-closed: la política que gobierna el motor es
+    // CarteraPolicyParameters.Vigente() (working copy aprobada). Esta tabla
+    // NO gobierna CarteraDecisionEngine, así que no se permite aparentar que
+    // se modifica la política. Cualquier cambio de política requiere una nueva
+    // versión aprobada del motor.
+    public IActionResult UpsertPolitica()
+        => Conflict(new { error = MensajePoliticaNoEditable });
+
+    internal const string MensajePoliticaNoEditable =
+        "La política de crédito vigente está gobernada por la versión aprobada del motor " +
+        "y no se modifica desde este endpoint.";
 
     // ── ADMIN: Cupos ──────────────────────────────────────────────────
     [HttpGet("admin/cupos")]
@@ -131,6 +139,9 @@ public class CarteraOrdinariaController(
 
     [HttpPost("admin/cupos")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - inexistente (404) en cualquier ambiente productivo. La
+    // materialización legítima (revisión manual / orquestador) no pasa por aquí.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> AsignarCupo([FromBody] AsignarCupoRequest req)
     {
         try { return Ok(await svc.AsignarCupoAsync(req, IdUsuarioActual)); }
@@ -155,7 +166,7 @@ public class CarteraOrdinariaController(
     // decisión crediticia, sin cálculo de edad, sin uso de score.
     [Authorize(Policy = "KycAprobado")]
     [HttpPost("solicitar-cupo")]
-    public async Task<IActionResult> SolicitarCupo([FromBody] SolicitarCupoRequest req)
+    public async Task<IActionResult> SolicitarCupo()
     {
         if (!TryGetIdempotencyKey(out var idempotencyKey, out var idempotencyError))
             return BadRequest(new { error = idempotencyError });
@@ -168,7 +179,7 @@ public class CarteraOrdinariaController(
         try
         {
             var result = await svc.CrearSolicitudCupoAsync(
-                IdUsuarioActual, idempotencyKey, req.MontoSolicitado, correlationId);
+                IdUsuarioActual, idempotencyKey, correlationId);
             return Ok(result);
         }
         catch (ArgumentException ex)
