@@ -50,6 +50,12 @@ public sealed class PassportOptions
 
     // Config NO secreta, sólo detalle técnico de transporte/cache — no forma
     // parte del contrato de Passport.
+    // P0 anticipo - key_id Passport de la llave Bre-B de recaudo de XPAY,
+    // requerida por POST /v1/qrcodes (QR dinamico del lote de recaudo). Dato
+    // del Dashboard Passport; no es secreto pero no se imprime. Sin valor,
+    // la generacion del QR falla cerrada ANTES de cualquier HTTP.
+    public const string EnvCollectionKeyId = "PASSPORT_COLLECTION_KEY_ID";
+
     public const string EnvTimeoutSeconds           = "PASSPORT_TIMEOUT_SECONDS";
     public const string EnvTokenSafetyMarginSeconds = "PASSPORT_TOKEN_SAFETY_MARGIN_SECONDS";
 

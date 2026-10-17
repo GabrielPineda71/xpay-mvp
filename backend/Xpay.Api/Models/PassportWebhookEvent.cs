@@ -14,4 +14,6 @@ public class PassportWebhookEvent
     public DateTime  FechaRecibido       { get; set; }
     public DateTime? FechaProcesado      { get; set; }
     public string? ErrorMessage          { get; set; }
+    // P0 (047) - lote de recaudo libranza correlacionado con el pago entrante.
+    public long?   IdLoteRecaudo         { get; set; }
 }

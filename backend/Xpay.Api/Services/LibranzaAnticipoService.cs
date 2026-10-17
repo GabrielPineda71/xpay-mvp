@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
+using Xpay.Api.Exceptions;
 using Xpay.Api.Models;
 
 namespace Xpay.Api.Services;
@@ -213,8 +215,24 @@ public class LibranzaAnticipoService
 
     // ── Solicitar anticipo ────────────────────────────────────────────────────
 
-    public async Task<AnticipoResponse> SolicitarAnticipoAsync(long idUsuario, SolicitarAnticipoRequest req)
+    // P0 anticipo - la modalidad ANTICIPADO produce un asiento descuadrado
+    // (DR = S+C+I, CR = (S-C-I)+C+I = S) y cobra la comisión dos veces. Queda
+    // FAIL-CLOSED en todo ambiente hasta que exista una definición contable y
+    // de producto aprobada: ningún desembolso se ejecuta con ella.
+    internal const string MomentoCobroHabilitado = "VENCIDO";
+    internal const string MensajeAnticipadoDeshabilitado =
+        "La modalidad de cobro ANTICIPADO está deshabilitada. Solo se permite VENCIDO.";
+
+    // P0 anticipo - patrón XPAY-712 adaptado a libranza: Idempotency-Key
+    // durable (wallet_idempotencia), lock pesimista del empleado (serializa
+    // el cálculo de cupo de TODAS las solicitudes del mismo empleado) y de
+    // wallet_saldos (mismo lock que la reserva Bre-B: sin lost update), una
+    // sola transacción y asiento balanceado.
+    public async Task<IdempotentOperationResult<AnticipoResponse>> SolicitarAnticipoAsync(
+        long idUsuario, SolicitarAnticipoRequest req, Guid idempotencyKey)
     {
+        if (idempotencyKey == Guid.Empty)
+            throw new ArgumentException("Idempotency-Key debe ser un identificador válido.");
         if (req.ValorSolicitado <= 0)
             throw new InvalidOperationException("El valor solicitado debe ser mayor a cero.");
 
@@ -222,97 +240,137 @@ public class LibranzaAnticipoService
             ? DateOnly.Parse(req.FechaSimulada)
             : DateOnly.FromDateTime(DateTime.UtcNow);
 
-        var asoc = await _db.LibranzaEmpleadoUsuarios
-            .FirstOrDefaultAsync(a => a.IdUsuario == idUsuario && a.Estado == "ACTIVO")
-            ?? throw new UnauthorizedAccessException("No tiene un perfil de empleado de libranza asociado.");
-
-        if (asoc.IdWallet is null)
-            throw new InvalidOperationException("El empleado no tiene wallet asociada para el desembolso.");
-
-        var empleado = await _db.LibranzaEmpleados.FindAsync(asoc.IdEmpleado)
-            ?? throw new InvalidOperationException("Empleado no encontrado.");
-        if (empleado.Estado != "ACTIVO")
-            throw new InvalidOperationException("El empleado no está activo.");
-
-        var convenio = await _db.LibranzaEmpresasConvenio.FindAsync(empleado.IdConvenio)
-            ?? throw new InvalidOperationException("Convenio no encontrado.");
-        if (convenio.Estado != "ACTIVO")
-            throw new InvalidOperationException("El convenio no está activo.");
-
-        var param = await ObtenerParametrosAsync(empleado.IdConvenio)
-            ?? throw new InvalidOperationException("El convenio no tiene parámetros activos.");
-
-        // Verify anticipo limit
-        var activosCount = await _db.LibranzaAnticipos
-            .CountAsync(a => a.IdEmpleado == empleado.IdEmpleado && a.Estado == "DESEMBOLSADO");
-        if (!param.PermiteAnticipoMultiple && activosCount >= param.MaxAnticipacionesActivos)
-            throw new InvalidOperationException(
-                $"Ya tiene {activosCount} anticipo(s) activo(s). El máximo permitido es {param.MaxAnticipacionesActivos}.");
-
-        var corte = await ObtenerCorteVigenteAsync(empleado.IdEmpleado, fechaSimulada)
-            ?? throw new InvalidOperationException(
-                "No hay corte de pago vigente para la fecha simulada indicada.");
-
-        if (corte.EsDiaPago && !convenio.PermiteAnticipodiaPago)
-            throw new InvalidOperationException("No se permite anticipos el día de pago.");
-
-        if (req.ValorSolicitado > corte.CupoDisponible)
-            throw new InvalidOperationException(
-                $"El valor solicitado ({req.ValorSolicitado:0.00}) supera el cupo disponible ({corte.CupoDisponible:0.00}).");
-
-        // Calculate comisión
-        var rango = await _db.LibranzaRangosCobro
-            .Where(r => r.IdConvenio == convenio.IdConvenio
-                     && r.Estado == "ACTIVO"
-                     && r.ValorDesde <= req.ValorSolicitado
-                     && r.ValorHasta >= req.ValorSolicitado)
-            .FirstOrDefaultAsync()
-            ?? throw new InvalidOperationException(
-                $"No existe rango de cobro activo para el valor {req.ValorSolicitado:0.00}.");
-
-        var comision = rango.TipoCobro == "FIJO"
-            ? rango.ValorCobro
-            : Math.Round(req.ValorSolicitado * rango.ValorCobro / 100m, 2);
-        var iva = rango.AplicaIva ? Math.Round(comision * param.IvaPorcentaje / 100m, 2) : 0m;
-        var totalACobrar = req.ValorSolicitado + comision + iva;
-
-        decimal netoDesembolsado, drCartera, crObligacion, crComision, crIva;
-
-        if (param.MomentoCobroComision == "VENCIDO")
-        {
-            // Desembolso total, cobra al vencer
-            netoDesembolsado = req.ValorSolicitado;
-            drCartera        = req.ValorSolicitado;
-            crObligacion     = req.ValorSolicitado;
-            crComision       = 0m;
-            crIva            = 0m;
-        }
-        else // ANTICIPADO
-        {
-            netoDesembolsado = req.ValorSolicitado - comision - iva;
-            if (netoDesembolsado <= 0)
-                throw new InvalidOperationException(
-                    "El valor neto desembolsado sería cero o negativo con comisión anticipada.");
-            drCartera    = totalACobrar;
-            crObligacion = netoDesembolsado;
-            crComision   = comision;
-            crIva        = iva;
-        }
+        const string endpoint = IdempotencyEndpoints.LibranzaAnticipoDesembolso;
+        var requestHash = IdempotencyHashHelper.ComputeAnticipoLibranzaHash(
+            idUsuario, req.ValorSolicitado, req.FechaSimulada);
 
         await using var tx = await _db.Database.BeginTransactionAsync();
+        var rolledBack = false;
         try
         {
-            // Load ledger accounts
-            var cuentaCartera   = await GetCuentaAsync(CodAnticipoCartera);
-            var cuentaObligacion = await GetCuentaAsync(CodObligacion);
-            var cuentaComision  = param.MomentoCobroComision == "ANTICIPADO" ? await GetCuentaAsync(CodComisionIncome) : null;
-            var cuentaIvaLedger = param.MomentoCobroComision == "ANTICIPADO" && iva > 0 ? await GetCuentaAsync(CodIva) : null;
+            // Reserva EN_PROCESO: primera escritura de la transacción. La
+            // restricción UNIQUE (id_usuario, endpoint, idempotency_key) arbitra
+            // la concurrencia de la misma clave.
+            var idem = IdempotencyStore.NuevaReserva(idUsuario, endpoint, idempotencyKey, requestHash);
+            _db.WalletIdempotencias.Add(idem);
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex) when (SqlExceptionHelper.IsUniqueViolation(ex))
+            {
+                await tx.RollbackAsync();
+                rolledBack = true;
+                _db.ChangeTracker.Clear();
+                try
+                {
+                    return await IdempotencyStore.ResolverReplayAsync<AnticipoResponse>(
+                        _db, idUsuario, endpoint, idempotencyKey, requestHash);
+                }
+                catch (InvalidOperationException exReplay)
+                {
+                    // P0 F.3 - replay de clave existente cuya respuesta no puede
+                    // reconstruirse: resultado INCIERTO (503), nunca rechazo
+                    // definitivo (400). El conflicto de hash es
+                    // IdempotencyConflictException (no capturada aqui -> 409).
+                    _logger.LogError(
+                        exReplay,
+                        "LIBRANZA_ANTICIPO_REPLAY_IRRECUPERABLE idUsuario={Id}",
+                        idUsuario);
 
-            // Load wallet
+                    throw new IdempotencyUnavailableException(
+                        "No fue posible confirmar el resultado de la operación con esta clave de idempotencia.");
+                }
+            }
+
+            var asoc = await _db.LibranzaEmpleadoUsuarios
+                .FirstOrDefaultAsync(a => a.IdUsuario == idUsuario && a.Estado == "ACTIVO")
+                ?? throw new UnauthorizedAccessException("No tiene un perfil de empleado de libranza asociado.");
+
+            if (asoc.IdWallet is null)
+                throw new InvalidOperationException("El empleado no tiene wallet asociada para el desembolso.");
+
+            // Lock pesimista del empleado: dos solicitudes concurrentes del mismo
+            // empleado se serializan aquí; la segunda recalcula el cupo usado YA
+            // incluyendo el anticipo confirmado por la primera.
+            var empleado = await _db.LibranzaEmpleados
+                .FromSqlInterpolated($"SELECT * FROM libranza_empleados WITH (UPDLOCK, ROWLOCK) WHERE id_empleado = {asoc.IdEmpleado}")
+                .FirstOrDefaultAsync()
+                ?? throw new InvalidOperationException("Empleado no encontrado.");
+            if (empleado.Estado != "ACTIVO")
+                throw new InvalidOperationException("El empleado no está activo.");
+
+            var convenio = await _db.LibranzaEmpresasConvenio.FindAsync(empleado.IdConvenio)
+                ?? throw new InvalidOperationException("Convenio no encontrado.");
+            if (convenio.Estado != "ACTIVO")
+                throw new InvalidOperationException("El convenio no está activo.");
+
+            var param = await ObtenerParametrosAsync(empleado.IdConvenio)
+                ?? throw new InvalidOperationException("El convenio no tiene parámetros activos.");
+
+            if (!string.Equals(param.MomentoCobroComision, MomentoCobroHabilitado, StringComparison.Ordinal))
+                throw new InvalidOperationException(MensajeAnticipadoDeshabilitado);
+
+            if (req.ValorSolicitado < param.MontoMinimoAnticipo)
+                throw new InvalidOperationException(
+                    $"El valor solicitado ({req.ValorSolicitado:0.00}) es inferior al mínimo de anticipo ({param.MontoMinimoAnticipo:0.00}).");
+
+            var activosCount = await _db.LibranzaAnticipos
+                .CountAsync(a => a.IdEmpleado == empleado.IdEmpleado && a.Estado == "DESEMBOLSADO");
+            if (!param.PermiteAnticipoMultiple && activosCount >= param.MaxAnticipacionesActivos)
+                throw new InvalidOperationException(
+                    $"Ya tiene {activosCount} anticipo(s) activo(s). El máximo permitido es {param.MaxAnticipacionesActivos}.");
+
+            var corte = await ObtenerCorteVigenteAsync(empleado.IdEmpleado, fechaSimulada)
+                ?? throw new InvalidOperationException(
+                    "No hay corte de pago vigente para la fecha simulada indicada.");
+
+            if (corte.EsDiaPago && !convenio.PermiteAnticipodiaPago)
+                throw new InvalidOperationException("No se permite anticipos el día de pago.");
+
+            if (req.ValorSolicitado > corte.CupoDisponible)
+                throw new InvalidOperationException(
+                    $"El valor solicitado ({req.ValorSolicitado:0.00}) supera el cupo disponible ({corte.CupoDisponible:0.00}).");
+
+            var rango = await _db.LibranzaRangosCobro
+                .Where(r => r.IdConvenio == convenio.IdConvenio
+                         && r.Estado == "ACTIVO"
+                         && r.ValorDesde <= req.ValorSolicitado
+                         && r.ValorHasta >= req.ValorSolicitado)
+                .FirstOrDefaultAsync()
+                ?? throw new InvalidOperationException(
+                    $"No existe rango de cobro activo para el valor {req.ValorSolicitado:0.00}.");
+
+            var comision = rango.TipoCobro == "FIJO"
+                ? rango.ValorCobro
+                : Math.Round(req.ValorSolicitado * rango.ValorCobro / 100m, 2);
+            var iva = rango.AplicaIva ? Math.Round(comision * param.IvaPorcentaje / 100m, 2) : 0m;
+            var totalACobrar = req.ValorSolicitado + comision + iva;
+
+            // VENCIDO: se desembolsa el capital completo; comisión e IVA se
+            // reconocen al recaudar (ver LibranzaRecaudoAplicacionService).
+            var netoDesembolsado = req.ValorSolicitado;
+
+            var cuentaCartera    = await GetCuentaAsync(CodAnticipoCartera);
+            var cuentaObligacion = await GetCuentaAsync(CodObligacion);
+
+            // La wallet debe pertenecer a la persona del usuario autenticado
+            // (defensa en profundidad sobre el vínculo empleado ↔ usuario).
+            var idPersonaUsuario = await _db.Usuarios
+                .Where(u => u.IdUsuario == idUsuario)
+                .Select(u => (long?)u.IdPersona)
+                .FirstOrDefaultAsync();
             var idWallet = asoc.IdWallet.Value;
-            var wallet  = await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == idWallet && w.Estado == "ACTIVA")
+            var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == idWallet && w.Estado == "ACTIVA")
                 ?? throw new InvalidOperationException("La wallet del empleado no está activa.");
-            var saldo   = await _db.WalletSaldos.FirstOrDefaultAsync(s => s.IdWallet == idWallet)
+            if (idPersonaUsuario is null || wallet.IdPersona != idPersonaUsuario || wallet.TipoWallet != "PERSONA")
+                throw new InvalidOperationException("La wallet asociada no pertenece al usuario.");
+
+            // Mismo lock que BrebPaymentService (reserva/liquidación/rechazo) y
+            // que Cartera: ninguna escritura concurrente del saldo se pierde.
+            var saldo = await _db.WalletSaldos
+                .FromSqlInterpolated($"SELECT * FROM wallet_saldos WITH (UPDLOCK, ROWLOCK) WHERE id_wallet = {idWallet}")
+                .FirstOrDefaultAsync()
                 ?? throw new InvalidOperationException("La wallet no tiene registro de saldo.");
 
             var now = DateTime.UtcNow;
@@ -336,7 +394,7 @@ public class LibranzaAnticipoService
                 ValorIva               = iva,
                 ValorTotalACobrar      = totalACobrar,
                 ValorNetoDesembolsado  = netoDesembolsado,
-                MomentoCobroComision   = param.MomentoCobroComision,
+                MomentoCobroComision   = MomentoCobroHabilitado,
                 Estado                 = "CREADO",
                 CreatedAt              = now,
                 CreatedByUsuario       = idUsuario,
@@ -360,14 +418,15 @@ public class LibranzaAnticipoService
             _db.LedgerTransacciones.Add(ledgerTx);
             await _db.SaveChangesAsync();
 
-            // Ledger movements
+            // Ledger (VENCIDO): DR 130104 cartera anticipo / CR 210101 obligación
+            // wallet, ambos por el capital desembolsado.
             var movimientos = new List<LedgerMovimiento>
             {
                 new() {
                     IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
                     IdCuenta    = cuentaCartera.IdCuenta,
                     Naturaleza  = "D",
-                    Valor       = drCartera,
+                    Valor       = netoDesembolsado,
                     Concepto    = "ANTICIPO_DESEMBOLSO",
                     ReferenciaTipo = "libranza_anticipos",
                     ReferenciaId   = anticipo.IdAnticipo,
@@ -378,7 +437,7 @@ public class LibranzaAnticipoService
                     IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
                     IdCuenta    = cuentaObligacion.IdCuenta,
                     Naturaleza  = "C",
-                    Valor       = crObligacion,
+                    Valor       = netoDesembolsado,
                     Concepto    = "ANTICIPO_DESEMBOLSO",
                     ReferenciaTipo = "libranza_anticipos",
                     ReferenciaId   = anticipo.IdAnticipo,
@@ -386,34 +445,6 @@ public class LibranzaAnticipoService
                     FechaMovimiento = now,
                 },
             };
-
-            if (param.MomentoCobroComision == "ANTICIPADO")
-            {
-                if (cuentaComision is not null && crComision > 0)
-                    movimientos.Add(new() {
-                        IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
-                        IdCuenta    = cuentaComision.IdCuenta,
-                        Naturaleza  = "C",
-                        Valor       = crComision,
-                        Concepto    = "ANTICIPO_COMISION",
-                        ReferenciaTipo = "libranza_anticipos",
-                        ReferenciaId   = anticipo.IdAnticipo,
-                        Descripcion = "Comisión anticipo nómina (cobro anticipado).",
-                        FechaMovimiento = now,
-                    });
-                if (cuentaIvaLedger is not null && crIva > 0)
-                    movimientos.Add(new() {
-                        IdTransaccionLedger = ledgerTx.IdTransaccionLedger,
-                        IdCuenta    = cuentaIvaLedger.IdCuenta,
-                        Naturaleza  = "C",
-                        Valor       = crIva,
-                        Concepto    = "ANTICIPO_IVA",
-                        ReferenciaTipo = "libranza_anticipos",
-                        ReferenciaId   = anticipo.IdAnticipo,
-                        Descripcion = "IVA comisión anticipo nómina (cobro anticipado).",
-                        FechaMovimiento = now,
-                    });
-            }
 
             _db.LedgerMovimientos.AddRange(movimientos);
 
@@ -446,24 +477,34 @@ public class LibranzaAnticipoService
             anticipo.UpdatedAt                     = now;
             anticipo.UpdatedByUsuario              = idUsuario;
 
-            await _db.SaveChangesAsync();
-
-            // Verify ledger balance
             var totalD = movimientos.Where(m => m.Naturaleza == "D").Sum(m => m.Valor);
             var totalC = movimientos.Where(m => m.Naturaleza == "C").Sum(m => m.Valor);
             if (totalD != totalC)
                 throw new InvalidOperationException($"Ledger desbalanceado: DR={totalD} CR={totalC}.");
 
+            // Respuesta ORIGINAL persistida para el replay de la misma clave.
+            var resultado     = ToAnticipoResponse(anticipo);
+            var respuestaJson = System.Text.Json.JsonSerializer.Serialize(resultado);
+            if (respuestaJson.Length > 1000)
+                throw new InvalidOperationException(
+                    "La respuesta del desembolso excede el límite de almacenamiento de idempotencia.");
+            IdempotencyStore.MarcarCompletada(idem, httpStatus: 200,
+                idRecurso: anticipo.IdAnticipo,
+                idTransaccionLedger: ledgerTx.IdTransaccionLedger,
+                respuestaJson);
+
+            await _db.SaveChangesAsync();
             await tx.CommitAsync();
 
             _logger.LogInformation("LIBRANZA_ANTICIPO_DESEMBOLSO: id={Id} empleado={Emp} valor={Val} ledger={Led}",
                 anticipo.IdAnticipo, empleado.IdEmpleado, netoDesembolsado, ledgerTx.IdTransaccionLedger);
 
-            return ToAnticipoResponse(anticipo);
+            return new IdempotentOperationResult<AnticipoResponse>(resultado, Replayed: false);
         }
         catch
         {
-            await tx.RollbackAsync();
+            if (!rolledBack)
+                await tx.RollbackAsync();
             throw;
         }
     }
@@ -529,6 +570,16 @@ public class LibranzaAnticipoService
         if (anticipos.Count == 0)
             throw new InvalidOperationException(
                 $"No hay anticipos DESEMBOLSADOS para el convenio {idConvenio} con fecha de pago {req.FechaPago}.");
+
+        // P0 anticipo - herramienta SOLO QA (el controller la bloquea en
+        // productivo). Nunca compite con el recaudo real: si algún anticipo
+        // del corte ya está en un lote vigente o aplicado, no se simula nada.
+        var idsAnticipos = anticipos.Select(a => a.IdAnticipo).ToList();
+        if (await _db.LibranzaLoteRecaudoDetalles.AnyAsync(d =>
+                idsAnticipos.Contains(d.IdAnticipo)
+                && (d.Estado == LibranzaLoteEstados.DetalleVigente || d.Estado == LibranzaLoteEstados.DetalleAplicado)))
+            throw new InvalidOperationException(
+                "Hay anticipos de este corte incluidos en un lote de recaudo; el pago simulado no aplica.");
 
         var convenio = await _db.LibranzaEmpresasConvenio.FindAsync(idConvenio)
             ?? throw new KeyNotFoundException($"Convenio {idConvenio} no encontrado.");
@@ -758,39 +809,113 @@ public class LibranzaAnticipoService
 
     // ── Admin: asociar empleado a usuario ─────────────────────────────────────
 
+    // P0 anticipo - el vínculo determina a QUIÉN se acredita dinero real, así
+    // que se valida antes de crearlo o cambiarlo:
+    //   · el empleado existe, está ACTIVO y pertenece al convenio esperado;
+    //   · el documento del empleado corresponde a la persona del usuario
+    //     (y al documento verificado por KYC, si existe);
+    //   · la wallet es la wallet PERSONA ACTIVA de esa misma persona;
+    //   · sin vínculos cruzados: un empleado ↔ un usuario, en ambos sentidos.
+    // Los mensajes y logs nunca incluyen documentos.
     public async Task AsociarEmpleadoUsuarioAsync(
         long idEmpleado, AsociarEmpleadoUsuarioRequest req, long adminId)
     {
-        if (!await _db.LibranzaEmpleados.AnyAsync(e => e.IdEmpleado == idEmpleado))
-            throw new KeyNotFoundException($"Empleado {idEmpleado} no encontrado.");
+        if (req.IdConvenio is null or <= 0)
+            throw new InvalidOperationException("idConvenio es obligatorio para vincular un empleado.");
+        if (req.IdUsuario <= 0)
+            throw new InvalidOperationException("idUsuario es obligatorio.");
 
-        var existing = await _db.LibranzaEmpleadoUsuarios
-            .FirstOrDefaultAsync(a => a.IdEmpleado == idEmpleado && a.Estado == "ACTIVO");
-
-        if (existing is not null)
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
         {
-            // Check no other active employee has this user
-            var conflicto = await _db.LibranzaEmpleadoUsuarios
-                .AnyAsync(a => a.IdUsuario == req.IdUsuario && a.Estado == "ACTIVO"
-                            && a.IdEmpleado != idEmpleado);
-            if (conflicto)
+            var empleado = await _db.LibranzaEmpleados
+                .FromSqlInterpolated($"SELECT * FROM libranza_empleados WITH (UPDLOCK, ROWLOCK) WHERE id_empleado = {idEmpleado}")
+                .FirstOrDefaultAsync()
+                ?? throw new KeyNotFoundException($"Empleado {idEmpleado} no encontrado.");
+            if (empleado.IdConvenio != req.IdConvenio.Value)
+                throw new InvalidOperationException("El empleado no pertenece al convenio indicado.");
+            if (empleado.Estado != "ACTIVO")
+                throw new InvalidOperationException("El empleado no está activo.");
+
+            var usuario = await _db.Usuarios.FirstOrDefaultAsync(u => u.IdUsuario == req.IdUsuario)
+                ?? throw new KeyNotFoundException($"Usuario {req.IdUsuario} no encontrado.");
+            if (usuario.Estado != "ACTIVO")
+                throw new InvalidOperationException("El usuario no está activo.");
+
+            var persona = await _db.Personas.FirstOrDefaultAsync(p => p.IdPersona == usuario.IdPersona)
+                ?? throw new InvalidOperationException("El usuario no tiene persona asociada.");
+            if (!DocumentoCoincide(empleado.TipoDocumento, empleado.NumeroDocumento, persona.TipoDocumento, persona.NumeroDocumento))
+                throw new InvalidOperationException("El documento del empleado no corresponde al usuario indicado.");
+            if (!string.IsNullOrWhiteSpace(persona.NumeroDocumentoVerificado)
+                && NormalizarDocumento(persona.NumeroDocumentoVerificado) != NormalizarDocumento(empleado.NumeroDocumento))
+                throw new InvalidOperationException("El documento del empleado no corresponde al documento verificado del usuario.");
+
+            var wallet = req.IdWallet is long idWallet
+                ? await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == idWallet)
+                : await _db.Wallets.FirstOrDefaultAsync(w =>
+                    w.IdPersona == persona.IdPersona && w.TipoWallet == "PERSONA" && w.Estado == "ACTIVA");
+            if (wallet is null || wallet.IdPersona != persona.IdPersona
+                || wallet.TipoWallet != "PERSONA" || wallet.Estado != "ACTIVA")
+                throw new InvalidOperationException("La wallet indicada no es una wallet activa del usuario.");
+
+            var existing = await _db.LibranzaEmpleadoUsuarios
+                .FirstOrDefaultAsync(a => a.IdEmpleado == idEmpleado && a.Estado == "ACTIVO");
+            if (existing is not null && existing.IdUsuario != req.IdUsuario)
                 throw new InvalidOperationException(
-                    $"El usuario {req.IdUsuario} ya está asociado a otro empleado activo.");
-            existing.IdWallet  = req.IdWallet;
-            await _db.SaveChangesAsync();
-            return;
-        }
+                    "El empleado ya está vinculado a otro usuario. Debe desvincularse antes de vincular uno nuevo.");
 
-        _db.LibranzaEmpleadoUsuarios.Add(new LibranzaEmpleadoUsuario
+            var usuarioEnOtroEmpleado = await _db.LibranzaEmpleadoUsuarios
+                .AnyAsync(a => a.IdUsuario == req.IdUsuario && a.Estado == "ACTIVO" && a.IdEmpleado != idEmpleado);
+            if (usuarioEnOtroEmpleado)
+                throw new InvalidOperationException("El usuario ya está vinculado a otro empleado activo.");
+
+            if (existing is not null)
+            {
+                existing.IdWallet = wallet.IdWallet;
+            }
+            else
+            {
+                _db.LibranzaEmpleadoUsuarios.Add(new LibranzaEmpleadoUsuario
+                {
+                    IdEmpleado        = idEmpleado,
+                    IdUsuario         = req.IdUsuario,
+                    IdWallet          = wallet.IdWallet,
+                    Estado            = "ACTIVO",
+                    CreatedAt         = DateTime.UtcNow,
+                    CreatedByUsuario  = adminId,
+                });
+            }
+
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex) when (SqlExceptionHelper.IsUniqueViolation(ex))
+            {
+                throw new InvalidOperationException("El empleado o el usuario ya tienen un vínculo activo.");
+            }
+            await tx.CommitAsync();
+
+            _logger.LogInformation("LIBRANZA_EMPLEADO_VINCULADO: empleado={Emp} usuario={Usr} wallet={Wal} admin={Admin}",
+                idEmpleado, req.IdUsuario, wallet.IdWallet, adminId);
+        }
+        catch
         {
-            IdEmpleado        = idEmpleado,
-            IdUsuario         = req.IdUsuario,
-            IdWallet          = req.IdWallet,
-            Estado            = "ACTIVO",
-            CreatedAt         = DateTime.UtcNow,
-            CreatedByUsuario  = adminId,
-        });
-        await _db.SaveChangesAsync();
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
+
+    internal static string NormalizarDocumento(string? numero) =>
+        new string((numero ?? string.Empty).Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+
+    internal static bool DocumentoCoincide(string? tipoEmpleado, string? numeroEmpleado, string? tipoPersona, string? numeroPersona)
+    {
+        var tE = (tipoEmpleado ?? string.Empty).Trim().ToUpperInvariant();
+        var tP = (tipoPersona ?? string.Empty).Trim().ToUpperInvariant();
+        var nE = NormalizarDocumento(numeroEmpleado);
+        var nP = NormalizarDocumento(numeroPersona);
+        return tE.Length > 0 && nE.Length > 0 && tE == tP && nE == nP;
     }
 
     // ── Lista anticipos del cliente ───────────────────────────────────────────

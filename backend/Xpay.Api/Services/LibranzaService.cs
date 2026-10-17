@@ -12,7 +12,10 @@ public class LibranzaService
 
     private static readonly HashSet<string> EstadosConvenio  = ["ACTIVO", "SUSPENDIDO", "CANCELADO"];
     private static readonly HashSet<string> Periodicidades   = ["MENSUAL", "QUINCENAL", "DECADAL", "SEMANAL"];
-    private static readonly HashSet<string> MomentosCobro    = ["ANTICIPADO", "VENCIDO"];
+    // P0 anticipo - ANTICIPADO queda fuera: su asiento de desembolso está
+    // descuadrado (ver LibranzaAnticipoService.MensajeAnticipadoDeshabilitado).
+    // La BD conserva el valor en su CHECK solo por datos históricos.
+    private static readonly HashSet<string> MomentosCobro    = ["VENCIDO"];
     private static readonly HashSet<string> TiposCobro       = ["FIJO", "PORCENTAJE"];
     private static readonly HashSet<string> EstadosParam     = ["ACTIVO", "INACTIVO"];
     private static readonly HashSet<string> EstadosRango     = ["ACTIVO", "INACTIVO"];
@@ -158,6 +161,8 @@ public class LibranzaService
 
         ValidarParametrosRequest(req.PorcentajeMaximoCupo, req.IvaPorcentaje,
             req.MaxAnticipacionesActivos, req.MomentoCobroComision, req.Estado);
+        if (req.MontoMinimoAnticipo <= 0)
+            throw new InvalidOperationException("monto_minimo_anticipo debe ser mayor a cero.");
 
         var param = new LibranzaParametrosEmpresa
         {
@@ -170,6 +175,7 @@ public class LibranzaService
             MaxAnticipacionesActivos  = req.MaxAnticipacionesActivos,
             IvaPorcentaje             = req.IvaPorcentaje,
             MomentoCobroComision      = req.MomentoCobroComision.Trim().ToUpperInvariant(),
+            MontoMinimoAnticipo       = req.MontoMinimoAnticipo,
             Estado                    = req.Estado.Trim().ToUpperInvariant(),
             CreatedAt                 = DateTime.UtcNow,
             CreatedByUsuario          = adminId,
@@ -208,8 +214,14 @@ public class LibranzaService
         {
             var m = req.MomentoCobroComision.Trim().ToUpperInvariant();
             if (!MomentosCobro.Contains(m))
-                throw new InvalidOperationException($"momento_cobro_comision inválido: '{m}'. Valores: ANTICIPADO, VENCIDO.");
+                throw new InvalidOperationException($"momento_cobro_comision inválido: '{m}'. Valores: VENCIDO.");
             param.MomentoCobroComision = m;
+        }
+        if (req.MontoMinimoAnticipo.HasValue)
+        {
+            if (req.MontoMinimoAnticipo <= 0)
+                throw new InvalidOperationException("monto_minimo_anticipo debe ser mayor a cero.");
+            param.MontoMinimoAnticipo = req.MontoMinimoAnticipo.Value;
         }
         if (!string.IsNullOrWhiteSpace(req.Estado))
         {
@@ -355,7 +367,7 @@ public class LibranzaService
         if (maxAnt < 1)
             throw new InvalidOperationException("max_anticipos_activos debe ser >= 1.");
         if (!MomentosCobro.Contains(momento.Trim().ToUpperInvariant()))
-            throw new InvalidOperationException($"momento_cobro_comision inválido: '{momento}'. Valores: ANTICIPADO, VENCIDO.");
+            throw new InvalidOperationException($"momento_cobro_comision inválido: '{momento}'. Valores: VENCIDO.");
         if (!EstadosParam.Contains(estado.Trim().ToUpperInvariant()))
             throw new InvalidOperationException($"estado inválido: '{estado}'. Valores: ACTIVO, INACTIVO.");
     }
@@ -426,6 +438,7 @@ public class LibranzaService
         MaxAnticipacionesActivos  = p.MaxAnticipacionesActivos,
         IvaPorcentaje             = p.IvaPorcentaje,
         MomentoCobroComision      = p.MomentoCobroComision,
+        MontoMinimoAnticipo       = p.MontoMinimoAnticipo,
         Estado                    = p.Estado,
         CreatedAt                 = p.CreatedAt,
         UpdatedAt                 = p.UpdatedAt,

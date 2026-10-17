@@ -18,6 +18,15 @@ namespace Xpay.Api.Services;
 //
 // El comportamiento financiero del producto (acreditación real de un pago
 // entrante) es alcance de Fase 65 y permanece fuera de aquí.
+//
+// P0 anticipo - este servicio sigue sin tocar Wallet/Ledger/breb_retiros
+// directamente. Tras registrar (y deduplicar de forma durable con
+// uq_pwh_evento_pago) un evento ENTRANTE, delega en
+// LibranzaRecaudoAplicacionService, que es la ÚNICA pieza que puede aplicar
+// un pago entrante (solo settled, con firma válida y validaciones completas)
+// a un lote de recaudo de anticipos. El evento queda processed=1 solo cuando
+// ese paso termina; un fallo transitorio lo deja processed=0 y la excepción
+// se propaga (500) para que Passport reintente sobre la MISMA fila.
 public enum PassportWebhookProcessResult
 {
     /// <summary>Entrega entrante válida, registrada y marcada como procesada.</summary>
@@ -45,15 +54,18 @@ public class PassportWebhookService
 {
     private readonly XpayDbContext _db;
     private readonly TimeProvider  _timeProvider;
+    private readonly LibranzaRecaudoAplicacionService _recaudo;
     private readonly ILogger<PassportWebhookService> _logger;
 
     public PassportWebhookService(
         XpayDbContext db,
         TimeProvider timeProvider,
+        LibranzaRecaudoAplicacionService recaudo,
         ILogger<PassportWebhookService> logger)
     {
         _db           = db;
         _timeProvider = timeProvider;
+        _recaudo      = recaudo;
         _logger       = logger;
     }
 
@@ -111,7 +123,10 @@ public class PassportWebhookService
                 ? PassportWebhookProcessResult.NotInbound
                 : PassportWebhookProcessResult.UnknownEvent;
 
-            var recorded = await RecordAsync(
+            // P0 - con uq_pwh_evento_pago, el reintento de un mismo evento no
+            // entrante NO inserta otra fila (y nunca provoca un 500).
+            var previo = await BuscarExistenteAsync(payload, cancellationToken);
+            var recorded = previo ?? await RecordOrGetExistingAsync(
                 payload, hash, signatureValid, processed: false, nowUtc,
                 errorMessage: $"Evento no procesable por M5-T6/T7: {kindResult}",
                 cancellationToken);
@@ -134,14 +149,11 @@ public class PassportWebhookService
                 PassportWebhookProcessResult.MissingPaymentId, payload.Kind, recorded.IdEvent);
         }
 
-        // Idempotencia lógica: (event_type, passport_payment_id). payment_id por
-        // sí solo NO sirve — received/confirmed/settled lo comparten y son
-        // entregas legítimamente distintas.
-        var existing = await _db.PassportWebhookEvents
-            .Where(e => e.EventType == payload.EventName
-                     && e.PassportPaymentId == payload.PaymentId)
-            .OrderByDescending(e => e.IdEvent)
-            .FirstOrDefaultAsync(cancellationToken);
+        // Idempotencia: (event_type, passport_payment_id). payment_id por sí solo
+        // NO sirve — received/confirmed/settled lo comparten y son entregas
+        // legítimamente distintas. Desde P0 la garantía es DURABLE
+        // (uq_pwh_evento_pago), no solo este SELECT previo.
+        var existing = await BuscarExistenteAsync(payload, cancellationToken);
 
         if (existing is not null && existing.Processed)
         {
@@ -153,6 +165,7 @@ public class PassportWebhookService
                 PassportWebhookProcessResult.Duplicate, payload.Kind, existing.IdEvent);
         }
 
+        PassportWebhookEvent fila;
         if (existing is not null)
         {
             // Entrega previa registrada pero no procesada (p. ej. un fallo
@@ -161,25 +174,98 @@ public class PassportWebhookService
             existing.SignatureValid       = signatureValid;
             existing.PayloadHash          = hash;
             existing.PayloadSanitizedJson = PassportWebhookPayloadParser.BuildSanitizedJson(payload);
-            existing.Processed            = true;
-            existing.FechaProcesado       = nowUtc;
-            existing.ErrorMessage         = null;
             await _db.SaveChangesAsync(cancellationToken);
-
-            return new PassportWebhookProcessOutcome(
-                PassportWebhookProcessResult.Processed, payload.Kind, existing.IdEvent);
+            fila = existing;
+        }
+        else
+        {
+            var insertada = await TryInsertAsync(payload, hash, signatureValid, nowUtc, cancellationToken);
+            if (insertada is null)
+            {
+                // Otra entrega concurrente del MISMO evento ganó el INSERT: esta
+                // no hace nada más (la otra completa el proceso o, si falla,
+                // responde 500 y Passport la reintenta).
+                var ganadora = await BuscarExistenteAsync(payload, cancellationToken);
+                return new PassportWebhookProcessOutcome(
+                    PassportWebhookProcessResult.Duplicate, payload.Kind, ganadora?.IdEvent);
+            }
+            fila = insertada;
         }
 
-        var inserted = await RecordAsync(
-            payload, hash, signatureValid, processed: true, nowUtc,
-            errorMessage: null, cancellationToken);
+        ResultadoRecaudo recaudo;
+        try
+        {
+            recaudo = await _recaudo.ProcesarEventoEntranteAsync(
+                payload.Kind, payload.PaymentId!, signatureValid, fila.IdEvent, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _db.ChangeTracker.Clear();
+            var pendiente = await _db.PassportWebhookEvents.FirstAsync(e => e.IdEvent == fila.IdEvent, cancellationToken);
+            pendiente.Processed    = false;
+            pendiente.ErrorMessage = $"RECAUDO_ERROR:{ex.GetType().Name}";
+            await _db.SaveChangesAsync(cancellationToken);
+            throw;
+        }
+
+        _db.ChangeTracker.Clear();
+        var procesada = await _db.PassportWebhookEvents.FirstAsync(e => e.IdEvent == fila.IdEvent, cancellationToken);
+        procesada.Processed      = true;
+        procesada.FechaProcesado = nowUtc;
+        procesada.ErrorMessage   = $"RECAUDO:{recaudo.Resultado}";
+        procesada.IdLoteRecaudo  = recaudo.IdLote;
+        await _db.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Passport webhook entrante procesado: kind={Kind} idEvent={IdEvent}",
-            payload.Kind, inserted.IdEvent);
+            "Passport webhook entrante procesado: kind={Kind} idEvent={IdEvent} recaudo={Recaudo} lote={Lote}",
+            payload.Kind, fila.IdEvent, recaudo.Resultado, recaudo.IdLote);
 
         return new PassportWebhookProcessOutcome(
-            PassportWebhookProcessResult.Processed, payload.Kind, inserted.IdEvent);
+            PassportWebhookProcessResult.Processed, payload.Kind, fila.IdEvent);
+    }
+
+    private async Task<PassportWebhookEvent?> BuscarExistenteAsync(
+        PassportWebhookPayload payload, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(payload.EventName) || !payload.HasPaymentId) return null;
+        return await _db.PassportWebhookEvents
+            .Where(e => e.EventType == payload.EventName
+                     && e.PassportPaymentId == payload.PaymentId)
+            .OrderByDescending(e => e.IdEvent)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    // INSERT del evento entrante con processed=0. null si la restricción
+    // uq_pwh_evento_pago indica que otra entrega concurrente ya lo insertó.
+    private async Task<PassportWebhookEvent?> TryInsertAsync(
+        PassportWebhookPayload payload, string hash, bool signatureValid, DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await RecordAsync(payload, hash, signatureValid, processed: false, nowUtc,
+                errorMessage: null, cancellationToken);
+        }
+        catch (Exception ex) when (Xpay.Api.Common.SqlExceptionHelper.IsUniqueViolation(ex))
+        {
+            _db.ChangeTracker.Clear();
+            return null;
+        }
+    }
+
+    private async Task<PassportWebhookEvent> RecordOrGetExistingAsync(
+        PassportWebhookPayload payload, string hash, bool signatureValid, bool processed, DateTime nowUtc,
+        string? errorMessage, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await RecordAsync(payload, hash, signatureValid, processed, nowUtc, errorMessage, cancellationToken);
+        }
+        catch (Exception ex) when (Xpay.Api.Common.SqlExceptionHelper.IsUniqueViolation(ex))
+        {
+            _db.ChangeTracker.Clear();
+            return (await BuscarExistenteAsync(payload, cancellationToken))!;
+        }
     }
 
     private async Task<PassportWebhookEvent> RecordAsync(

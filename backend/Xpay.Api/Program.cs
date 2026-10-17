@@ -45,6 +45,11 @@ builder.Services.AddScoped<BrebService>();
 builder.Services.AddScoped<LibranzaService>();
 builder.Services.AddScoped<LibranzaEmpleadosService>();
 builder.Services.AddScoped<LibranzaAnticipoService>();
+// P0 anticipo - lote de recaudo + QR dinámico (sin efecto financiero) y
+// aplicación del pago entrante (solo payment.inbound.settled validado).
+// Scoped: dependen de XpayDbContext.
+builder.Services.AddScoped<LibranzaRecaudoService>();
+builder.Services.AddScoped<LibranzaRecaudoAplicacionService>();
 builder.Services.AddScoped<ComercioAliadoService>();
 builder.Services.AddScoped<ComercioDisponibilidadService>();
 builder.Services.AddScoped<ComercioScopeService>();
@@ -156,6 +161,16 @@ builder.Services.AddSingleton<
     Xpay.Api.Integrations.Passport.IPassportPaymentClient,
     Xpay.Api.Integrations.Passport.PassportPaymentClient>();
 builder.Services.AddScoped<Xpay.Api.Services.BrebPaymentService>();
+
+// P0 anticipo - cuarto cliente de negocio Passport en DI: IPassportQrClient
+// (Create QR Code), consumido SOLO por LibranzaRecaudoService para el QR
+// dinámico del lote de recaudo. Mismo lifetime/patrón que IPassportKeyClient/
+// IPassportPaymentClient: wrapper puro y sin estado sobre IPassportHttpClient.
+// Fail-closed sin cambios: sin PASSPORT_BASE_URL/API_KEY/API_SECRET,
+// PASSPORT_CUSTOMER_ID o PASSPORT_COLLECTION_KEY_ID no hay llamada posible.
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.Passport.IPassportQrClient,
+    Xpay.Api.Integrations.Passport.PassportQrClient>();
 
 // XPAY-594 — M5-T6/T7: recepción del webhook de pago ENTRANTE de Passport
 // (pago hacia una llave XPAY o un QR). Componentes propios, sin acoplar KYC.

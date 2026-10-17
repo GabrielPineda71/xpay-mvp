@@ -44,9 +44,15 @@ public class BrebPaymentReconciliationService(
     // Payments Bre-B observados en Sandbox resuelven en segundos/minutos,
     // ver XPAY-379/380) — el objetivo es detectar una anomalía real, no
     // generar ruido. Nunca dispara ninguna acción financiera por sí mismo.
-    private static readonly TimeSpan UmbralEstancado = TimeSpan.FromHours(2);
+    private static readonly TimeSpan UmbralEstancado = BrebPaymentReconciliationSelector.UmbralRevisionHumana;
 
     private readonly TimeSpan _intervalo = ResolverIntervalo(configuration, logger);
+
+    // P0 J.1 - último aviso por retiro que requiere revisión humana (solo
+    // memoria del proceso, sin BD). Claves = conjunto vigente; máximo un aviso
+    // por retiro cada UmbralEstancado. Solo lo usa el bucle secuencial de
+    // ExecuteAsync, por lo que no requiere lock.
+    private readonly Dictionary<long, DateTime> _ultimoAvisoIncierto = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -106,6 +112,7 @@ public class BrebPaymentReconciliationService(
         var candidatos = candidatosCrudos.Where(BrebPaymentReconciliationSelector.EsCandidato).ToList();
 
         LoguearEstancados(candidatos);
+        LoguearEnviosInciertos(candidatosCrudos);
 
         if (candidatos.Count == 0)
         {
@@ -141,6 +148,38 @@ public class BrebPaymentReconciliationService(
                     "BREB_RECONCILIACION_ESTANCADO: retiro={Retiro} horasTranscurridas={Horas:F1}",
                     retiro.IdBrebRetiro, (ahora - envio).TotalHours);
             }
+        }
+    }
+
+    // P0 J.1 - SOLO observabilidad: envíos inciertos que requieren revisión
+    // humana (mismo predicado compartido que el listado admin). No llama a
+    // Passport, no cambia estado, no escribe BD, no mueve fondos y nunca los
+    // incluye en ProcesarLoteAsync. Máximo un aviso por retiro cada
+    // UmbralEstancado durante la vida del proceso.
+    private void LoguearEnviosInciertos(IReadOnlyList<PassportBrebRetiro> candidatosCrudos)
+    {
+        var ahora = DateTime.UtcNow;
+        var corte = BrebPaymentReconciliationSelector.CorteRevisionHumana(ahora);
+        var requiereRevision = BrebPaymentReconciliationSelector.RequiereRevisionHumana(corte).Compile();
+
+        var actuales = candidatosCrudos.Where(requiereRevision).ToList();
+        var idsActuales = actuales.Select(r => r.IdBrebRetiro).ToHashSet();
+
+        var clavesObsoletas = _ultimoAvisoIncierto.Keys.Where(id => !idsActuales.Contains(id)).ToList();
+        foreach (var id in clavesObsoletas)
+            _ultimoAvisoIncierto.Remove(id);
+
+        foreach (var retiro in actuales)
+        {
+            if (_ultimoAvisoIncierto.TryGetValue(retiro.IdBrebRetiro, out var ultimoAviso)
+                && ahora - ultimoAviso < UmbralEstancado)
+                continue;
+
+            _ultimoAvisoIncierto[retiro.IdBrebRetiro] = ahora;
+            var desde = retiro.FechaEnvioPassport ?? retiro.FechaSolicitud;
+            logger.LogWarning(
+                "BREB_ENVIO_INCIERTO_SIN_PAYMENT_ID: retiro={Retiro} estado={Estado} fechaSolicitud={FechaSolicitud:o} fechaEnvioPassport={FechaEnvio:o} horasDesdeEnvio={Horas:F1} — fondos retenidos, requiere revisión humana.",
+                retiro.IdBrebRetiro, retiro.Estado, retiro.FechaSolicitud, retiro.FechaEnvioPassport, (ahora - desde).TotalHours);
         }
     }
 

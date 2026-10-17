@@ -165,6 +165,7 @@ public sealed class FechaOperacionLibranzaTests
         {
             User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("idUsuario", "10") }, "test")),
         };
+        http.Request.Headers["Idempotency-Key"] = Guid.NewGuid().ToString();
         var c = new LibranzaClienteController(
             null!, NullLogger<LibranzaClienteController>.Instance, ambiente);
         c.ControllerContext = new ControllerContext { HttpContext = http };

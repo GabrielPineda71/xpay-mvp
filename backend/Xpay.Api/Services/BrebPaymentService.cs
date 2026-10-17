@@ -412,6 +412,44 @@ public class BrebPaymentService
         catch { await dbTx.RollbackAsync(cancellationToken); throw; }
     }
 
+    // P0 J.1 - SOLO LECTURA: envíos inciertos que requieren revisión humana.
+    // Filtro completo en SQL con el MISMO predicado compartido que el aviso del
+    // reconciliador (BrebPaymentReconciliationSelector.RequiereRevisionHumana).
+    // AsNoTracking + proyección mínima. No escribe, no llama a Passport, no
+    // toca Wallet/Ledger y no lee resolucion_incierta_* ni resolution_id/payment_id.
+    public async Task<List<RetiroEnvioInciertoResponse>> ListarEnviosInciertosSinPaymentIdAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var ahoraUtc = DateTime.UtcNow;
+        var corte    = BrebPaymentReconciliationSelector.CorteRevisionHumana(ahoraUtc);
+
+        var filas = await _db.PassportBrebRetiros
+            .AsNoTracking()
+            .Where(BrebPaymentReconciliationSelector.RequiereRevisionHumana(corte))
+            .OrderBy(r => r.FechaEnvioPassport ?? r.FechaSolicitud)
+            .Select(r => new
+            {
+                r.IdBrebRetiro,
+                r.Valor,
+                r.Estado,
+                r.FechaSolicitud,
+                r.FechaEnvioPassport,
+                r.PassportResolutionExpiresAtUtc,
+            })
+            .ToListAsync(cancellationToken);
+
+        return filas.Select(r => new RetiroEnvioInciertoResponse
+        {
+            IdBrebRetiro        = r.IdBrebRetiro,
+            Valor               = r.Valor,
+            Estado              = r.Estado,
+            FechaSolicitud      = r.FechaSolicitud,
+            FechaEnvioPassport  = r.FechaEnvioPassport,
+            ResolucionExpiraUtc = r.PassportResolutionExpiresAtUtc,
+            AntiguedadMinutos   = (ahoraUtc - (r.FechaEnvioPassport ?? r.FechaSolicitud)).TotalMinutes,
+        }).ToList();
+    }
+
     // ── Helpers privados ──────────────────────────────────────────────────
 
     // FASE 7 — SETTLED: SaldoRetenido baja; SaldoDisponible NUNCA vuelve a

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Xpay.Api.Common;
 using Xpay.Api.DTOs;
+using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
@@ -29,6 +30,31 @@ public class LibranzaClienteController : ControllerBase
 
     private bool TryGetIdUsuario(out long id) =>
         long.TryParse(User.FindFirst("idUsuario")?.Value, out id) && id > 0;
+
+    // P0 anticipo - Idempotency-Key: header obligatorio generado por el
+    // cliente. Mismo criterio que CarteraOrdinariaController (XPAY-712):
+    // presente, valor único, GUID válido y distinto de Guid.Empty.
+    private bool TryGetIdempotencyKey(out Guid idempotencyKey, out string errorMessage)
+    {
+        idempotencyKey = Guid.Empty;
+        if (!Request.Headers.TryGetValue("Idempotency-Key", out var values) || values.Count == 0)
+        {
+            errorMessage = "Falta el encabezado Idempotency-Key.";
+            return false;
+        }
+        if (values.Count > 1)
+        {
+            errorMessage = "Se recibió más de un valor para Idempotency-Key.";
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(values[0]) || !Guid.TryParse(values[0], out idempotencyKey) || idempotencyKey == Guid.Empty)
+        {
+            errorMessage = "Idempotency-Key debe ser un identificador válido.";
+            return false;
+        }
+        errorMessage = string.Empty;
+        return true;
+    }
 
     // XPAY-717 - resuelve la fecha ANTES de cualquier llamada al servicio.
     // Devuelve el 400 a responder, o null si la solicitud puede continuar.
@@ -82,6 +108,9 @@ public class LibranzaClienteController : ControllerBase
         if (!TryGetIdUsuario(out var idUsuario))
             return Unauthorized(new { message = "Token inválido." });
 
+        if (!TryGetIdempotencyKey(out var idempotencyKey, out var idempotencyError))
+            return BadRequest(new { message = idempotencyError });
+
         var resultadoFecha = FechaOperacionLibranza.Resolver(
             _ambiente, req.FechaSimulada, DateOnly.FromDateTime(DateTime.UtcNow), out var fechaSimulada);
         if (RechazoFecha(resultadoFecha) is { } rechazo)
@@ -93,8 +122,18 @@ public class LibranzaClienteController : ControllerBase
 
         try
         {
-            var result = await _svc.SolicitarAnticipoAsync(idUsuario, req);
-            return Ok(new { success = true, data = result });
+            var result = await _svc.SolicitarAnticipoAsync(idUsuario, req, idempotencyKey);
+            if (result.Replayed)
+                Response.Headers["Idempotent-Replayed"] = "true";
+            return Ok(new { success = true, data = result.Data });
+        }
+        catch (IdempotencyConflictException ex)
+        {
+            return Conflict(new { message = ex.Message });
+        }
+        catch (IdempotencyUnavailableException ex)
+        {
+            return StatusCode(503, new { message = ex.Message });
         }
         catch (UnauthorizedAccessException ex)
         {

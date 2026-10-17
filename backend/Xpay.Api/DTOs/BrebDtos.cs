@@ -145,6 +145,20 @@ public class RechazarRetiroRequest
     public string? Motivo { get; set; }
 }
 
+// P0 J.1 - envíos inciertos que requieren revisión humana (ENVIADO_PASSPORT,
+// sin payment_id, > 2 h). Mínimo operativo: sin PII, sin wallet/usuario y sin
+// IDs Passport (ni completos ni fingerprint).
+public class RetiroEnvioInciertoResponse
+{
+    public long IdBrebRetiro { get; set; }
+    public decimal Valor { get; set; }
+    public string Estado { get; set; } = string.Empty;
+    public DateTime FechaSolicitud { get; set; }
+    public DateTime? FechaEnvioPassport { get; set; }
+    public DateTime? ResolucionExpiraUtc { get; set; }
+    public double AntiguedadMinutos { get; set; }
+}
+
 public class AdminLlaveResponse
 {
     public long    IdBrebLlave     { get; set; }

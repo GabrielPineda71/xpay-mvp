@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xpay.Api.Data;
 using Xpay.Api.Integrations.Passport;
@@ -35,7 +36,14 @@ public sealed class PassportWebhookServiceIdempotencyTests
         "\"updated_at\":\"2026-03-10T17:44:52.111820Z\"}";
 
     private static PassportWebhookService Servicio(XpayDbContext ctx)
-        => new(ctx, new FijoTimeProvider(T0), NullLogger<PassportWebhookService>.Instance);
+        => new(
+            ctx,
+            new FijoTimeProvider(T0),
+            new LibranzaRecaudoAplicacionService(
+                ctx,
+                new ConfigurationBuilder().Build(),
+                NullLogger<LibranzaRecaudoAplicacionService>.Instance),
+            NullLogger<PassportWebhookService>.Instance);
 
     private static async Task<PassportWebhookProcessOutcome> ProcesarAsync(
         XpayDbContext ctx, string raw)

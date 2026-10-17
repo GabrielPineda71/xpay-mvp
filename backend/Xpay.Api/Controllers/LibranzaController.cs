@@ -344,9 +344,14 @@ public class LibranzaController : ControllerBase
         if (!TryGetIdUsuario(out var adminId))
             return Unauthorized(new { success = false, message = "Token inválido." });
 
+        if (request.IdConvenio is null or <= 0)
+            return BadRequest(new { success = false, message = "idConvenio es obligatorio." });
+
         try
         {
             await _anticipos.AsociarEmpleadoUsuarioAsync(id, request, adminId);
+            _audit.LogSensitiveAction(HttpContext, "LIBRANZA_ASOCIAR_EMPLEADO_USUARIO",
+                new { idEmpleado = id, idConvenio = request.IdConvenio.Value, idUsuario = request.IdUsuario, adminId });
             return Ok(new { success = true, message = "Asociación actualizada." });
         }
         catch (KeyNotFoundException ex)

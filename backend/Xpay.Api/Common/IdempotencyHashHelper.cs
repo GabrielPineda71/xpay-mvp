@@ -50,6 +50,18 @@ public static class IdempotencyHashHelper
             ["frecuencia"] = NormalizarTexto(frecuencia)?.ToUpperInvariant(),
         });
 
+    // P0 anticipo - desembolso de anticipo de sueldo. idUsuario lo resuelve el
+    // servidor desde el JWT; valor y fecha simulada (solo no productivo, ya
+    // normalizada a ISO por el controller) son la intencion del cliente.
+    public static byte[] ComputeAnticipoLibranzaHash(long idUsuario, decimal valorSolicitado, string? fechaSimulada) =>
+        ComputeHash(new SortedDictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["op"] = "libranza.anticipo_desembolso.v1",
+            ["idUsuario"] = idUsuario,
+            ["valorSolicitado"] = NormalizarValor(valorSolicitado),
+            ["fechaSimulada"] = NormalizarTexto(fechaSimulada),
+        });
+
     // Formato invariante, dos decimales fijos — evita que variaciones de
     // cultura/formato produzcan hashes distintos para el mismo valor.
     private static string NormalizarValor(decimal valor) => valor.ToString("F2", CultureInfo.InvariantCulture);

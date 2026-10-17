@@ -265,6 +265,26 @@ public class BrebController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // GET /api/breb/admin/retiros/envio-incierto
+    // P0 J.1 - SOLO LECTURA. Retiros reales que requieren revisión humana:
+    // ENVIADO_PASSPORT, sin payment_id y con más de 2 h desde el envío (fondos
+    // retenidos). La selección vive en BrebPaymentService. No resuelve, no
+    // libera, no llama a Passport. Operación real: sin [SoloAmbienteNoProductivo].
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("api/breb/admin/retiros/envio-incierto")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> ListarEnviosInciertos()
+    {
+        try
+        {
+            var data = await _brebPayment.ListarEnviosInciertosSinPaymentIdAsync();
+            return Ok(new { success = true, data });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // POST /api/breb/admin/retiros/{id}/confirmar
     // CREADO → CONFIRMADO. Descuenta saldo y crea ledger DR 210101 / CR 210204.
     // ──────────────────────────────────────────────────────────────────────

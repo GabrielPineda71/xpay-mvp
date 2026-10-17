@@ -9,4 +9,6 @@ public static class IdempotencyEndpoints
     public const string QrPagar = "qr.pagar";
     // XPAY-712 - desembolso de cupo ordinario a la wallet (AVANCE_WALLET).
     public const string CarteraAvanceWallet = "cartera.avance_wallet";
+    // P0 anticipo - desembolso de anticipo de sueldo (libranza) a la wallet.
+    public const string LibranzaAnticipoDesembolso = "libranza.anticipo_desembolso";
 }

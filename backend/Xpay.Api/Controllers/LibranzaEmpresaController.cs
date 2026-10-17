@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
+using Xpay.Api.Integrations.Passport;
 using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
@@ -12,15 +14,20 @@ public class LibranzaEmpresaController : ControllerBase
 {
     private readonly LibranzaEmpleadosService            _svc;
     private readonly LibranzaAnticipoService             _anticipoSvc;
+    private readonly LibranzaRecaudoService              _recaudoSvc;
     private readonly ILogger<LibranzaEmpresaController>  _logger;
+
+    internal const string MensajeSinPermiso = "Su rol en la empresa no permite esta operación.";
 
     public LibranzaEmpresaController(
         LibranzaEmpleadosService svc,
         LibranzaAnticipoService anticipoSvc,
+        LibranzaRecaudoService recaudoSvc,
         ILogger<LibranzaEmpresaController> logger)
     {
         _svc         = svc;
         _anticipoSvc = anticipoSvc;
+        _recaudoSvc  = recaudoSvc;
         _logger      = logger;
     }
 
@@ -36,6 +43,12 @@ public class LibranzaEmpresaController : ControllerBase
         if (asoc is null) return null;
         return (asoc.IdConvenio, asoc.RolEmpresa);
     }
+
+    // P0 anticipo - autorización por rol_empresa (LibranzaEmpresaPermisos).
+    // Devuelve el 403 a responder, o null si el rol permite la operación.
+    // Fail-closed: un rol desconocido o vacío no tiene ningún permiso.
+    private IActionResult? RechazoRol((long IdConvenio, string Rol) ctx, Func<string?, bool> permiso) =>
+        permiso(ctx.Rol) ? null : StatusCode(403, new { message = MensajeSinPermiso });
 
     // ── GET /api/libranza/empresa/mis-convenios ───────────────────────────
 
@@ -68,6 +81,8 @@ public class LibranzaEmpresaController : ControllerBase
         var ctx = await GetConvenioEmpresaAsync(idConvenio);
         if (ctx is null)
             return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+        if (RechazoRol(ctx.Value, LibranzaEmpresaPermisos.PuedeLeer) is { } sinPermiso)
+            return sinPermiso;
 
         try
         {
@@ -93,6 +108,8 @@ public class LibranzaEmpresaController : ControllerBase
         var ctx = await GetConvenioEmpresaAsync(idConvenio);
         if (ctx is null)
             return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+        if (RechazoRol(ctx.Value, LibranzaEmpresaPermisos.PuedeLeer) is { } sinPermiso)
+            return sinPermiso;
 
         try
         {
@@ -135,6 +152,8 @@ public class LibranzaEmpresaController : ControllerBase
         var ctx = await GetConvenioEmpresaAsync(idConvenio);
         if (ctx is null)
             return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+        if (RechazoRol(ctx.Value, LibranzaEmpresaPermisos.PuedeGestionarEmpleados) is { } sinPermiso)
+            return sinPermiso;
 
         if (archivo is null || archivo.Length == 0)
             return BadRequest(new { message = "Debe adjuntar un archivo CSV." });
@@ -173,6 +192,8 @@ public class LibranzaEmpresaController : ControllerBase
         var ctx = await GetConvenioEmpresaAsync(idConvenio);
         if (ctx is null)
             return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+        if (RechazoRol(ctx.Value, LibranzaEmpresaPermisos.PuedeLeer) is { } sinPermiso)
+            return sinPermiso;
 
         if (string.IsNullOrWhiteSpace(fechaPago) || !DateOnly.TryParse(fechaPago, out var fecha))
             return BadRequest(new { message = "Parámetro fechaPago inválido. Use YYYY-MM-DD." });
@@ -190,8 +211,13 @@ public class LibranzaEmpresaController : ControllerBase
     }
 
     // ── POST /api/libranza/empresa/cobros/aplicar?idConvenio=N ───────────
+    // P0 anticipo - PAGO SIMULADO QA: marca PAGADO sin dinero recibido. Queda
+    // bloqueado (404) en todo ambiente productivo por el mecanismo central
+    // XPAY-717 y, en no productivo, exige rol ADMIN_EMPRESA. El recaudo real
+    // solo ocurre vía lote + QR dinámico + settled Passport.
 
     [HttpPost("cobros/aplicar")]
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> AplicarPago(
         [FromBody] AplicarPagoRequest req, [FromQuery] long? idConvenio)
     {
@@ -201,6 +227,8 @@ public class LibranzaEmpresaController : ControllerBase
         var ctx = await GetConvenioEmpresaAsync(idConvenio);
         if (ctx is null)
             return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+        if (RechazoRol(ctx.Value, LibranzaEmpresaPermisos.PuedeAplicarPagoSimulado) is { } sinPermiso)
+            return sinPermiso;
 
         try
         {
@@ -215,6 +243,136 @@ public class LibranzaEmpresaController : ControllerBase
         {
             _logger.LogError(ex, "Error AplicarPago convenio={Id}", ctx.Value.IdConvenio);
             return StatusCode(500, new { message = "Error interno." });
+        }
+    }
+
+    // ── Lotes de recaudo (P0 anticipo) ────────────────────────────────────
+    // Ninguno de estos endpoints mueve dinero: la aplicación financiera ocurre
+    // solo con un payment.inbound.settled Passport validado.
+
+    [HttpGet("lotes")]
+    public async Task<IActionResult> GetLotes([FromQuery] long? idConvenio)
+    {
+        var ctx = await GetConvenioEmpresaAsync(idConvenio);
+        if (ctx is null)
+            return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+        if (RechazoRol(ctx.Value, LibranzaEmpresaPermisos.PuedeLeer) is { } sinPermiso)
+            return sinPermiso;
+
+        var data = await _recaudoSvc.ListarLotesAsync(ctx.Value.IdConvenio);
+        return Ok(new { success = true, data, total = data.Count });
+    }
+
+    [HttpGet("lotes/{idLote:long}")]
+    public async Task<IActionResult> GetLote(long idLote, [FromQuery] long? idConvenio)
+    {
+        var ctx = await GetConvenioEmpresaAsync(idConvenio);
+        if (ctx is null)
+            return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+        if (RechazoRol(ctx.Value, LibranzaEmpresaPermisos.PuedeLeer) is { } sinPermiso)
+            return sinPermiso;
+
+        try
+        {
+            var data = await _recaudoSvc.ObtenerLoteAsync(idLote, ctx.Value.IdConvenio);
+            return Ok(new { success = true, data });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("lotes")]
+    public async Task<IActionResult> CrearLote([FromBody] CrearLoteRecaudoRequest req, [FromQuery] long? idConvenio)
+    {
+        if (!TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { message = "Token inválido." });
+
+        var ctx = await GetConvenioEmpresaAsync(idConvenio);
+        if (ctx is null)
+            return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+        if (RechazoRol(ctx.Value, LibranzaEmpresaPermisos.PuedeOperarRecaudo) is { } sinPermiso)
+            return sinPermiso;
+
+        if (string.IsNullOrWhiteSpace(req.FechaCorte)
+            || !DateOnly.TryParseExact(req.FechaCorte, "yyyy-MM-dd", out var fechaCorte))
+            return BadRequest(new { message = "fechaCorte inválida. Use YYYY-MM-DD." });
+
+        try
+        {
+            var data = await _recaudoSvc.CrearLoteAsync(ctx.Value.IdConvenio, fechaCorte, idUsuario);
+            return Ok(new { success = true, data });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("lotes/{idLote:long}/qr")]
+    public async Task<IActionResult> GenerarQrLote(long idLote, [FromQuery] long? idConvenio)
+    {
+        if (!TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { message = "Token inválido." });
+
+        var ctx = await GetConvenioEmpresaAsync(idConvenio);
+        if (ctx is null)
+            return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+        if (RechazoRol(ctx.Value, LibranzaEmpresaPermisos.PuedeOperarRecaudo) is { } sinPermiso)
+            return sinPermiso;
+
+        try
+        {
+            var data = await _recaudoSvc.GenerarQrAsync(idLote, ctx.Value.IdConvenio, idUsuario);
+            return Ok(new { success = true, data });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (PassportConfigurationException)
+        {
+            return StatusCode(503, new { message = "El recaudo por QR no está configurado." });
+        }
+        catch (PassportException)
+        {
+            return StatusCode(502, new { message = "No fue posible generar el QR. Intente de nuevo." });
+        }
+    }
+
+    [HttpPost("lotes/{idLote:long}/cancelar")]
+    public async Task<IActionResult> CancelarLote(long idLote, [FromQuery] long? idConvenio)
+    {
+        if (!TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { message = "Token inválido." });
+
+        var ctx = await GetConvenioEmpresaAsync(idConvenio);
+        if (ctx is null)
+            return StatusCode(403, new { message = "No está asociado a ningún convenio de empresa." });
+        if (RechazoRol(ctx.Value, LibranzaEmpresaPermisos.PuedeOperarRecaudo) is { } sinPermiso)
+            return sinPermiso;
+
+        try
+        {
+            var data = await _recaudoSvc.CancelarLoteAsync(idLote, ctx.Value.IdConvenio, idUsuario);
+            return Ok(new { success = true, data });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
         }
     }
 }

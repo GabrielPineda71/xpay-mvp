@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { get, post } from '../api/client.ts';
+import { useState, useEffect, useRef } from 'react';
+import { get, post, ApiError } from '../api/client.ts';
 
 interface CorteVigente {
   diaPago: number;
@@ -63,6 +63,57 @@ function estadoBadge(e: string) {
   return <span className={`badge ${cls}`}>{e}</span>;
 }
 
+// P0 anticipo - Idempotency-Key por intencion de desembolso (mismo patron
+// que XPAY-712 en MiCarteraOrdinariaPage). La clave es un UUID opaco: no
+// contiene usuario, documento, wallet, convenio ni monto.
+const ANTICIPO_IDEM_STORAGE = 'xpay_libranza_anticipo_idempotency';
+
+interface AnticipoIdem {
+  key: string;
+  intencion: string;
+}
+
+// Respaldo si sessionStorage no esta disponible: la clave sobrevive a los
+// reintentos dentro de esta ejecucion de la app (no a una recarga).
+let anticipoIdemMemoria: AnticipoIdem | null = null;
+
+function claveAnticipo(intencion: string): string {
+  try {
+    const raw = sessionStorage.getItem(ANTICIPO_IDEM_STORAGE);
+    const guardada = raw ? (JSON.parse(raw) as Partial<AnticipoIdem>) : null;
+    if (guardada && guardada.intencion === intencion && guardada.key) {
+      anticipoIdemMemoria = {
+        key: guardada.key,
+        intencion: guardada.intencion,
+      };
+      return guardada.key;
+    }
+  } catch {
+    // sin storage o valor corrupto: se consulta el respaldo en memoria
+  }
+  if (anticipoIdemMemoria && anticipoIdemMemoria.intencion === intencion) {
+    return anticipoIdemMemoria.key;
+  }
+  const key = crypto.randomUUID();
+  const nueva: AnticipoIdem = { key, intencion };
+  anticipoIdemMemoria = nueva;
+  try {
+    sessionStorage.setItem(ANTICIPO_IDEM_STORAGE, JSON.stringify(nueva));
+  } catch {
+    // sin storage: la clave queda solo en memoria
+  }
+  return key;
+}
+
+function olvidarClaveAnticipo(): void {
+  anticipoIdemMemoria = null;
+  try {
+    sessionStorage.removeItem(ANTICIPO_IDEM_STORAGE);
+  } catch {
+    // sin storage
+  }
+}
+
 export function MiWalletLibranzaPage() {
   const [fecha, setFecha]             = useState('');
   const [cupo, setCupo]               = useState<MiCupo | null>(null);
@@ -70,6 +121,7 @@ export function MiWalletLibranzaPage() {
   const [error, setError]             = useState<string | null>(null);
   const [valor, setValor]             = useState('');
   const [solicitando, setSolicitando] = useState(false);
+  const enCursoRef = useRef(false);
   const [solicErr, setSolicErr]       = useState<string | null>(null);
   const [solicOk, setSolicOk]         = useState<AnticipoResponse | null>(null);
   const [tab, setTab]                 = useState<'cupo' | 'historial'>('cupo');
@@ -89,24 +141,45 @@ export function MiWalletLibranzaPage() {
 
   async function solicitarAnticipo(e: React.FormEvent) {
     e.preventDefault();
+    if (enCursoRef.current) return;
     const v = Number(valor);
     if (!Number.isFinite(v) || v <= 0) { setSolicErr('Ingresa un valor numérico.'); return; }
     if (cupo?.corteVigente && v > cupo.corteVigente.cupoDisponible) {
       setSolicErr(`El valor supera tu cupo disponible (${fmt(cupo.corteVigente.cupoDisponible)}).`);
       return;
     }
+    // P0 anticipo - misma intencion => misma Idempotency-Key.
+    const intencion = `${v.toFixed(2)}|${fecha}`;
+    enCursoRef.current = true;
+    const key = claveAnticipo(intencion);
     setSolicitando(true); setSolicErr(null); setSolicOk(null);
     try {
-      const r = await post<ApiOk<AnticipoResponse>>('/api/libranza/cliente/anticipos', {
-        valorSolicitado: v,
-        ...(fecha ? { fechaSimulada: fecha } : {}),
-      });
+      const r = await post<ApiOk<AnticipoResponse>>(
+        '/api/libranza/cliente/anticipos',
+        {
+          valorSolicitado: v,
+          ...(fecha ? { fechaSimulada: fecha } : {}),
+        },
+        { 'Idempotency-Key': key },
+      );
+      olvidarClaveAnticipo();
       setSolicOk(r.data);
       setValor('');
       await loadCupo(fecha || undefined);
     } catch (err: unknown) {
-      setSolicErr(err instanceof Error ? err.message : 'Error solicitando anticipo.');
-    } finally { setSolicitando(false); }
+      // P0 F.3 - fail-closed: solo un 4xx HTTP demostrado es rechazo definitivo
+      // y libera la clave; todo lo demas es incierto y la conserva.
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
+        olvidarClaveAnticipo();
+        setSolicErr(err.message);
+      } else {
+        setSolicErr('No pudimos confirmar si el anticipo se procesó. Revisa tu cupo e historial. Si reintentas el mismo valor y fecha, XPAY reutilizará la misma operación para evitar un desembolso duplicado.');
+        await loadCupo(fecha || undefined);
+      }
+    } finally {
+      enCursoRef.current = false;
+      setSolicitando(false);
+    }
   }
 
   return (
