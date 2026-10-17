@@ -285,6 +285,73 @@ public class BrebController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/admin/retiros/{id}/resolver-envio-incierto/rechazo-confirmado
+    // P0 J.3 - decisión operativa privilegiada: el admin certifica evidencia
+    // FIRME de Passport de que el pago no existe. Libera el Held (ver
+    // BrebPaymentService.ResolverRechazoConfirmadoAsync). Operación real.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpPost("api/breb/admin/retiros/{id:long}/resolver-envio-incierto/rechazo-confirmado")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> ResolverRechazoConfirmado(long id, [FromBody] ResolverRechazoConfirmadoRequest request)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_RECHAZO_CONFIRMADO_ATTEMPT",
+            new { idBrebRetiro = id, adminId, evidenciaLongitud = request?.Evidencia?.Trim().Length ?? 0 });
+        try
+        {
+            var retiro = await _brebPayment.ResolverRechazoConfirmadoAsync(id, request?.Evidencia, adminId);
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_RECHAZO_CONFIRMADO_OK",
+                new { idBrebRetiro = id, adminId, estado = retiro.Estado });
+            return Ok(new { success = true, data = ToRetiroRealResponse(retiro) });
+        }
+        catch (KeyNotFoundException ex)
+        { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_RECHAZO_CONFIRMADO_RECHAZADO",
+                new { idBrebRetiro = id, adminId, motivo = ex.Message });
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/admin/retiros/{id}/liberar-pendiente-envio
+    // P0 J.6 - libera un retiro huérfano PENDIENTE_ENVIO_PASSPORT (> 15 min),
+    // que nunca llegó a Passport (ver LiberarPendienteEnvioHuerfanoAsync).
+    // Operación real: sin frontera de ambiente no productivo.
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpPost("api/breb/admin/retiros/{id:long}/liberar-pendiente-envio")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> LiberarPendienteEnvio(long id)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_ORPHAN_LIBERAR_ATTEMPT", new { idBrebRetiro = id, adminId });
+        try
+        {
+            var retiro = await _brebPayment.LiberarPendienteEnvioHuerfanoAsync(id, adminId);
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_ORPHAN_LIBERAR_OK",
+                new { idBrebRetiro = id, adminId, estado = retiro.Estado });
+            return Ok(new { success = true, data = ToRetiroRealResponse(retiro) });
+        }
+        catch (KeyNotFoundException ex)
+        { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_ORPHAN_LIBERAR_RECHAZADO",
+                new { idBrebRetiro = id, adminId, motivo = ex.Message });
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // POST /api/breb/admin/retiros/{id}/confirmar
     // CREADO → CONFIRMADO. Descuenta saldo y crea ledger DR 210101 / CR 210204.
     // ──────────────────────────────────────────────────────────────────────

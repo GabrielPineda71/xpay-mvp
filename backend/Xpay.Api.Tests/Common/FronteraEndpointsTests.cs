@@ -123,6 +123,8 @@ public sealed class FronteraEndpointsTests
         { typeof(BrebController),            nameof(BrebController.GetAdminLlaves) },
         { typeof(BrebController),            nameof(BrebController.GetCuentaOperativa) },
         { typeof(BrebController),            nameof(BrebController.PassportHealthConfig) },
+        { typeof(BrebController),            nameof(BrebController.ResolverRechazoConfirmado) },
+        { typeof(BrebController),            nameof(BrebController.LiberarPendienteEnvio) },
         { typeof(PassportWebhookController), nameof(PassportWebhookController.Webhook) },
     };
 

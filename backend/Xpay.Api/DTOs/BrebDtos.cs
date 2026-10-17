@@ -159,6 +159,13 @@ public class RetiroEnvioInciertoResponse
     public double AntiguedadMinutos { get; set; }
 }
 
+// P0 J.3 - evidencia FIRME de Passport aportada por el administrador al
+// resolver un envío incierto como RECHAZO_CONFIRMADO. No se interpreta.
+public class ResolverRechazoConfirmadoRequest
+{
+    public string? Evidencia { get; set; }
+}
+
 public class AdminLlaveResponse
 {
     public long    IdBrebLlave     { get; set; }
