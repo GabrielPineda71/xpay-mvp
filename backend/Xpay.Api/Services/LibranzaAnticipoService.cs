@@ -315,12 +315,11 @@ public class LibranzaAnticipoService
                 throw new InvalidOperationException(
                     $"El valor solicitado ({req.ValorSolicitado:0.00}) es inferior al mínimo de anticipo ({param.MontoMinimoAnticipo:0.00}).");
 
-            var activosCount = await _db.LibranzaAnticipos
-                .CountAsync(a => a.IdEmpleado == empleado.IdEmpleado && a.Estado == "DESEMBOLSADO");
-            if (!param.PermiteAnticipoMultiple && activosCount >= param.MaxAnticipacionesActivos)
-                throw new InvalidOperationException(
-                    $"Ya tiene {activosCount} anticipo(s) activo(s). El máximo permitido es {param.MaxAnticipacionesActivos}.");
-
+            // Sin límite de cantidad de anticipos (decisión de producto): la
+            // única restricción acumulativa es el cupo del corte, que
+            // CalcularCupoUsadoAsync suma solo para ese corte. El UPDLOCK sobre
+            // el empleado serializa solicitudes concurrentes del mismo cupo.
+            // PermiteAnticipoMultiple/MaxAnticipacionesActivos ya no limitan.
             var corte = await ObtenerCorteVigenteAsync(empleado.IdEmpleado, fechaSimulada)
                 ?? throw new InvalidOperationException(
                     "No hay corte de pago vigente para la fecha simulada indicada.");
