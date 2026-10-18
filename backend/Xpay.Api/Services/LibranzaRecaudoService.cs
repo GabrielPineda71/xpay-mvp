@@ -200,8 +200,9 @@ public class LibranzaRecaudoService
 
         var montoRespuesta = LibranzaRecaudoQrRequestBuilder.ParsearMonto(response.Amount?.Value);
         if (string.IsNullOrWhiteSpace(response.Id) || string.IsNullOrWhiteSpace(response.QrCodeData)
-            || (response.QrCodeReference is not null && response.QrCodeReference != lote.ReferenciaPublica)
-            || (response.Amount?.Value is not null && montoRespuesta != lote.MontoTotal))
+            || LibranzaRecaudoReferencia.ExtraerDePassport(response.QrCodeReference) != lote.ReferenciaPublica
+            || (response.Amount?.Value is not null && montoRespuesta != lote.MontoTotal)
+            || (response.Amount?.Currency is not null && response.Amount.Currency != "COP"))
         {
             await LiberarMarcaQrAsync(idLote);
             throw new PassportProtocolException("La respuesta de Passport no coincide con el lote (referencia, monto o datos del QR).");

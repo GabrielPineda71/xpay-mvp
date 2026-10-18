@@ -147,9 +147,12 @@ public class LibranzaRecaudoAplicacionService
             .Where(l => l.PassportPaymentId == paymentId)
             .Select(l => (long?)l.IdLote)
             .FirstOrDefaultAsync(ct);
-        if (porPago is not null || referencia is null) return porPago;
+        // Solo una referencia XPAY válida (directa o con el prefijo de Passport)
+        // correlaciona; "LLAVE" u otro valor no reconocido no correlaciona nada.
+        var referenciaXpay = LibranzaRecaudoReferencia.ExtraerDePassport(referencia);
+        if (porPago is not null || referenciaXpay is null) return porPago;
         return await _db.LibranzaLotesRecaudo.AsNoTracking()
-            .Where(l => l.ReferenciaPublica == referencia)
+            .Where(l => l.ReferenciaPublica == referenciaXpay)
             .Select(l => (long?)l.IdLote)
             .FirstOrDefaultAsync(ct);
     }
@@ -281,7 +284,7 @@ public class LibranzaRecaudoAplicacionService
                 return await MarcarRevisionAsync(tx, lote, "CUENTA_OPERATIVA_NO_CONFIGURADA", ct);
             if (!string.Equals(datos.AccountId.Trim(), cuentaEsperada.Trim(), StringComparison.OrdinalIgnoreCase))
                 return await MarcarRevisionAsync(tx, lote, "CUENTA_DESTINO_NO_COINCIDE", ct);
-            if (datos.Referencia is not null && datos.Referencia != lote.ReferenciaPublica)
+            if (datos.Referencia is not null && LibranzaRecaudoReferencia.ExtraerDePassport(datos.Referencia) != lote.ReferenciaPublica)
                 return await MarcarRevisionAsync(tx, lote, "REFERENCIA_NO_COINCIDE", ct);
             if (!string.Equals(datos.Moneda, "COP", StringComparison.OrdinalIgnoreCase))
                 return await MarcarRevisionAsync(tx, lote, "MONEDA_NO_COINCIDE", ct);
