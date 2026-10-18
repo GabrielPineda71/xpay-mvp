@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Xpay.Api.Controllers;
@@ -6,6 +7,7 @@ namespace Xpay.Api.Controllers;
 public class HealthController : ControllerBase
 {
     [HttpGet("/health")]
+    [AllowAnonymous]
     public IActionResult Health() => Ok(new
     {
         status    = "Healthy",

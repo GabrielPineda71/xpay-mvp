@@ -161,6 +161,10 @@ jobs:
 
       - name: Iniciar backend en background
         run: |
+          # P0-A: Jwt__Key efímera y aleatoria solo para esta ejecución. Vive en
+          # la variable de entorno de este proceso y del backend hijo; no se
+          # escribe en archivos, no se imprime y se descarta al terminar el job.
+          export Jwt__Key="$(openssl rand -base64 48)"
           dotnet run \
             --project backend/Xpay.Api/Xpay.Api.csproj \
             --no-build \

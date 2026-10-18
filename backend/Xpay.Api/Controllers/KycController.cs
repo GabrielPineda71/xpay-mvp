@@ -238,6 +238,7 @@ public class KycController : ControllerBase
     /// Never logs: VERIFF_SHARED_SECRET, raw body, person data, biometrics, documents.
     /// </summary>
     [HttpPost("veriff/webhook")]
+    [AllowAnonymous]
     public async Task<IActionResult> VeriffWebhook()
     {
         // Read raw body before any model binding — required for HMAC computation

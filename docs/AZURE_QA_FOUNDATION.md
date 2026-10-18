@@ -105,7 +105,7 @@ Configurar como **App Settings** en Azure App Service (nunca en el repositorio).
 
 > **`ASPNETCORE_ENVIRONMENT=Production`** en Azure App Service hace que el backend no tome el `appsettings.Development.json` local. Todas las variables arriba sobreescriben los defaults. El fallback CORS para `Development` (localhost) no aplica en Azure.
 
-> **Generar `Jwt__Key`:** usar `openssl rand -base64 48` o equivalente. Nunca usar la clave del repositorio (`XpayMvpDevKeyParaCIYDesarrolloLocal2024Secure!`) en QA ni producción.
+> **Generar `Jwt__Key`:** usar `openssl rand -base64 48` o equivalente. Nunca usar la clave del repositorio (`<clave-de-desarrollo-retirada-y-comprometida>`) en QA ni producción.
 
 ---
 

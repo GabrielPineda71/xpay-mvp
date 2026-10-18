@@ -228,6 +228,7 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod()));
 
 var jwtSection       = builder.Configuration.GetSection("Jwt");
+JwtKeyGuard.Validar(jwtSection["Key"]); // P0-A: fail-fast antes de AddJwtBearer
 var clockSkewSeconds = jwtSection.GetValue("ClockSkewSeconds", defaultValue: 60);
 if (clockSkewSeconds < 0) clockSkewSeconds = 60;
 builder.Services
@@ -263,14 +264,8 @@ builder.Services.AddScoped<IAuthorizationHandler, ClaveVigenteAuthorizationHandl
 // [Authorize(Policy = "KycAprobado")]. Ver Authorization/KycAprobadoRequirement.cs.
 builder.Services.AddScoped<IAuthorizationHandler, KycAprobadoAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, KycAuthorizationResultHandler>();
-builder.Services.AddAuthorization(options =>
-{
-    options.DefaultPolicy = new AuthorizationPolicyBuilder(options.DefaultPolicy)
-        .AddRequirements(new ClaveVigenteRequirement())
-        .Build();
-    options.AddPolicy("SoloAutenticado", policy => policy.RequireAuthenticatedUser());
-    options.AddPolicy("KycAprobado", policy => policy.AddRequirements(new KycAprobadoRequirement()));
-});
+// P0-A: políticas centralizadas + FallbackPolicy (deny-by-default).
+builder.Services.AddAuthorization(AutorizacionPoliticas.Configurar);
 
 // Rate limiting — FixedWindow por IP para endpoints sensibles (login)
 var rlSection          = builder.Configuration.GetSection("RateLimiting");

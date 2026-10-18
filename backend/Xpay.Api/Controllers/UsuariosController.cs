@@ -37,6 +37,7 @@ public class UsuariosController : ControllerBase
         long.TryParse(User.FindFirst("idUsuario")?.Value, out idUsuario) && idUsuario > 0;
 
     [HttpPost("registro-final")]
+    [AllowAnonymous]
     public async Task<IActionResult> RegistrarUsuarioFinal([FromBody] RegistroUsuarioFinalRequest request)
     {
         try
@@ -51,8 +52,9 @@ public class UsuariosController : ControllerBase
     // Commit 3 — registro-inicial (Opción B): solo usuario+clave+celular,
     // login inmediato después. Sin [Authorize] a nivel de clase ni de este
     // método — mismo patrón exacto que registro-final (endpoint público de
-    // autoregistro), sin necesidad de [AllowAnonymous] adicional.
+    // autoregistro), con [AllowAnonymous] explícito (P0-A deny-by-default).
     [HttpPost("registro-inicial")]
+    [AllowAnonymous]
     public async Task<IActionResult> RegistrarInicial([FromBody] RegistroInicialRequest request)
     {
         try

@@ -191,6 +191,8 @@ public class UsuarioAdminService
         var usuario = await _db.Usuarios.FindAsync(idUsuario)
             ?? throw new KeyNotFoundException($"Usuario {idUsuario} no encontrado.");
 
+        await ExigirAutoridadSobreAsync(idAdmin, idUsuario);
+
         if (usuario.Estado != "INACTIVO")
             throw new TransicionUsuarioInvalidaException(
                 $"El usuario no está INACTIVO (estado actual: {usuario.Estado}). Use el endpoint correspondiente a su estado actual.");
@@ -216,6 +218,8 @@ public class UsuarioAdminService
 
         var usuario = await _db.Usuarios.FindAsync(idUsuario)
             ?? throw new KeyNotFoundException($"Usuario {idUsuario} no encontrado.");
+
+        await ExigirAutoridadSobreAsync(idAdmin, idUsuario);
 
         if (usuario.Estado != "ACTIVO")
             throw new TransicionUsuarioInvalidaException(
@@ -268,6 +272,8 @@ public class UsuarioAdminService
         var usuario = await _db.Usuarios.FindAsync(idUsuario)
             ?? throw new KeyNotFoundException($"Usuario {idUsuario} no encontrado.");
 
+        await ExigirAutoridadSobreAsync(idAdmin, idUsuario);
+
         if (usuario.Estado != "BLOQUEADO")
             throw new TransicionUsuarioInvalidaException(
                 $"El usuario no está BLOQUEADO (estado actual: {usuario.Estado}). Use el endpoint correspondiente a su estado actual.");
@@ -298,6 +304,8 @@ public class UsuarioAdminService
 
         var usuario = await _db.Usuarios.FindAsync(idUsuario)
             ?? throw new KeyNotFoundException($"Usuario {idUsuario} no encontrado.");
+
+        await ExigirAutoridadSobreAsync(idAdmin, idUsuario);
 
         if (usuario.Estado != "ACTIVO")
             throw new TransicionUsuarioInvalidaException(
@@ -395,6 +403,23 @@ public class UsuarioAdminService
         ).AnyAsync();
     }
 
+    // P0-A: jerarquía SUPERUSUARIO (2) > ADMIN_XPAY (1) > resto (0), leída de
+    // la BD (no del token). SUPERUSUARIO actúa sobre cualquier otra cuenta;
+    // ADMIN_XPAY solo sobre cuentas de rango inferior. El controller lo
+    // traduce a 403.
+    private async Task<int> RangoAdministrativoAsync(long idUsuario) =>
+        await ActorTieneRolAsync(idUsuario, RolSuperusuario) ? 2
+        : await ActorTieneRolAsync(idUsuario, RolAdminXpay) ? 1
+        : 0;
+
+    private async Task ExigirAutoridadSobreAsync(long idAdmin, long idUsuario)
+    {
+        var rangoActor = await RangoAdministrativoAsync(idAdmin);
+        if (rangoActor == 2) return;
+        if (rangoActor <= await RangoAdministrativoAsync(idUsuario))
+            throw new UnauthorizedAccessException("No tienes autoridad administrativa sobre esta cuenta.");
+    }
+
     // Fase USUARIOS-ADMIN-4: GET /api/admin/roles/asignables — lista blanca
     // filtrada según el privilegio real del actor (nunca SUPERUSUARIO si el
     // actor no lo tiene activo).
@@ -426,6 +451,8 @@ public class UsuarioAdminService
 
         _ = await _db.Usuarios.FindAsync(idUsuario)
             ?? throw new KeyNotFoundException($"Usuario {idUsuario} no encontrado.");
+
+        await ExigirAutoridadSobreAsync(idAdmin, idUsuario);
 
         if (!RolesAsignables.Contains(rolCodigo))
             throw new InvalidOperationException($"El rol '{rolCodigo}' no puede asignarse desde este módulo.");
@@ -485,6 +512,8 @@ public class UsuarioAdminService
 
         _ = await _db.Usuarios.FindAsync(idUsuario)
             ?? throw new KeyNotFoundException($"Usuario {idUsuario} no encontrado.");
+
+        await ExigirAutoridadSobreAsync(idAdmin, idUsuario);
 
         var rol = await _db.Roles.FindAsync(idRol)
             ?? throw new KeyNotFoundException($"Rol {idRol} no encontrado.");

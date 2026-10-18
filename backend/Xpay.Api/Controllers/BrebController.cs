@@ -40,13 +40,16 @@ public class BrebController : ControllerBase
     // (no tienen fila propia en ComercioUsuarios, así que aplicarles el
     // mismo check los bloquearía incorrectamente — comportamiento actual
     // preservado a propósito, no una omisión).
-    private async Task<IActionResult?> ValidarScopeComercioAsync(long idUsuario, long idComercio)
+    // P0-A: `permiso` (p. ej. PuedeEnviarBreb) se exige además del comercio,
+    // con el mismo alcance que el check de scope (solo rol COMERCIO).
+    private async Task<IActionResult?> ValidarScopeComercioAsync(
+        long idUsuario, long idComercio, Func<ComercioScope, bool>? permiso = null)
     {
         if (!User.IsInRole("COMERCIO")) return null;
         try
         {
-            await _scope.RequireScopeForComercioAsync(idUsuario, idComercio);
-            return null;
+            var scope = await _scope.RequireScopeForComercioAsync(idUsuario, idComercio);
+            return permiso is null || permiso(scope) ? null : Forbid();
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
     }
@@ -202,7 +205,7 @@ public class BrebController : ControllerBase
             return Unauthorized(new { success = false, message = "Token inválido." });
         if (request.IdComercio is null or <= 0)
             return BadRequest(new { success = false, message = "idComercio requerido para contexto COMERCIO." });
-        if (await ValidarScopeComercioAsync(idUsuario, request.IdComercio.Value) is { } denied)
+        if (await ValidarScopeComercioAsync(idUsuario, request.IdComercio.Value, s => s.PuedeEnviarBreb) is { } denied)
             return denied;
 
         _audit.LogSensitiveAction(HttpContext, "BREB_LLAVE_COMERCIO_REGISTRO_ATTEMPT",
@@ -577,7 +580,7 @@ public class BrebController : ControllerBase
             return Unauthorized(new { success = false, message = "Token inválido." });
         if (request.IdComercio is null or <= 0)
             return BadRequest(new { success = false, message = "idComercio requerido para contexto COMERCIO." });
-        if (await ValidarScopeComercioAsync(idUsuario, request.IdComercio.Value) is { } denied)
+        if (await ValidarScopeComercioAsync(idUsuario, request.IdComercio.Value, s => s.PuedeEnviarBreb) is { } denied)
             return denied;
 
         _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_SIMULAR_COMERCIO_ATTEMPT",

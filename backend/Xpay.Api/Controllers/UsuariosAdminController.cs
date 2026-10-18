@@ -77,6 +77,7 @@ public class UsuariosAdminController : ControllerBase
         }
         catch (KeyNotFoundException ex)              { return NotFound(new { success = false, message = ex.Message }); }
         catch (TransicionUsuarioInvalidaException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (UnauthorizedAccessException)           { return Forbid(); }
         catch (InvalidOperationException ex)          { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno activando el usuario." }); }
     }
@@ -94,6 +95,7 @@ public class UsuariosAdminController : ControllerBase
         }
         catch (KeyNotFoundException ex)              { return NotFound(new { success = false, message = ex.Message }); }
         catch (TransicionUsuarioInvalidaException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (UnauthorizedAccessException)           { return Forbid(); }
         catch (InvalidOperationException ex)          { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno inactivando el usuario." }); }
     }
@@ -111,6 +113,7 @@ public class UsuariosAdminController : ControllerBase
         }
         catch (KeyNotFoundException ex)              { return NotFound(new { success = false, message = ex.Message }); }
         catch (TransicionUsuarioInvalidaException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (UnauthorizedAccessException)           { return Forbid(); }
         catch (InvalidOperationException ex)          { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno desbloqueando el usuario." }); }
     }
