@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.tsx';
 
 const API_HINT = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
@@ -69,6 +69,15 @@ export function LoginPage() {
             {loading ? 'Ingresando...' : 'Ingresar'}
           </button>
         </form>
+        {/* P0-B frontend — accesos públicos de identidad (rutas fijas). El
+            error de login sigue siendo genérico: no se intenta detectar
+            PENDIENTE_VERIFICACION. */}
+        <p className="results-meta">
+          <Link to="/recuperar-clave">¿Olvidaste tu contraseña?</Link>
+        </p>
+        <p className="results-meta">
+          <Link to="/reenviar-verificacion">¿No recibiste el correo de verificación?</Link>
+        </p>
         <p className="api-hint">API: {API_HINT}</p>
       </div>
     </div>
