@@ -17,4 +17,6 @@ public class Usuario
     public DateTime? FechaActualizacion { get; set; }
     public string EstadoKycActual { get; set; } = "NO_INICIADO";
     public DateTime? FechaKycActualizacion { get; set; }
+    // P0-B — migración 049: revocación de JWT (claim "vs").
+    public int VersionSeguridad { get; set; }
 }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -12,33 +13,45 @@ public class AuthController : ControllerBase
 {
     private readonly AuthService      _authService;
     private readonly AuditLogService  _audit;
+    private readonly ILogger<AuthController> _logger;
 
-    public AuthController(AuthService authService, AuditLogService audit)
+    public AuthController(AuthService authService, AuditLogService audit, ILogger<AuthController> logger)
     {
         _authService = authService;
         _audit       = audit;
+        _logger      = logger;
     }
 
     [HttpPost("login")]
     [AllowAnonymous]
     [EnableRateLimiting("LoginPolicy")]
-    public async Task<IActionResult> Login([FromBody] LoginRequest request)
+    public async Task<IActionResult> Login([FromBody] LoginRequest? request)
     {
         var usuario = request?.Usuario ?? "-";
+        // P0-B3 — request nulo: el mismo 400 fijo que cualquier credencial inválida.
+        if (request is null)
+        {
+            _audit.LogLoginFailure(HttpContext, usuario, "credentials_invalid");
+            return BadRequest(new { success = false, message = CredencialesInvalidasException.MensajePublico });
+        }
         try
         {
-            var data = await _authService.LoginAsync(request!);
+            var data = await _authService.LoginAsync(request);
             _audit.LogLoginSuccess(HttpContext, usuario);
             return Ok(new { success = true, data });
         }
-        catch (InvalidOperationException ex)
+        catch (CredencialesInvalidasException)
         {
+            // P0-B3 — mensaje público fijo, nunca el texto de la excepción.
             _audit.LogLoginFailure(HttpContext, usuario, "credentials_invalid");
-            return BadRequest(new { success = false, message = ex.Message });
+            return BadRequest(new { success = false, message = CredencialesInvalidasException.MensajePublico });
         }
-        catch
+        catch (Exception ex)
         {
+            // Error técnico (incluida cualquier InvalidOperationException de EF):
+            // 500 genérico; solo se registra el tipo de excepción.
             _audit.LogLoginFailure(HttpContext, usuario, "internal_error");
+            _logger.LogError("Error técnico en login ({TipoError}).", ex.GetType().Name);
             return StatusCode(500, new { success = false, message = "Error interno iniciando sesión." });
         }
     }

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -38,6 +39,7 @@ public class UsuariosController : ControllerBase
 
     [HttpPost("registro-final")]
     [AllowAnonymous]
+    [SoloAmbienteNoProductivo] // P0-B1: solo Development/QA/Test (QA/CI); en productivo 404.
     public async Task<IActionResult> RegistrarUsuarioFinal([FromBody] RegistroUsuarioFinalRequest request)
     {
         try
@@ -55,6 +57,7 @@ public class UsuariosController : ControllerBase
     // autoregistro), con [AllowAnonymous] explícito (P0-A deny-by-default).
     [HttpPost("registro-inicial")]
     [AllowAnonymous]
+    [SoloAmbienteNoProductivo] // P0-B1: solo Development/QA/Test; en productivo 404.
     public async Task<IActionResult> RegistrarInicial([FromBody] RegistroInicialRequest request)
     {
         try

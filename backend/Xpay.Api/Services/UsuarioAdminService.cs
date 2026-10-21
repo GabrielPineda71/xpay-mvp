@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
 using Xpay.Api.Exceptions;
@@ -204,7 +205,7 @@ public class UsuarioAdminService
         RegistrarAuditoria(idAdmin, "USUARIO_ACTIVAR", idUsuario, estadoAnterior, "ACTIVO",
             "Activación manual por administrador.");
 
-        await _db.SaveChangesAsync();
+        await GuardarYRevocarAsync(idUsuario);
         return (await ObtenerDetalleAsync(idUsuario))!;
     }
 
@@ -257,7 +258,7 @@ public class UsuarioAdminService
         RegistrarAuditoria(idAdmin, "USUARIO_INACTIVAR", idUsuario, estadoAnterior, "INACTIVO",
             "Inactivación manual por administrador.");
 
-        await _db.SaveChangesAsync();
+        await GuardarYRevocarAsync(idUsuario);
         return (await ObtenerDetalleAsync(idUsuario))!;
     }
 
@@ -288,7 +289,7 @@ public class UsuarioAdminService
         RegistrarAuditoria(idAdmin, "USUARIO_DESBLOQUEAR", idUsuario, estadoAnterior, "ACTIVO",
             "Desbloqueo manual por administrador.");
 
-        await _db.SaveChangesAsync();
+        await GuardarYRevocarAsync(idUsuario);
         return (await ObtenerDetalleAsync(idUsuario))!;
     }
 
@@ -326,7 +327,7 @@ public class UsuarioAdminService
         RegistrarAuditoria(idAdmin, "USUARIO_RESTABLECER_CLAVE", idUsuario, null, null,
             observacion ?? "Restablecimiento de contraseña por administrador.");
 
-        await _db.SaveChangesAsync();
+        await GuardarYRevocarAsync(idUsuario);
 
         var detalle = (await ObtenerDetalleAsync(idUsuario))!;
         return (detalle, claveTemporal);
@@ -358,9 +359,30 @@ public class UsuarioAdminService
         return new string(caracteres);
     }
 
+    // P0-B — revocación de JWT: persiste los cambios rastreados (modificación +
+    // auditoría) e incrementa de forma atómica version_seguridad del usuario
+    // OBJETIVO en una única transacción explícita. Ante cualquier fallo, el
+    // dispose de la transacción no confirmada revierte todo y se limpia el
+    // ChangeTracker; la excepción original se propaga sin envolver.
+    private async Task GuardarYRevocarAsync(long idUsuario)
+    {
+        await using var tx = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+            await VersionSeguridadUsuario.IncrementarAsync(_db, idUsuario);
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            _db.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
     // Agrega la fila de auditoría al mismo ChangeTracker que la modificación
-    // del usuario — un único SaveChangesAsync() posterior persiste ambas en
-    // la misma transacción implícita de EF Core (misma unidad transaccional).
+    // del usuario. P0-B: GuardarYRevocarAsync persiste ambas e incrementa
+    // version_seguridad del usuario objetivo en una única transacción explícita.
     private void RegistrarAuditoria(long idAdmin, string accion, long idUsuarioObjetivo, string? valorAnterior, string? valorNuevo, string observacion, string entidad = "usuarios", string? idEntidad = null)
     {
         _db.Auditorias.Add(new Auditoria
@@ -497,7 +519,7 @@ public class UsuarioAdminService
         RegistrarAuditoria(idAdmin, "USUARIO_ROL_ASIGNAR", idUsuario, valorAnterior, "ACTIVO",
             observacion ?? $"Asignación de rol {rolCodigo}.", entidad: "usuario_roles", idEntidad: $"{idUsuario}:{rol.IdRol}");
 
-        await _db.SaveChangesAsync();
+        await GuardarYRevocarAsync(idUsuario);
         return (await ObtenerDetalleAsync(idUsuario))!;
     }
 
@@ -562,7 +584,7 @@ public class UsuarioAdminService
         RegistrarAuditoria(idAdmin, "USUARIO_ROL_REVOCAR", idUsuario, "ACTIVO", "INACTIVO",
             observacion ?? $"Revocación de rol {rol.Codigo}.", entidad: "usuario_roles", idEntidad: $"{idUsuario}:{idRol}");
 
-        await _db.SaveChangesAsync();
+        await GuardarYRevocarAsync(idUsuario);
         return (await ObtenerDetalleAsync(idUsuario))!;
     }
 

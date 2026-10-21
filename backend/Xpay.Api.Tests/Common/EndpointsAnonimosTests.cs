@@ -21,10 +21,15 @@ public class EndpointsAnonimosTests
         "GET api/version",
         "GET health",
         "POST api/auth/login",
+        "POST api/auth/recuperar-clave",
+        "POST api/auth/restablecer-clave",
         "POST api/kyc/veriff/webhook",
         "POST api/passport/webhook",
+        "POST api/usuarios/registro",
         "POST api/usuarios/registro-final",
         "POST api/usuarios/registro-inicial",
+        "POST api/usuarios/reenviar-verificacion",
+        "POST api/usuarios/verificar-email",
     };
 
     private static IEnumerable<(Type Controller, MethodInfo Accion, string Endpoint)> Acciones()
@@ -52,7 +57,7 @@ public class EndpointsAnonimosTests
         || c.IsDefined(typeof(AllowAnonymousAttribute), inherit: true);
 
     [Fact]
-    public void AccionesAnonimas_SonExactamenteLasDiezAcordadas()
+    public void AccionesAnonimas_SonExactamenteLasAcordadas()
     {
         var anonimas = Acciones().Where(a => EsAnonima(a.Controller, a.Accion))
             .Select(a => a.Endpoint).OrderBy(e => e, StringComparer.Ordinal).ToList();

@@ -103,6 +103,7 @@ public class XpayDbContext : DbContext
     public DbSet<CatalogoPais>                            CatalogoPaises                             => Set<CatalogoPais>();
     public DbSet<CatalogoDepartamento>                    CatalogoDepartamentos                      => Set<CatalogoDepartamento>();
     public DbSet<CatalogoCiudad>                          CatalogoCiudades                           => Set<CatalogoCiudad>();
+    public DbSet<UsuarioToken> UsuarioTokens => Set<UsuarioToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -175,6 +176,7 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<CatalogoPais>(e => { e.ToTable("catalogo_paises"); e.HasKey(x => x.IdPais); MapCatalogoPais(e); });
         modelBuilder.Entity<CatalogoDepartamento>(e => { e.ToTable("catalogo_departamentos"); e.HasKey(x => x.IdDepartamento); MapCatalogoDepartamento(e); });
         modelBuilder.Entity<CatalogoCiudad>(e => { e.ToTable("catalogo_ciudades"); e.HasKey(x => x.IdCiudad); MapCatalogoCiudad(e); });
+        modelBuilder.Entity<UsuarioToken>(e => { e.ToTable("usuario_tokens"); e.HasKey(x => x.IdToken); MapUsuarioToken(e); });
     }
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)
@@ -189,7 +191,7 @@ public class XpayDbContext : DbContext
     }
     private static void MapUsuario(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Usuario> e)
     {
-        e.Property(x => x.IdUsuario).HasColumnName("id_usuario"); e.Property(x => x.IdPersona).HasColumnName("id_persona"); e.Property(x => x.NombreUsuario).HasColumnName("usuario"); e.Property(x => x.PasswordHash).HasColumnName("password_hash"); e.Property(x => x.EmailVerificado).HasColumnName("email_verificado"); e.Property(x => x.CelularVerificado).HasColumnName("celular_verificado"); e.Property(x => x.RequiereCambioClave).HasColumnName("requiere_cambio_clave"); e.Property(x => x.IntentosFallidos).HasColumnName("intentos_fallidos"); e.Property(x => x.UltimoIngreso).HasColumnName("ultimo_ingreso"); e.Property(x => x.FechaBloqueo).HasColumnName("fecha_bloqueo"); e.Property(x => x.MotivoBloqueo).HasColumnName("motivo_bloqueo"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion"); e.Property(x => x.EstadoKycActual).HasColumnName("estado_kyc_actual"); e.Property(x => x.FechaKycActualizacion).HasColumnName("fecha_kyc_actualizacion");
+        e.Property(x => x.IdUsuario).HasColumnName("id_usuario"); e.Property(x => x.IdPersona).HasColumnName("id_persona"); e.Property(x => x.NombreUsuario).HasColumnName("usuario"); e.Property(x => x.PasswordHash).HasColumnName("password_hash"); e.Property(x => x.EmailVerificado).HasColumnName("email_verificado"); e.Property(x => x.CelularVerificado).HasColumnName("celular_verificado"); e.Property(x => x.RequiereCambioClave).HasColumnName("requiere_cambio_clave"); e.Property(x => x.IntentosFallidos).HasColumnName("intentos_fallidos"); e.Property(x => x.UltimoIngreso).HasColumnName("ultimo_ingreso"); e.Property(x => x.FechaBloqueo).HasColumnName("fecha_bloqueo"); e.Property(x => x.MotivoBloqueo).HasColumnName("motivo_bloqueo"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion"); e.Property(x => x.EstadoKycActual).HasColumnName("estado_kyc_actual"); e.Property(x => x.FechaKycActualizacion).HasColumnName("fecha_kyc_actualizacion"); e.Property(x => x.VersionSeguridad).HasColumnName("version_seguridad");
     }
     private static void MapRol(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Rol> e)
     { e.Property(x => x.IdRol).HasColumnName("id_rol"); e.Property(x => x.Codigo).HasColumnName("codigo"); e.Property(x => x.Nombre).HasColumnName("nombre"); e.Property(x => x.Descripcion).HasColumnName("descripcion"); e.Property(x => x.TipoRol).HasColumnName("tipo_rol"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); }
@@ -361,4 +363,20 @@ public class XpayDbContext : DbContext
     { e.Property(x => x.IdDepartamento).HasColumnName("id_departamento"); e.Property(x => x.IdPais).HasColumnName("id_pais"); e.Property(x => x.CodigoDivipola).HasColumnName("codigo_divipola"); e.Property(x => x.Nombre).HasColumnName("nombre"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion"); }
     private static void MapCatalogoCiudad(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<CatalogoCiudad> e)
     { e.Property(x => x.IdCiudad).HasColumnName("id_ciudad"); e.Property(x => x.IdDepartamento).HasColumnName("id_departamento"); e.Property(x => x.CodigoDivipola).HasColumnName("codigo_divipola"); e.Property(x => x.Nombre).HasColumnName("nombre"); e.Property(x => x.Tipo).HasColumnName("tipo"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion"); }
+    // P0-B — ver database/048_usuario_tokens.sql (no ejecutado en QA/PROD).
+    // fecha_creacion la fija siempre la aplicación (TimeProvider); el DEFAULT
+    // SQL de 048 no se modela a propósito para que EF envíe siempre el valor.
+    private static void MapUsuarioToken(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<UsuarioToken> e)
+    {
+        e.Property(x => x.IdToken).HasColumnName("id_token");
+        e.Property(x => x.IdUsuario).HasColumnName("id_usuario");
+        e.Property(x => x.Proposito).HasColumnName("proposito").HasMaxLength(30).IsUnicode(false).IsRequired();
+        e.Property(x => x.TokenHash).HasColumnName("token_hash").HasColumnType("binary(32)").IsRequired();
+        e.Property(x => x.EmailDestino).HasColumnName("email_destino").HasMaxLength(200).IsUnicode(false).IsRequired();
+        e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion");
+        e.Property(x => x.FechaExpiracion).HasColumnName("fecha_expiracion");
+        e.Property(x => x.FechaUso).HasColumnName("fecha_uso");
+        e.Property(x => x.FechaInvalidacion).HasColumnName("fecha_invalidacion");
+        e.Property(x => x.IpSolicitud).HasColumnName("ip_solicitud").HasMaxLength(100).IsUnicode(false);
+    }
 }

@@ -23,6 +23,17 @@ builder.Services.AddScoped<RegistroUsuarioFinalService>();
 builder.Services.AddScoped<RegistroInicialService>();
 builder.Services.AddScoped<PerfilService>(); // XPAY-399 — Perfil Fase 2A (mi-perfil self-service)
 builder.Services.AddScoped<AuthService>();
+// P0-B — tokens de un solo uso y envío de email. QA-IDENTIDAD-EMAIL-3: SMTP
+// solo en QA con Email:Modo=QaSmtp; en otro caso sender local o fail-closed.
+builder.Services.AddScoped<TokenUsuarioService>();
+builder.Services.AddEmailSenderXpay(builder.Environment.EnvironmentName, builder.Configuration);
+// P0-B1 — registro público + verificación de email (endpoints solo no
+// productivos hasta resolver consentimiento/términos).
+builder.Services.AddSingleton<PlantillasEmailIdentidad>();
+builder.Services.AddScoped<RegistroPublicoService>();
+// P0-B2 — recuperación universal de contraseña (misma frontera no
+// productiva e IdentidadPublicaPolicy que P0-B1).
+builder.Services.AddScoped<RecuperacionClaveService>();
 builder.Services.AddScoped<WalletService>();
 builder.Services.AddScoped<WalletOperacionService>();
 builder.Services.AddScoped<QrResolutionService>(); // XPAY-451 — resolución read-only compartida CodigoQr→Comercio/Tienda
@@ -247,6 +258,8 @@ builder.Services
             ValidateLifetime         = true,
             ClockSkew                = TimeSpan.FromSeconds(clockSkewSeconds)
         };
+        // P0-B — revocación: valida en vivo existencia, estado ACTIVO y claim "vs".
+        ValidadorVersionSeguridad.Registrar(opts);
     });
 
 // Fase USUARIOS-ADMIN-5: ClaveVigenteRequirement se agrega a la DefaultPolicy
@@ -288,6 +301,13 @@ var cambiarClavePermitLimit   = rlSection.GetValue("CambiarClavePermitLimit",   
 var cambiarClaveWindowSeconds = rlSection.GetValue("CambiarClaveWindowSeconds", defaultValue: 300);
 var cambiarClaveQueueLimit    = rlSection.GetValue("CambiarClaveQueueLimit",    defaultValue: 0);
 
+// P0-B1 — política dedicada por IP para los endpoints anónimos de identidad
+// (registro y verificación de email): separada de LoginPolicy para no
+// compartir cupo con el login. Configurable con el mismo patrón.
+var identidadPermitLimit   = rlSection.GetValue("IdentidadPublicaPermitLimit",   defaultValue: 10);
+var identidadWindowSeconds = rlSection.GetValue("IdentidadPublicaWindowSeconds", defaultValue: 300);
+var identidadQueueLimit    = rlSection.GetValue("IdentidadPublicaQueueLimit",    defaultValue: 0);
+
 builder.Services.AddRateLimiter(options =>
 {
     options.AddPolicy("LoginPolicy", httpContext =>
@@ -314,6 +334,17 @@ builder.Services.AddRateLimiter(options =>
                 PermitLimit          = cambiarClavePermitLimit,
                 Window               = TimeSpan.FromSeconds(cambiarClaveWindowSeconds),
                 QueueLimit           = cambiarClaveQueueLimit,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
+    options.AddPolicy("IdentidadPublicaPolicy", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit          = identidadPermitLimit,
+                Window               = TimeSpan.FromSeconds(identidadWindowSeconds),
+                QueueLimit           = identidadQueueLimit,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst
             }));
 
