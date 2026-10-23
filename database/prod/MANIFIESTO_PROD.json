@@ -1,0 +1,1113 @@
+{
+  "paquete": "xpay-prod-migraciones",
+  "base_datos_objetivo": "XPAY PROD (nombre real fuera del repositorio)",
+  "commit_origen": "5bfbfb03238b8722b550fcec490486b5a36d4f9d",
+  "sha256_especificacion": "f612ab00eb3e5a8b5d4f94ccc3bd21b262fee9158e7428cc165436d546b4d4e6",
+  "nota": "ejecutable=true solo indica preparacion tecnica. Ninguna ejecucion esta autorizada (autorizacion_ejecucion=NO_OTORGADA).",
+  "scripts": [
+    {
+      "orden": 1,
+      "id": "001",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/001_security_identity.sql",
+      "sha256_origen": "9671425e9d66c47f4488ab6b259273a761b91193e03a83ec82dc3e34363db94e",
+      "archivo": "database/001_security_identity.sql",
+      "sha256_archivo": "9671425e9d66c47f4488ab6b259273a761b91193e03a83ec82dc3e34363db94e",
+      "rangos_conservados": null,
+      "depende_de": [],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Crea XPAY_COL, 15 roles y 27 permisos. Sin guardas: no se puede reejecutar."
+    },
+    {
+      "orden": 2,
+      "id": "002",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/002_wallet_ledger.sql",
+      "sha256_origen": "3245d5469e4fc65726f2b2369c3201775f006001ac2d3d8a7e10057a8a55d252",
+      "archivo": "database/002_wallet_ledger.sql",
+      "sha256_archivo": "3245d5469e4fc65726f2b2369c3201775f006001ac2d3d8a7e10057a8a55d252",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "21 cuentas contables. Sin guardas: no se puede reejecutar."
+    },
+    {
+      "orden": 3,
+      "id": "003",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/003_comercios_qr.sql",
+      "sha256_origen": "000b242dda1052ff575031ecbdfa32754ca291fef06c9a1880668376d0d3f166",
+      "archivo": "database/prod/variantes/003_comercios_qr.prod.sql",
+      "sha256_archivo": "d3fb0e87af325929eba74a840a4af40673cf954037ade29a90ebdbea9491e63f",
+      "rangos_conservados": [
+        [
+          1,
+          104
+        ]
+      ],
+      "depende_de": [
+        "001",
+        "002"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L106-120: comercio demo 'Comercio Demo XPAY' (NIT 900123456-1), tienda y QR demo.",
+      "notas": null
+    },
+    {
+      "orden": 4,
+      "id": "004",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/004_liquidacion_qr.sql",
+      "sha256_origen": "75fdff96a038cec1d2039624fa0fcfc4f94d134b404961561c797b5c02194fde",
+      "archivo": "database/prod/variantes/004_liquidacion_qr.prod.sql",
+      "sha256_archivo": "cc2c86df7bd06161b30450429c3675d7bca3623fa14da858b89853ac3e6e6d62",
+      "rangos_conservados": [
+        [
+          1,
+          81
+        ]
+      ],
+      "depende_de": [
+        "001",
+        "002",
+        "003"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L83-111: wallet COMERCIO y saldo del comercio demo.",
+      "notas": null
+    },
+    {
+      "orden": 5,
+      "id": "005",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/005_retiros_comercio.sql",
+      "sha256_origen": "5bb1b97e5a44ee0808e1bea25e989cfc4945d7fee19cdc2f7b7678e59ae76236",
+      "archivo": "database/005_retiros_comercio.sql",
+      "sha256_archivo": "5bb1b97e5a44ee0808e1bea25e989cfc4945d7fee19cdc2f7b7678e59ae76236",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "002",
+        "003"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 6,
+      "id": "006",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/006_gestion_retiros_comercio.sql",
+      "sha256_origen": "6a2fdcda18aac441ea9e48ecac31e6c6f02fa694f9140b4213a33ebf9b690ca2",
+      "archivo": "database/006_gestion_retiros_comercio.sql",
+      "sha256_archivo": "6a2fdcda18aac441ea9e48ecac31e6c6f02fa694f9140b4213a33ebf9b690ca2",
+      "rangos_conservados": null,
+      "depende_de": [
+        "002",
+        "005"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Inserta 110101 sin guarda: no se puede reejecutar."
+    },
+    {
+      "orden": 7,
+      "id": "007",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/007_security_roles_jwt.sql",
+      "sha256_origen": "37f7f8befbb525946f15a73101bbedf3cefc36ea73ba2f304340406a43b1c245",
+      "archivo": "database/007_security_roles_jwt.sql",
+      "sha256_archivo": "37f7f8befbb525946f15a73101bbedf3cefc36ea73ba2f304340406a43b1c245",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Roles ADMIN_XPAY, OPERADOR_XPAY, COMERCIO. Sin guarda."
+    },
+    {
+      "orden": 8,
+      "id": "009",
+      "tipo": "VARIANTE_PROD",
+      "clase": "D",
+      "origen": "database/009_kyc_verificaciones.sql",
+      "sha256_origen": "6b54f23cefe9a5a1b3dd90f868c1effa709c33772a9e62533cecd3fcb66dd315",
+      "archivo": "database/prod/variantes/009_kyc_verificaciones.prod.sql",
+      "sha256_archivo": "c3d5574545c5c9664721d2aaab6f0af64e12f8dad2d3530a8c538edc497282a6",
+      "rangos_conservados": [
+        [
+          26,
+          28
+        ],
+        [
+          36,
+          135
+        ],
+        [
+          137,
+          142
+        ],
+        [
+          155,
+          166
+        ]
+      ],
+      "depende_de": [
+        "001"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L1-25: encabezado 'NO EJECUTAR EN PRODUCCION' y prerrequisito 001-008. L29-35: mensajes SOLO QA. L136: linea en blanco. L143-154: SELECT de usuarios qa.*. L167-180: mensajes de cierre QA.",
+      "notas": "Variante PROD sin encabezado ni consultas QA. Necesaria: el backend mapea kyc_verificaciones y usuarios.estado_kyc_actual/fecha_kyc_actualizacion. Incluida en el conjunto ejecutable por autorizacion del usuario."
+    },
+    {
+      "orden": 9,
+      "id": "010",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/010_passport_breb_base.sql",
+      "sha256_origen": "ec079a0996b871817465db5a700e02d93f74aa1f7588e6ca5b8f7ec9cb990a53",
+      "archivo": "database/010_passport_breb_base.sql",
+      "sha256_archivo": "ec079a0996b871817465db5a700e02d93f74aa1f7588e6ca5b8f7ec9cb990a53",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "002"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Cuenta 110102 'Banco Coopcentral XPAY': confirmar a que cuenta real corresponde en PROD."
+    },
+    {
+      "orden": 10,
+      "id": "011",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/011_libranza_base.sql",
+      "sha256_origen": "56025003d1a904174989febd8bb7977e75bdd39a78be9967a7aebdf1eae69609",
+      "archivo": "database/prod/variantes/011_libranza_base.prod.sql",
+      "sha256_archivo": "3bde637f790e708e0bbdd471f08e1ca1e60c2aa464fd6ef4025cc73b6b6002a5",
+      "rangos_conservados": [
+        [
+          1,
+          149
+        ]
+      ],
+      "depende_de": [],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L151-189: empresa demo de libranza (NIT 900123456-7), parametros y rangos demo.",
+      "notas": null
+    },
+    {
+      "orden": 11,
+      "id": "012",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/012_libranza_empleados.sql",
+      "sha256_origen": "0af1d2a8d8fb710768881457629026f626fed3a15b1f58c9f597ae3e51672d64",
+      "archivo": "database/prod/variantes/012_libranza_empleados.prod.sql",
+      "sha256_archivo": "6d8525884834022ddcb831e5d1de40770254b3d69dbe7a104d63a53b035ca5d4",
+      "rangos_conservados": [
+        [
+          1,
+          154
+        ]
+      ],
+      "depende_de": [
+        "011"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L156-223: ADMIN_EMPRESA para id_usuario=12 (qa.empresa1) y 3 empleados demo.",
+      "notas": null
+    },
+    {
+      "orden": 12,
+      "id": "013",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/013_libranza_anticipos.sql",
+      "sha256_origen": "8baa4d4a6aae7313c8438c9bc2f36065dddbf5cc9ccfe6c04819326473ef031e",
+      "archivo": "database/prod/variantes/013_libranza_anticipos.prod.sql",
+      "sha256_archivo": "f714ed982fbb2f3ad78639c81bebc1f65445ffb8fdf9a0a7e62ee31c7fdfcb8e",
+      "rangos_conservados": [
+        [
+          1,
+          191
+        ]
+      ],
+      "depende_de": [
+        "002",
+        "011",
+        "012"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L193-295: empresa decadal demo, empleado demo, cortes, ADMIN_EMPRESA para usuario 12, vinculo con usuario 3 / wallet 2, y verificacion de esos datos.",
+      "notas": "No reejecutar despues de 014: reduce el CHECK de periodicidad. Ver README integridad."
+    },
+    {
+      "orden": 13,
+      "id": "014",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/014_libranza_semanal.sql",
+      "sha256_origen": "aa1e1f4f92c20411b4bdf6c078d880643621ff4f5471c01686730a42dfdbc844",
+      "archivo": "database/prod/variantes/014_libranza_semanal.prod.sql",
+      "sha256_archivo": "9f54dd8b2d86cd727ecb82b5d7009f5d1c1472933c76d4de239529b3f2c8962d",
+      "rangos_conservados": [
+        [
+          1,
+          66
+        ]
+      ],
+      "depende_de": [
+        "011",
+        "012",
+        "013"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L68-234: empresa semanal demo, parametros, rangos, usuario 12, empleado demo, cortes y verificacion.",
+      "notas": null
+    },
+    {
+      "orden": 14,
+      "id": "015",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/015_comercios_aliados.sql",
+      "sha256_origen": "e97bf8883fc9a934ee222eadf3b82a02881103b624fc7a370829e58f640efaa9",
+      "archivo": "database/prod/variantes/015_comercios_aliados.prod.sql",
+      "sha256_archivo": "683886288682b64932ccb677dce870a39d6866f97ccc89cd726e5356945a8ab1",
+      "rangos_conservados": [
+        [
+          1,
+          148
+        ]
+      ],
+      "depende_de": [],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L150-254: aliado demo (NIT 901999999-1), representante, establecimiento, usuarios solicitados @xpay.qa y verificacion.",
+      "notas": null
+    },
+    {
+      "orden": 15,
+      "id": "016",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/016_comercio_disponibilidad.sql",
+      "sha256_origen": "109eef755417d2f9c198ec274f5b93f3162c67dfaf932b331fefd8a427f55552",
+      "archivo": "database/prod/variantes/016_comercio_disponibilidad.prod.sql",
+      "sha256_archivo": "bb2bdaa61b31db73d81a6f6f026ad4d407e67e26e77426e3baae8b0ac6809c98",
+      "rangos_conservados": [
+        [
+          1,
+          120
+        ]
+      ],
+      "depende_de": [
+        "002",
+        "003",
+        "015"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L122-141: vinculo aliado 1 -> comercio 2 y condicion demo. L143-158: tasas globales 0-60 dias (movidas a 016b, pendiente de negocio). L160-207: recalculo de ventas del comercio 2 y verificacion.",
+      "notas": null
+    },
+    {
+      "orden": 16,
+      "id": "017",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/017_comercio_usuarios_contexto.sql",
+      "sha256_origen": "95ced065961038160d11402285f8fcf622adde9dd9a5ca3465bd271a94722ab2",
+      "archivo": "database/prod/variantes/017_comercio_usuarios_contexto.prod.sql",
+      "sha256_archivo": "5339b3eb47121ada3002803ae71af919407db92762e6a98d3ea1ae10036b987d",
+      "rangos_conservados": [
+        [
+          1,
+          61
+        ]
+      ],
+      "depende_de": [
+        "001",
+        "003",
+        "015"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L63-108: qa.comercio1 como ADMIN_COMERCIO, recalculo de ventas del comercio 2 y verificacion.",
+      "notas": null
+    },
+    {
+      "orden": 17,
+      "id": "019",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/019_iva_parametrizado.sql",
+      "sha256_origen": "7745dc78a86c8daf191b8a60d87f2b95fda6e35cfc66e3531a49377417573375",
+      "archivo": "database/prod/variantes/019_iva_parametrizado.prod.sql",
+      "sha256_archivo": "5cc92ec685318fb4d001854213b8b5d2af634e075d6af8a3c3d1cbe38298a10d",
+      "rangos_conservados": [
+        [
+          1,
+          140
+        ]
+      ],
+      "depende_de": [
+        "002",
+        "015",
+        "016"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L142-226: IVA de la condicion demo, 61 parametros para aliado 1, recalculo de la venta 17 y verificacion.",
+      "notas": "Conserva el DROP de uq_xpla_dias sin restriccion sustituta. Ver README integridad."
+    },
+    {
+      "orden": 18,
+      "id": "016b",
+      "tipo": "PENDIENTE_DATOS",
+      "clase": "D",
+      "origen": "database/016_comercio_disponibilidad.sql",
+      "sha256_origen": "109eef755417d2f9c198ec274f5b93f3162c67dfaf932b331fefd8a427f55552",
+      "archivo": "database/prod/pendientes/016b_comercio_disponibilidad.pendiente.sql",
+      "sha256_archivo": "20a774059a5c3f2088e4ecd14d0ca2cfcd009eac664d57c713a6e6d7cd295d2b",
+      "rangos_conservados": [
+        [
+          1,
+          2
+        ],
+        [
+          143,
+          158
+        ]
+      ],
+      "depende_de": [
+        "016",
+        "019"
+      ],
+      "estado": "BLOQUEADO_DECISION_NEGOCIO",
+      "ejecutable": false,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "Solo contiene las tasas globales de liquidacion anticipada (0,5% por dia, 0-60 dias).",
+      "notas": "Valores comerciales: requieren aprobacion de negocio antes de PROD."
+    },
+    {
+      "orden": 19,
+      "id": "021",
+      "tipo": "VARIANTE_PROD",
+      "clase": "B",
+      "origen": "database/021_cartera_ordinaria.sql",
+      "sha256_origen": "53d06557e0be23d06f93c9a882832090162384f7649fa0d11595078f662931f4",
+      "archivo": "database/prod/variantes/021_cartera_ordinaria.prod.sql",
+      "sha256_archivo": "250fc2331a33a68424631bafae971fe3f962347aaa7f15b9e5d79b6186dbcfde",
+      "rangos_conservados": [
+        [
+          1,
+          206
+        ],
+        [
+          279,
+          279
+        ]
+      ],
+      "depende_de": [],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "L207-245: parametros de utilizacion, gastos de cobranza y politica de credito (movidos a 021b, pendiente de negocio). L247-268: cupos QA para id_usuario 3 y 4. L270-277: verificacion.",
+      "notas": null
+    },
+    {
+      "orden": 20,
+      "id": "021b",
+      "tipo": "PENDIENTE_DATOS",
+      "clase": "D",
+      "origen": "database/021_cartera_ordinaria.sql",
+      "sha256_origen": "53d06557e0be23d06f93c9a882832090162384f7649fa0d11595078f662931f4",
+      "archivo": "database/prod/pendientes/021b_cartera_ordinaria.pendiente.sql",
+      "sha256_archivo": "2301f428a4db48aa7ceb5dde0d62c30fd184461f84989c855c9b46f5da7fc8a8",
+      "rangos_conservados": [
+        [
+          207,
+          245
+        ]
+      ],
+      "depende_de": [
+        "021"
+      ],
+      "estado": "BLOQUEADO_DECISION_NEGOCIO",
+      "ejecutable": false,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "Solo contiene parametros de utilizacion (tasas, plazos, montos), gastos de cobranza y la politica de credito inicial.",
+      "notas": "El backend los exige en tiempo de ejecucion para cartera, pero son valores comerciales."
+    },
+    {
+      "orden": 21,
+      "id": "022",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/022_cartera_ordinaria_avance_wallet.sql",
+      "sha256_origen": "c529bc3c2fd23316832a087675d25ed780aa129465e6d08c08aa53c6c62bfb86",
+      "archivo": "database/022_cartera_ordinaria_avance_wallet.sql",
+      "sha256_archivo": "c529bc3c2fd23316832a087675d25ed780aa129465e6d08c08aa53c6c62bfb86",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "002"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Usa id_unidad_negocio=1 fijo."
+    },
+    {
+      "orden": 22,
+      "id": "023",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/023_cartera_pago_manual_wallet.sql",
+      "sha256_origen": "aade2182aeadf7aff8a4234b6470ca51b7c78d2ff0975f2a06fa3108ac1a446f",
+      "archivo": "database/023_cartera_pago_manual_wallet.sql",
+      "sha256_archivo": "aade2182aeadf7aff8a4234b6470ca51b7c78d2ff0975f2a06fa3108ac1a446f",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "002",
+        "021"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 23,
+      "id": "024",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/024_cartera_compra_qr_cupo.sql",
+      "sha256_origen": "2af06b8679bfbec99c3c1fb2d844587c1f80159527bbd0e29bd79a5f2a83188f",
+      "archivo": "database/024_cartera_compra_qr_cupo.sql",
+      "sha256_archivo": "2af06b8679bfbec99c3c1fb2d844587c1f80159527bbd0e29bd79a5f2a83188f",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "002",
+        "021"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 24,
+      "id": "025",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/025_wallet_recargas_comercio.sql",
+      "sha256_origen": "c255ec56fd6666ae1f8d895b4c5d2d2b9034aaef1a01f1b01ad5d4d13ac0b6cd",
+      "archivo": "database/025_wallet_recargas_comercio.sql",
+      "sha256_archivo": "c255ec56fd6666ae1f8d895b4c5d2d2b9034aaef1a01f1b01ad5d4d13ac0b6cd",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "002"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 25,
+      "id": "026",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/026_wallet_liquidacion_recaudos_comercio.sql",
+      "sha256_origen": "1b34df96681b064cdf0d7f11a66bfb03191e526e6a12b83474888d22464b0bf1",
+      "archivo": "database/026_wallet_liquidacion_recaudos_comercio.sql",
+      "sha256_archivo": "1b34df96681b064cdf0d7f11a66bfb03191e526e6a12b83474888d22464b0bf1",
+      "rangos_conservados": null,
+      "depende_de": [
+        "025"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 26,
+      "id": "027",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/027_wallet_cierres_diarios_comercio.sql",
+      "sha256_origen": "17257d08341cd5e82b884a1f47f82f36165034aac48cb657e6310ce94f033e45",
+      "archivo": "database/027_wallet_cierres_diarios_comercio.sql",
+      "sha256_archivo": "17257d08341cd5e82b884a1f47f82f36165034aac48cb657e6310ce94f033e45",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "003",
+        "025"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 27,
+      "id": "028",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/028_wallet_cajas_comercio.sql",
+      "sha256_origen": "b1be909f990d2b4d22fdeef0766adbfa039bf2161a7a1e09d540c210ab4d9c6a",
+      "archivo": "database/028_wallet_cajas_comercio.sql",
+      "sha256_archivo": "b1be909f990d2b4d22fdeef0766adbfa039bf2161a7a1e09d540c210ab4d9c6a",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "003",
+        "015",
+        "025"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 28,
+      "id": "029",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/029_wallet_idempotencia.sql",
+      "sha256_origen": "523e528bc723b5aeb38443aa8da408d6bc5a0a7774141bf67b888d23393df120",
+      "archivo": "database/029_wallet_idempotencia.sql",
+      "sha256_archivo": "523e528bc723b5aeb38443aa8da408d6bc5a0a7774141bf67b888d23393df120",
+      "rangos_conservados": null,
+      "depende_de": [],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 29,
+      "id": "030",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/030_usuario_roles_revocacion.sql",
+      "sha256_origen": "0858fcca0e3e6915a186fbdd50c0f29e5e730440a6a729fbc534332a0c4cfa1f",
+      "archivo": "database/030_usuario_roles_revocacion.sql",
+      "sha256_archivo": "0858fcca0e3e6915a186fbdd50c0f29e5e730440a6a729fbc534332a0c4cfa1f",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 30,
+      "id": "031",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/031_catalogo_geografico.sql",
+      "sha256_origen": "6c6a944f17b435f80e97a0a29f936e8fac9f27f38f17b40dedd3f64bd53508ae",
+      "archivo": "database/031_catalogo_geografico.sql",
+      "sha256_archivo": "6c6a944f17b435f80e97a0a29f936e8fac9f27f38f17b40dedd3f64bd53508ae",
+      "rangos_conservados": null,
+      "depende_de": [],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Catalogo DANE DIVIPOLA."
+    },
+    {
+      "orden": 31,
+      "id": "032",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/032_persona_identidad_verificada.sql",
+      "sha256_origen": "c2bb02f86bce6fff579de49239c922ae3ce2d5069aefa5de0e4721faf78d20a9",
+      "archivo": "database/032_persona_identidad_verificada.sql",
+      "sha256_archivo": "c2bb02f86bce6fff579de49239c922ae3ce2d5069aefa5de0e4721faf78d20a9",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 32,
+      "id": "033",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/033_persona_nombre_nullable.sql",
+      "sha256_origen": "9b58e32634daf50d19b9ef22290e3c1d80a1b27a6cfa686d2dadcb047caa82c6",
+      "archivo": "database/033_persona_nombre_nullable.sql",
+      "sha256_archivo": "9b58e32634daf50d19b9ef22290e3c1d80a1b27a6cfa686d2dadcb047caa82c6",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Su verificacion final imprime nombres de personas; con la base vacia no imprime nada."
+    },
+    {
+      "orden": 33,
+      "id": "034",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/034_kyc_identidad_orden_unicidad.sql",
+      "sha256_origen": "d686ebfaddfceca54a47982afd9aef6b02d0dece209f2c712f53245fa9870d3e",
+      "archivo": "database/034_kyc_identidad_orden_unicidad.sql",
+      "sha256_archivo": "d686ebfaddfceca54a47982afd9aef6b02d0dece209f2c712f53245fa9870d3e",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "009",
+        "032"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Depende de 009 (columnas KYC) y 032."
+    },
+    {
+      "orden": 34,
+      "id": "035",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/035_cartera_solicitud_cupo.sql",
+      "sha256_origen": "115a0c7a23f5a02a4c8718760e6fa13b1bff7b8b3ad0707397b9de03e08d5d81",
+      "archivo": "database/035_cartera_solicitud_cupo.sql",
+      "sha256_archivo": "115a0c7a23f5a02a4c8718760e6fa13b1bff7b8b3ad0707397b9de03e08d5d81",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "021"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 35,
+      "id": "036",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/036_cartera_intento_resultado_riesgo.sql",
+      "sha256_origen": "bfe75697877c3f1965ee0483cf07af8d35cd1d1319b82323293fb502d0414f59",
+      "archivo": "database/036_cartera_intento_resultado_riesgo.sql",
+      "sha256_archivo": "bfe75697877c3f1965ee0483cf07af8d35cd1d1319b82323293fb502d0414f59",
+      "rangos_conservados": null,
+      "depende_de": [
+        "035"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 36,
+      "id": "037",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/037_cartera_intento_resultado_purgado.sql",
+      "sha256_origen": "f0dfc3e2e730bd0c35ef6e576393b984977261897dba25ede32319cd2abea821",
+      "archivo": "database/037_cartera_intento_resultado_purgado.sql",
+      "sha256_archivo": "f0dfc3e2e730bd0c35ef6e576393b984977261897dba25ede32319cd2abea821",
+      "rangos_conservados": null,
+      "depende_de": [
+        "035"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 37,
+      "id": "038",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/038_cartera_consumo_resultado_riesgo.sql",
+      "sha256_origen": "0b54a2c4f6896e683a7b1323134a498fc563aa0eeec6bb58d9140a3d75a43023",
+      "archivo": "database/038_cartera_consumo_resultado_riesgo.sql",
+      "sha256_archivo": "0b54a2c4f6896e683a7b1323134a498fc563aa0eeec6bb58d9140a3d75a43023",
+      "rangos_conservados": null,
+      "depende_de": [
+        "035"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 38,
+      "id": "039",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/039_cartera_captura_documento_edad_comportamiento.sql",
+      "sha256_origen": "61e9bd7c019ba73e0a2da9d74fdbeb639eebd9b1ebc786034468377adbc1d57f",
+      "archivo": "database/039_cartera_captura_documento_edad_comportamiento.sql",
+      "sha256_archivo": "61e9bd7c019ba73e0a2da9d74fdbeb639eebd9b1ebc786034468377adbc1d57f",
+      "rangos_conservados": null,
+      "depende_de": [
+        "035"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 39,
+      "id": "040",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/040_cartera_motivos_decision.sql",
+      "sha256_origen": "f0c0483f218b84ddbc804e0a833a28b42d5fed84a95f4190a1424a0b62bc79a0",
+      "archivo": "database/040_cartera_motivos_decision.sql",
+      "sha256_archivo": "f0c0483f218b84ddbc804e0a833a28b42d5fed84a95f4190a1424a0b62bc79a0",
+      "rangos_conservados": null,
+      "depende_de": [
+        "035"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 40,
+      "id": "041",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/041_cartera_autorizacion_consulta_riesgo.sql",
+      "sha256_origen": "5ba80273b1311b4da61ff218199cdd0d9c37a32694c865ca37aff135cc2e9270",
+      "archivo": "database/041_cartera_autorizacion_consulta_riesgo.sql",
+      "sha256_archivo": "5ba80273b1311b4da61ff218199cdd0d9c37a32694c865ca37aff135cc2e9270",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "035"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 41,
+      "id": "042",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/042_cartera_p0_raw_purga_marca.sql",
+      "sha256_origen": "f057c1ec9c8aa065b10924e17c3302810303b2db578edf4bb46567435de3879c",
+      "archivo": "database/042_cartera_p0_raw_purga_marca.sql",
+      "sha256_archivo": "f057c1ec9c8aa065b10924e17c3302810303b2db578edf4bb46567435de3879c",
+      "rangos_conservados": null,
+      "depende_de": [
+        "035"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 42,
+      "id": "043",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/043_breb_payment_resolution_fields.sql",
+      "sha256_origen": "49c94d893f3e132fe0b310f2606b6133b0e4c1be78dd524765c551ac229e7adf",
+      "archivo": "database/043_breb_payment_resolution_fields.sql",
+      "sha256_archivo": "49c94d893f3e132fe0b310f2606b6133b0e4c1be78dd524765c551ac229e7adf",
+      "rangos_conservados": null,
+      "depende_de": [
+        "010"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 43,
+      "id": "044",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/044_cuenta_operativa_real.sql",
+      "sha256_origen": "e0752a596dfc0b2275a678b4001577f66d3a51dd17d698103d381a0683be16c6",
+      "archivo": "database/044_cuenta_operativa_real.sql",
+      "sha256_archivo": "e0752a596dfc0b2275a678b4001577f66d3a51dd17d698103d381a0683be16c6",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "002"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Cuenta 110103 y tabla cuentas_operativas vacia; la llena OperationalAccountBootstrapper al arrancar si PASSPORT_ACCOUNT_ID esta configurado."
+    },
+    {
+      "orden": 44,
+      "id": "045a",
+      "tipo": "VARIANTE_PROD",
+      "clase": "D",
+      "origen": "database/045_cartera_solicitud_sin_monto_y_politica_aplicada.sql",
+      "sha256_origen": "8f6909891af7b4e1bd62f3c8a05b229ca7cdfbe32b32edc168c322fc4774b42a",
+      "archivo": "database/prod/variantes/045a_cartera_solicitud_sin_monto_y_politica_aplicada.prod.sql",
+      "sha256_archivo": "f520c3265d28be2ac1329309ef7d198fbf83ba4451763a8351cded9a034f30e5",
+      "rangos_conservados": [
+        [
+          44,
+          119
+        ],
+        [
+          145,
+          162
+        ]
+      ],
+      "depende_de": [
+        "021",
+        "035"
+      ],
+      "estado": "BLOQUEADO_PENDIENTE_AUTORIZACION",
+      "ejecutable": false,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "Encabezado original L1-42, paso 3 (alineacion de politica) L120-143 y verificacion de politica L164-174.",
+      "notas": "Solo estructura: monto_solicitado NULL y CHECK (NULL o > 0). 045 completo esta pendiente de decision."
+    },
+    {
+      "orden": 45,
+      "id": "045b",
+      "tipo": "PENDIENTE_DATOS",
+      "clase": "D",
+      "origen": "database/045_cartera_solicitud_sin_monto_y_politica_aplicada.sql",
+      "sha256_origen": "8f6909891af7b4e1bd62f3c8a05b229ca7cdfbe32b32edc168c322fc4774b42a",
+      "archivo": "database/prod/pendientes/045b_cartera_solicitud_sin_monto_y_politica_aplicada.pendiente.sql",
+      "sha256_archivo": "7c5c5403092f90db737523591e65901f74ce756761662696af70e7e074f1ea02",
+      "rangos_conservados": [
+        [
+          44,
+          60
+        ],
+        [
+          120,
+          152
+        ],
+        [
+          168,
+          174
+        ]
+      ],
+      "depende_de": [
+        "021b",
+        "035"
+      ],
+      "estado": "BLOQUEADO_DECISION_NEGOCIO",
+      "ejecutable": false,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": "Solo contiene la alineacion de la fila ACTIVA de cartera_politicas_credito (200000-700000, 18-65).",
+      "notas": "Esos valores en la base NO gobiernan el motor: el motor usa CarteraPoliticaAplicada.Vigente() en codigo."
+    },
+    {
+      "orden": 46,
+      "id": "046",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/046_cartera_solicitud_revision_manual.sql",
+      "sha256_origen": "f1eb7baaf5daaff98d43c8296cf25a2b1a7da44c0bb83d23fbea1b9641bd44c4",
+      "archivo": "database/046_cartera_solicitud_revision_manual.sql",
+      "sha256_archivo": "f1eb7baaf5daaff98d43c8296cf25a2b1a7da44c0bb83d23fbea1b9641bd44c4",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001",
+        "035"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 47,
+      "id": "047",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/047_libranza_recaudo_p0.sql",
+      "sha256_origen": "80212cc47a0fb85811b86757b628a902b4256d6b0aaaf360471e89b621b82971",
+      "archivo": "database/047_libranza_recaudo_p0.sql",
+      "sha256_archivo": "80212cc47a0fb85811b86757b628a902b4256d6b0aaaf360471e89b621b82971",
+      "rangos_conservados": null,
+      "depende_de": [
+        "010",
+        "011",
+        "012",
+        "013",
+        "044"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Mas de 15 lotes sin transaccion: exige sqlcmd -b. Default monto_minimo_anticipo 100000 (valor de negocio en DEFAULT de columna)."
+    },
+    {
+      "orden": 48,
+      "id": "048",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/048_usuario_tokens.sql",
+      "sha256_origen": "75b10d698c73754f97bdc4df44d7d34a343cab03b1c261d6495a9137e08fb2f8",
+      "archivo": "database/048_usuario_tokens.sql",
+      "sha256_archivo": "75b10d698c73754f97bdc4df44d7d34a343cab03b1c261d6495a9137e08fb2f8",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    },
+    {
+      "orden": 49,
+      "id": "049",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/049_usuario_version_seguridad.sql",
+      "sha256_origen": "78b17c6193401648179732333273908bb692347724708fea505cb1d3c1ff4e38",
+      "archivo": "database/049_usuario_version_seguridad.sql",
+      "sha256_archivo": "78b17c6193401648179732333273908bb692347724708fea505cb1d3c1ff4e38",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": null
+    }
+  ],
+  "excluidos": [
+    {
+      "ruta": "database/008_seed_qa_dataset.sql",
+      "clase": "C",
+      "motivo": "Dataset QA: usuarios QA activos (uno con ADMIN_XPAY), hash marcador y contrasena QA documentada en comentarios.",
+      "sha256": "c962e805a81d3c5f902cf50bb3c2b151ca8403c6fcf9995885a4a2adc0518fed"
+    },
+    {
+      "ruta": "database/018_backfill_disponibilidad_venta17.sql",
+      "clase": "C",
+      "motivo": "Correccion puntual de datos QA (venta 17). Sin estructura.",
+      "sha256": "71e6cdbd4c69d5c97de25cf2c1b7a3ebc7a34333bee70c54bc66f0cad5111530"
+    },
+    {
+      "ruta": "database/020_libranza_anticipo_multiple.sql",
+      "clase": "C",
+      "motivo": "Configura solo el convenio demo 1. Sin estructura.",
+      "sha256": "3cc870c08981146efbeb45bf906392e48056d5e0d6c75465200c919cb40ab9a6"
+    },
+    {
+      "ruta": "scripts/ci/ci_admin_xpay_fixture.sql",
+      "clase": "C",
+      "motivo": "Fixture de CI: administradores con contrasenas conocidas.",
+      "sha256": "f9d67bfe91ce1d011770bdee1903ebde634a1b03c15b8642263f4bf0430c9174"
+    },
+    {
+      "ruta": "scripts/ci/ci_comercio_caja_fixture.sql",
+      "clase": "C",
+      "motivo": "Fixture de CI: usuarios COMERCIO de prueba y comercio demo.",
+      "sha256": "28f841f31efdcd2a1f47893af541b5839c26da62f84fc9d4cfb4530409cb2fa0"
+    }
+  ]
+}
