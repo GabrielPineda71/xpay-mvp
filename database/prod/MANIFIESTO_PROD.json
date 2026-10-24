@@ -1,7 +1,8 @@
 {
   "paquete": "xpay-prod-migraciones",
   "base_datos_objetivo": "XPAY PROD (nombre real fuera del repositorio)",
-  "commit_origen": "5bfbfb03238b8722b550fcec490486b5a36d4f9d",
+  "commit_origen": "26f4894a717d8ec7a484c8847bf5f070c5e22cd8",
+  "commit_origen_significado": "ultimo commit que modifico los scripts originales de database/",
   "sha256_especificacion": "f612ab00eb3e5a8b5d4f94ccc3bd21b262fee9158e7428cc165436d546b4d4e6",
   "nota": "ejecutable=true solo indica preparacion tecnica. Ninguna ejecucion esta autorizada (autorizacion_ejecucion=NO_OTORGADA).",
   "scripts": [

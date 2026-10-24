@@ -76,9 +76,14 @@ def encabezado(entrada, sha_origen):
     return ("\n".join(lineas) + "\n").encode("ascii")
 
 
-def commit_actual():
+def commit_originales():
+    # Ultimo commit que modifico los scripts originales de database/.
+    # No depende de los commits del propio paquete (database/prod/).
     try:
-        return subprocess.check_output(["git", "-C", RAIZ, "rev-parse", "HEAD"], text=True).strip()
+        salida = subprocess.check_output(
+            ["git", "-C", RAIZ, "log", "-1", "--format=%H", "--",
+             ":(glob)database/[0-9][0-9][0-9]_*.sql"], text=True).strip()
+        return salida or "desconocido"
     except Exception:
         return "desconocido"
 
@@ -128,7 +133,8 @@ def main():
     manifiesto = {
         "paquete": espec["paquete"],
         "base_datos_objetivo": espec["base_datos_objetivo"],
-        "commit_origen": commit_actual(),
+        "commit_origen": commit_originales(),
+        "commit_origen_significado": "ultimo commit que modifico los scripts originales de database/",
         "sha256_especificacion": sha256_archivo(ESPECIFICACION),
         "nota": "ejecutable=true solo indica preparacion tecnica. Ninguna ejecucion esta autorizada (autorizacion_ejecucion=NO_OTORGADA).",
         "scripts": entradas_manifiesto,

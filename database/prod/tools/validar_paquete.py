@@ -139,6 +139,23 @@ def main():
     except Exception as exc:
         aviso("No se pudo consultar git (%s); se comprueban solo los SHA-256" % exc)
 
+    # 2b. commit_origen existe en el historial y contiene exactamente los originales
+    commit = man.get("commit_origen", "")
+    try:
+        subprocess.check_call(["git", "-C", RAIZ, "merge-base", "--is-ancestor", commit, "HEAD"],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        distintos = []
+        for e in man["scripts"]:
+            datos_c = subprocess.check_output(["git", "-C", RAIZ, "show", "%s:%s" % (commit, e["origen"])])
+            if sha256_bytes(datos_c) != e["sha256_origen"]:
+                distintos.append(e["id"])
+        if distintos:
+            error("Originales distintos en commit_origen %s: %s" % (commit, distintos))
+        else:
+            info.append("commit_origen %s esta en el historial y contiene los originales del manifiesto" % commit[:12])
+    except Exception:
+        error("commit_origen %s no existe o no es antecesor de HEAD" % commit)
+
     # 3. Cobertura de originales
     origenes = {e["origen"] for e in man["scripts"]}
     excluidos = {x["ruta"] for x in man["excluidos"]}

@@ -63,7 +63,7 @@ def main():
     p.add_argument("--log-dir", default=os.path.expanduser("~/xpay-tools/xpay-prod-migraciones/logs"))
     a = p.parse_args()
 
-    print("== Validador local ==")
+    print("== Validador local ==", flush=True)
     if subprocess.call([sys.executable, VALIDADOR]) != 0:
         print("DETENIDO: el validador local fallo.")
         return 2
