@@ -28,6 +28,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -61,7 +62,14 @@ def main():
     p.add_argument("--omitir-bloqueados", action="store_true")
     p.add_argument("--sqlcmd", default=os.path.expanduser("~/xpay-tools/go-sqlcmd-1.10.0/sqlcmd"))
     p.add_argument("--log-dir", default=os.path.expanduser("~/xpay-tools/xpay-prod-migraciones/logs"))
+    p.add_argument("--limite-inicio-utc",
+                   help="YYYY-MM-DDTHH:MM:SSZ; a partir de esta hora no se inicia ningun script nuevo")
     a = p.parse_args()
+    if a.limite_inicio_utc and not re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", a.limite_inicio_utc):
+        print("DETENIDO: --limite-inicio-utc debe tener el formato YYYY-MM-DDTHH:MM:SSZ")
+        return 2
+    # Archivo de detencion: si existe, no se inicia ningun script nuevo.
+    detener = os.path.join(os.path.dirname(os.path.abspath(a.log_dir)), "DETENER")
 
     print("== Validador local ==", flush=True)
     if subprocess.call([sys.executable, VALIDADOR]) != 0:
@@ -104,6 +112,9 @@ def main():
           % (a.sqlcmd, SERVIDOR, BASE, USUARIO))
     if faltan:
         print("AVISO: variables de entorno no definidas: %s" % ", ".join(faltan))
+    print("Limite de inicio: %s | Archivo DETENER: %s (%s)"
+          % (a.limite_inicio_utc or "sin limite", detener,
+             "PRESENTE" if os.path.exists(detener) else "ausente"))
 
     if a.modo == "plan":
         print("")
@@ -129,7 +140,21 @@ def main():
     registro = os.path.join(a.log_dir, "ejecucion_%s_%s-%s.tsv" % (sello, a.desde, a.hasta))
     with open(registro, "w", encoding="utf-8") as reg:
         reg.write("inicio_utc\tfin_utc\tid\tarchivo\tsha256\tcodigo_salida\tlog\n")
-        for e in a_ejecutar:
+        for posicion, e in enumerate(a_ejecutar):
+            motivo = None
+            if a.limite_inicio_utc and ahora() >= a.limite_inicio_utc:
+                motivo, codigo_salida = "NO_INICIADO_LIMITE", 5
+            elif os.path.exists(detener):
+                motivo, codigo_salida = "NO_INICIADO_DETENER", 6
+            if motivo:
+                pendientes = a_ejecutar[posicion:]
+                for x in pendientes:
+                    reg.write("%s\t-\t%s\t%s\t-\t%s\t-\n"
+                              % (ahora(), x["id"], x["archivo"], motivo))
+                ids = ", ".join(x["id"] for x in pendientes)
+                print("DETENIDO (%s): no se inician %s." % (motivo, ids))
+                print("Registro: %s" % registro)
+                return codigo_salida
             ruta = os.path.join(RAIZ, e["archivo"])
             actual = sha256(ruta)
             if actual != e["sha256_archivo"]:
