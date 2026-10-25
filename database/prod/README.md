@@ -2,7 +2,11 @@
 
 Paquete reproducible para crear el esquema de la base XPAY PROD (vacía) a partir de los scripts `database/001`–`049`, **sin datos QA/demo y sin valores comerciales no aprobados**.
 
-> Nada de este directorio se ha ejecutado contra ninguna base de datos. Ninguna ejecución está autorizada: todas las entradas del manifiesto tienen `autorizacion_ejecucion = NO_OTORGADA`.
+> Nada de este directorio se ha ejecutado contra la base de PROD.
+> B1 (001–009) se ha probado solo en un SQL Server 2022 local
+> (PROCEDIMIENTO_EJECUCION_PROD.md, sección 6.1). Ninguna ejecución
+> en PROD está autorizada: todas las entradas del manifiesto tienen
+> `autorizacion_ejecucion = NO_OTORGADA`.
 
 ## Contenido
 
@@ -98,5 +102,8 @@ No se introdujo ningún cambio estructural nuevo. Efectos documentados, pendient
 4. Aprobar o descartar las correcciones de integridad propuestas (013, 014, 019).
 5. Confirmar a qué cuenta bancaria real corresponde 110102 "Banco Coopcentral XPAY" en PROD, y la configuración de `PASSPORT_ACCOUNT_ID` (el arranque inserta en `cuentas_operativas` si está definida).
 6. Primer administrador de PROD: procedimiento controlado aparte (ningún script lo crea).
-7. Vía de acceso para ejecutar (ver procedimiento).
+7. Vía de acceso para ejecutar (P1 o P2) y criterio de ventana
+   (procedimiento, secciones 1 y 6.3).
 8. Autorizar el commit de este paquete para fijar su origen.
+9. Control de las conexiones de la aplicación durante B1 y la
+   recuperación (procedimiento, sección 6.2 y decisión 1 de 6.12).
