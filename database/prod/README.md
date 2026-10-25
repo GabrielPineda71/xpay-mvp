@@ -20,6 +20,7 @@ Paquete reproducible para crear el esquema de la base XPAY PROD (vacía) a parti
 | `tools/validar_paquete.py` | Validador local (no ejecuta SQL, no se conecta a nada). |
 | `tools/ejecutar_migraciones.py` | Ejecutor controlado por bloques. Por defecto **solo muestra el plan**. |
 | `verificacion_post_migracion.sql` | Comprobaciones de solo lectura tras migrar. |
+| `operacion/*.sql` | Inventario y verificación de B1, solo lectura. |
 | `PROCEDIMIENTO_EJECUCION_PROD.md` | Procedimiento de ejecución controlada. |
 
 Regenerar y validar (desde la raíz del repositorio):

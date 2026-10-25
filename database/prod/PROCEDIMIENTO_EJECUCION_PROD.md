@@ -191,7 +191,7 @@ Frase de confirmación: EJECUTAR 001-009 EN <base PROD>.
 
 ### 6.6 V: verificación previa (solo lectura)
 
-Con operacion/inventario_estado.sql (se creará en T6B):
+Con operacion/inventario_estado.sql:
 - inventario inv_PROD_previo: referencia de la recuperación; se exige
   RESUMEN|0|0|0;
 - se anotan intercalación, compatibilidad y RCSI (línea BASE) y los
@@ -205,7 +205,7 @@ Cualquier objeto de usuario o cualquier sesión ajena: no se ejecuta E.
 
 1. Ejecutor con código 0 y TSV con 8 filas, en orden, con código 0.
 2. Ningún error de nivel 11 o superior en los registros por script.
-3. operacion/verificacion_b1.sql (T6B): TABLAS 24, UNIDADES 1,
+3. operacion/verificacion_b1.sql: TABLAS 24, UNIDADES 1,
    ROLES 18, PERMISOS 27, CUENTAS 25, USUARIOS 0, COL_KYC 30,
    ACENTOS 1.
 4. Inventario inv_PROD_posterior: líneas de estructura (OBJ, COL, IDX,
