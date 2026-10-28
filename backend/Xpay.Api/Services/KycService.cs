@@ -853,6 +853,11 @@ public class KycService
                 return new VeriffDecisionProcessResult(true, estadoXpay, false, false);
             }
 
+            // Diseño A — documento legal establecido en el Caso 1 (si lo hubo),
+            // para poder deshacerlo solo a él ante un duplicado tardío.
+            Persona?   personaDocumentoLegal   = null;
+            Auditoria? auditoriaDocumentoLegal = null;
+
             // ── Commit 4 — consolidación de identidad Veriff → Persona (Casos 1-6) ──
             // Solo aplica cuando la decisión mapeada es APROBADO, la sesión es
             // vigente (EsActual=true) y el gate de 4 campos está completo
@@ -1067,6 +1072,14 @@ public class KycService
                             persona.IdentidadVerificadaFecha     = DateTime.UtcNow;
                             persona.FechaActualizacion           = DateTime.UtcNow;
 
+                            // Diseño A — TipoDocumento/NumeroDocumento legales, bajo
+                            // el mismo lock y transacción. PrimerApellido NO se toca:
+                            // Veriff solo entrega person.lastName "como aparece en el
+                            // documento" (en la cédula CO trae ambos apellidos) y no
+                            // existe un campo inequívoco de primer apellido.
+                            auditoriaDocumentoLegal = await ConsolidarDocumentoLegalAsync(persona, parsed, usuario.IdUsuario, kyc.IdKycVerificacion, ct);
+                            personaDocumentoLegal   = persona;
+
                             _db.Auditorias.Add(new Auditoria
                             {
                                 IdUsuario     = usuario.IdUsuario,
@@ -1122,6 +1135,37 @@ public class KycService
                     "Veriff decisión ({Origen}): idUsuario={IdUsuario} caso identidad={Caso} detectado tardíamente por el índice único — se descarta este intento completo.",
                     origen, usuario.IdUsuario, IdentidadCaso.DocumentoDuplicado);
                 return new VeriffDecisionProcessResult(false, null, false, false);
+            }
+            catch (DbUpdateException ex) when (EsViolacionDocumentoLegalDuplicado(ex)
+                                               && personaDocumentoLegal != null && auditoriaDocumentoLegal != null)
+            {
+                // Diseño A — duplicado tardío del documento legal (otro escritor
+                // que no toma el lock de identidad). La aprobación KYC es válida
+                // y NO se pierde: se deshace únicamente el documento legal (antes
+                // vacío por construcción) y se reintenta. EF revierte al savepoint
+                // previo a SaveChanges, así que la transacción sigue utilizable.
+                personaDocumentoLegal.TipoDocumento   = null;
+                personaDocumentoLegal.NumeroDocumento = null;
+                _db.Auditorias.Remove(auditoriaDocumentoLegal);
+                AuditarDocumentoLegal(personaDocumentoLegal, usuario.IdUsuario, kyc.IdKycVerificacion, "KYC_DOCUMENTO_LEGAL_DUPLICADO", null,
+                    "Documento legal no establecido: ya está asociado a otra Persona de la misma unidad de negocio (detectado por el índice único).");
+
+                _logger.LogWarning(
+                    "Veriff decisión ({Origen}): idUsuario={IdUsuario} documento legal duplicado detectado tardíamente por IX_personas_documento — se conserva la decisión KYC sin documento legal.",
+                    origen, usuario.IdUsuario);
+
+                try
+                {
+                    await _db.SaveChangesAsync(ct);
+                }
+                catch (DbUpdateException ex2) when (EsViolacionDocumentoVerificadoDuplicado(ex2))
+                {
+                    await tx.RollbackAsync(ct);
+                    _logger.LogWarning(
+                        "Veriff decisión ({Origen}): idUsuario={IdUsuario} caso identidad={Caso} detectado tardíamente por el índice único — se descarta este intento completo.",
+                        origen, usuario.IdUsuario, IdentidadCaso.DocumentoDuplicado);
+                    return new VeriffDecisionProcessResult(false, null, false, false);
+                }
             }
 
             await tx.CommitAsync(ct);
@@ -1238,6 +1282,91 @@ public class KycService
         && (sqlEx.Number == 2601 || sqlEx.Number == 2627)
         && sqlEx.Message.Contains("UX_personas_documento_verificado", StringComparison.OrdinalIgnoreCase);
 
+    // Diseño A — índice único filtrado de 032 sobre
+    // (id_unidad_negocio, tipo_documento, numero_documento).
+    private static bool EsViolacionDocumentoLegalDuplicado(DbUpdateException ex) =>
+        ex.InnerException is SqlException sqlEx
+        && (sqlEx.Number == 2601 || sqlEx.Number == 2627)
+        && sqlEx.Message.Contains("IX_personas_documento", StringComparison.OrdinalIgnoreCase);
+
+    // ── Diseño A — consolidación del documento legal desde Veriff (solo Caso 1).
+    // Solo rellena si TipoDocumento y NumeroDocumento están ambos vacíos; nunca
+    // sobrescribe. Ningún valor de auditoría ni log lleva número ni apellido.
+    // La escritura de identidad verificada del Caso 1 continúa aunque el
+    // documento legal no pueda establecerse. Devuelve la auditoría
+    // KYC_DOCUMENTO_LEGAL_ESTABLECIDO si el documento se estableció (para
+    // deshacerlo ante un duplicado tardío); null en cualquier otro desenlace.
+    private async Task<Auditoria?> ConsolidarDocumentoLegalAsync(
+        Persona persona, VeriffDecisionParsed parsed, long idUsuario, long idKycVerificacion, CancellationToken ct)
+    {
+        var mapeo = TipoDocumentoVeriffMapper.Mapear(parsed.DocumentType, parsed.DocumentCountry, parsed.DocumentNumber);
+
+        if (mapeo.Resultado == TipoDocumentoVeriffMapper.Resultado.TipoNoMapeable)
+        {
+            AuditarDocumentoLegal(persona, idUsuario, idKycVerificacion, "KYC_DOCUMENTO_TIPO_NO_MAPEABLE", null,
+                "Documento legal no establecido: el tipo/país documental de Veriff no tiene correspondencia cerrada en XPAY.");
+            return null;
+        }
+
+        if (mapeo.Resultado == TipoDocumentoVeriffMapper.Resultado.NumeroInvalido)
+        {
+            AuditarDocumentoLegal(persona, idUsuario, idKycVerificacion, "KYC_DOCUMENTO_NUMERO_INVALIDO", null,
+                $"Documento legal no establecido: número vacío, con caracteres no permitidos o de más de {TipoDocumentoVeriffMapper.LongitudMaximaNumero} caracteres (no se trunca).");
+            return null;
+        }
+
+        var tipoVacio   = string.IsNullOrWhiteSpace(persona.TipoDocumento);
+        var numeroVacio = string.IsNullOrWhiteSpace(persona.NumeroDocumento);
+
+        if (!tipoVacio || !numeroVacio)
+        {
+            var coincide = !tipoVacio && !numeroVacio
+                && string.Equals(persona.TipoDocumento!.Trim(), mapeo.TipoDocumento, StringComparison.OrdinalIgnoreCase)
+                && LibranzaAnticipoService.NormalizarDocumento(persona.NumeroDocumento) == mapeo.NumeroDocumento;
+
+            if (!coincide)
+                AuditarDocumentoLegal(persona, idUsuario, idKycVerificacion, "KYC_DOCUMENTO_DECLARADO_DIFIERE", null,
+                    "Documento legal existente no modificado: difiere del verificado por Veriff o está incompleto.");
+            return null;
+        }
+
+        var duplicado = await _db.Personas.AnyAsync(p =>
+            p.IdPersona != persona.IdPersona &&
+            p.IdUnidadNegocio == persona.IdUnidadNegocio &&
+            p.TipoDocumento == mapeo.TipoDocumento &&
+            p.NumeroDocumento == mapeo.NumeroDocumento, ct);
+
+        if (duplicado)
+        {
+            AuditarDocumentoLegal(persona, idUsuario, idKycVerificacion, "KYC_DOCUMENTO_LEGAL_DUPLICADO", null,
+                "Documento legal no establecido: ya está asociado a otra Persona de la misma unidad de negocio.");
+            return null;
+        }
+
+        persona.TipoDocumento   = mapeo.TipoDocumento;
+        persona.NumeroDocumento = mapeo.NumeroDocumento;
+
+        return AuditarDocumentoLegal(persona, idUsuario, idKycVerificacion, "KYC_DOCUMENTO_LEGAL_ESTABLECIDO",
+            $"TIPO:{mapeo.TipoDocumento}", "Documento legal establecido desde la identidad verificada por Veriff.");
+    }
+
+    private Auditoria AuditarDocumentoLegal(
+        Persona persona, long idUsuario, long idKycVerificacion, string accion, string? valorNuevo, string observacion) =>
+        _db.Auditorias.Add(new Auditoria
+        {
+            IdUsuario     = idUsuario,
+            IdPersona     = persona.IdPersona,
+            Modulo        = "KYC",
+            Accion        = accion,
+            Entidad       = "personas",
+            IdEntidad     = persona.IdPersona.ToString(),
+            Resultado     = "EXITOSO",
+            ValorAnterior = valorNuevo is null ? null : "VACIO",
+            ValorNuevo    = valorNuevo,
+            Observacion   = observacion,
+            FechaEvento   = DateTime.UtcNow,
+        }).Entity;
+
     private static string? MapVeriffDecision(string? decision) =>
         decision?.ToLowerInvariant() switch
         {
@@ -1338,7 +1467,7 @@ public class KycService
     // pero en GET /decision significa "la llamada HTTP tuvo éxito" — un dato
     // completamente distinto. Ese fallback, si aplica, permanece fuera de
     // este parser, en el adaptador de cada camino (webhook vs GET).
-    private static VeriffDecisionParsed? ParseVeriffDecision(JsonElement verification)
+    internal static VeriffDecisionParsed? ParseVeriffDecision(JsonElement verification)
     {
         if (verification.ValueKind != JsonValueKind.Object)
             return null;
@@ -1357,7 +1486,8 @@ public class KycService
             LastName:        hasPerson   ? GetTrimmedString(person, "lastName")      : null,
             DocumentType:    hasDocument ? GetTrimmedString(document, "type")        : null,
             DocumentNumber:  hasDocument ? GetTrimmedString(document, "number")      : null,
-            DateOfBirth:     hasPerson   ? ParseVeriffDateOnly(person, "dateOfBirth") : null
+            DateOfBirth:     hasPerson   ? ParseVeriffDateOnly(person, "dateOfBirth") : null,
+            DocumentCountry: hasDocument ? GetTrimmedString(document, "country")     : null
         );
     }
 
