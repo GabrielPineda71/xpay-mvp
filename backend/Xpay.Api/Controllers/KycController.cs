@@ -107,7 +107,7 @@ public class KycController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            var code = ex.Message.StartsWith("Veriff sandbox no configurado") ? 503 : 400;
+            var code = ex.Message == KycService.MensajeVeriffNoDisponible ? 503 : 400;
             return StatusCode(code, new { success = false, message = ex.Message });
         }
         catch (KycUsuarioConcurrenteException ex)

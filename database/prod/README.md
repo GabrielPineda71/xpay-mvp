@@ -20,7 +20,8 @@ Paquete reproducible para crear el esquema de la base XPAY PROD (vacía) a parti
 | `tools/validar_paquete.py` | Validador local (no ejecuta SQL, no se conecta a nada). |
 | `tools/ejecutar_migraciones.py` | Ejecutor controlado por bloques. Por defecto **solo muestra el plan**. |
 | `verificacion_post_migracion.sql` | Comprobaciones de solo lectura tras migrar. |
-| `operacion/*.sql` | Inventario y verificación de B1, solo lectura. |
+| `operacion/*.sql` | Inventario y verificación de B1, solo lectura; y `crear_primer_admin.sql` (escritura, un solo uso, autorización aparte). |
+| `tools/hash_clave/` | Consola .NET que genera el hash BCrypt de la clave inicial del primer administrador (no la muestra ni la guarda). |
 | `PROCEDIMIENTO_EJECUCION_PROD.md` | Procedimiento de ejecución controlada. |
 
 Regenerar y validar (desde la raíz del repositorio):
@@ -102,7 +103,9 @@ No se introdujo ningún cambio estructural nuevo. Efectos documentados, pendient
 3. Aprobar o sustituir los valores de 016b, 021b y 045b.
 4. Aprobar o descartar las correcciones de integridad propuestas (013, 014, 019).
 5. Confirmar a qué cuenta bancaria real corresponde 110102 "Banco Coopcentral XPAY" en PROD, y la configuración de `PASSPORT_ACCOUNT_ID` (el arranque inserta en `cuentas_operativas` si está definida).
-6. Primer administrador de PROD: procedimiento controlado aparte (ningún script lo crea).
+6. Primer administrador de PROD: `operacion/crear_primer_admin.sql` (un solo uso,
+   aborta si ya existe un SUPERUSUARIO/ADMIN_XPAY activo) con el hash de
+   `tools/hash_clave`. Su ejecución requiere autorización expresa.
 7. Vía de acceso para ejecutar (P1 o P2) y criterio de ventana
    (procedimiento, secciones 1 y 6.3).
 8. Autorizar el commit de este paquete para fijar su origen.

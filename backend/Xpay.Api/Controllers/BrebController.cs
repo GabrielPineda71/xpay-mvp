@@ -642,6 +642,17 @@ public class BrebController : ControllerBase
                 new { idUsuario, idBrebRetiro = retiro.IdBrebRetiro, estado = retiro.Estado });
             return Ok(new { success = true, data = ToRetiroRealResponse(retiro) });
         }
+        catch (Xpay.Api.Exceptions.OperacionFinancieraBloqueadaException ex)
+        {
+            // Piloto PROD — pausa/configuración → 503; tope o límite diario XPAY → 400.
+            var accion = ex.Motivo == MotivoBloqueoFinanciero.LimiteDiarioXpay
+                ? "BREB_RETIRO_REAL_BLOQUEADO_LIMITE_DIARIO_XPAY"
+                : ex.EsLimite ? "BREB_RETIRO_REAL_BLOQUEADO_TOPE_OPERACION" : "BREB_RETIRO_REAL_BLOQUEADO_CONTROL";
+            _audit.LogSensitiveAction(HttpContext, accion, new { idUsuario, motivo = ex.Motivo.ToString() });
+            return ex.EsLimite
+                ? BadRequest(new { success = false, message = ex.Message })
+                : StatusCode(503, new { success = false, message = ex.Message });
+        }
         catch (InvalidOperationException ex)
         {
             _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_REAL_RECHAZADO", new { idUsuario, motivo = ex.Message });

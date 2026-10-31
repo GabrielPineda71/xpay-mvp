@@ -45,6 +45,15 @@ public class KycService
     private readonly IConfiguration      _config;
     private readonly IHttpClientFactory  _http;
     private readonly ILogger<KycService> _logger;
+    private readonly IAmbienteXpay       _ambiente;
+
+    // Piloto PROD — corrección 1: mensaje único cuando la configuración de
+    // Veriff está incompleta o es inválida. KycController lo traduce a 503.
+    internal const string MensajeVeriffNoDisponible =
+        "Verificación de identidad no disponible. Contacta al administrador.";
+
+    // Ruta exacta del webhook de decisión (KycController: api/kyc + veriff/webhook).
+    internal const string RutaWebhookVeriff = "/api/kyc/veriff/webhook";
 
     private static readonly HashSet<string> EstadosValidos = new(StringComparer.Ordinal)
     {
@@ -61,12 +70,14 @@ public class KycService
         XpayDbContext db,
         IConfiguration config,
         IHttpClientFactory httpClientFactory,
-        ILogger<KycService> logger)
+        ILogger<KycService> logger,
+        IAmbienteXpay ambiente)
     {
-        _db     = db;
-        _config = config;
-        _http   = httpClientFactory;
-        _logger = logger;
+        _db       = db;
+        _config   = config;
+        _http     = httpClientFactory;
+        _logger   = logger;
+        _ambiente = ambiente;
     }
 
     public async Task<MiEstadoKycResponse> GetMiEstadoAsync(long idUsuario)
@@ -91,32 +102,52 @@ public class KycService
             EstadoKyc          = datos.EstadoKycActual,
             FechaActualizacion = datos.FechaKycActualizacion,
             SessionUrl         = sessionUrl,
-            Nota               = "QA/Demo — sin verificación real de identidad en esta fase.",
+            Nota               = _ambiente.EsProductivo
+                ? string.Empty
+                : "QA/Demo — sin verificación real de identidad en esta fase.",
         };
     }
 
+    // Piloto PROD — corrección 1. El callback viene de VERIFF_CALLBACK_URL:
+    // https absoluto, sin credenciales en la URL, sin query/fragment y con la
+    // ruta exacta del webhook de decisión. Cualquier otra cosa es inválida.
+    internal static bool EsCallbackVeriffValido(string? url)
+    {
+        if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri)) return false;
+        return uri.Scheme == Uri.UriSchemeHttps
+            && string.IsNullOrEmpty(uri.UserInfo)
+            && string.IsNullOrEmpty(uri.Query)
+            && string.IsNullOrEmpty(uri.Fragment)
+            && string.Equals(uri.AbsolutePath, RutaWebhookVeriff, StringComparison.Ordinal);
+    }
+
+    // vendorData sin PII: solo ambiente + id interno.
+    internal static string VendorDataVeriff(long idUsuario, bool esProductivo) =>
+        $"XPAY-{(esProductivo ? "PROD" : "QA")}-USUARIO-{idUsuario}";
+
     public async Task<IniciarKycResponse> CreateVeriffSessionAsync(long idUsuario)
     {
-        // Read all three config values — validate presence, never log values
-        var apiKey  = _config["VERIFF_API_KEY"];
-        var baseUrl = _config["VERIFF_BASE_URL"];
-        var secret  = _config["VERIFF_SHARED_SECRET"];
+        // Read all config values — validate presence, never log values
+        var apiKey   = _config["VERIFF_API_KEY"];
+        var baseUrl  = _config["VERIFF_BASE_URL"];
+        var secret   = _config["VERIFF_SHARED_SECRET"];
+        var callback = _config["VERIFF_CALLBACK_URL"];
 
-        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(secret))
+        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(secret)
+            || !EsCallbackVeriffValido(callback))
         {
-            _logger.LogWarning("Veriff sandbox config incomplete for user {IdUsuario}.", idUsuario);
-            throw new InvalidOperationException(
-                "Veriff sandbox no configurado. Contacta al administrador.");
+            _logger.LogWarning("Veriff config incompleta o inválida para user {IdUsuario}.", idUsuario);
+            throw new InvalidOperationException(MensajeVeriffNoDisponible);
         }
 
-        // No-PII vendor data — internal QA tracking only, no personal data sent to Veriff
-        var vendorData = $"XPAY-QA-USUARIO-{idUsuario}";
+        // No-PII vendor data — no personal data sent to Veriff
+        var vendorData = VendorDataVeriff(idUsuario, _ambiente.EsProductivo);
 
         var payload = new
         {
             Verification = new
             {
-                Callback   = "https://xpay-api-qa.azurewebsites.net/api/kyc/veriff/webhook",
+                Callback   = callback!.Trim(),
                 VendorData = vendorData,
             }
         };

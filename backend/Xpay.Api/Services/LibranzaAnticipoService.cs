@@ -11,6 +11,7 @@ public class LibranzaAnticipoService
 {
     private readonly XpayDbContext                      _db;
     private readonly ILogger<LibranzaAnticipoService>  _logger;
+    private readonly ControlOperacionesFinancieras     _control;
 
     // Ledger account codes
     private const string CodAnticipoCartera = "130104"; // Cartera Anticipo Nómina (ACTIVO, D)
@@ -21,10 +22,12 @@ public class LibranzaAnticipoService
 
     private const long IdUnidadNegocio = 1;
 
-    public LibranzaAnticipoService(XpayDbContext db, ILogger<LibranzaAnticipoService> logger)
+    public LibranzaAnticipoService(
+        XpayDbContext db, ILogger<LibranzaAnticipoService> logger, ControlOperacionesFinancieras control)
     {
-        _db     = db;
-        _logger = logger;
+        _db      = db;
+        _logger  = logger;
+        _control = control;
     }
 
     // ── Obtener corte vigente ─────────────────────────────────────────────────
@@ -235,6 +238,10 @@ public class LibranzaAnticipoService
             throw new ArgumentException("Idempotency-Key debe ser un identificador válido.");
         if (req.ValorSolicitado <= 0)
             throw new InvalidOperationException("El valor solicitado debe ser mayor a cero.");
+
+        // Piloto PROD — solo el interruptor: el límite del anticipo sigue siendo
+        // el porcentaje parametrizado del pago de nómina y el cupo disponible.
+        _control.ExigirInterruptor();
 
         var fechaSimulada = req.FechaSimulada is not null
             ? DateOnly.Parse(req.FechaSimulada)

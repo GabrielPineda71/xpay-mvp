@@ -135,6 +135,12 @@ public class LibranzaClienteController : ControllerBase
         {
             return StatusCode(503, new { message = ex.Message });
         }
+        catch (OperacionFinancieraBloqueadaException ex)
+        {
+            // Piloto PROD — pausa financiera: anticipos nuevos bloqueados.
+            _logger.LogWarning("LIBRANZA_ANTICIPO_BLOQUEADO_CONTROL idUsuario={Id} motivo={Motivo}", idUsuario, ex.Motivo);
+            return StatusCode(503, new { message = ex.Message });
+        }
         catch (UnauthorizedAccessException ex)
         {
             return StatusCode(403, new { message = ex.Message });

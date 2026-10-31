@@ -52,6 +52,10 @@ builder.Services.AddScoped<QaIdentidadPruebaService>();
 builder.Services.AddScoped<QaClientePruebaService>();
 // XPAY-717 - frontera central QA/PROD (lista cerrada Development/QA/Test).
 builder.Services.AddSingleton<IAmbienteXpay, AmbienteXpay>();
+// Piloto PROD — interruptor financiero y límites de retiro (lee la
+// configuración en cada llamada; sin estado propio).
+builder.Services.AddSingleton<ControlOperacionesFinancieras>();
+builder.Services.AddScoped<AltaUsuarioPilotoService>();
 builder.Services.AddScoped<BrebService>();
 builder.Services.AddScoped<LibranzaService>();
 builder.Services.AddScoped<LibranzaEmpleadosService>();

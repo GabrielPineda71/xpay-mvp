@@ -93,7 +93,8 @@ public sealed class LibranzaAnticipoMultipleTests
     private static async Task<AnticipoResponse> SolicitarAsync(string cs, SembradoEmpleado s, decimal valor)
     {
         await using var ctx = NuevoContexto(cs);
-        var svc = new LibranzaAnticipoService(ctx, NullLogger<LibranzaAnticipoService>.Instance);
+        var svc = new LibranzaAnticipoService(ctx, NullLogger<LibranzaAnticipoService>.Instance,
+            new Xpay.Api.Common.ControlOperacionesFinancieras(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), Xpay.Api.Tests.Common.AmbienteXpayTests.Ambiente("QA")));
         var req = new SolicitarAnticipoRequest { ValorSolicitado = valor, FechaSimulada = FechaSimulada };
         var r = await svc.SolicitarAnticipoAsync(s.IdUsuario, req, Guid.NewGuid());
         return r.Data;

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
 using Xpay.Api.Integrations.Passport;
@@ -33,16 +34,25 @@ public class BrebPaymentService
     private readonly IPassportPaymentClient    _paymentClient;
     private readonly IConfiguration            _config;
     private readonly ILogger<BrebPaymentService> _logger;
+    private readonly ControlOperacionesFinancieras _control;
+
+    // Piloto PROD — estados que devolvieron (o nunca tomaron) la reserva: no
+    // cuentan para el límite diario. Todo lo demás cuenta, incluido un envío
+    // incierto (ENVIADO_PASSPORT sin confirmación).
+    internal static readonly string[] EstadosSinSalidaDeDinero = ["RECHAZADO", "ERROR", "CANCELADO"];
 
     public BrebPaymentService(
         XpayDbContext db, IPassportPaymentClient paymentClient, IConfiguration config,
-        ILogger<BrebPaymentService> logger)
+        ILogger<BrebPaymentService> logger, ControlOperacionesFinancieras control)
     {
         _db            = db;
         _paymentClient = paymentClient;
         _config        = config;
         _logger        = logger;
+        _control       = control;
     }
+
+    internal static string ClaveLockRetiroUsuario(long idUsuario) => $"XPAY:BREB_RETIRO_USUARIO:{idUsuario}";
 
     // ═══════════════════════════════════════════════════════════════════
     // FASE 4/6 — Solicitar retiro real: valida llave RESUELTA REALMENTE
@@ -73,6 +83,10 @@ public class BrebPaymentService
         if (monto <= 0)
             throw new InvalidOperationException("El valor del retiro debe ser mayor a cero.");
 
+        // Piloto PROD — corte rápido de la pausa antes de cualquier lectura;
+        // los límites se vuelven a evaluar completos bajo lock más abajo.
+        _control.ExigirInterruptor();
+
         var wallet = await _db.Wallets.FirstOrDefaultAsync(
             w => w.IdPersona == idPersona && w.TipoWallet == "PERSONA" && w.Estado == "ACTIVA",
             cancellationToken)
@@ -101,6 +115,14 @@ public class BrebPaymentService
         await using var dbTx = await _db.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            // Piloto PROD — serializa los retiros reales del MISMO usuario
+            // (aunque tuviera varias wallets) para que el acumulado diario se
+            // lea y se supere bajo exclusión mutua. Siempre antes del UPDLOCK
+            // de saldo; ningún otro camino toma esta clave, así que no hay ciclo.
+            var lockUsuario = await AppLockHelper.AdquirirAsync(_db, ClaveLockRetiroUsuario(idUsuario), cancellationToken);
+            if (lockUsuario < 0)
+                throw new InvalidOperationException("Hay otro retiro en curso. Intenta de nuevo en unos segundos.");
+
             // Mismo patrón de lock pesimista ya probado en
             // WalletOperacionService.TransferirWalletAsync/
             // RecargarWalletManualAsync — necesario para que dos
@@ -110,6 +132,17 @@ public class BrebPaymentService
                 .FromSqlInterpolated($"SELECT * FROM wallet_saldos WITH (UPDLOCK, ROWLOCK) WHERE id_wallet = {wallet.IdWallet}")
                 .FirstOrDefaultAsync(cancellationToken)
                 ?? throw new InvalidOperationException("La wallet no tiene registro de saldo.");
+
+            // Piloto PROD — tope por operación (1.000 UVB) y límite diario
+            // interno XPAY, evaluados bajo los dos locks.
+            var inicioDiaUtc = ControlOperacionesFinancieras.InicioDiaColombiaUtc(nowUtc);
+            var finDiaUtc    = inicioDiaUtc.AddDays(1);
+            var acumuladoDia = await _db.PassportBrebRetiros
+                .Where(r => r.IdUsuario == idUsuario && r.TipoSujeto == "USUARIO"
+                    && r.FechaSolicitud >= inicioDiaUtc && r.FechaSolicitud < finDiaUtc
+                    && !EstadosSinSalidaDeDinero.Contains(r.Estado))
+                .SumAsync(r => (decimal?)r.Valor, cancellationToken) ?? 0m;
+            _control.ExigirRetiro(monto, acumuladoDia, nowUtc);
 
             var reserva = WalletReservationCalculator.TryReserve(saldo.SaldoDisponible, saldo.SaldoRetenido, monto);
             if (!reserva.Success)

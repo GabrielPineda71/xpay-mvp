@@ -18,13 +18,36 @@ namespace Xpay.Api.Controllers;
 [Route("api/admin/usuarios")]
 public class UsuariosAdminController : ControllerBase
 {
-    private readonly UsuarioAdminService _usuarioAdminService;
-    private readonly AuditLogService     _audit;
+    private readonly UsuarioAdminService      _usuarioAdminService;
+    private readonly AuditLogService          _audit;
+    private readonly AltaUsuarioPilotoService _altaPiloto;
 
-    public UsuariosAdminController(UsuarioAdminService usuarioAdminService, AuditLogService audit)
+    public UsuariosAdminController(
+        UsuarioAdminService usuarioAdminService, AuditLogService audit, AltaUsuarioPilotoService altaPiloto)
     {
         _usuarioAdminService = usuarioAdminService;
         _audit                = audit;
+        _altaPiloto           = altaPiloto;
+    }
+
+    // Piloto PROD — corrección 2b: única vía de alta de usuario final en PROD,
+    // acotada por configuración y por un máximo de altas (ver
+    // AltaUsuarioPilotoService). Deshabilitada → 404.
+    [HttpPost("piloto")]
+    public async Task<IActionResult> AltaUsuarioPiloto([FromBody] AltaUsuarioPilotoRequest request)
+    {
+        if (!TryGetUsuarioId(out var idAdmin)) return Unauthorized(new { success = false, message = "Token inválido." });
+        _audit.LogSensitiveAction(HttpContext, "ADMIN_ALTA_USUARIO_PILOTO_ATTEMPT", new { idAdmin });
+        try
+        {
+            var data = await _altaPiloto.CrearAsync(request, idAdmin);
+            _audit.LogSensitiveAction(HttpContext, "ADMIN_ALTA_USUARIO_PILOTO_SUCCESS", new { idAdmin, idUsuario = data.IdUsuario });
+            return Ok(new { success = true, data });
+        }
+        catch (AltaUsuarioPilotoNoDisponibleException) { return NotFound(); }
+        catch (UnauthorizedAccessException)            { return Forbid(); }
+        catch (InvalidOperationException ex)           { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno en el alta del usuario del piloto." }); }
     }
 
     private bool TryGetUsuarioId(out long idUsuario) =>

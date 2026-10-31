@@ -152,7 +152,8 @@ public sealed class UsuarioAdminJerarquiaTests
             var s = await SembrarAsync(cs, creados);
             await using var ctx = NuevoContexto(cs);
             var c = new UsuariosAdminController(new UsuarioAdminService(ctx),
-                new AuditLogService(NullLogger<AuditLogService>.Instance, new ConfigurationBuilder().Build()))
+                new AuditLogService(NullLogger<AuditLogService>.Instance, new ConfigurationBuilder().Build()),
+                new AltaUsuarioPilotoService(ctx, new ConfigurationBuilder().Build(), Xpay.Api.Tests.Common.AmbienteXpayTests.Ambiente("QA")))
             {
                 ControllerContext = new ControllerContext
                 {

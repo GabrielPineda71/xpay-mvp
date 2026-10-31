@@ -275,7 +275,8 @@ public sealed class KycDocumentoLegalSqlTests
         });
 
         await using var db = NuevoContexto(cs, interceptor);
-        var servicio = new KycService(db, new ConfigurationBuilder().Build(), new SinHttp(), NullLogger<KycService>.Instance);
+        var servicio = new KycService(db, new ConfigurationBuilder().Build(), new SinHttp(), NullLogger<KycService>.Instance,
+            Xpay.Api.Tests.Common.AmbienteXpayTests.Ambiente("QA"));
         return (await servicio.ProcessVeriffWebhookAsync(body)).Processed;
     }
 

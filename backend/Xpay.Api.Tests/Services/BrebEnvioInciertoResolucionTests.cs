@@ -248,7 +248,8 @@ public sealed class BrebEnvioInciertoResolucionTests
     {
         await using var ctx = NuevoContexto(cs);
         var svc = new BrebPaymentService(ctx, new FakePassportPaymentClient(),
-            new ConfigurationBuilder().Build(), NullLogger<BrebPaymentService>.Instance);
+            new ConfigurationBuilder().Build(), NullLogger<BrebPaymentService>.Instance,
+            new Xpay.Api.Common.ControlOperacionesFinancieras(new ConfigurationBuilder().Build(), Xpay.Api.Tests.Common.AmbienteXpayTests.Ambiente("QA")));
         return await accion(svc);
     }
 
