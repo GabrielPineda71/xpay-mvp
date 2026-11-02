@@ -80,10 +80,29 @@ export function useQrScanner({ active, elementId, onDecode, onError }: UseQrScan
     const scanner = new Html5Qrcode(elementId);
     scannerRef.current = scanner;
 
+    // Se pide a la cámara la proporción del contenedor a pantalla completa:
+    // si el navegador la respeta, object-fit: cover no recorta y la zona
+    // analizada coincide con el marco. Es solo una preferencia (ideal): si no
+    // la respeta, la zona puede desviarse algo del marco visible.
+    const contenedor = document.getElementById(elementId);
+    const aspectRatio = contenedor && contenedor.clientHeight > 0
+      ? contenedor.clientWidth / contenedor.clientHeight
+      : undefined;
+
     try {
       await scanner.start(
         { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
+        // Recuadro de lectura = tamaño real del marco visible de
+        // QrScannerOverlay (hermano del contenedor del vídeo). Sin marco
+        // medible, 70 % del lado menor como antes.
+        { fps: 10, aspectRatio, qrbox: (w: number, h: number) => {
+          const marco = document.getElementById(elementId)?.parentElement
+            ?.querySelector('.qr-fullscreen-frame');
+          const medido = marco ? Math.floor(marco.getBoundingClientRect().width) : 0;
+          const deseado = medido > 0 ? medido : Math.floor(Math.min(w, h) * 0.7);
+          const lado = Math.min(Math.max(150, deseado), Math.floor(Math.min(w, h)));
+          return { width: lado, height: lado };
+        } },
         (text) => { if (isStillWanted()) onDecodeRef.current(text); },
         () => { /* per-frame decode miss — normal, ignored */ },
       );

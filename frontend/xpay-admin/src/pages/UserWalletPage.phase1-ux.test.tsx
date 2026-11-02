@@ -465,3 +465,95 @@ describe('UserWalletPage — XPAY-422B: cámara física única (Enviar ⇄ Compr
     startDeferreds[1].resolve();
   });
 });
+
+// Lector QR a pantalla completa (QrScannerOverlay): la cámara se monta en una
+// capa fija en document.body; cerrar la detiene sin reabrirse sola, y leer un
+// QR solo cierra la capa y rellena el formulario — nunca paga ni transfiere.
+describe('UserWalletPage — lector QR a pantalla completa', () => {
+  it('Enviar: el lector se abre a pantalla completa con botón de cierre', async () => {
+    renderWalletAt('enviar');
+    await waitFor(() => expect(constructedIds).toContain('env-qr-reader'));
+    const dialog = screen.getByRole('dialog', { name: 'Escanea el QR del receptor' });
+    expect(dialog).toHaveClass('qr-fullscreen');
+    expect(dialog.parentElement).toBe(document.body);
+    expect(dialog.querySelector('#env-qr-reader')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Cerrar escáner' })).toBeInTheDocument();
+    startDeferreds[0].resolve();
+  });
+
+  it('Enviar: "Cerrar escáner" detiene la cámara y no la vuelve a abrir sola', async () => {
+    const user = userEvent.setup();
+    renderWalletAt('enviar');
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await waitFor(() => expect(callLog).toContain('start:0'));
+
+    await user.click(screen.getByRole('button', { name: 'Cerrar escáner' }));
+
+    await waitFor(() => expect(callLog).toContain('stop:0'));
+    expect(screen.queryByRole('dialog', { name: 'Escanea el QR del receptor' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Activar cámara/ })).toBeInTheDocument();
+    expect(constructedIds).toEqual(['env-qr-reader']);
+  });
+
+  it('Enviar: tras cerrar, "Activar cámara" vuelve a abrir el lector', async () => {
+    const user = userEvent.setup();
+    renderWalletAt('enviar');
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await user.click(await screen.findByRole('button', { name: 'Cerrar escáner' }));
+    await waitFor(() => expect(callLog).toContain('clear:0'));
+
+    await user.click(screen.getByRole('button', { name: /Activar cámara/ }));
+
+    await waitFor(() => expect(constructedIds).toEqual(['env-qr-reader', 'env-qr-reader']));
+    expect(screen.getByRole('dialog', { name: 'Escanea el QR del receptor' })).toBeInTheDocument();
+    startDeferreds[1].resolve();
+  });
+
+  it('Comprar: Escape cierra el lector y detiene la cámara', async () => {
+    const user = userEvent.setup();
+    renderWalletAt('pagar');
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await waitFor(() => expect(callLog).toContain('start:0'));
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(callLog).toContain('stop:0'));
+    expect(screen.queryByRole('dialog', { name: 'Escanea el QR del comercio' })).toBeNull();
+    expect(constructedIds).toEqual(['pag-qr-reader']);
+  });
+
+  it('Enviar: leer un QR cierra el lector y no ejecuta ninguna transferencia', async () => {
+    renderWalletAt('enviar');
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await waitFor(() => expect(callLog).toContain('start:0'));
+    const onDecode = startSpy.mock.calls[0][2] as (text: string) => void;
+
+    act(() => {
+      onDecode(JSON.stringify({ type: 'XPAY_TRANSFER', env: 'QA', receiverWalletId: 3, receiverUser: 'qa.usuario2' }));
+    });
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Escanea el QR del receptor' })).toBeNull());
+    await waitFor(() => expect(callLog).toContain('stop:0'));
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('Comprar: leer un QR cierra el lector y no ejecuta ningún pago', async () => {
+    renderWalletAt('pagar');
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await waitFor(() => expect(callLog).toContain('start:0'));
+    const onDecode = startSpy.mock.calls[0][2] as (text: string) => void;
+
+    act(() => {
+      onDecode(JSON.stringify({ type: 'XPAY_MERCHANT_PAYMENT', qrCode: 'QR-PRUEBA-001', amount: 15000 }));
+    });
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Escanea el QR del comercio' })).toBeNull());
+    await waitFor(() => expect(callLog).toContain('stop:0'));
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+});

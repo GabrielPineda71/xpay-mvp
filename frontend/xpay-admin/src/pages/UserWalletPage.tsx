@@ -6,6 +6,7 @@ import { get, post, HttpUncertainError } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
 import { HeroBalanceCard } from '../components/wallet/HeroBalanceCard.tsx';
 import { useQrScanner } from '../hooks/useQrScanner.ts';
+import { QrScannerOverlay } from '../components/wallet/QrScannerOverlay.tsx';
 import { useWalletNotifications } from '../components/wallet/WalletNotificationsContext.tsx';
 
 // Fase 71.2-E-C: DEMO_MAP eliminado — la wallet propia se resuelve vía
@@ -320,6 +321,10 @@ export function UserWalletPage() {
   const [envPasted,     setEnvPasted]     = useState('');
   const [envScanning,   setEnvScanning]   = useState(false);
   const [envScanErr,    setEnvScanErr]    = useState<string | null>(null);
+  // Lector a pantalla completa: tras cerrarlo (o tras un error de cámara) no
+  // se vuelve a abrir solo mientras el usuario siga en el tab; "Activar
+  // cámara" lo reabre a mano. Se rearma al salir del tab.
+  const [envAutoScanOff, setEnvAutoScanOff] = useState(false);
   const [envManual,     setEnvManual]     = useState(false);
   const [envManualDest, setEnvManualDest] = useState('');
   // XPAY-426 (Block B) — reemplaza el mensaje inline QA-WALLET-7A que
@@ -389,6 +394,7 @@ export function UserWalletPage() {
   const [pagPasted,       setPagPasted]       = useState('');
   const [pagScanning,     setPagScanning]     = useState(false);
   const [pagScanErr,      setPagScanErr]      = useState<string | null>(null);
+  const [pagAutoScanOff,  setPagAutoScanOff]  = useState(false);
   const [pagMetodoPago,   setPagMetodoPago]   = useState<'wallet' | 'cupo' | null>(null);
   // Fase 71.2-E-G: misma idea que envIdemRef, para el pago QR.
   const pagIdemRef = useRef<{ key: string; qrCode: string; valor: string } | null>(null);
@@ -677,10 +683,21 @@ export function UserWalletPage() {
       else if (scannerMode === 'pagar') { setPagScanning(false); parseMerchantQrRef.current(text); }
     },
     onError: (message) => {
-      if (scannerMode === 'enviar') { setEnvScanning(false); setEnvScanErr(message); }
-      else if (scannerMode === 'pagar') { setPagScanning(false); setPagScanErr(message); }
+      if (scannerMode === 'enviar') { setEnvAutoScanOff(true); setEnvScanning(false); setEnvScanErr(message); }
+      else if (scannerMode === 'pagar') { setPagAutoScanOff(true); setPagScanning(false); setPagScanErr(message); }
     },
   });
+
+  // Cierre del lector a pantalla completa: detiene la cámara (vía
+  // useQrScanner) y suspende el auto-inicio. No toca destino, monto ni PIN.
+  const cerrarEscaneoEnviar = useCallback(() => {
+    setEnvAutoScanOff(true);
+    setEnvScanning(false);
+  }, []);
+  const cerrarEscaneoPagar = useCallback(() => {
+    setPagAutoScanOff(true);
+    setPagScanning(false);
+  }, []);
 
   // ── Auto-inicio de escaneo al entrar a 'enviar'/'pagar', y liberación al
   //    salir (XPAY-390 R4/R5) ─────────────────────────────────────────────
@@ -689,16 +706,16 @@ export function UserWalletPage() {
   // el mismo estado/efecto de escaneo que el botón manual usaba antes —
   // ningún handler financiero se modifica.
   useEffect(() => {
-    if (tab === 'enviar' && !envDest && !envManual && !envScanning) {
+    if (tab === 'enviar' && !envDest && !envManual && !envScanning && !envAutoScanOff) {
       setEnvScanning(true);
     }
-  }, [tab, envDest, envManual, envScanning]);
+  }, [tab, envDest, envManual, envScanning, envAutoScanOff]);
 
   useEffect(() => {
-    if (tab === 'pagar' && !pagQrCode && !pagScanning) {
+    if (tab === 'pagar' && !pagQrCode && !pagScanning && !pagAutoScanOff) {
       setPagScanning(true);
     }
-  }, [tab, pagQrCode, pagScanning]);
+  }, [tab, pagQrCode, pagScanning, pagAutoScanOff]);
 
   // Liberación explícita del flag al abandonar el tab — el guard `tab !==`
   // dentro de cada efecto de scanner ya detiene la cámara real; esto sólo
@@ -706,11 +723,13 @@ export function UserWalletPage() {
   // "envScanning=true" fantasma mientras no hay cámara activa).
   useEffect(() => {
     if (tab !== 'enviar' && envScanning) setEnvScanning(false);
-  }, [tab, envScanning]);
+    if (tab !== 'enviar' && envAutoScanOff) setEnvAutoScanOff(false);
+  }, [tab, envScanning, envAutoScanOff]);
 
   useEffect(() => {
     if (tab !== 'pagar' && pagScanning) setPagScanning(false);
-  }, [tab, pagScanning]);
+    if (tab !== 'pagar' && pagAutoScanOff) setPagAutoScanOff(false);
+  }, [tab, pagScanning, pagAutoScanOff]);
 
   // ── Auto-generación del QR base de Recibir al entrar al tab (XPAY-390 R2/
   //    R3) — SIN backend, SIN Passport: mismo `generarQr(null)` ya usado por
@@ -1101,13 +1120,13 @@ export function UserWalletPage() {
   function resetEnviar() {
     setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
     setEnvMsg(null); setEnvScanErr(null); setEnvPasted(''); setEnvManual(false); setEnvManualDest('');
-    setEnvScanning(false);
+    setEnvScanning(false); setEnvAutoScanOff(false);
     envIdemRef.current = null; // Fase 71.2-E-G: cambio material del formulario → clave nueva en el próximo intento
   }
   function resetPagar() {
     setPagQrCode(''); setPagValor(''); setPagNeedValor(false);
     setPagMsg(null); setPagScanErr(null); setPagPasted('');
-    setPagScanning(false); setPagMetodoPago(null);
+    setPagScanning(false); setPagAutoScanOff(false); setPagMetodoPago(null);
     // XPAY-451 §9 — única función que puede volver a habilitar el
     // formulario tras un éxito ("Hacer otro pago"/"✕ Cambiar"). Limpia
     // también el preview y el estado de éxito — un QR/pago anterior nunca
@@ -1376,14 +1395,15 @@ export function UserWalletPage() {
               opciones". */}
           {!envDest && !envManual && (
             <div className="wallet-send-scan">
-              <p className="wallet-send-scan-title">Escanea el QR del receptor</p>
-
-              {envScanning && <div id="env-qr-reader" className="qr-reader-container" />}
+              {/* Con el lector abierto, el título lo muestra QrScannerOverlay. */}
+              {!envScanning && <p className="wallet-send-scan-title">Escanea el QR del receptor</p>}
 
               {envScanning && (
-                <button className="wallet-send-secondary-btn wallet-send-cancel-btn" onClick={() => setEnvScanning(false)}>
-                  Cancelar escaneo
-                </button>
+                <QrScannerOverlay
+                  readerId="env-qr-reader"
+                  title="Escanea el QR del receptor"
+                  onClose={cerrarEscaneoEnviar}
+                />
               )}
               {!envScanning && (
                 <button
@@ -1529,14 +1549,15 @@ export function UserWalletPage() {
 
           {!pagQrCode && (
             <div className="wallet-pay-scan">
-              <p className="wallet-pay-scan-title">Escanea el QR del comercio</p>
-
-              {pagScanning && <div id="pag-qr-reader" className="qr-reader-container" />}
+              {/* Con el lector abierto, el título lo muestra QrScannerOverlay. */}
+              {!pagScanning && <p className="wallet-pay-scan-title">Escanea el QR del comercio</p>}
 
               {pagScanning && (
-                <button className="wallet-pay-secondary-btn wallet-pay-cancel-btn" onClick={() => setPagScanning(false)}>
-                  Cancelar escaneo
-                </button>
+                <QrScannerOverlay
+                  readerId="pag-qr-reader"
+                  title="Escanea el QR del comercio"
+                  onClose={cerrarEscaneoPagar}
+                />
               )}
               {!pagScanning && (
                 <button

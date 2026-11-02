@@ -487,7 +487,9 @@ describe('XPAY-438/438A — CommerceNotifications', () => {
     panel = within(getPanel());
     expect(panel.getByText('Venta #2002')).toBeInTheDocument();
     expect(panel.getByText('Venta #2201')).toBeInTheDocument();
-  });
+    // Renderiza >2.200 ventas en dos ciclos: en local roza el límite por
+    // defecto de 5 s (se han medido ~5,4 s), así que se le da margen propio.
+  }, 15000);
 
   // XPAY-438A §4 — guard in-flight: una consulta lenta (>7s) no debe
   // solaparse con el siguiente tick del intervalo.
