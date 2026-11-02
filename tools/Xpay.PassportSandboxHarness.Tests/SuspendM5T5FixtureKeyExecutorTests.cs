@@ -66,6 +66,8 @@ public class SuspendM5T5FixtureKeyExecutorTests
 
     private const string SyntheticActiveKeyValue = "synthetic-active-0268-key-value-never-used-here";
     private const string SyntheticFixtureKeyValue = "0091234567";
+    private const string SyntheticSecondFixtureKeyValue = "999000000002";
+    private const string SyntheticThirdFixtureKeyValue = "999000000003";
     private const string SyntheticFixtureKeyId = "synthetic-fixture-key-id-from-xpay-575";
 
     private static IConfiguration CreateConfig(string? privateCaptureDir, string? activeKeyValue = SyntheticActiveKeyValue)
@@ -146,8 +148,8 @@ public class SuspendM5T5FixtureKeyExecutorTests
     public async Task MultipleCreatedArtifacts_LocalBlocked_Ambiguous_NoHttp()
     {
         var dir = NewTempDir("xpay-m5-t5-d-suspend-multiple");
-        PrepareCreatedArtifact(dir, keyId: "id-1", keyValue: "0011111111", timestampToken: "2026-01-01T00-10-00Z");
-        PrepareCreatedArtifact(dir, keyId: "id-2", keyValue: "0022222222", timestampToken: "2026-01-01T00-11-00Z");
+        PrepareCreatedArtifact(dir, keyId: "id-1", keyValue: SyntheticSecondFixtureKeyValue, timestampToken: "2026-01-01T00-10-00Z");
+        PrepareCreatedArtifact(dir, keyId: "id-2", keyValue: SyntheticThirdFixtureKeyValue, timestampToken: "2026-01-01T00-11-00Z");
         var config = CreateConfig(privateCaptureDir: dir);
         var client = new FakeKeyClient();
 

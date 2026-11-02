@@ -62,6 +62,7 @@ public class DeleteM5T5FixtureKeyExecutorTests
 
     private const string SyntheticActiveKeyValue = "synthetic-active-0268-key-value-never-used-here";
     private const string SyntheticFixtureKeyValue = "0091234567";
+    private const string SyntheticSecondFixtureKeyValue = "999000000001";
     private const string SyntheticFixtureKeyId = "synthetic-fixture-key-id-from-m5-t5-e-phase-a";
 
     private static IConfiguration CreateConfig(
@@ -135,7 +136,7 @@ public class DeleteM5T5FixtureKeyExecutorTests
         var dir = NewTempDir("xpay-m5-t5-e-delete-ambiguous");
         var fullDir = FullDirFor(dir);
         PrepareCreatedArtifact(fullDir, timestampToken: "2026-01-01T00-15-00Z");
-        PrepareCreatedArtifact(fullDir, keyId: "otro-key-id", keyValue: "0098765432", timestampToken: "2026-01-01T00-16-00Z");
+        PrepareCreatedArtifact(fullDir, keyId: "otro-key-id", keyValue: SyntheticSecondFixtureKeyValue, timestampToken: "2026-01-01T00-16-00Z");
         var client = new FakeKeyClient();
 
         var result = await Execute(CreateConfig(dir), client);
