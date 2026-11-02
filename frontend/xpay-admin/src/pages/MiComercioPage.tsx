@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { get, post } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
+import { ambienteXpay } from '../config/ambiente.ts';
 import { generarComprobantePdfCierre } from '../utils/comprobanteCierrePdf.ts';
 
 // Fuente: GET /api/comercio/dashboard (ComercioViewController, rol COMERCIO).
@@ -606,7 +607,7 @@ export function MiComercioPage() {
     try {
       const payload = JSON.stringify({
         type:     'XPAY_MERCHANT_PAYMENT',
-        env:      'QA',
+        env:      ambienteXpay(),
         version:  1,
         qrCode:   qrSeleccionado.codigoQr,
         amount:   qrComValor ? Number(qrComValor) : null,

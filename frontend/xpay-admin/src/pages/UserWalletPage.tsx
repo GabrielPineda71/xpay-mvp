@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { get, post, HttpUncertainError } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
+import { ambienteXpay } from '../config/ambiente.ts';
 import { HeroBalanceCard } from '../components/wallet/HeroBalanceCard.tsx';
 import { useQrScanner } from '../hooks/useQrScanner.ts';
 import { QrScannerOverlay } from '../components/wallet/QrScannerOverlay.tsx';
@@ -36,9 +37,11 @@ const POLL_INTERVAL_MS = 7000;
 
 // XPAY QR payload types — QA/Demo phase (no cryptographic signing in this phase)
 // See docs/QA_QR_MONEY_FLOW.md for full specification
+// `env` = ambiente del build que generó el QR (ambienteXpay()); un QR de
+// otro ambiente se rechaza al leerlo.
 interface XpayTransferQR {
   type: 'XPAY_TRANSFER';
-  env:  'QA';
+  env:  string;
   version: number;
   receiverUser:     string;
   receiverWalletId: number;
@@ -48,7 +51,7 @@ interface XpayTransferQR {
 
 interface XpayMerchantQR {
   type: 'XPAY_MERCHANT_PAYMENT';
-  env:  'QA';
+  env:  string;
   version: number;
   merchantName: string;
   qrCode:  string;
@@ -607,8 +610,9 @@ export function UserWalletPage() {
   function parseTransferQr(raw: string): void {
     try {
       const p = JSON.parse(raw) as XpayTransferQR;
+      const ambiente = ambienteXpay();
       if (p.type !== 'XPAY_TRANSFER')       { setEnvScanErr('El QR no es de tipo XPAY_TRANSFER.'); return; }
-      if (p.env  !== 'QA')                  { setEnvScanErr('El QR no corresponde al ambiente QA.'); return; }
+      if (p.env  !== ambiente)              { setEnvScanErr(`El QR no corresponde al ambiente ${ambiente}.`); return; }
       if (!p.receiverWalletId)              { setEnvScanErr('QR sin wallet destino.'); return; }
       if (p.receiverWalletId === miWallet?.idWallet)
                                              { setEnvScanErr('No puedes transferirte a tu propia wallet.'); return; }
@@ -624,6 +628,10 @@ export function UserWalletPage() {
     try {
       const p = JSON.parse(raw) as XpayMerchantQR;
       if (p.type === 'XPAY_MERCHANT_PAYMENT') {
+        // El código en texto plano (más abajo) lo resuelve el backend de cada
+        // ambiente; el JSON trae su ambiente y se exige que sea este.
+        const ambiente = ambienteXpay();
+        if (p.env !== ambiente) { setPagScanErr(`El QR no corresponde al ambiente ${ambiente}.`); return; }
         setPagQrCode(p.qrCode);
         if (p.amount && p.amount > 0) { setPagValor(String(p.amount)); setPagNeedValor(false); }
         else                          { setPagValor('');                setPagNeedValor(true); }
@@ -768,7 +776,7 @@ export function UserWalletPage() {
     try {
       const payload: XpayTransferQR = {
         type:             'XPAY_TRANSFER',
-        env:              'QA',
+        env:              ambienteXpay(),
         version:          1,
         receiverUser:     user.usuario,
         receiverWalletId: miWallet.idWallet,

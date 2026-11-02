@@ -33,6 +33,7 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE_URL: http://localhost:5000
+          VITE_XPAY_ENV: QA
 
       # XPAY-413A — build QA-específico, separado del build de validación de
       # arriba (que usa localhost:5000 y no se conserva). VITE_API_BASE_URL
@@ -43,6 +44,7 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE_URL: https://api-qa.xpaycol.com
+          VITE_XPAY_ENV: QA
 
       # XPAY-413C — server.cjs/package.json recuperados del App Service QA
       # real (xpay-admin-qa, vía Kudu VFS de solo lectura, XPAY-413B) y
@@ -74,6 +76,7 @@ jobs:
             echo "GIT_SHA=${GITHUB_SHA}"
             echo "TARGET=QA"
             echo "VITE_API_BASE_URL=https://api-qa.xpaycol.com"
+            echo "VITE_XPAY_ENV=QA"
           } > "xpay-admin-qa-build-info.txt"
 
       # Solo conserva el artifact — NO despliega nada. XPAY-414 descarga

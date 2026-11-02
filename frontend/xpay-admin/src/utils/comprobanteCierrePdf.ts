@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { fmtMoney, fmtDate } from '../utils.ts';
+import { ambienteXpay } from '../config/ambiente.ts';
 
 export interface ComprobanteCierreData {
   idCierre:                number;
@@ -28,11 +29,16 @@ export function generarComprobantePdfCierre(data: ComprobanteCierreData) {
   doc.text('XPAY — Comprobante de Cierre Diario de Comercio', left, y);
   y += 22;
 
-  doc.setFontSize(9);
-  doc.setTextColor(120);
-  doc.text('Ambiente QA · datos ficticios · sin dinero real · sin producción', left, y);
-  y += 26;
-  doc.setTextColor(0);
+  // La leyenda de ambiente solo existe en QA; en PROD el comprobante no la lleva.
+  if (ambienteXpay() === 'QA') {
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text('Ambiente QA · datos ficticios · sin dinero real · sin producción', left, y);
+    y += 26;
+    doc.setTextColor(0);
+  } else {
+    y += 8;
+  }
 
   doc.setFontSize(11);
   const rows: [string, string][] = [

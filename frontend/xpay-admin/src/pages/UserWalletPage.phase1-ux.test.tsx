@@ -4,7 +4,7 @@
 // (vi.mock) — ninguna llamada llega jamás a Passport/Payment/Wallet
 // reales. `qrcode` y `html5-qrcode` también se mockean: ninguna prueba
 // depende de canvas real ni de acceso a cámara.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
@@ -549,11 +549,71 @@ describe('UserWalletPage — lector QR a pantalla completa', () => {
     const onDecode = startSpy.mock.calls[0][2] as (text: string) => void;
 
     act(() => {
-      onDecode(JSON.stringify({ type: 'XPAY_MERCHANT_PAYMENT', qrCode: 'QR-PRUEBA-001', amount: 15000 }));
+      onDecode(JSON.stringify({ type: 'XPAY_MERCHANT_PAYMENT', env: 'QA', qrCode: 'QR-PRUEBA-001', amount: 15000 }));
     });
 
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Escanea el QR del comercio' })).toBeNull());
     await waitFor(() => expect(callLog).toContain('stop:0'));
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+});
+
+// Separación de ambientes: el QR lleva el ambiente del build (VITE_XPAY_ENV)
+// y un QR de otro ambiente se rechaza — su wallet destino es un número que
+// en el otro ambiente es de otra persona.
+describe('UserWalletPage — QR separados por ambiente (QA / PROD)', () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  async function leerQr(tab: 'enviar' | 'pagar', contenido: object) {
+    renderWalletAt(tab);
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await waitFor(() => expect(callLog).toContain('start:0'));
+    const onDecode = startSpy.mock.calls[0][2] as (text: string) => void;
+    act(() => { onDecode(JSON.stringify(contenido)); });
+  }
+
+  it('Recibir en PROD: el QR generado lleva env PROD', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    renderWalletAt('recibir');
+    const img = await waitFor(() => screen.getByAltText('QR para recibir dinero') as HTMLImageElement);
+    expect(decodeMockQr(img.src)).toMatchObject({ type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 2 });
+  });
+
+  it('Enviar en PROD: un QR de QA se rechaza y no fija destino', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'QA', receiverWalletId: 3, receiverUser: 'qa.usuario2' });
+    expect(await screen.findByText('El QR no corresponde al ambiente PROD.')).toBeInTheDocument();
+    expect(screen.queryByText('Destino confirmado')).toBeNull();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('Enviar en PROD: un QR de PROD fija el destino sin transferir', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 3, receiverUser: 'usuario.prod' });
+    expect(await screen.findByText('Destino confirmado')).toBeInTheDocument();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('Enviar en QA: un QR de PROD se rechaza', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'QA');
+    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 3, receiverUser: 'usuario.prod' });
+    expect(await screen.findByText('El QR no corresponde al ambiente QA.')).toBeInTheDocument();
+    expect(screen.queryByText('Destino confirmado')).toBeNull();
+  });
+
+  it('Comprar en PROD: un QR de comercio de QA se rechaza', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await leerQr('pagar', { type: 'XPAY_MERCHANT_PAYMENT', env: 'QA', qrCode: 'QR-PRUEBA-QA', amount: 15000 });
+    expect(await screen.findByText('El QR no corresponde al ambiente PROD.')).toBeInTheDocument();
+    expect(screen.queryByText('QR-PRUEBA-QA')).toBeNull();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('Comprar en PROD: un QR de comercio de PROD carga el código sin pagar', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await leerQr('pagar', { type: 'XPAY_MERCHANT_PAYMENT', env: 'PROD', qrCode: 'QR-PRUEBA-PROD', amount: 15000 });
+    expect(await screen.findByText('QR-PRUEBA-PROD')).toBeInTheDocument();
     expect(mockPost).not.toHaveBeenCalled();
   });
 });
