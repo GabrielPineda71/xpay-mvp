@@ -194,8 +194,8 @@ public sealed class DestinatarioWalletSqlTests
                     $"UPDATE wallets SET estado = 'INACTIVA' WHERE id_wallet = {destino.IdWallet}"));
 
                 otra.Usuarios.Add(NuevoUsuario(destino.IdPersona, "dws_extra"));
-                var ex = await Assert.ThrowsAsync<DbUpdateException>(() => otra.SaveChangesAsync());
-                Assert.Equal(1222, Assert.IsType<SqlException>(ex.InnerException).Number);
+                var ex = await Assert.ThrowsAnyAsync<Exception>(() => otra.SaveChangesAsync());
+                Assert.Equal(1222, BuscarSqlException(ex)?.Number);
             }
 
             await tx.RollbackAsync();
@@ -227,6 +227,14 @@ public sealed class DestinatarioWalletSqlTests
     {
         var ex = await Assert.ThrowsAsync<SqlException>(accion);
         Assert.Equal(1222, ex.Number);
+    }
+
+    // EF puede envolver el error de bloqueo (transitorio) en InvalidOperationException.
+    private static SqlException? BuscarSqlException(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+            if (ex is SqlException sql) return sql;
+        return null;
     }
 
     private static async Task SinEfectosAsync(string cs, Titular origen, Titular destino)
