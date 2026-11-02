@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Exceptions;
@@ -14,13 +15,15 @@ public class WalletsController : ControllerBase
 {
     private readonly WalletService          _walletService;
     private readonly WalletOperacionService _walletOperacionService;
+    private readonly DestinatarioWalletService _destinatarios;
     private readonly AuditLogService        _audit;
     private readonly ILogger<WalletsController> _logger;
 
-    public WalletsController(WalletService walletService, WalletOperacionService walletOperacionService, AuditLogService audit, ILogger<WalletsController> logger)
+    public WalletsController(WalletService walletService, WalletOperacionService walletOperacionService, DestinatarioWalletService destinatarios, AuditLogService audit, ILogger<WalletsController> logger)
     {
         _walletService          = walletService;
         _walletOperacionService = walletOperacionService;
+        _destinatarios          = destinatarios;
         _audit                  = audit;
         _logger                 = logger;
     }
@@ -90,6 +93,29 @@ public class WalletsController : ControllerBase
             _logger.LogError(ex, "Error interno consultando mi-wallet para idPersona {IdPersona}.", idPersona);
             return StatusCode(500, new { success = false, message = "Error interno consultando mi wallet." });
         }
+    }
+
+    // ── Vista previa del destinatario de una transferencia: usuario y nombre
+    // enmascarado del titular, resueltos por DestinatarioWalletService (el
+    // mismo criterio que vuelve a aplicar la transferencia). Misma exigencia
+    // que transferir (KycAprobado) y límite de consultas por usuario contra el
+    // recorrido masivo de wallets. Cualquier destino no válido responde el
+    // mismo 404 genérico, sin distinguir el motivo. La auditoría registra solo
+    // la wallet consultada y si se encontró: nunca el nombre del titular.
+    [Authorize(Policy = "KycAprobado")]
+    [EnableRateLimiting("DestinatarioWalletPolicy")]
+    [HttpGet("destinatario/{idWallet:long}")]
+    public async Task<IActionResult> ObtenerDestinatario(long idWallet)
+    {
+        if (!TryGetIdPersona(out var idPersona))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        var destinatario = await _destinatarios.ResolverAsync(idWallet, idPersona);
+        _audit.LogSensitiveAction(HttpContext, "WALLET_DESTINATARIO_LOOKUP",
+            new { idWallet, encontrado = destinatario is not null });
+        return destinatario is null
+            ? NotFound(new { success = false, message = "Wallet destino no disponible." })
+            : Ok(new { success = true, data = destinatario });
     }
 
     // ── Fase 71.2-E-B: uso administrativo — permite consultar la wallet de
@@ -198,6 +224,12 @@ public class WalletsController : ControllerBase
             });
         }
         catch (IdempotencyConflictException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (DestinatarioNoCoincideException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "WALLET_TRANSFER_DESTINATARIO_NO_COINCIDE",
+                new { idWalletOrigen = walletOrigen.IdWallet, idWalletDestino = request.IdWalletDestino });
+            return Conflict(new { success = false, message = ex.Message });
+        }
         catch (IdempotencyUnavailableException ex)
         {
             _logger.LogWarning(ex, "Idempotencia no resuelta a tiempo — idUsuario {IdUsuario}, idempotencyKey {IdempotencyKey}.", idUsuario, idempotencyKey);

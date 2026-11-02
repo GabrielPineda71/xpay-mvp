@@ -35,6 +35,7 @@ builder.Services.AddScoped<RegistroPublicoService>();
 // productiva e IdentidadPublicaPolicy que P0-B1).
 builder.Services.AddScoped<RecuperacionClaveService>();
 builder.Services.AddScoped<WalletService>();
+builder.Services.AddScoped<DestinatarioWalletService>();
 builder.Services.AddScoped<WalletOperacionService>();
 builder.Services.AddScoped<QrResolutionService>(); // XPAY-451 — resolución read-only compartida CodigoQr→Comercio/Tienda
 builder.Services.AddScoped<PagoQrService>();
@@ -312,6 +313,13 @@ var identidadPermitLimit   = rlSection.GetValue("IdentidadPublicaPermitLimit",  
 var identidadWindowSeconds = rlSection.GetValue("IdentidadPublicaWindowSeconds", defaultValue: 300);
 var identidadQueueLimit    = rlSection.GetValue("IdentidadPublicaQueueLimit",    defaultValue: 0);
 
+// Vista previa de destinatario (GET /api/wallets/destinatario/{idWallet}):
+// por idUsuario, como CambiarClavePolicy — frena el recorrido masivo de
+// wallets para obtener titulares. Configurable con el mismo patrón.
+var destinatarioPermitLimit   = rlSection.GetValue("DestinatarioWalletPermitLimit",   defaultValue: 20);
+var destinatarioWindowSeconds = rlSection.GetValue("DestinatarioWalletWindowSeconds", defaultValue: 300);
+var destinatarioQueueLimit    = rlSection.GetValue("DestinatarioWalletQueueLimit",    defaultValue: 0);
+
 builder.Services.AddRateLimiter(options =>
 {
     options.AddPolicy("LoginPolicy", httpContext =>
@@ -349,6 +357,19 @@ builder.Services.AddRateLimiter(options =>
                 PermitLimit          = identidadPermitLimit,
                 Window               = TimeSpan.FromSeconds(identidadWindowSeconds),
                 QueueLimit           = identidadQueueLimit,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
+    options.AddPolicy("DestinatarioWalletPolicy", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.User.FindFirst("idUsuario")?.Value
+                ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit          = destinatarioPermitLimit,
+                Window               = TimeSpan.FromSeconds(destinatarioWindowSeconds),
+                QueueLimit           = destinatarioQueueLimit,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst
             }));
 
@@ -497,9 +518,12 @@ if (enableHsts && !app.Environment.IsDevelopment())
 if (enableHttpsRedirection)
     app.UseHttpsRedirection();
 app.UseCors("FrontendCorsPolicy");   // antes de autenticación — requerido para preflight
-if (enableRateLimiting)
-    app.UseRateLimiter();            // después de CORS, antes de autenticación
 app.UseAuthentication();
+// Después de autenticar: CambiarClavePolicy y DestinatarioWalletPolicy
+// particionan por el claim idUsuario, que antes de UseAuthentication aún no
+// existe (caían siempre a la IP). Las políticas por IP no cambian.
+if (enableRateLimiting)
+    app.UseRateLimiter();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();

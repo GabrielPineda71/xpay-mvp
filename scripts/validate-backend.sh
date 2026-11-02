@@ -519,9 +519,47 @@ ok "Wallet maria → idWallet=$ID_WALLET_B"
 # header Idempotency-Key (Fase 71.2-E-G, commit 13f4aa2) — GUID nuevo e
 # independiente por operación lógica, nunca reutilizado entre llamadas.
 IDEMPOTENCY_KEY_TRANSFERENCIA=$(python3 -c 'import uuid; print(uuid.uuid4())')
+
+# Verificación del destinatario: la transferencia exige el usuario que
+# devuelve GET /api/wallets/destinatario (usuarioDestinoEsperado), y el GET
+# solo expone idWallet/usuario/nombreVisible.
+info "GET /api/wallets/destinatario/{idWallet} (titular de la wallet B)"
+DESTINATARIO_B=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/destinatario/$ID_WALLET_B") \
+  || fail "GET destinatario no respondió"
+assert_ok "$DESTINATARIO_B" "destinatario wallet B"
+USUARIO_DESTINO_B=$(echo "$DESTINATARIO_B" | jq -r '.data.usuario')
+[[ -n "$USUARIO_DESTINO_B" && "$USUARIO_DESTINO_B" != "null" ]] || fail "destinatario wallet B sin usuario"
+echo "$DESTINATARIO_B" | jq -e '.data | keys == ["idWallet","nombreVisible","usuario"]' > /dev/null \
+  || fail "destinatario expone campos no permitidos: $(echo "$DESTINATARIO_B" | jq -c '.data | keys')"
+ok "destinatario wallet B → usuario verificado, solo idWallet/usuario/nombreVisible"
+
+info "GET /api/wallets/destinatario de una wallet inexistente → 404"
+STATUS_DEST_404=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
+  -H "Authorization: Bearer $TOKEN_A" "$API_URL/api/wallets/destinatario/999999999")
+[[ "$STATUS_DEST_404" == "404" ]] || fail "destinatario inexistente → esperado 404, obtenido $STATUS_DEST_404"
+ok "destinatario inexistente → 404"
+
+# Sin usuarioDestinoEsperado (400) y con un destinatario distinto del titular
+# (409): ninguna de las dos mueve dinero — lo confirman los saldos de abajo.
+info "POST /api/wallets/transferencia sin usuarioDestinoEsperado → 400"
+STATUS_SIN_DEST=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL/api/wallets/transferencia" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_A" \
+  -H "Idempotency-Key: $(python3 -c 'import uuid; print(uuid.uuid4())')" --max-time 15 \
+  -d "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"descripcion\": \"CI sin destinatario\"}")
+[[ "$STATUS_SIN_DEST" == "400" ]] || fail "transferencia sin destinatario → esperado 400, obtenido $STATUS_SIN_DEST"
+ok "transferencia sin destinatario confirmado → 400"
+
+info "POST /api/wallets/transferencia con destinatario distinto del titular → 409"
+STATUS_OTRO_DEST=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL/api/wallets/transferencia" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_A" \
+  -H "Idempotency-Key: $(python3 -c 'import uuid; print(uuid.uuid4())')" --max-time 15 \
+  -d "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"descripcion\": \"CI destinatario incorrecto\", \"usuarioDestinoEsperado\": \"ci_destinatario_incorrecto\"}")
+[[ "$STATUS_OTRO_DEST" == "409" ]] || fail "transferencia a destinatario distinto → esperado 409, obtenido $STATUS_OTRO_DEST"
+ok "transferencia con destinatario que no coincide → 409"
+
 info "POST /api/wallets/transferencia (25.000)"
 TRANSFERENCIA=$(post_auth_json "$TOKEN_A" "$API_URL/api/wallets/transferencia" \
-  "{\"idWalletOrigen\": $ID_WALLET_A, \"idWalletDestino\": $ID_WALLET_B, \"valor\": 25000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Transferencia CI fase 2\"}" \
+  "{\"idWalletOrigen\": $ID_WALLET_A, \"idWalletDestino\": $ID_WALLET_B, \"valor\": 25000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Transferencia CI fase 2\", \"usuarioDestinoEsperado\": \"$USUARIO_DESTINO_B\"}" \
   "$IDEMPOTENCY_KEY_TRANSFERENCIA") \
   || fail "POST transferencia no respondió"
 echo "$TRANSFERENCIA" | jq .

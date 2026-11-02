@@ -15,15 +15,18 @@ namespace Xpay.Api.Common;
 // existen en TransferenciaWalletRequest/PagoQrRequest desde 71.2-E-C/D.
 public static class IdempotencyHashHelper
 {
-    public static byte[] ComputeTransferenciaHash(long idUsuario, long idWalletOrigen, long idWalletDestino, decimal valor, string? descripcion) =>
+    // v2: incluye el destinatario confirmado — repetir la clave con otro
+    // destinatario esperado es un payload distinto, nunca un replay.
+    public static byte[] ComputeTransferenciaHash(long idUsuario, long idWalletOrigen, long idWalletDestino, decimal valor, string? descripcion, string usuarioDestinoEsperado) =>
         ComputeHash(new SortedDictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["op"] = "wallets.transferencia.v1",
+            ["op"] = "wallets.transferencia.v2",
             ["idUsuario"] = idUsuario,
             ["idWalletOrigen"] = idWalletOrigen,
             ["idWalletDestino"] = idWalletDestino,
             ["valor"] = NormalizarValor(valor),
             ["descripcion"] = NormalizarTexto(descripcion),
+            ["usuarioDestinoEsperado"] = NormalizarTexto(usuarioDestinoEsperado),
         });
 
     public static byte[] ComputePagoQrHash(long idUsuario, long idWalletPagadora, string codigoQr, decimal valor, string? descripcion) =>

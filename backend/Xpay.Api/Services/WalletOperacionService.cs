@@ -11,7 +11,13 @@ namespace Xpay.Api.Services;
 public class WalletOperacionService
 {
     private readonly XpayDbContext _db;
-    public WalletOperacionService(XpayDbContext db) => _db = db;
+    private readonly DestinatarioWalletService _destinatarios;
+
+    public WalletOperacionService(XpayDbContext db, DestinatarioWalletService destinatarios)
+    {
+        _db            = db;
+        _destinatarios = destinatarios;
+    }
 
     public async Task<long> RecargarWalletManualAsync(long idWallet, RecargaWalletRequest request)
     {
@@ -128,10 +134,14 @@ public class WalletOperacionService
             throw new InvalidOperationException("El valor de la transferencia debe ser mayor a cero.");
         if (idWalletOrigen == request.IdWalletDestino)
             throw new InvalidOperationException("La wallet origen y destino no pueden ser la misma.");
+        // Sin modo de compatibilidad: sin destinatario confirmado no hay transferencia.
+        var usuarioDestinoEsperado = request.UsuarioDestinoEsperado?.Trim();
+        if (string.IsNullOrEmpty(usuarioDestinoEsperado))
+            throw new InvalidOperationException("Falta confirmar el destinatario.");
 
         const string endpoint = IdempotencyEndpoints.WalletsTransferencia;
         var requestHash = IdempotencyHashHelper.ComputeTransferenciaHash(
-            creadoPor, idWalletOrigen, request.IdWalletDestino, request.Valor, request.Descripcion);
+            creadoPor, idWalletOrigen, request.IdWalletDestino, request.Valor, request.Descripcion, usuarioDestinoEsperado);
 
         await using var transaction = await _db.Database.BeginTransactionAsync();
         // Fase 71.2-E-G.1: evita un doble RollbackAsync() — si ResolverReplayAsync
@@ -182,6 +192,14 @@ public class WalletOperacionService
                 throw new InvalidOperationException("La wallet origen debe ser de tipo PERSONA.");
             if (walletDestino.TipoWallet != "PERSONA")
                 throw new InvalidOperationException("La wallet destino debe ser de tipo PERSONA.");
+
+            // Destinatario confirmado: se vuelve a resolver el titular con
+            // bloqueo (ver ResolverConBloqueoAsync), antes de tocar saldos. Desde
+            // aquí hasta el commit ningún cambio concurrente puede desactivar al
+            // titular, cambiarlo ni añadir otro usuario a esa persona.
+            var titular = await _destinatarios.ResolverConBloqueoAsync(request.IdWalletDestino, walletOrigen.IdPersona ?? 0);
+            if (titular is null || !string.Equals(titular.Usuario, usuarioDestinoEsperado, StringComparison.Ordinal))
+                throw new DestinatarioNoCoincideException();
 
             // Fase 71.2-E-D: lock pesimista WITH (UPDLOCK, ROWLOCK) — mismo patrón ya
             // aprobado y usado en CarteraOrdinariaService/WalletRecargaComercioService
