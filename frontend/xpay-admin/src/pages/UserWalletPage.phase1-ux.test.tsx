@@ -104,6 +104,8 @@ const CUENTA_BASE = {
 };
 
 function apiRoutedGet(path: string) {
+  const destinatario = /^\/api\/wallets\/destinatario\/(\d+)$/.exec(path);
+  if (destinatario) return Promise.resolve({ success: true, data: { idWallet: Number(destinatario[1]), usuario: 'qa.usuario2', nombreVisible: 'Usuario D.' } });
   if (path === '/api/wallets/mi-wallet') return Promise.resolve({ success: true, data: { idWallet: 2, idPersona: 3, nombreWallet: 'Wallet qa.usuario1', estado: 'ACTIVA' } });
   if (path === '/api/reportes/mi-estado-cuenta') return Promise.resolve({ success: true, data: CUENTA_BASE });
   if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc: 'APROBADO' } });
@@ -269,7 +271,7 @@ describe('UserWalletPage — handlers/endpoints financieros sin modificar (XPAY-
     await user.click(screen.getByText('Ingresar destino manualmente →'));
     await user.type(screen.getByLabelText('ID de wallet destino'), '3');
     await user.click(screen.getByRole('button', { name: 'Confirmar destino' }));
-    await user.type(screen.getByLabelText('Valor a transferir (COP ficticio)'), '500');
+    await user.type(await screen.findByLabelText('Valor a transferir (COP ficticio)'), '500');
     await user.type(screen.getByLabelText(/Clave de 7 dígitos/), '1234567');
     await user.click(screen.getByRole('button', { name: 'Enviar dinero' }));
 
@@ -584,22 +586,22 @@ describe('UserWalletPage — QR separados por ambiente (QA / PROD)', () => {
     vi.stubEnv('VITE_XPAY_ENV', 'PROD');
     await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'QA', receiverWalletId: 3, receiverUser: 'qa.usuario2' });
     expect(await screen.findByText('El QR no corresponde al ambiente PROD.')).toBeInTheDocument();
-    expect(screen.queryByText('Destino confirmado')).toBeNull();
+    expect(screen.queryByText('Destino verificado')).toBeNull();
     expect(mockPost).not.toHaveBeenCalled();
   });
 
-  it('Enviar en PROD: un QR de PROD fija el destino sin transferir', async () => {
+  it('Enviar en PROD: un QR de PROD fija el destino, verificado por el backend, sin transferir', async () => {
     vi.stubEnv('VITE_XPAY_ENV', 'PROD');
-    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 3, receiverUser: 'usuario.prod' });
-    expect(await screen.findByText('Destino confirmado')).toBeInTheDocument();
+    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 3, receiverUser: 'qa.usuario2' });
+    expect(await screen.findByText('Destino verificado')).toBeInTheDocument();
     expect(mockPost).not.toHaveBeenCalled();
   });
 
   it('Enviar en QA: un QR de PROD se rechaza', async () => {
     vi.stubEnv('VITE_XPAY_ENV', 'QA');
-    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 3, receiverUser: 'usuario.prod' });
+    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 3, receiverUser: 'qa.usuario2' });
     expect(await screen.findByText('El QR no corresponde al ambiente QA.')).toBeInTheDocument();
-    expect(screen.queryByText('Destino confirmado')).toBeNull();
+    expect(screen.queryByText('Destino verificado')).toBeNull();
   });
 
   it('Comprar en PROD: un QR de comercio de QA se rechaza', async () => {

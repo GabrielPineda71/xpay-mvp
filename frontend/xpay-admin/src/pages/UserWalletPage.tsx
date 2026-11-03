@@ -72,6 +72,16 @@ interface QrPreview {
   nombreTienda:   string;
 }
 
+// Respuesta de GET /api/wallets/destinatario/{idWallet} — espejo de
+// DestinatarioWalletResponse (backend). Única fuente del destinatario que se
+// muestra y se confirma en Enviar: XpayTransferQR.receiverUser nunca es
+// autoridad, solo se compara con este usuario.
+interface DestinatarioVerificado {
+  idWallet:      number;
+  usuario:       string;
+  nombreVisible: string | null;
+}
+
 interface Movimiento {
   idMovimiento:   number;
   fecha:          string;
@@ -315,7 +325,13 @@ export function UserWalletPage() {
 
   // ── Enviar dinero ─────────────────────────────────────────────────────────
   const [envDest,       setEnvDest]       = useState<number | null>(null);
+  // Usuario que DECLARA el QR: solo se compara con el titular real, nunca
+  // se muestra ni se envía.
   const [envDestUser,   setEnvDestUser]   = useState('');
+  // Titular resuelto por el backend para envDest; sin él no hay valor ni PIN.
+  const [envDestVerificado,  setEnvDestVerificado]  = useState<DestinatarioVerificado | null>(null);
+  const [envDestVerificando, setEnvDestVerificando] = useState(false);
+  const [envDestErr,         setEnvDestErr]         = useState<string | null>(null);
   const [envValor,      setEnvValor]      = useState('');
   const [envNeedValor,  setEnvNeedValor]  = useState(false);
   const [envPin,        setEnvPin]        = useState('');
@@ -438,6 +454,36 @@ export function UserWalletPage() {
     })();
     return () => { cancelado = true; };
   }, [pagQrCode]);
+
+  // Verificación del destinatario de Enviar: cada vez que cambia el destino
+  // (QR, QR pegado o ingreso manual) se resuelve el titular en el backend
+  // ANTES de mostrar valor y PIN. Si el QR declara un usuario distinto del
+  // titular real, se rechaza. La transferencia envía este usuario como
+  // usuarioDestinoEsperado y el backend lo vuelve a comprobar.
+  useEffect(() => {
+    let cancelado = false;
+    setEnvDestVerificado(null);
+    setEnvDestErr(null);
+    if (!envDest) { setEnvDestVerificando(false); return; }
+    setEnvDestVerificando(true);
+    void (async () => {
+      try {
+        const r = await get<{ success: boolean; data: DestinatarioVerificado }>(
+          `/api/wallets/destinatario/${envDest}`);
+        if (cancelado) return;
+        if (envDestUser && envDestUser !== r.data.usuario) {
+          setEnvDestErr('El QR no coincide con el titular de la wallet. No envíes dinero con este QR.');
+          return;
+        }
+        setEnvDestVerificado(r.data);
+      } catch (err) {
+        if (!cancelado) setEnvDestErr((err as Error).message || 'No fue posible verificar el destinatario.');
+      } finally {
+        if (!cancelado) setEnvDestVerificando(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [envDest, envDestUser]);
 
   // ── KYC load / manual refresh ─────────────────────────────────────────────
   const loadKyc = useCallback(async (silent = false) => {
@@ -813,9 +859,12 @@ export function UserWalletPage() {
     if (destId === miWallet.idWallet) { setEnvMsg({ ok: false, text: 'No puedes transferirte a tu propia wallet.' }); return; }
     const pinErr = validatePin(envPin);
     if (pinErr) { setEnvMsg({ ok: false, text: pinErr }); return; }
-    const descripcion = envDestUser
-      ? `Enviado a ${envDestUser} — Wallet #${destId}`
-      : `Enviado a Wallet #${destId}`;
+    if (!envDestVerificado || envDestVerificado.idWallet !== destId) {
+      setEnvMsg({ ok: false, text: 'Verifica el destinatario antes de enviar.' }); return;
+    }
+    const verificado = envDestVerificado;
+    // En la descripción guardada solo va el usuario verificado, no el nombre.
+    const descripcion = `Enviado a ${verificado.usuario} — Wallet #${destId}`;
     // Fase 71.2-E-G: misma clave si es un reintento del mismo intento
     // (destino/valor/descripción sin cambios); clave nueva si algo cambió.
     if (!envIdemRef.current
@@ -829,22 +878,22 @@ export function UserWalletPage() {
       // Fase 71.2-E-C: idWalletOrigen/creadoPor ya no se envían — el backend
       // los resuelve desde el JWT (ver TransferenciaWalletRequest).
       const r = await post<{ success: boolean; message?: string }>('/api/wallets/transferencia', {
-        idWalletDestino: destId,
-        valor:           Number(envValor),
+        idWalletDestino:        destId,
+        valor:                  Number(envValor),
         descripcion,
+        usuarioDestinoEsperado: verificado.usuario,
       }, { 'Idempotency-Key': envIdemRef.current.key });
       if (r.success) {
         envIdemRef.current = null;
         await loadCuenta();
-        // XPAY-426 (Block B) — destinatario/monto capturados de las mismas
-        // variables locales ya validadas antes del POST (destId/envValor/
-        // envDestUser), no del `data` de la respuesta: es la fuente más
-        // confiable ya presente en el flujo, sin depender de que el backend
-        // agregue nada nuevo al contrato. `envDestUser` solo llega resuelto
-        // cuando el destino vino de un QR (parseTransferQr) — si el destino
-        // se ingresó manualmente no hay username validado, así que se cae
-        // al identificador de wallet (nunca se inventa un nombre).
-        const destinoLabel = envDestUser || `Wallet #${destId}`;
+        // XPAY-426 (Block B) — destinatario/monto capturados de variables
+        // locales ya validadas antes del POST, no del `data` de la respuesta.
+        // El destinatario es siempre el verificado por el backend (GET
+        // /api/wallets/destinatario y de nuevo dentro de la transferencia),
+        // nunca el nombre que trae el QR.
+        const destinoLabel = verificado.nombreVisible
+          ? `${verificado.usuario} (${verificado.nombreVisible})`
+          : verificado.usuario;
         const montoTransferido = Number(envValor);
         // Limpiar el formulario para que no quede listo para repetir el
         // envío (igual que antes) — la confirmación ahora vive en el modal,
@@ -856,7 +905,20 @@ export function UserWalletPage() {
       } else {
         setEnvMsg({ ok: false, text: r.message ?? 'Error al transferir.' });
       }
-    } catch (e) { setEnvMsg({ ok: false, text: (e as Error).message }); }
+    } catch (e) {
+      // Cualquier 409 de la transferencia (destinatario que cambió o ya no
+      // coincide, o conflicto de idempotencia) no movió dinero: se descarta
+      // el destino para que se vuelva a escanear o ingresar y se verifique
+      // de nuevo. Se decide por el estado HTTP, no por el texto del mensaje.
+      if ((e as { status?: number }).status === 409) {
+        envIdemRef.current = null;
+        setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
+        setEnvPasted(''); setEnvManual(false); setEnvManualDest('');
+        setEnvScanErr((e as Error).message);
+      } else {
+        setEnvMsg({ ok: false, text: (e as Error).message });
+      }
+    }
     finally { setEnvBusy(false); setEnvPin(''); opInProgressRef.current = false; }
   }
 
@@ -1486,13 +1548,25 @@ export function UserWalletPage() {
           {envDest && (
             <>
               <div className="wallet-send-confirmed">
-                <span className="wallet-send-confirmed-badge">Destino confirmado</span>
-                {' → '}Wallet #{envDest}
-                {envDestUser && <span className="wallet-send-confirmed-user">({envDestUser})</span>}
+                {envDestVerificado ? (
+                  <>
+                    <span className="wallet-send-confirmed-badge">Destino verificado</span>
+                    {' → '}{envDestVerificado.usuario}
+                    {envDestVerificado.nombreVisible && (
+                      <span className="wallet-send-confirmed-user">({envDestVerificado.nombreVisible})</span>
+                    )}
+                    {' · '}Wallet #{envDest}
+                  </>
+                ) : (
+                  <span>{envDestVerificando ? 'Verificando destinatario…' : `Wallet #${envDest}`}</span>
+                )}
                 {' '}
                 <button className="wallet-send-link-btn" onClick={resetEnviar}>✕ Cambiar</button>
               </div>
+              {envDestErr && <div className="wallet-send-error">{envDestErr}</div>}
 
+              {/* Valor y PIN solo con el destinatario verificado por el backend. */}
+              {envDestVerificado && (
               <form className="wallet-send-form" onSubmit={e => void handleEnviar(e)}>
                 <label className="wallet-send-field">
                   <span className="wallet-send-field-label">Valor a transferir (COP ficticio)</span>
@@ -1531,6 +1605,7 @@ export function UserWalletPage() {
                   {envBusy ? 'Procesando...' : 'Enviar dinero'}
                 </button>
               </form>
+              )}
               {envMsg && (
                 <div className={`wallet-send-msg${envMsg.ok ? ' wallet-send-msg--ok' : ' wallet-send-msg--err'}`}>
                   {envMsg.text}
