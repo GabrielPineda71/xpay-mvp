@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { ambienteXpay, validarAmbienteXpay } from './ambiente.ts';
+import { ambienteXpay, monedaVisible, validarAmbienteXpay } from './ambiente.ts';
 
 describe('validarAmbienteXpay', () => {
   it('acepta QA y PROD', () => {
@@ -33,5 +33,16 @@ describe('ambienteXpay', () => {
     expect(ambienteXpay()).toBe('PROD');
     vi.stubEnv('VITE_XPAY_ENV', 'QA');
     expect(ambienteXpay()).toBe('QA');
+  });
+});
+
+describe('monedaVisible', () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('aclara "ficticio" solo en QA', () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'QA');
+    expect(monedaVisible()).toBe('COP ficticio');
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    expect(monedaVisible()).toBe('COP');
   });
 });

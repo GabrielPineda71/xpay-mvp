@@ -612,6 +612,26 @@ describe('UserWalletPage — QR separados por ambiente (QA / PROD)', () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 
+  it('QA conserva el pie de página de ambiente; PROD no muestra avisos de QA/Demo ni "ficticio"', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'QA');
+    const qa = renderWalletAt('saldo');
+    await waitFor(() => expect(screen.getByText('Disponible')).toBeInTheDocument());
+    expect(screen.getByText(/Ambiente QA\/Demo/)).toBeInTheDocument();
+    qa.unmount();
+
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    renderWalletAt('saldo');
+    await waitFor(() => expect(screen.getByText('Disponible')).toBeInTheDocument());
+    expect(document.body.textContent).not.toMatch(/QA\/Demo|ficticio/i);
+  });
+
+  it('Enviar en PROD: etiqueta "(COP)" y sin aviso QA/Demo del PIN', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 3, receiverUser: 'qa.usuario2' });
+    expect(await screen.findByText('Valor a transferir (COP)')).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/QA\/Demo|ficticio/i);
+  });
+
   it('Comprar en PROD: un QR de comercio de PROD carga el código sin pagar', async () => {
     vi.stubEnv('VITE_XPAY_ENV', 'PROD');
     await leerQr('pagar', { type: 'XPAY_MERCHANT_PAYMENT', env: 'PROD', qrCode: 'QR-PRUEBA-PROD', amount: 15000 });

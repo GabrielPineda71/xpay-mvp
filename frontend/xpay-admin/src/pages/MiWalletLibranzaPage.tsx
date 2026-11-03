@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { get, post, ApiError } from '../api/client.ts';
+import { SoloQa } from '../config/SoloQa.tsx';
 
 interface CorteVigente {
   diaPago: number;
@@ -186,7 +187,8 @@ export function MiWalletLibranzaPage() {
     <div className="page">
       <h2>Anticipo de Nómina</h2>
 
-      {/* Simulated date selector */}
+      {/* Simulated date selector — solo QA: el backend ignora la fecha simulada en productivo. */}
+      <SoloQa>
       <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#fefce8', border: '1px solid #fde68a', borderRadius: '0.5rem', display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#92400e' }}>Fecha simulada QA:</span>
         <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
@@ -197,6 +199,7 @@ export function MiWalletLibranzaPage() {
         </button>
         {fecha && <span style={{ fontSize: '0.78rem', color: '#92400e' }}>Simulando: {fecha}</span>}
       </div>
+      </SoloQa>
 
       {loading && <p>Cargando...</p>}
       {error && <div className="msg-error">{error}</div>}
@@ -353,7 +356,7 @@ export function MiWalletLibranzaPage() {
         </>
       )}
 
-      <p className="user-wallet-footer">Ambiente QA/Demo · anticipo nómina · sin transacciones reales en producción</p>
+      <SoloQa><p className="user-wallet-footer">Ambiente QA/Demo · anticipo nómina · sin transacciones reales en producción</p></SoloQa>
     </div>
   );
 }

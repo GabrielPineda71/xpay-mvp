@@ -3,7 +3,8 @@ import QRCode from 'qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { get, post } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
-import { ambienteXpay } from '../config/ambiente.ts';
+import { ambienteXpay, monedaVisible } from '../config/ambiente.ts';
+import { SoloQa } from '../config/SoloQa.tsx';
 import { generarComprobantePdfCierre } from '../utils/comprobanteCierrePdf.ts';
 
 // Fuente: GET /api/comercio/dashboard (ComercioViewController, rol COMERCIO).
@@ -685,7 +686,7 @@ export function MiComercioPage() {
       <h2>Mi Comercio</h2>
       <p className="dashboard-subtitle">
         idComercio #{idComercio}
-        {' · '}<span className="badge badge-info">QA / Demo</span>
+        <SoloQa>{' · '}<span className="badge badge-info">QA / Demo</span></SoloQa>
         {scope && <>{' · '}<span className="badge badge-ok">{scope.rolComercio}</span></>}
       </p>
 
@@ -812,7 +813,7 @@ export function MiComercioPage() {
                 )}
 
                 <label>
-                  Valor (opcional — COP ficticio)
+                  Valor (opcional — {monedaVisible()})
                   <input
                     type="number"
                     value={qrComValor}
@@ -836,7 +837,7 @@ export function MiComercioPage() {
                     <img src={qrComSrc} alt="QR del comercio" className="qr-image" />
                     <p className="qr-caption">
                       {qrComValor
-                        ? `QR con valor ${fmtMoney(Number(qrComValor))} (COP ficticio)`
+                        ? `QR con valor ${fmtMoney(Number(qrComValor))} (${monedaVisible()})`
                         : 'QR sin valor fijo — el usuario ingresa el monto'}
                     </p>
                     <div className="qr-action-row">
@@ -850,10 +851,12 @@ export function MiComercioPage() {
                   </div>
                 )}
 
-                <p className="tab-warn">
-                  QA/Demo · el QR contiene type=XPAY_MERCHANT_PAYMENT{qrSeleccionado ? ` · qrCode=${qrSeleccionado.codigoQr}` : ''} ·
-                  datos ficticios · sin dinero real.
-                </p>
+                <SoloQa>
+                  <p className="tab-warn">
+                    QA/Demo · el QR contiene type=XPAY_MERCHANT_PAYMENT{qrSeleccionado ? ` · qrCode=${qrSeleccionado.codigoQr}` : ''} ·
+                    datos ficticios · sin dinero real.
+                  </p>
+                </SoloQa>
               </>
             )}
           </div>
@@ -1134,7 +1137,7 @@ export function MiComercioPage() {
               Destino: <strong>{brebLlave.keyType} · {brebLlave.keyValueMasked}</strong>
             </p>
             <label>
-              Valor a retirar (COP ficticio)
+              Valor a retirar ({monedaVisible()})
               <input
                 type="number"
                 min="1"
@@ -1287,7 +1290,7 @@ export function MiComercioPage() {
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.82rem', marginBottom: '0.5rem', maxWidth: 200 }}>
                 Clave de 7 dígitos
-                <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}> — QA/Demo: solo se valida formato</span>
+                <SoloQa><span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}> — QA/Demo: solo se valida formato</span></SoloQa>
                 <input
                   type="password"
                   inputMode="numeric"
@@ -1564,9 +1567,11 @@ export function MiComercioPage() {
         </>
       )}
 
-      <p className="user-wallet-footer">
-        Ambiente QA/Demo · datos ficticios · sin dinero real · sin producción
-      </p>
+      <SoloQa>
+        <p className="user-wallet-footer">
+          Ambiente QA/Demo · datos ficticios · sin dinero real · sin producción
+        </p>
+      </SoloQa>
     </div>
   );
 }

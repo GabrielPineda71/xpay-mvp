@@ -23,3 +23,8 @@ export function validarAmbienteXpay(valor: string | undefined, exigirExplicito: 
 export function ambienteXpay(): AmbienteXpay {
   return validarAmbienteXpay(import.meta.env.VITE_XPAY_ENV, import.meta.env.PROD);
 }
+
+// Etiqueta de moneda de los importes: en QA se aclara que es dinero ficticio.
+export function monedaVisible(): string {
+  return ambienteXpay() === 'QA' ? 'COP ficticio' : 'COP';
+}

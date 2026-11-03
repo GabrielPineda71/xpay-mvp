@@ -3,7 +3,7 @@
 // ("QR-DEMO-XPAY-QA-001"), sin relación con el comercio realmente
 // autenticado. Cubre F1-F10 del ticket. CERO red real: api/client.ts está
 // completamente mockeado con un router por ruta.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MiComercioPage } from './MiComercioPage.tsx';
@@ -88,6 +88,27 @@ beforeEach(() => {
   mockGet.mockReset();
   mockGet.mockImplementation(apiRoutedGet);
   mockPost.mockReset();
+});
+
+// Textos de ambiente: avisos QA/Demo y "COP ficticio" solo en QA.
+describe('MiComercioPage — avisos de ambiente', () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('QA muestra la insignia y el pie "QA/Demo"; PROD no muestra avisos de QA/Demo ni "ficticio"', async () => {
+    qrFixtures = [qr({ idQr: 3, codigoQr: 'QR-UAT-XPAY-001', idTienda: 3, nombreTienda: 'Tienda 1' })];
+
+    vi.stubEnv('VITE_XPAY_ENV', 'QA');
+    const qa = render(<MiComercioPage />);
+    await waitForLoaded();
+    expect(screen.getByText('QA / Demo')).toBeInTheDocument();
+    expect(screen.getByText(/Ambiente QA\/Demo/)).toBeInTheDocument();
+    qa.unmount();
+
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    render(<MiComercioPage />);
+    await waitForLoaded();
+    expect(document.body.textContent).not.toMatch(/QA\/Demo|QA \/ Demo|ficticio/i);
+  });
 });
 
 describe('XPAY-447 — MiComercioPage QR real del comercio', () => {

@@ -4,7 +4,8 @@ import QRCode from 'qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { get, post, HttpUncertainError } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
-import { ambienteXpay } from '../config/ambiente.ts';
+import { ambienteXpay, monedaVisible } from '../config/ambiente.ts';
+import { SoloQa } from '../config/SoloQa.tsx';
 import { HeroBalanceCard } from '../components/wallet/HeroBalanceCard.tsx';
 import { useQrScanner } from '../hooks/useQrScanner.ts';
 import { QrScannerOverlay } from '../components/wallet/QrScannerOverlay.tsx';
@@ -1494,7 +1495,7 @@ export function UserWalletPage() {
                       className="wallet-send-textarea"
                       value={envPasted}
                       onChange={e => setEnvPasted(e.target.value)}
-                      placeholder={'{"type":"XPAY_TRANSFER","env":"QA","receiverWalletId":3,...}'}
+                      placeholder={`{"type":"XPAY_TRANSFER","env":"${ambienteXpay()}","receiverWalletId":3,...}`}
                       rows={3}
                     />
                   </label>
@@ -1569,7 +1570,7 @@ export function UserWalletPage() {
               {envDestVerificado && (
               <form className="wallet-send-form" onSubmit={e => void handleEnviar(e)}>
                 <label className="wallet-send-field">
-                  <span className="wallet-send-field-label">Valor a transferir (COP ficticio)</span>
+                  <span className="wallet-send-field-label">Valor a transferir ({monedaVisible()})</span>
                   <input
                     type="number"
                     className="wallet-send-input"
@@ -1583,7 +1584,7 @@ export function UserWalletPage() {
                 <label className="wallet-send-field">
                   <span className="wallet-send-field-label">
                     Clave de 7 dígitos
-                    <span className="wallet-send-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
+                    <SoloQa><span className="wallet-send-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span></SoloQa>
                   </span>
                   <input
                     type="password"
@@ -1661,7 +1662,9 @@ export function UserWalletPage() {
                       className="wallet-pay-textarea"
                       value={pagPasted}
                       onChange={e => setPagPasted(e.target.value)}
-                      placeholder={`QR-DEMO-XPAY-QA-001\no\n{"type":"XPAY_MERCHANT_PAYMENT","env":"QA",...}`}
+                      placeholder={ambienteXpay() === 'QA'
+                        ? `QR-DEMO-XPAY-QA-001\no\n{"type":"XPAY_MERCHANT_PAYMENT","env":"QA",...}`
+                        : `Código del comercio\no\n{"type":"XPAY_MERCHANT_PAYMENT","env":"${ambienteXpay()}",...}`}
                       rows={3}
                     />
                   </label>
@@ -1761,7 +1764,7 @@ export function UserWalletPage() {
                 <>
                   <form className="wallet-pay-form" onSubmit={e => void handlePagarQr(e)}>
                     <label className="wallet-pay-field">
-                      <span className="wallet-pay-field-label">Valor a pagar (COP ficticio)</span>
+                      <span className="wallet-pay-field-label">Valor a pagar ({monedaVisible()})</span>
                       <input
                         type="number"
                         className="wallet-pay-input"
@@ -1775,7 +1778,7 @@ export function UserWalletPage() {
                     <label className="wallet-pay-field">
                       <span className="wallet-pay-field-label">
                         Clave de 7 dígitos
-                        <span className="wallet-pay-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
+                        <SoloQa><span className="wallet-pay-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span></SoloQa>
                       </span>
                       <input
                         type="password"
@@ -1915,7 +1918,7 @@ export function UserWalletPage() {
                     El retiro se enviará a: <strong>{brebLlave.keyType} · {brebLlave.keyValueMasked}</strong>
                   </p>
                   <label>
-                    Valor a retirar (COP ficticio)
+                    Valor a retirar ({monedaVisible()})
                     <input
                       type="number"
                       min="1"
@@ -1937,7 +1940,7 @@ export function UserWalletPage() {
               {brebLlave && brebLlave.estado !== 'VALIDADA' && (
                 <p className="breb-retiro-note" style={{ marginTop: '0.75rem' }}>
                   Solo puedes solicitar retiros una vez que tu llave esté <strong>VALIDADA</strong>.
-                  En QA: usa el endpoint admin <code>POST /api/breb/admin/simular-validacion-llave</code>.
+                  <SoloQa> En QA: usa el endpoint admin <code>POST /api/breb/admin/simular-validacion-llave</code>.</SoloQa>
                 </p>
               )}
 
@@ -2227,9 +2230,11 @@ export function UserWalletPage() {
         </div>
       )}
 
-      <p className="user-wallet-footer">
-        Ambiente QA/Demo · saldos y transacciones ficticios · sin dinero real · sin producción
-      </p>
+      <SoloQa>
+        <p className="user-wallet-footer">
+          Ambiente QA/Demo · saldos y transacciones ficticios · sin dinero real · sin producción
+        </p>
+      </SoloQa>
 
       {/* ── New movement toast ─────────────────────────────────────────────── */}
       {newMovMsg && (
