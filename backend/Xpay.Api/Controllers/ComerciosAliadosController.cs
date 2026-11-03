@@ -315,6 +315,7 @@ public class ComerciosAliadosController : ControllerBase
         catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
     }
 
+    [OperacionFinanciera]
     [HttpPost("disponibilidad/{idDisponibilidad:long}/liberar")]
     public async Task<IActionResult> LiberarManual(long idDisponibilidad)
     {
@@ -434,6 +435,7 @@ public class ComerciosAliadosController : ControllerBase
 
     // ── Liquidación automática ─────────────────────────────────────────────────
 
+    [OperacionFinanciera]
     [HttpPost("liquidacion-automatica/ejecutar")]
     public async Task<IActionResult> EjecutarLiquidacionAutomatica(
         [FromBody] EjecutarLiquidacionAutomaticaRequest? req)

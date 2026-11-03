@@ -57,13 +57,16 @@ public class LibranzaRecaudoAplicacionService
     private readonly XpayDbContext                             _db;
     private readonly IConfiguration                            _config;
     private readonly ILogger<LibranzaRecaudoAplicacionService> _logger;
+    private readonly ControlOperacionesFinancieras             _control;
 
     public LibranzaRecaudoAplicacionService(
-        XpayDbContext db, IConfiguration config, ILogger<LibranzaRecaudoAplicacionService> logger)
+        XpayDbContext db, IConfiguration config, ILogger<LibranzaRecaudoAplicacionService> logger,
+        ControlOperacionesFinancieras control)
     {
-        _db     = db;
-        _config = config;
-        _logger = logger;
+        _db      = db;
+        _config  = config;
+        _logger  = logger;
+        _control = control;
     }
 
     // Punto de entrada desde PassportWebhookService, DESPUÉS de registrar el
@@ -76,6 +79,13 @@ public class LibranzaRecaudoAplicacionService
         // tienen efecto sobre lotes ni dinero.
         if (!signatureValid)
             return new ResultadoRecaudo(ResFirmaNoValida, null);
+
+        // Bloqueo financiero: con el interruptor cerrado no se aplica ningún
+        // recaudo. La excepción llega a PassportWebhookService, que deja el
+        // evento registrado como NO procesado (RECAUDO_ERROR) y la propaga: el
+        // webhook responde 500 y Passport reintenta la entrega. Nunca se
+        // confirma con 200 un evento sin procesar.
+        _control.ExigirInterruptor();
 
         var datos = await RecolectarDatosAsync(paymentId, ct);
 

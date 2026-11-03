@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -60,6 +61,7 @@ public class ComercioDisponibilidadController : ControllerBase
         catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
     }
 
+    [OperacionFinanciera]
     [HttpPost("ventas-no-disponibles/{idDisponibilidad:long}/liquidar-ahora")]
     public async Task<IActionResult> LiquidarAhora(long idDisponibilidad, [FromQuery] long idComercio)
     {

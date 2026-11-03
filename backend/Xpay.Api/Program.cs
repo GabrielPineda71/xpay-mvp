@@ -15,9 +15,14 @@ using Xpay.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
-builder.Services.AddDbContext<XpayDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("XpayConnection")));
+builder.Services.AddControllers(o => o.Filters.Add<OperacionFinancieraBloqueadaFilter>());
+// Bloqueo financiero, fase visual: BloqueoFinancieroInterceptor rechaza en
+// SaveChanges cualquier escritura de dinero u obligaciones con el interruptor
+// XPAY_OPERACIONES_FINANCIERAS_HABILITADAS cerrado (ver ControlOperacionesFinancieras).
+builder.Services.AddSingleton<BloqueoFinancieroInterceptor>();
+builder.Services.AddDbContext<XpayDbContext>((sp, options) =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("XpayConnection"))
+        .AddInterceptors(sp.GetRequiredService<BloqueoFinancieroInterceptor>()));
 
 builder.Services.AddScoped<RegistroUsuarioFinalService>();
 builder.Services.AddScoped<RegistroInicialService>();

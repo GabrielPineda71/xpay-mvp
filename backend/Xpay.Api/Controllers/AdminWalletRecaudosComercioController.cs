@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -37,6 +38,7 @@ public class AdminWalletRecaudosComercioController(WalletLiquidacionRecaudoComer
         return Ok(new { success = true, data });
     }
 
+    [OperacionFinanciera]
     [HttpPost("liquidar")]
     public async Task<IActionResult> Liquidar([FromBody] LiquidarRecaudosComercioRequest req)
     {

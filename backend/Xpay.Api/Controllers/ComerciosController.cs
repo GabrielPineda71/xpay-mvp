@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
@@ -75,6 +76,7 @@ public class ComerciosController : ControllerBase
     // restringido de forma conservadora a administración. Ver documento de
     // seguridad para el hallazgo y la justificación de esta decisión.
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    [OperacionFinanciera]
     [HttpPost("liquidar-venta-qr")]
     public async Task<IActionResult> LiquidarVentaQr([FromBody] LiquidarVentaQrRequest request)
     {
@@ -110,6 +112,7 @@ public class ComerciosController : ControllerBase
     // desde el scope real cuando el solicitante es COMERCIO (nunca se confía
     // en el valor recibido) — ver RetiroComercioService.SolicitarRetiroAsync.
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO,COMERCIO")]
+    [OperacionFinanciera]
     [HttpPost("solicitar-retiro")]
     public async Task<IActionResult> SolicitarRetiro([FromBody] SolicitarRetiroComercioRequest request)
     {
@@ -145,6 +148,7 @@ public class ComerciosController : ControllerBase
     // propio retiro. OPERADOR_XPAY habilitado explícitamente: coincide con su
     // descripción de rol ("gestión de retiros XPAY", migración 007).
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO,OPERADOR_XPAY")]
+    [OperacionFinanciera]
     [HttpPost("retiros/confirmar-pago")]
     public async Task<IActionResult> ConfirmarPago([FromBody] ConfirmarRetiroComercioRequest request)
     {
@@ -179,6 +183,7 @@ public class ComerciosController : ControllerBase
 
     // Fase 71.2-E-B: mismo criterio que ConfirmarPago.
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO,OPERADOR_XPAY")]
+    [OperacionFinanciera]
     [HttpPost("retiros/rechazar")]
     public async Task<IActionResult> RechazarRetiro([FromBody] RechazarRetiroComercioRequest request)
     {

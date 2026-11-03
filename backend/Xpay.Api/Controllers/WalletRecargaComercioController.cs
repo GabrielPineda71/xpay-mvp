@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
@@ -22,6 +23,7 @@ public class WalletRecargaComercioController(WalletRecargaComercioService svc) :
         return Ok(new { success = true, data });
     }
 
+    [OperacionFinanciera]
     [HttpPost]
     public async Task<IActionResult> Recargar([FromBody] RecargarWalletComercioRequest req)
     {

@@ -12,9 +12,17 @@ public enum MotivoBloqueoFinanciero
 }
 
 // Piloto PROD — corrección 3: interruptor de operaciones financieras y límites
-// de retiro Bre-B. Solo afecta a lo que saca dinero nuevo (solicitar anticipo,
-// retiro Bre-B real). QR, recaudos, webhooks, conciliación y resolución de
-// envíos inciertos NUNCA pasan por aquí.
+// de retiro Bre-B.
+//
+// Fase visual (bloqueo financiero, fase 1): con el interruptor cerrado no se
+// mueve dinero ni se crean obligaciones por NINGUNA vía. Tres capas lo usan:
+//   · [OperacionFinanciera] (OperacionFinancieraFilter): 503 antes de ejecutar
+//     cualquier endpoint que mueva dinero o llame a Passport/riesgo con efecto.
+//   · BloqueoFinancieroInterceptor: rechaza al guardar cualquier asiento,
+//     movimiento, cambio de saldo o cupo, venga de donde venga.
+//   · Webhook de recaudo (LibranzaRecaudoAplicacionService) y conciliación
+//     Bre-B (BrebPaymentReconciliationService): no aplican nada; el evento
+//     queda sin procesar y Passport lo reintenta.
 //
 // Ambiente productivo (IAmbienteXpay) — fail-closed:
 //   · XPAY_OPERACIONES_FINANCIERAS_HABILITADAS debe ser exactamente "true".
@@ -40,6 +48,9 @@ public sealed class ControlOperacionesFinancieras(IConfiguration config, IAmbien
 
     public void ExigirInterruptor() =>
         Lanzar(EvaluarInterruptor(ambiente.EsProductivo, config[ClaveInterruptor]));
+
+    public bool EstaHabilitado() =>
+        EvaluarInterruptor(ambiente.EsProductivo, config[ClaveInterruptor]) is null;
 
     // acumuladoDiaCop: suma de retiros del usuario en el día Colombia de
     // ahoraUtc que no devolvieron la reserva (calculado bajo lock por el

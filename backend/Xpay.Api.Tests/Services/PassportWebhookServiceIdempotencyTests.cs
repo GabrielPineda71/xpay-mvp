@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Xpay.Api.Data;
 using Xpay.Api.Integrations.Passport;
 using Xpay.Api.Services;
+using Xpay.Api.Tests.Common;
 using Xunit;
 
 namespace Xpay.Api.Tests.Services;
@@ -35,14 +36,15 @@ public sealed class PassportWebhookServiceIdempotencyTests
         "\"created_at\":\"2026-03-10T17:44:52.111820Z\"," +
         "\"updated_at\":\"2026-03-10T17:44:52.111820Z\"}";
 
-    private static PassportWebhookService Servicio(XpayDbContext ctx)
+    private static PassportWebhookService Servicio(XpayDbContext ctx, Xpay.Api.Common.ControlOperacionesFinancieras? control = null)
         => new(
             ctx,
             new FijoTimeProvider(T0),
             new LibranzaRecaudoAplicacionService(
                 ctx,
                 new ConfigurationBuilder().Build(),
-                NullLogger<LibranzaRecaudoAplicacionService>.Instance),
+                NullLogger<LibranzaRecaudoAplicacionService>.Instance,
+                control ?? ControlesFinancierosPrueba.Habilitado()),
             NullLogger<PassportWebhookService>.Instance);
 
     private static async Task<PassportWebhookProcessOutcome> ProcesarAsync(
@@ -50,6 +52,41 @@ public sealed class PassportWebhookServiceIdempotencyTests
     {
         Assert.True(PassportWebhookPayloadParser.TryParse(raw, out var payload));
         return await Servicio(ctx).ProcessAsync(raw, payload, signatureValid: true);
+    }
+
+    // Bloqueo financiero: con el interruptor cerrado el evento queda registrado
+    // SIN procesar y la excepción sube al controlador (500), así que Passport
+    // reintenta; nunca se confirma con 200. Al reabrir, el reintento completa
+    // la MISMA fila.
+    [Fact]
+    public async Task InterruptorCerrado_EventoQuedaSinProcesar_YElReintentoLoCompleta()
+    {
+        if (!TryConnString(out var cs)) return;
+        var pid = NuevoPaymentId();
+        try
+        {
+            var raw = RawInbound(pid, PassportInboundEventClassifier.EventInboundReceived, "PROCESSING");
+            Assert.True(PassportWebhookPayloadParser.TryParse(raw, out var payload));
+
+            await using (var ctx = NuevoContexto(cs))
+                await Assert.ThrowsAsync<Xpay.Api.Exceptions.OperacionFinancieraBloqueadaException>(() =>
+                    Servicio(ctx, ControlesFinancierosPrueba.CerradoEnProduccion()).ProcessAsync(raw, payload, signatureValid: true));
+
+            await using var lectura = NuevoContexto(cs);
+            var pendiente = Assert.Single(await Filas(lectura, pid));
+            Assert.False(pendiente.Processed);
+            Assert.StartsWith("RECAUDO_ERROR:", pendiente.ErrorMessage);
+
+            await using (var ctx = NuevoContexto(cs))
+            {
+                var r = await Servicio(ctx).ProcessAsync(raw, payload, signatureValid: true);
+                Assert.Equal(PassportWebhookProcessResult.Processed, r.Result);
+            }
+            var fila = Assert.Single(await Filas(lectura, pid));
+            Assert.True(fila.Processed);
+            Assert.Equal(pendiente.IdEvent, fila.IdEvent);
+        }
+        finally { await LimpiarAsync(cs, pid); }
     }
 
     // 1 — primera entrega: se registra y queda procesada.

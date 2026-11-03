@@ -7,6 +7,7 @@ using Xpay.Api.DTOs;
 using Xpay.Api.Integrations.Passport;
 using Xpay.Api.Models;
 using Xpay.Api.Services;
+using Xpay.Api.Tests.Common;
 using Xunit;
 
 namespace Xpay.Api.Tests.Services;
@@ -155,7 +156,8 @@ public sealed class LibranzaRecaudoWebhookReferenciaTests
 
             await using (var ctx = NuevoContexto(cs))
             {
-                var recaudo = new LibranzaRecaudoAplicacionService(ctx, Config(), NullLogger<LibranzaRecaudoAplicacionService>.Instance);
+                var recaudo = new LibranzaRecaudoAplicacionService(ctx, Config(), NullLogger<LibranzaRecaudoAplicacionService>.Instance,
+                    ControlesFinancierosPrueba.Habilitado());
                 var r = await recaudo.ProcesarEventoEntranteAsync(
                     PassportInboundEventKind.Settled, pid, signatureValid: true, primera.IdEvent!.Value);
                 Assert.Equal(LibranzaRecaudoAplicacionService.ResYaAplicado, r.Resultado);
@@ -199,7 +201,8 @@ public sealed class LibranzaRecaudoWebhookReferenciaTests
         var svc = new PassportWebhookService(
             ctx,
             new FijoTimeProvider(T0),
-            new LibranzaRecaudoAplicacionService(ctx, Config(), NullLogger<LibranzaRecaudoAplicacionService>.Instance),
+            new LibranzaRecaudoAplicacionService(ctx, Config(), NullLogger<LibranzaRecaudoAplicacionService>.Instance,
+                ControlesFinancierosPrueba.Habilitado()),
             NullLogger<PassportWebhookService>.Instance);
         return await svc.ProcessAsync(raw, payload, signatureValid: true);
     }

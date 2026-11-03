@@ -136,17 +136,33 @@ public sealed class ControlOperacionesFinancierasTests
         Assert.False(Assert.Throws<OperacionFinancieraBloqueadaException>(() => control.ExigirRetiro(1m, 0m, DateTime.UtcNow)).EsLimite);
     }
 
-    // ── Lo que NUNCA se pausa ─────────────────────────────────────────────
+    // ── EstaHabilitado: misma regla que el interruptor ────────────────────
 
     [Theory]
-    [InlineData(typeof(PassportWebhookService))]
-    [InlineData(typeof(LibranzaRecaudoService))]
+    [InlineData("Production", null, false)]
+    [InlineData("Production", "false", false)]
+    [InlineData("Production", "TRUE", false)]
+    [InlineData("Production", "true", true)]
+    [InlineData("Staging", null, false)]
+    [InlineData("Development", null, true)]
+    [InlineData("QA", "true", true)]
+    [InlineData("QA", "false", false)]
+    public void EstaHabilitado_sigue_la_regla_del_interruptor(string ambiente, string? valor, bool esperado)
+    {
+        var config = valor is null ? Config() : Config(("XPAY_OPERACIONES_FINANCIERAS_HABILITADAS", valor));
+        Assert.Equal(esperado, new C(config, AmbienteXpayTests.Ambiente(ambiente)).EstaHabilitado());
+    }
+
+    // ── Fase visual: webhook de recaudo y conciliación también se pausan ──
+    // (antes quedaban fuera del interruptor; con él cerrado no aplican nada).
+
+    [Theory]
     [InlineData(typeof(LibranzaRecaudoAplicacionService))]
     [InlineData(typeof(BrebPaymentReconciliationService))]
-    public void QR_recaudo_webhook_y_conciliacion_no_dependen_del_interruptor(Type servicio)
+    public void Recaudo_webhook_y_conciliacion_dependen_del_interruptor(Type servicio)
     {
         var dependencias = servicio.GetConstructors().SelectMany(c => c.GetParameters()).Select(p => p.ParameterType);
-        Assert.DoesNotContain(typeof(C), dependencias);
+        Assert.Contains(typeof(C), dependencias);
     }
 
     private static IConfiguration Config(params (string Clave, string Valor)[] valores) =>

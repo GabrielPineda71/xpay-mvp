@@ -148,6 +148,7 @@ public class WalletsController : ControllerBase
     // permitía a cualquier autenticado recargar cualquier wallet arbitraria.
     // Restringido a administración — ver docs/security/FASE_71.2_E_B_AUTORIZACION_IDOR.md.
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    [OperacionFinanciera]
     [HttpPost("{idWallet:long}/recarga-manual")]
     // XPAY-717 - inexistente (404) en cualquier ambiente productivo.
     [SoloAmbienteNoProductivo]
@@ -176,6 +177,7 @@ public class WalletsController : ControllerBase
     // existe hoy un flujo administrativo separado que transfiera en nombre de
     // un tercero — único consumidor confirmado es UserWalletPage.tsx.
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("transferencia")]
     public async Task<IActionResult> Transferir([FromBody] TransferenciaWalletRequest request)
     {

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -26,6 +27,7 @@ public sealed class CarteraRevisionManualController(
         return d is null ? NotFound(new { error = "Solicitud no encontrada." }) : Ok(d);
     }
 
+    [OperacionFinanciera]
     [HttpPost("{idSolicitud:long}/resolver")]
     public async Task<IActionResult> Resolver(long idSolicitud, [FromBody] ResolverRevisionManualRequest req)
     {

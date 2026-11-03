@@ -137,6 +137,7 @@ public class CarteraOrdinariaController(
     public async Task<IActionResult> GetCupos()
         => Ok(await svc.GetCuposAsync());
 
+    [OperacionFinanciera]
     [HttpPost("admin/cupos")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     // XPAY-717 - inexistente (404) en cualquier ambiente productivo. La
@@ -165,6 +166,7 @@ public class CarteraOrdinariaController(
     // creación atómica de solicitud + primer intento. Sin proveedor, sin
     // decisión crediticia, sin cálculo de edad, sin uso de score.
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("solicitar-cupo")]
     public async Task<IActionResult> SolicitarCupo()
     {
@@ -214,6 +216,7 @@ public class CarteraOrdinariaController(
             CarteraAutorizacionConsultaRiesgoTextos.V1_HashSha256));
 
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("solicitudes/{idSolicitud:long}/autorizar-consulta-riesgo")]
     public async Task<IActionResult> AutorizarConsultaRiesgo(
         long idSolicitud, [FromBody] RegistrarAutorizacionConsultaRiesgoRequest req)
@@ -253,6 +256,7 @@ public class CarteraOrdinariaController(
     // STOP_AFTER_CONSULTA activo el orquestador devuelve DetenidaTrasConsulta
     // (solicitud en EN_EVALUACION, sin decisión ni cupo).
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("solicitudes/{idSolicitud:long}/iniciar-evaluacion")]
     public async Task<IActionResult> IniciarEvaluacion(long idSolicitud)
     {
@@ -330,6 +334,7 @@ public class CarteraOrdinariaController(
     // correlación se registran vía AuditLogService (no hay columna durable
     // dedicada — gap conocido XPAY-204).
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    [OperacionFinanciera]
     [HttpPost("admin/solicitudes/{idSolicitud:long}/reconciliar-consulta-atascada")]
     public async Task<IActionResult> ReconciliarConsultaAtascada(
         long idSolicitud, [FromBody] ReconciliarConsultaAtascadaRequest req)
@@ -430,6 +435,7 @@ public class CarteraOrdinariaController(
 
     // ── USUARIO: Confirmación real de utilización (AVANCE_WALLET) ─────
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("confirmar-avance-wallet")]
     public async Task<IActionResult> ConfirmarAvanceWallet([FromBody] SimularUtilizacionRequest req)
     {
@@ -466,6 +472,7 @@ public class CarteraOrdinariaController(
     }
 
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("pagar-cuota-wallet")]
     public async Task<IActionResult> PagarCuotaWallet([FromBody] PagarCuotaWalletRequest req)
     {
@@ -477,6 +484,7 @@ public class CarteraOrdinariaController(
 
     // ── USUARIO: Compra QR con Cupo Ordinario ──────────────────────────
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("pagar-qr-con-cupo")]
     public async Task<IActionResult> PagarQrConCupo([FromBody] PagarQrConCupoRequest req)
     {

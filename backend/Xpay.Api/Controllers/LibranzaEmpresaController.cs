@@ -216,6 +216,7 @@ public class LibranzaEmpresaController : ControllerBase
     // XPAY-717 y, en no productivo, exige rol ADMIN_EMPRESA. El recaudo real
     // solo ocurre vía lote + QR dinámico + settled Passport.
 
+    [OperacionFinanciera]
     [HttpPost("cobros/aplicar")]
     [SoloAmbienteNoProductivo]
     public async Task<IActionResult> AplicarPago(
@@ -283,6 +284,7 @@ public class LibranzaEmpresaController : ControllerBase
         }
     }
 
+    [OperacionFinanciera]
     [HttpPost("lotes")]
     public async Task<IActionResult> CrearLote([FromBody] CrearLoteRecaudoRequest req, [FromQuery] long? idConvenio)
     {
@@ -314,6 +316,7 @@ public class LibranzaEmpresaController : ControllerBase
         }
     }
 
+    [OperacionFinanciera]
     [HttpPost("lotes/{idLote:long}/qr")]
     public async Task<IActionResult> GenerarQrLote(long idLote, [FromQuery] long? idConvenio)
     {

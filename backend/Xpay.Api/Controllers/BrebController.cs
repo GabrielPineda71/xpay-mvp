@@ -99,6 +99,7 @@ public class BrebController : ControllerBase
     // Usuario autenticado — registra o reemplaza llave propia (USUARIO).
     // Validaciones: formato, no duplicar llave ajena, hash en DB.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/mi-llave")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]
@@ -133,6 +134,7 @@ public class BrebController : ControllerBase
     // POST /api/breb/admin/simular-validacion-llave (que se preserva sin
     // cambios para QA/demo).
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/mi-llave/resolver")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]
@@ -197,6 +199,7 @@ public class BrebController : ControllerBase
     // POST /api/breb/mi-llave/comercio
     // COMERCIO o ADMIN — registra llave para el comercio.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/mi-llave/comercio")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO,COMERCIO")]
     public async Task<IActionResult> RegistrarLlaveComercio([FromBody] RegistrarLlaveRequest request)
@@ -293,6 +296,7 @@ public class BrebController : ControllerBase
     // FIRME de Passport de que el pago no existe. Libera el Held (ver
     // BrebPaymentService.ResolverRechazoConfirmadoAsync). Operación real.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/retiros/{id:long}/resolver-envio-incierto/rechazo-confirmado")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     public async Task<IActionResult> ResolverRechazoConfirmado(long id, [FromBody] ResolverRechazoConfirmadoRequest request)
@@ -327,6 +331,7 @@ public class BrebController : ControllerBase
     // que nunca llegó a Passport (ver LiberarPendienteEnvioHuerfanoAsync).
     // Operación real: sin frontera de ambiente no productivo.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/retiros/{id:long}/liberar-pendiente-envio")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     public async Task<IActionResult> LiberarPendienteEnvio(long id)
@@ -358,6 +363,7 @@ public class BrebController : ControllerBase
     // POST /api/breb/admin/retiros/{id}/confirmar
     // CREADO → CONFIRMADO. Descuenta saldo y crea ledger DR 210101 / CR 210204.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/retiros/{id:long}/confirmar")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     // XPAY-717 - flujo simulado (solo CREADO): inexistente (404) en ambiente productivo.
@@ -384,6 +390,7 @@ public class BrebController : ControllerBase
     // POST /api/breb/admin/retiros/{id}/liquidar
     // CONFIRMADO → LIQUIDADO. Crea ledger DR 210204 / CR 110102.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/retiros/{id:long}/liquidar")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     // XPAY-717 - flujo simulado (solo CONFIRMADO): inexistente (404) en ambiente productivo.
@@ -410,6 +417,7 @@ public class BrebController : ControllerBase
     // POST /api/breb/admin/retiros/{id}/rechazar
     // CREADO → RECHAZADO (sin ledger) o CONFIRMADO → RECHAZADO (reverso ledger).
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/retiros/{id:long}/rechazar")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     // XPAY-717 - flujo simulado (solo CREADO/CONFIRMADO): inexistente (404) en ambiente productivo.
@@ -455,6 +463,7 @@ public class BrebController : ControllerBase
     // Solo ADMIN_XPAY/SUPERUSUARIO. QA only.
     // Marca llave como VALIDADA o RECHAZADA sin llamar Passport real.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/simular-validacion-llave")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     // XPAY-717 - validación simulada sin Passport: inexistente (404) en ambiente productivo.
@@ -537,6 +546,7 @@ public class BrebController : ControllerBase
     // En Fase 64: CREADO, sin tocar ledger ni saldo.
     // En Fase 65: llamará Passport real, moverá saldo transaccionalmente.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/retiros/simular")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]
@@ -570,6 +580,7 @@ public class BrebController : ControllerBase
     // la identidad de persona natural verificada vía Veriff no aplica al
     // onboarding/KYB de un comercio (alcance futuro separado).
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/retiros/simular/comercio")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO,COMERCIO")]
     // XPAY-717 - retiro simulado (CREADO, sin Passport): inexistente (404) en ambiente productivo.
@@ -609,6 +620,7 @@ public class BrebController : ControllerBase
     // no resuelta, resolución vencida), nunca se intenta contactar
     // Passport.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/retiros/real")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]
@@ -677,6 +689,7 @@ public class BrebController : ControllerBase
     // retiro. NO ejecuta red real en XPAY-373 (PASSPORT_ACCOUNT_ID/
     // PASSPORT_BASE_URL ausentes en todo ambiente).
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/retiros/{id:long}/actualizar-estado")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     public async Task<IActionResult> ActualizarEstadoRetiroReal(long id)
@@ -717,6 +730,7 @@ public class BrebController : ControllerBase
     // camino que el admin y que el propio EnviarPaymentAsync — sin
     // duplicar lógica financiera.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/mis-retiros/{id:long}/actualizar-estado")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]

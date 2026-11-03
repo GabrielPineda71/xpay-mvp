@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.Integrations.Passport;
 using Xpay.Api.Models;
@@ -33,7 +34,8 @@ namespace Xpay.Api.Services;
 public class BrebPaymentReconciliationService(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
-    ILogger<BrebPaymentReconciliationService> logger) : BackgroundService
+    ILogger<BrebPaymentReconciliationService> logger,
+    ControlOperacionesFinancieras control) : BackgroundService
 {
     public const string EnvIntervalSeconds = "BREB_RECONCILIATION_INTERVAL_SECONDS";
     private const int DefaultIntervalSeconds = 10;
@@ -117,6 +119,17 @@ public class BrebPaymentReconciliationService(
         if (candidatos.Count == 0)
         {
             logger.LogInformation("BREB_RECONCILIACION: sin retiros transitorios pendientes.");
+            return;
+        }
+
+        // Bloqueo financiero: con el interruptor cerrado no se consulta Passport
+        // ni se aplica ningún estado. Los retiros siguen en su estado transitorio
+        // (persistido en BD) y se concilian en el primer ciclo tras reabrirlo.
+        if (!control.EstaHabilitado())
+        {
+            logger.LogWarning(
+                "BREB_RECONCILIACION_PAUSADA: {Total} retiros transitorios pendientes; operaciones financieras deshabilitadas.",
+                candidatos.Count);
             return;
         }
 
