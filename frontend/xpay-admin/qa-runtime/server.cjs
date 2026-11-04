@@ -20,13 +20,20 @@ const MIME = {
 // P0-B frontend — cabeceras en TODA respuesta. Anti-framing con CSP
 // frame-ancestors (navegadores actuales) + X-Frame-Options (anteriores). No
 // se añade una CSP amplia: solo frame-ancestors, que no restringe scripts,
-// estilos ni conexiones del bundle.
+// estilos ni conexiones del bundle. HSTS: el navegador no vuelve a intentar
+// HTTP con este host (App Service ya redirige HTTP → HTTPS).
 const CABECERAS_SEGURIDAD = {
   'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "frame-ancestors 'none'",
+  'Strict-Transport-Security': 'max-age=31536000',
 };
+
+// El ZIP desplegado tiene el bundle junto al propio servidor: estos archivos
+// de la raíz nunca se sirven (en minúsculas: el sistema de archivos puede no
+// distinguir mayúsculas).
+const ARCHIVOS_PRIVADOS = new Set(['server.cjs', 'package.json']);
 
 // Respuesta de error con texto FIJO: nunca refleja la URL recibida.
 function responderError(res, status, texto) {
@@ -60,6 +67,10 @@ function crearManejador(root) {
     let filePath = path.normalize(path.join(raiz, urlPath));
     if (filePath !== raiz && !filePath.startsWith(raiz + path.sep)) {
       filePath = indice;
+    }
+    if (ARCHIVOS_PRIVADOS.has(path.relative(raiz, filePath).toLowerCase())) {
+      responderError(res, 404, 'No encontrado.');
+      return;
     }
 
     fs.stat(filePath, (err, stat) => {

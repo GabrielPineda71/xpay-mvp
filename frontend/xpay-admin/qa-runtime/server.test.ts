@@ -46,6 +46,7 @@ function esperarCabecerasSeguridad(r: Respuesta) {
   expect(r.headers['x-content-type-options']).toBe('nosniff');
   expect(r.headers['x-frame-options']).toBe('DENY');
   expect(r.headers['content-security-policy']).toBe("frame-ancestors 'none'");
+  expect(r.headers['strict-transport-security']).toBe('max-age=31536000');
 }
 
 let raiz = '';
@@ -58,6 +59,9 @@ beforeAll(async () => {
   mkdirSync(join(raiz, 'assets'));
   writeFileSync(join(raiz, 'index.html'), INDICE);
   writeFileSync(join(raiz, 'assets', 'app.js'), 'export const x = 1;\n');
+  // Mismo contenido que el ZIP desplegado: el servidor y su package.json en la raíz.
+  writeFileSync(join(raiz, 'server.cjs'), '// SERVIDOR SINTETICO\n');
+  writeFileSync(join(raiz, 'package.json'), '{"name":"PAQUETE SINTETICO"}\n');
   raizVacia = mkdtempSync(join(tmpdir(), 'xpay-qa-runtime-vacia-'));
   servidor = await iniciar(raiz);
   servidorSinIndice = await iniciar(raizVacia);
@@ -123,6 +127,18 @@ describe('qa-runtime/server.cjs (P0-B frontend)', () => {
     expect(r.status).toBe(200);
     expect(r.body).toBe(INDICE);
   });
+
+  it.each(['/server.cjs', '/package.json', '/SERVER.CJS', '/Package.Json', '/assets/../server.cjs', '/%73erver.cjs'])(
+    'archivos del propio servidor %s: 404 fijo, nunca su contenido',
+    async ruta => {
+      const r = await pedir(servidor, ruta);
+      expect(r.status).toBe(404);
+      expect(r.body).toBe('No encontrado.');
+      expect(r.body).not.toContain('SINTETICO');
+      expect(r.headers['cache-control']).toBe('no-store');
+      esperarCabecerasSeguridad(r);
+    },
+  );
 
   it('sin index.html: 500 fijo en lugar de tumbar el proceso', async () => {
     const r = await pedir(servidorSinIndice, '/verificar-email');
