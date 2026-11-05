@@ -37,6 +37,10 @@ import { AdminUsuariosListPage } from './pages/AdminUsuariosListPage.tsx';
 import { AdminUsuarioDetallePage } from './pages/AdminUsuarioDetallePage.tsx';
 import { CambiarClaveObligatoriaPage } from './pages/CambiarClaveObligatoriaPage.tsx';
 import { ProfilePage } from './pages/ProfilePage.tsx';
+import { VerificarEmailPage } from './pages/VerificarEmailPage.tsx';
+import { RestablecerClavePage } from './pages/RestablecerClavePage.tsx';
+import { RecuperarClavePage } from './pages/RecuperarClavePage.tsx';
+import { ReenviarVerificacionPage } from './pages/ReenviarVerificacionPage.tsx';
 
 // Smart redirect based on user role/view
 function UserRedirect() {
@@ -55,6 +59,13 @@ export default function App() {
       <AuthProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* P0-B frontend — rutas públicas de identidad, fuera de
+              PrivateRoute a propósito (el catch-all "*" está dentro y las
+              mandaría a /login). */}
+          <Route path="/verificar-email" element={<VerificarEmailPage />} />
+          <Route path="/restablecer-clave" element={<RestablecerClavePage />} />
+          <Route path="/recuperar-clave" element={<RecuperarClavePage />} />
+          <Route path="/reenviar-verificacion" element={<ReenviarVerificacionPage />} />
           <Route element={<PrivateRoute />}>
             {/* Fase USUARIOS-ADMIN-5: fuera de RequireClaveVigente a propósito
                 — es la única ruta accesible mientras requiereCambioClave=true. */}

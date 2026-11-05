@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -39,13 +40,16 @@ public class BrebController : ControllerBase
     // (no tienen fila propia en ComercioUsuarios, así que aplicarles el
     // mismo check los bloquearía incorrectamente — comportamiento actual
     // preservado a propósito, no una omisión).
-    private async Task<IActionResult?> ValidarScopeComercioAsync(long idUsuario, long idComercio)
+    // P0-A: `permiso` (p. ej. PuedeEnviarBreb) se exige además del comercio,
+    // con el mismo alcance que el check de scope (solo rol COMERCIO).
+    private async Task<IActionResult?> ValidarScopeComercioAsync(
+        long idUsuario, long idComercio, Func<ComercioScope, bool>? permiso = null)
     {
         if (!User.IsInRole("COMERCIO")) return null;
         try
         {
-            await _scope.RequireScopeForComercioAsync(idUsuario, idComercio);
-            return null;
+            var scope = await _scope.RequireScopeForComercioAsync(idUsuario, idComercio);
+            return permiso is null || permiso(scope) ? null : Forbid();
         }
         catch (UnauthorizedAccessException) { return Forbid(); }
     }
@@ -95,6 +99,7 @@ public class BrebController : ControllerBase
     // Usuario autenticado — registra o reemplaza llave propia (USUARIO).
     // Validaciones: formato, no duplicar llave ajena, hash en DB.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/mi-llave")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]
@@ -129,6 +134,7 @@ public class BrebController : ControllerBase
     // POST /api/breb/admin/simular-validacion-llave (que se preserva sin
     // cambios para QA/demo).
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/mi-llave/resolver")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]
@@ -193,6 +199,7 @@ public class BrebController : ControllerBase
     // POST /api/breb/mi-llave/comercio
     // COMERCIO o ADMIN — registra llave para el comercio.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/mi-llave/comercio")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO,COMERCIO")]
     public async Task<IActionResult> RegistrarLlaveComercio([FromBody] RegistrarLlaveRequest request)
@@ -201,7 +208,7 @@ public class BrebController : ControllerBase
             return Unauthorized(new { success = false, message = "Token inválido." });
         if (request.IdComercio is null or <= 0)
             return BadRequest(new { success = false, message = "idComercio requerido para contexto COMERCIO." });
-        if (await ValidarScopeComercioAsync(idUsuario, request.IdComercio.Value) is { } denied)
+        if (await ValidarScopeComercioAsync(idUsuario, request.IdComercio.Value, s => s.PuedeEnviarBreb) is { } denied)
             return denied;
 
         _audit.LogSensitiveAction(HttpContext, "BREB_LLAVE_COMERCIO_REGISTRO_ATTEMPT",
@@ -264,11 +271,103 @@ public class BrebController : ControllerBase
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // GET /api/breb/admin/retiros/envio-incierto
+    // P0 J.1 - SOLO LECTURA. Retiros reales que requieren revisión humana:
+    // ENVIADO_PASSPORT, sin payment_id y con más de 2 h desde el envío (fondos
+    // retenidos). La selección vive en BrebPaymentService. No resuelve, no
+    // libera, no llama a Passport. Operación real: sin [SoloAmbienteNoProductivo].
+    // ──────────────────────────────────────────────────────────────────────
+    [HttpGet("api/breb/admin/retiros/envio-incierto")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> ListarEnviosInciertos()
+    {
+        try
+        {
+            var data = await _brebPayment.ListarEnviosInciertosSinPaymentIdAsync();
+            return Ok(new { success = true, data });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/admin/retiros/{id}/resolver-envio-incierto/rechazo-confirmado
+    // P0 J.3 - decisión operativa privilegiada: el admin certifica evidencia
+    // FIRME de Passport de que el pago no existe. Libera el Held (ver
+    // BrebPaymentService.ResolverRechazoConfirmadoAsync). Operación real.
+    // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
+    [HttpPost("api/breb/admin/retiros/{id:long}/resolver-envio-incierto/rechazo-confirmado")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> ResolverRechazoConfirmado(long id, [FromBody] ResolverRechazoConfirmadoRequest request)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_RECHAZO_CONFIRMADO_ATTEMPT",
+            new { idBrebRetiro = id, adminId, evidenciaLongitud = request?.Evidencia?.Trim().Length ?? 0 });
+        try
+        {
+            var retiro = await _brebPayment.ResolverRechazoConfirmadoAsync(id, request?.Evidencia, adminId);
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_RECHAZO_CONFIRMADO_OK",
+                new { idBrebRetiro = id, adminId, estado = retiro.Estado });
+            return Ok(new { success = true, data = ToRetiroRealResponse(retiro) });
+        }
+        catch (KeyNotFoundException ex)
+        { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_RECHAZO_CONFIRMADO_RECHAZADO",
+                new { idBrebRetiro = id, adminId, motivo = ex.Message });
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // POST /api/breb/admin/retiros/{id}/liberar-pendiente-envio
+    // P0 J.6 - libera un retiro huérfano PENDIENTE_ENVIO_PASSPORT (> 15 min),
+    // que nunca llegó a Passport (ver LiberarPendienteEnvioHuerfanoAsync).
+    // Operación real: sin frontera de ambiente no productivo.
+    // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
+    [HttpPost("api/breb/admin/retiros/{id:long}/liberar-pendiente-envio")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> LiberarPendienteEnvio(long id)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_ORPHAN_LIBERAR_ATTEMPT", new { idBrebRetiro = id, adminId });
+        try
+        {
+            var retiro = await _brebPayment.LiberarPendienteEnvioHuerfanoAsync(id, adminId);
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_ORPHAN_LIBERAR_OK",
+                new { idBrebRetiro = id, adminId, estado = retiro.Estado });
+            return Ok(new { success = true, data = ToRetiroRealResponse(retiro) });
+        }
+        catch (KeyNotFoundException ex)
+        { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex)
+        {
+            _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_ORPHAN_LIBERAR_RECHAZADO",
+                new { idBrebRetiro = id, adminId, motivo = ex.Message });
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch
+        { return StatusCode(500, new { success = false, message = "Error interno." }); }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // POST /api/breb/admin/retiros/{id}/confirmar
     // CREADO → CONFIRMADO. Descuenta saldo y crea ledger DR 210101 / CR 210204.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/retiros/{id:long}/confirmar")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - flujo simulado (solo CREADO): inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> ConfirmarRetiro(long id)
     {
         if (!TryGetIdUsuario(out var adminId))
@@ -291,8 +390,11 @@ public class BrebController : ControllerBase
     // POST /api/breb/admin/retiros/{id}/liquidar
     // CONFIRMADO → LIQUIDADO. Crea ledger DR 210204 / CR 110102.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/retiros/{id:long}/liquidar")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - flujo simulado (solo CONFIRMADO): inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> LiquidarRetiro(long id)
     {
         if (!TryGetIdUsuario(out var adminId))
@@ -315,8 +417,11 @@ public class BrebController : ControllerBase
     // POST /api/breb/admin/retiros/{id}/rechazar
     // CREADO → RECHAZADO (sin ledger) o CONFIRMADO → RECHAZADO (reverso ledger).
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/retiros/{id:long}/rechazar")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - flujo simulado (solo CREADO/CONFIRMADO): inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> RechazarRetiro(long id, [FromBody] RechazarRetiroRequest request)
     {
         if (!TryGetIdUsuario(out var adminId))
@@ -358,8 +463,11 @@ public class BrebController : ControllerBase
     // Solo ADMIN_XPAY/SUPERUSUARIO. QA only.
     // Marca llave como VALIDADA o RECHAZADA sin llamar Passport real.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/simular-validacion-llave")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - validación simulada sin Passport: inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> SimularValidacionLlave([FromBody] SimularValidacionLlaveRequest request)
     {
         if (!TryGetIdUsuario(out var idUsuario))
@@ -438,9 +546,12 @@ public class BrebController : ControllerBase
     // En Fase 64: CREADO, sin tocar ledger ni saldo.
     // En Fase 65: llamará Passport real, moverá saldo transaccionalmente.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/retiros/simular")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]
+    // XPAY-717 - retiro simulado (CREADO, sin Passport): inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> SimularRetiro([FromBody] SimularRetiroRequest request)
     {
         if (!TryGetIdPersona(out var idPersona) || !TryGetIdUsuario(out var idUsuario))
@@ -469,15 +580,18 @@ public class BrebController : ControllerBase
     // la identidad de persona natural verificada vía Veriff no aplica al
     // onboarding/KYB de un comercio (alcance futuro separado).
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/retiros/simular/comercio")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO,COMERCIO")]
+    // XPAY-717 - retiro simulado (CREADO, sin Passport): inexistente (404) en ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> SimularRetiroComercio([FromBody] SimularRetiroRequest request)
     {
         if (!TryGetIdUsuario(out var idUsuario))
             return Unauthorized(new { success = false, message = "Token inválido." });
         if (request.IdComercio is null or <= 0)
             return BadRequest(new { success = false, message = "idComercio requerido para contexto COMERCIO." });
-        if (await ValidarScopeComercioAsync(idUsuario, request.IdComercio.Value) is { } denied)
+        if (await ValidarScopeComercioAsync(idUsuario, request.IdComercio.Value, s => s.PuedeEnviarBreb) is { } denied)
             return denied;
 
         _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_SIMULAR_COMERCIO_ATTEMPT",
@@ -506,6 +620,7 @@ public class BrebController : ControllerBase
     // no resuelta, resolución vencida), nunca se intenta contactar
     // Passport.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/retiros/real")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]
@@ -539,6 +654,17 @@ public class BrebController : ControllerBase
                 new { idUsuario, idBrebRetiro = retiro.IdBrebRetiro, estado = retiro.Estado });
             return Ok(new { success = true, data = ToRetiroRealResponse(retiro) });
         }
+        catch (Xpay.Api.Exceptions.OperacionFinancieraBloqueadaException ex)
+        {
+            // Piloto PROD — pausa/configuración → 503; tope o límite diario XPAY → 400.
+            var accion = ex.Motivo == MotivoBloqueoFinanciero.LimiteDiarioXpay
+                ? "BREB_RETIRO_REAL_BLOQUEADO_LIMITE_DIARIO_XPAY"
+                : ex.EsLimite ? "BREB_RETIRO_REAL_BLOQUEADO_TOPE_OPERACION" : "BREB_RETIRO_REAL_BLOQUEADO_CONTROL";
+            _audit.LogSensitiveAction(HttpContext, accion, new { idUsuario, motivo = ex.Motivo.ToString() });
+            return ex.EsLimite
+                ? BadRequest(new { success = false, message = ex.Message })
+                : StatusCode(503, new { success = false, message = ex.Message });
+        }
         catch (InvalidOperationException ex)
         {
             _audit.LogSensitiveAction(HttpContext, "BREB_RETIRO_REAL_RECHAZADO", new { idUsuario, motivo = ex.Message });
@@ -563,6 +689,7 @@ public class BrebController : ControllerBase
     // retiro. NO ejecuta red real en XPAY-373 (PASSPORT_ACCOUNT_ID/
     // PASSPORT_BASE_URL ausentes en todo ambiente).
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/admin/retiros/{id:long}/actualizar-estado")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     public async Task<IActionResult> ActualizarEstadoRetiroReal(long id)
@@ -603,6 +730,7 @@ public class BrebController : ControllerBase
     // camino que el admin y que el propio EnviarPaymentAsync — sin
     // duplicar lógica financiera.
     // ──────────────────────────────────────────────────────────────────────
+    [OperacionFinanciera]
     [HttpPost("api/breb/mis-retiros/{id:long}/actualizar-estado")]
     [Authorize]
     [Authorize(Policy = "KycAprobado")]

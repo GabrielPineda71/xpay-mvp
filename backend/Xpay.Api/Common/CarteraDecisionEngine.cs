@@ -397,8 +397,11 @@ public static class CarteraDecisionEngine
             }
         }
 
-        // Ventana objetivo: `ventanaMeses` meses consecutivos terminando en M-1.
-        var (u1a, u1m) = MesAnterior(qa, qm);                    // M-1
+        // XPAY-698: ventana de meses consecutivos terminando
+        // en el periodo mas reciente reportado por el proveedor.
+        if (mapa.Count == 0)
+            return NdInfo;
+        var (u1a, u1m) = mapa.Keys.Max();
         var ventana = new List<(int a, int m)>();
         var cur = (a: u1a, m: u1m);
         for (var i = 0; i < p.ComportamientoVentanaMeses; i++)
@@ -453,12 +456,12 @@ public static class CarteraDecisionEngine
         return new ComportamientoResultado(null, rechazos, factor);
     }
 
-    private static (int a, int m) MesAnterior(int a, int m) => m == 1 ? (a - 1, 12) : (a, m - 1);
+    internal static (int a, int m) MesAnterior(int a, int m) => m == 1 ? (a - 1, 12) : (a, m - 1);
 
     // Gramática aceptada EXCLUSIVAMENTE: YYYY-M / YYYY-MM. Año exactamente 4
     // dígitos ASCII ; mes 1..12. Sin trim, sin fechas completas, sin slashes,
     // sin nombres, sin espacios, sin interpretación flexible.
-    private static bool TryParseAnioMes(string? s, out int anio, out int mes)
+    internal static bool TryParseAnioMes(string? s, out int anio, out int mes)
     {
         anio = 0;
         mes = 0;
@@ -484,7 +487,7 @@ public static class CarteraDecisionEngine
 
     // severidad: N=0 ; 1..6 ; C=7 ; D=8 ; NO-DATA ("", "-", " ") = -1.
     // Devuelve false si el valor no es reconocible (código desconocido).
-    private static bool ClasificarComportamiento(string? raw, out int severidad)
+    internal static bool ClasificarComportamiento(string? raw, out int severidad)
     {
         var t = (raw ?? string.Empty).Trim();
         if (t.Length == 0 || t == "-")

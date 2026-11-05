@@ -1,0 +1,24 @@
+{
+  "case_id": "M4-T3-B-KEY-PREP-CREATE",
+  "executed_at_utc": "2026-09-23T00:17:10Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "7d7bdcbdd0fa471af7b814a35695bad36216f53c",
+  "operation": "POST /v1/keys",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "key_type": "BCODE",
+    "account_id_fingerprint": "22308566F22C",
+    "key_value": "REDACTED",
+    "display_name_present": true
+  },
+  "response_sanitized": {
+    "status": "ACTIVE",
+    "key_type": "BCODE",
+    "id_fingerprint": "8A15DB69E7E0",
+    "account_id_fingerprint": "22308566F22C"
+  },
+  "automated_test_reference": null,
+  "notes": "M4-T3-B-KEY-PREP-CREATE: llave desechable creada. El key_id real NO fue persistido \u2014 recup\u00E9relo manualmente desde Passport Sandbox Dashboard y configure PASSPORT_TEST_QR_DELETED_KEY_ID usted mismo.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

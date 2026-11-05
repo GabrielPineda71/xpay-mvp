@@ -1427,6 +1427,155 @@
   margin: 0;
 }
 
+/* ── Lector QR a pantalla completa (QrScannerOverlay.tsx) — Enviar y
+   Comprar con QR. Capa fija sobre todo el shell (portal en body); el vídeo
+   que inyecta html5-qrcode cubre la pantalla y el marco es solo visual.
+   Respeta las áreas seguras (requiere viewport-fit=cover en index.html).
+   Al montarse en body queda FUERA de .wallet-shell-v2, donde viven los
+   tokens --xpay-*: por eso define sus propios colores (mismos valores de
+   la paleta oficial) y no depende de ellos. ── */
+.qr-fullscreen {
+  --qr-fs-bg: #000000;      /* = --xpay-black */
+  --qr-fs-fg: #ffffff;      /* = --xpay-surface */
+  --qr-fs-focus: #0d828e;   /* = --xpay-teal */
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--qr-fs-bg);
+  overflow: hidden;
+}
+
+.qr-fullscreen-reader {
+  /* html5-qrcode fija position:relative en línea al arrancar; sin esto el
+     contenedor pierde inset:0 y el vídeo queda con su altura natural. */
+  position: absolute !important;
+  inset: 0;
+}
+
+/* Recorte "cover" hecho con el tamaño del propio vídeo, sin object-fit:
+   html5-qrcode mapea la zona de lectura con videoWidth/clientWidth y
+   videoHeight/clientHeight por separado, así que el elemento debe conservar
+   la proporción real de la cámara o la imagen analizada sale deformada. El
+   vídeo llena el lado largo de la pantalla, se centra y el contenedor
+   (.qr-fullscreen, overflow: hidden) recorta el excedente. */
+.qr-fullscreen-reader video {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: auto !important;
+  height: 100% !important;
+  transform: translate(-50%, -50%);
+}
+
+@media (orientation: landscape) {
+  .qr-fullscreen-reader video {
+    width: 100% !important;
+    height: auto !important;
+  }
+}
+
+/* html5-qrcode dibuja su propia región sombreada; el marco lo pone la capa. */
+.qr-fullscreen-reader #qr-shaded-region {
+  display: none;
+}
+
+/* Marco cuadrado: 90 % del ancho útil, limitado por el alto disponible tras
+   reservar arriba (título y X) y abajo (instrucción) el mismo espacio, para
+   quedar centrado sin pisarlos. useQrScanner mide este elemento para fijar
+   qrbox, así que su tamaño es la única fuente de verdad de la zona de lectura.
+   Las esquinas son degradados de fondo: solo visuales, html5-qrcode analiza
+   los fotogramas de la cámara y no lo que se pinta encima. */
+.qr-fullscreen-frame {
+  --qr-fs-reserva: 80px;
+  --qr-fs-esquina: 44px;
+  --qr-fs-grosor: 5px;
+  --qr-fs-lado: max(120px, min(
+    calc((100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) * 0.9),
+    calc(100dvh - 2 * (var(--qr-fs-reserva)
+      + max(env(safe-area-inset-top, 0px), env(safe-area-inset-bottom, 0px))))
+  ));
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--qr-fs-lado);
+  height: var(--qr-fs-lado);
+  transform: translate(-50%, -50%);
+  border-radius: 14px;
+  background:
+    linear-gradient(var(--qr-fs-fg), var(--qr-fs-fg)) top left / var(--qr-fs-esquina) var(--qr-fs-grosor),
+    linear-gradient(var(--qr-fs-fg), var(--qr-fs-fg)) top left / var(--qr-fs-grosor) var(--qr-fs-esquina),
+    linear-gradient(var(--qr-fs-fg), var(--qr-fs-fg)) top right / var(--qr-fs-esquina) var(--qr-fs-grosor),
+    linear-gradient(var(--qr-fs-fg), var(--qr-fs-fg)) top right / var(--qr-fs-grosor) var(--qr-fs-esquina),
+    linear-gradient(var(--qr-fs-fg), var(--qr-fs-fg)) bottom left / var(--qr-fs-esquina) var(--qr-fs-grosor),
+    linear-gradient(var(--qr-fs-fg), var(--qr-fs-fg)) bottom left / var(--qr-fs-grosor) var(--qr-fs-esquina),
+    linear-gradient(var(--qr-fs-fg), var(--qr-fs-fg)) bottom right / var(--qr-fs-esquina) var(--qr-fs-grosor),
+    linear-gradient(var(--qr-fs-fg), var(--qr-fs-fg)) bottom right / var(--qr-fs-grosor) var(--qr-fs-esquina);
+  background-repeat: no-repeat;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.qr-fullscreen-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px)
+           calc(env(safe-area-inset-right, 0px) + 12px)
+           12px
+           calc(env(safe-area-inset-left, 0px) + 16px);
+}
+
+.qr-fullscreen-title {
+  margin: 0;
+  color: var(--qr-fs-fg);
+  font-size: 1rem;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.qr-fullscreen-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--qr-fs-fg);
+  cursor: pointer;
+}
+
+.qr-fullscreen-close:focus-visible {
+  outline: 3px solid var(--qr-fs-focus);
+  outline-offset: 2px;
+}
+
+.qr-fullscreen-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 16px
+           calc(env(safe-area-inset-right, 0px) + 16px)
+           calc(env(safe-area-inset-bottom, 0px) + 24px)
+           calc(env(safe-area-inset-left, 0px) + 16px);
+  color: var(--qr-fs-fg);
+  font-size: 0.9rem;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
 /* ── Mi llave Bre-B dentro de Perfil (BrebMyKeySection.tsx) ── */
 .breb-profile-section {
   display: flex;

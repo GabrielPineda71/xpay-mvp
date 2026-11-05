@@ -4,8 +4,11 @@ import QRCode from 'qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { get, post, HttpUncertainError } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
+import { ambienteXpay, monedaVisible } from '../config/ambiente.ts';
+import { SoloQa } from '../config/SoloQa.tsx';
 import { HeroBalanceCard } from '../components/wallet/HeroBalanceCard.tsx';
 import { useQrScanner } from '../hooks/useQrScanner.ts';
+import { QrScannerOverlay } from '../components/wallet/QrScannerOverlay.tsx';
 import { useWalletNotifications } from '../components/wallet/WalletNotificationsContext.tsx';
 
 // Fase 71.2-E-C: DEMO_MAP eliminado — la wallet propia se resuelve vía
@@ -35,9 +38,11 @@ const POLL_INTERVAL_MS = 7000;
 
 // XPAY QR payload types — QA/Demo phase (no cryptographic signing in this phase)
 // See docs/QA_QR_MONEY_FLOW.md for full specification
+// `env` = ambiente del build que generó el QR (ambienteXpay()); un QR de
+// otro ambiente se rechaza al leerlo.
 interface XpayTransferQR {
   type: 'XPAY_TRANSFER';
-  env:  'QA';
+  env:  string;
   version: number;
   receiverUser:     string;
   receiverWalletId: number;
@@ -47,7 +52,7 @@ interface XpayTransferQR {
 
 interface XpayMerchantQR {
   type: 'XPAY_MERCHANT_PAYMENT';
-  env:  'QA';
+  env:  string;
   version: number;
   merchantName: string;
   qrCode:  string;
@@ -66,6 +71,16 @@ interface QrPreview {
   nombreComercio: string;
   idTienda:       number;
   nombreTienda:   string;
+}
+
+// Respuesta de GET /api/wallets/destinatario/{idWallet} — espejo de
+// DestinatarioWalletResponse (backend). Única fuente del destinatario que se
+// muestra y se confirma en Enviar: XpayTransferQR.receiverUser nunca es
+// autoridad, solo se compara con este usuario.
+interface DestinatarioVerificado {
+  idWallet:      number;
+  usuario:       string;
+  nombreVisible: string | null;
 }
 
 interface Movimiento {
@@ -311,7 +326,13 @@ export function UserWalletPage() {
 
   // ── Enviar dinero ─────────────────────────────────────────────────────────
   const [envDest,       setEnvDest]       = useState<number | null>(null);
+  // Usuario que DECLARA el QR: solo se compara con el titular real, nunca
+  // se muestra ni se envía.
   const [envDestUser,   setEnvDestUser]   = useState('');
+  // Titular resuelto por el backend para envDest; sin él no hay valor ni PIN.
+  const [envDestVerificado,  setEnvDestVerificado]  = useState<DestinatarioVerificado | null>(null);
+  const [envDestVerificando, setEnvDestVerificando] = useState(false);
+  const [envDestErr,         setEnvDestErr]         = useState<string | null>(null);
   const [envValor,      setEnvValor]      = useState('');
   const [envNeedValor,  setEnvNeedValor]  = useState(false);
   const [envPin,        setEnvPin]        = useState('');
@@ -320,6 +341,10 @@ export function UserWalletPage() {
   const [envPasted,     setEnvPasted]     = useState('');
   const [envScanning,   setEnvScanning]   = useState(false);
   const [envScanErr,    setEnvScanErr]    = useState<string | null>(null);
+  // Lector a pantalla completa: tras cerrarlo (o tras un error de cámara) no
+  // se vuelve a abrir solo mientras el usuario siga en el tab; "Activar
+  // cámara" lo reabre a mano. Se rearma al salir del tab.
+  const [envAutoScanOff, setEnvAutoScanOff] = useState(false);
   const [envManual,     setEnvManual]     = useState(false);
   const [envManualDest, setEnvManualDest] = useState('');
   // XPAY-426 (Block B) — reemplaza el mensaje inline QA-WALLET-7A que
@@ -389,6 +414,7 @@ export function UserWalletPage() {
   const [pagPasted,       setPagPasted]       = useState('');
   const [pagScanning,     setPagScanning]     = useState(false);
   const [pagScanErr,      setPagScanErr]      = useState<string | null>(null);
+  const [pagAutoScanOff,  setPagAutoScanOff]  = useState(false);
   const [pagMetodoPago,   setPagMetodoPago]   = useState<'wallet' | 'cupo' | null>(null);
   // Fase 71.2-E-G: misma idea que envIdemRef, para el pago QR.
   const pagIdemRef = useRef<{ key: string; qrCode: string; valor: string } | null>(null);
@@ -429,6 +455,36 @@ export function UserWalletPage() {
     })();
     return () => { cancelado = true; };
   }, [pagQrCode]);
+
+  // Verificación del destinatario de Enviar: cada vez que cambia el destino
+  // (QR, QR pegado o ingreso manual) se resuelve el titular en el backend
+  // ANTES de mostrar valor y PIN. Si el QR declara un usuario distinto del
+  // titular real, se rechaza. La transferencia envía este usuario como
+  // usuarioDestinoEsperado y el backend lo vuelve a comprobar.
+  useEffect(() => {
+    let cancelado = false;
+    setEnvDestVerificado(null);
+    setEnvDestErr(null);
+    if (!envDest) { setEnvDestVerificando(false); return; }
+    setEnvDestVerificando(true);
+    void (async () => {
+      try {
+        const r = await get<{ success: boolean; data: DestinatarioVerificado }>(
+          `/api/wallets/destinatario/${envDest}`);
+        if (cancelado) return;
+        if (envDestUser && envDestUser !== r.data.usuario) {
+          setEnvDestErr('El QR no coincide con el titular de la wallet. No envíes dinero con este QR.');
+          return;
+        }
+        setEnvDestVerificado(r.data);
+      } catch (err) {
+        if (!cancelado) setEnvDestErr((err as Error).message || 'No fue posible verificar el destinatario.');
+      } finally {
+        if (!cancelado) setEnvDestVerificando(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [envDest, envDestUser]);
 
   // ── KYC load / manual refresh ─────────────────────────────────────────────
   const loadKyc = useCallback(async (silent = false) => {
@@ -601,8 +657,9 @@ export function UserWalletPage() {
   function parseTransferQr(raw: string): void {
     try {
       const p = JSON.parse(raw) as XpayTransferQR;
+      const ambiente = ambienteXpay();
       if (p.type !== 'XPAY_TRANSFER')       { setEnvScanErr('El QR no es de tipo XPAY_TRANSFER.'); return; }
-      if (p.env  !== 'QA')                  { setEnvScanErr('El QR no corresponde al ambiente QA.'); return; }
+      if (p.env  !== ambiente)              { setEnvScanErr(`El QR no corresponde al ambiente ${ambiente}.`); return; }
       if (!p.receiverWalletId)              { setEnvScanErr('QR sin wallet destino.'); return; }
       if (p.receiverWalletId === miWallet?.idWallet)
                                              { setEnvScanErr('No puedes transferirte a tu propia wallet.'); return; }
@@ -618,6 +675,10 @@ export function UserWalletPage() {
     try {
       const p = JSON.parse(raw) as XpayMerchantQR;
       if (p.type === 'XPAY_MERCHANT_PAYMENT') {
+        // El código en texto plano (más abajo) lo resuelve el backend de cada
+        // ambiente; el JSON trae su ambiente y se exige que sea este.
+        const ambiente = ambienteXpay();
+        if (p.env !== ambiente) { setPagScanErr(`El QR no corresponde al ambiente ${ambiente}.`); return; }
         setPagQrCode(p.qrCode);
         if (p.amount && p.amount > 0) { setPagValor(String(p.amount)); setPagNeedValor(false); }
         else                          { setPagValor('');                setPagNeedValor(true); }
@@ -677,10 +738,21 @@ export function UserWalletPage() {
       else if (scannerMode === 'pagar') { setPagScanning(false); parseMerchantQrRef.current(text); }
     },
     onError: (message) => {
-      if (scannerMode === 'enviar') { setEnvScanning(false); setEnvScanErr(message); }
-      else if (scannerMode === 'pagar') { setPagScanning(false); setPagScanErr(message); }
+      if (scannerMode === 'enviar') { setEnvAutoScanOff(true); setEnvScanning(false); setEnvScanErr(message); }
+      else if (scannerMode === 'pagar') { setPagAutoScanOff(true); setPagScanning(false); setPagScanErr(message); }
     },
   });
+
+  // Cierre del lector a pantalla completa: detiene la cámara (vía
+  // useQrScanner) y suspende el auto-inicio. No toca destino, monto ni PIN.
+  const cerrarEscaneoEnviar = useCallback(() => {
+    setEnvAutoScanOff(true);
+    setEnvScanning(false);
+  }, []);
+  const cerrarEscaneoPagar = useCallback(() => {
+    setPagAutoScanOff(true);
+    setPagScanning(false);
+  }, []);
 
   // ── Auto-inicio de escaneo al entrar a 'enviar'/'pagar', y liberación al
   //    salir (XPAY-390 R4/R5) ─────────────────────────────────────────────
@@ -689,16 +761,16 @@ export function UserWalletPage() {
   // el mismo estado/efecto de escaneo que el botón manual usaba antes —
   // ningún handler financiero se modifica.
   useEffect(() => {
-    if (tab === 'enviar' && !envDest && !envManual && !envScanning) {
+    if (tab === 'enviar' && !envDest && !envManual && !envScanning && !envAutoScanOff) {
       setEnvScanning(true);
     }
-  }, [tab, envDest, envManual, envScanning]);
+  }, [tab, envDest, envManual, envScanning, envAutoScanOff]);
 
   useEffect(() => {
-    if (tab === 'pagar' && !pagQrCode && !pagScanning) {
+    if (tab === 'pagar' && !pagQrCode && !pagScanning && !pagAutoScanOff) {
       setPagScanning(true);
     }
-  }, [tab, pagQrCode, pagScanning]);
+  }, [tab, pagQrCode, pagScanning, pagAutoScanOff]);
 
   // Liberación explícita del flag al abandonar el tab — el guard `tab !==`
   // dentro de cada efecto de scanner ya detiene la cámara real; esto sólo
@@ -706,11 +778,13 @@ export function UserWalletPage() {
   // "envScanning=true" fantasma mientras no hay cámara activa).
   useEffect(() => {
     if (tab !== 'enviar' && envScanning) setEnvScanning(false);
-  }, [tab, envScanning]);
+    if (tab !== 'enviar' && envAutoScanOff) setEnvAutoScanOff(false);
+  }, [tab, envScanning, envAutoScanOff]);
 
   useEffect(() => {
     if (tab !== 'pagar' && pagScanning) setPagScanning(false);
-  }, [tab, pagScanning]);
+    if (tab !== 'pagar' && pagAutoScanOff) setPagAutoScanOff(false);
+  }, [tab, pagScanning, pagAutoScanOff]);
 
   // ── Auto-generación del QR base de Recibir al entrar al tab (XPAY-390 R2/
   //    R3) — SIN backend, SIN Passport: mismo `generarQr(null)` ya usado por
@@ -749,7 +823,7 @@ export function UserWalletPage() {
     try {
       const payload: XpayTransferQR = {
         type:             'XPAY_TRANSFER',
-        env:              'QA',
+        env:              ambienteXpay(),
         version:          1,
         receiverUser:     user.usuario,
         receiverWalletId: miWallet.idWallet,
@@ -786,9 +860,12 @@ export function UserWalletPage() {
     if (destId === miWallet.idWallet) { setEnvMsg({ ok: false, text: 'No puedes transferirte a tu propia wallet.' }); return; }
     const pinErr = validatePin(envPin);
     if (pinErr) { setEnvMsg({ ok: false, text: pinErr }); return; }
-    const descripcion = envDestUser
-      ? `Enviado a ${envDestUser} — Wallet #${destId}`
-      : `Enviado a Wallet #${destId}`;
+    if (!envDestVerificado || envDestVerificado.idWallet !== destId) {
+      setEnvMsg({ ok: false, text: 'Verifica el destinatario antes de enviar.' }); return;
+    }
+    const verificado = envDestVerificado;
+    // En la descripción guardada solo va el usuario verificado, no el nombre.
+    const descripcion = `Enviado a ${verificado.usuario} — Wallet #${destId}`;
     // Fase 71.2-E-G: misma clave si es un reintento del mismo intento
     // (destino/valor/descripción sin cambios); clave nueva si algo cambió.
     if (!envIdemRef.current
@@ -802,22 +879,22 @@ export function UserWalletPage() {
       // Fase 71.2-E-C: idWalletOrigen/creadoPor ya no se envían — el backend
       // los resuelve desde el JWT (ver TransferenciaWalletRequest).
       const r = await post<{ success: boolean; message?: string }>('/api/wallets/transferencia', {
-        idWalletDestino: destId,
-        valor:           Number(envValor),
+        idWalletDestino:        destId,
+        valor:                  Number(envValor),
         descripcion,
+        usuarioDestinoEsperado: verificado.usuario,
       }, { 'Idempotency-Key': envIdemRef.current.key });
       if (r.success) {
         envIdemRef.current = null;
         await loadCuenta();
-        // XPAY-426 (Block B) — destinatario/monto capturados de las mismas
-        // variables locales ya validadas antes del POST (destId/envValor/
-        // envDestUser), no del `data` de la respuesta: es la fuente más
-        // confiable ya presente en el flujo, sin depender de que el backend
-        // agregue nada nuevo al contrato. `envDestUser` solo llega resuelto
-        // cuando el destino vino de un QR (parseTransferQr) — si el destino
-        // se ingresó manualmente no hay username validado, así que se cae
-        // al identificador de wallet (nunca se inventa un nombre).
-        const destinoLabel = envDestUser || `Wallet #${destId}`;
+        // XPAY-426 (Block B) — destinatario/monto capturados de variables
+        // locales ya validadas antes del POST, no del `data` de la respuesta.
+        // El destinatario es siempre el verificado por el backend (GET
+        // /api/wallets/destinatario y de nuevo dentro de la transferencia),
+        // nunca el nombre que trae el QR.
+        const destinoLabel = verificado.nombreVisible
+          ? `${verificado.usuario} (${verificado.nombreVisible})`
+          : verificado.usuario;
         const montoTransferido = Number(envValor);
         // Limpiar el formulario para que no quede listo para repetir el
         // envío (igual que antes) — la confirmación ahora vive en el modal,
@@ -829,7 +906,20 @@ export function UserWalletPage() {
       } else {
         setEnvMsg({ ok: false, text: r.message ?? 'Error al transferir.' });
       }
-    } catch (e) { setEnvMsg({ ok: false, text: (e as Error).message }); }
+    } catch (e) {
+      // Cualquier 409 de la transferencia (destinatario que cambió o ya no
+      // coincide, o conflicto de idempotencia) no movió dinero: se descarta
+      // el destino para que se vuelva a escanear o ingresar y se verifique
+      // de nuevo. Se decide por el estado HTTP, no por el texto del mensaje.
+      if ((e as { status?: number }).status === 409) {
+        envIdemRef.current = null;
+        setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
+        setEnvPasted(''); setEnvManual(false); setEnvManualDest('');
+        setEnvScanErr((e as Error).message);
+      } else {
+        setEnvMsg({ ok: false, text: (e as Error).message });
+      }
+    }
     finally { setEnvBusy(false); setEnvPin(''); opInProgressRef.current = false; }
   }
 
@@ -1101,13 +1191,13 @@ export function UserWalletPage() {
   function resetEnviar() {
     setEnvDest(null); setEnvDestUser(''); setEnvValor(''); setEnvNeedValor(false);
     setEnvMsg(null); setEnvScanErr(null); setEnvPasted(''); setEnvManual(false); setEnvManualDest('');
-    setEnvScanning(false);
+    setEnvScanning(false); setEnvAutoScanOff(false);
     envIdemRef.current = null; // Fase 71.2-E-G: cambio material del formulario → clave nueva en el próximo intento
   }
   function resetPagar() {
     setPagQrCode(''); setPagValor(''); setPagNeedValor(false);
     setPagMsg(null); setPagScanErr(null); setPagPasted('');
-    setPagScanning(false); setPagMetodoPago(null);
+    setPagScanning(false); setPagAutoScanOff(false); setPagMetodoPago(null);
     // XPAY-451 §9 — única función que puede volver a habilitar el
     // formulario tras un éxito ("Hacer otro pago"/"✕ Cambiar"). Limpia
     // también el preview y el estado de éxito — un QR/pago anterior nunca
@@ -1376,14 +1466,15 @@ export function UserWalletPage() {
               opciones". */}
           {!envDest && !envManual && (
             <div className="wallet-send-scan">
-              <p className="wallet-send-scan-title">Escanea el QR del receptor</p>
-
-              {envScanning && <div id="env-qr-reader" className="qr-reader-container" />}
+              {/* Con el lector abierto, el título lo muestra QrScannerOverlay. */}
+              {!envScanning && <p className="wallet-send-scan-title">Escanea el QR del receptor</p>}
 
               {envScanning && (
-                <button className="wallet-send-secondary-btn wallet-send-cancel-btn" onClick={() => setEnvScanning(false)}>
-                  Cancelar escaneo
-                </button>
+                <QrScannerOverlay
+                  readerId="env-qr-reader"
+                  title="Escanea el QR del receptor"
+                  onClose={cerrarEscaneoEnviar}
+                />
               )}
               {!envScanning && (
                 <button
@@ -1404,7 +1495,7 @@ export function UserWalletPage() {
                       className="wallet-send-textarea"
                       value={envPasted}
                       onChange={e => setEnvPasted(e.target.value)}
-                      placeholder={'{"type":"XPAY_TRANSFER","env":"QA","receiverWalletId":3,...}'}
+                      placeholder={`{"type":"XPAY_TRANSFER","env":"${ambienteXpay()}","receiverWalletId":3,...}`}
                       rows={3}
                     />
                   </label>
@@ -1458,16 +1549,28 @@ export function UserWalletPage() {
           {envDest && (
             <>
               <div className="wallet-send-confirmed">
-                <span className="wallet-send-confirmed-badge">Destino confirmado</span>
-                {' → '}Wallet #{envDest}
-                {envDestUser && <span className="wallet-send-confirmed-user">({envDestUser})</span>}
+                {envDestVerificado ? (
+                  <>
+                    <span className="wallet-send-confirmed-badge">Destino verificado</span>
+                    {' → '}{envDestVerificado.usuario}
+                    {envDestVerificado.nombreVisible && (
+                      <span className="wallet-send-confirmed-user">({envDestVerificado.nombreVisible})</span>
+                    )}
+                    {' · '}Wallet #{envDest}
+                  </>
+                ) : (
+                  <span>{envDestVerificando ? 'Verificando destinatario…' : `Wallet #${envDest}`}</span>
+                )}
                 {' '}
                 <button className="wallet-send-link-btn" onClick={resetEnviar}>✕ Cambiar</button>
               </div>
+              {envDestErr && <div className="wallet-send-error">{envDestErr}</div>}
 
+              {/* Valor y PIN solo con el destinatario verificado por el backend. */}
+              {envDestVerificado && (
               <form className="wallet-send-form" onSubmit={e => void handleEnviar(e)}>
                 <label className="wallet-send-field">
-                  <span className="wallet-send-field-label">Valor a transferir (COP ficticio)</span>
+                  <span className="wallet-send-field-label">Valor a transferir ({monedaVisible()})</span>
                   <input
                     type="number"
                     className="wallet-send-input"
@@ -1481,7 +1584,7 @@ export function UserWalletPage() {
                 <label className="wallet-send-field">
                   <span className="wallet-send-field-label">
                     Clave de 7 dígitos
-                    <span className="wallet-send-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
+                    <SoloQa><span className="wallet-send-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span></SoloQa>
                   </span>
                   <input
                     type="password"
@@ -1503,6 +1606,7 @@ export function UserWalletPage() {
                   {envBusy ? 'Procesando...' : 'Enviar dinero'}
                 </button>
               </form>
+              )}
               {envMsg && (
                 <div className={`wallet-send-msg${envMsg.ok ? ' wallet-send-msg--ok' : ' wallet-send-msg--err'}`}>
                   {envMsg.text}
@@ -1529,14 +1633,15 @@ export function UserWalletPage() {
 
           {!pagQrCode && (
             <div className="wallet-pay-scan">
-              <p className="wallet-pay-scan-title">Escanea el QR del comercio</p>
-
-              {pagScanning && <div id="pag-qr-reader" className="qr-reader-container" />}
+              {/* Con el lector abierto, el título lo muestra QrScannerOverlay. */}
+              {!pagScanning && <p className="wallet-pay-scan-title">Escanea el QR del comercio</p>}
 
               {pagScanning && (
-                <button className="wallet-pay-secondary-btn wallet-pay-cancel-btn" onClick={() => setPagScanning(false)}>
-                  Cancelar escaneo
-                </button>
+                <QrScannerOverlay
+                  readerId="pag-qr-reader"
+                  title="Escanea el QR del comercio"
+                  onClose={cerrarEscaneoPagar}
+                />
               )}
               {!pagScanning && (
                 <button
@@ -1557,7 +1662,9 @@ export function UserWalletPage() {
                       className="wallet-pay-textarea"
                       value={pagPasted}
                       onChange={e => setPagPasted(e.target.value)}
-                      placeholder={`QR-DEMO-XPAY-QA-001\no\n{"type":"XPAY_MERCHANT_PAYMENT","env":"QA",...}`}
+                      placeholder={ambienteXpay() === 'QA'
+                        ? `QR-DEMO-XPAY-QA-001\no\n{"type":"XPAY_MERCHANT_PAYMENT","env":"QA",...}`
+                        : `Código del comercio\no\n{"type":"XPAY_MERCHANT_PAYMENT","env":"${ambienteXpay()}",...}`}
                       rows={3}
                     />
                   </label>
@@ -1657,7 +1764,7 @@ export function UserWalletPage() {
                 <>
                   <form className="wallet-pay-form" onSubmit={e => void handlePagarQr(e)}>
                     <label className="wallet-pay-field">
-                      <span className="wallet-pay-field-label">Valor a pagar (COP ficticio)</span>
+                      <span className="wallet-pay-field-label">Valor a pagar ({monedaVisible()})</span>
                       <input
                         type="number"
                         className="wallet-pay-input"
@@ -1671,7 +1778,7 @@ export function UserWalletPage() {
                     <label className="wallet-pay-field">
                       <span className="wallet-pay-field-label">
                         Clave de 7 dígitos
-                        <span className="wallet-pay-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
+                        <SoloQa><span className="wallet-pay-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span></SoloQa>
                       </span>
                       <input
                         type="password"
@@ -1811,7 +1918,7 @@ export function UserWalletPage() {
                     El retiro se enviará a: <strong>{brebLlave.keyType} · {brebLlave.keyValueMasked}</strong>
                   </p>
                   <label>
-                    Valor a retirar (COP ficticio)
+                    Valor a retirar ({monedaVisible()})
                     <input
                       type="number"
                       min="1"
@@ -1833,7 +1940,7 @@ export function UserWalletPage() {
               {brebLlave && brebLlave.estado !== 'VALIDADA' && (
                 <p className="breb-retiro-note" style={{ marginTop: '0.75rem' }}>
                   Solo puedes solicitar retiros una vez que tu llave esté <strong>VALIDADA</strong>.
-                  En QA: usa el endpoint admin <code>POST /api/breb/admin/simular-validacion-llave</code>.
+                  <SoloQa> En QA: usa el endpoint admin <code>POST /api/breb/admin/simular-validacion-llave</code>.</SoloQa>
                 </p>
               )}
 
@@ -2123,9 +2230,11 @@ export function UserWalletPage() {
         </div>
       )}
 
-      <p className="user-wallet-footer">
-        Ambiente QA/Demo · saldos y transacciones ficticios · sin dinero real · sin producción
-      </p>
+      <SoloQa>
+        <p className="user-wallet-footer">
+          Ambiente QA/Demo · saldos y transacciones ficticios · sin dinero real · sin producción
+        </p>
+      </SoloQa>
 
       {/* ── New movement toast ─────────────────────────────────────────────── */}
       {newMovMsg && (

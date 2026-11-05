@@ -15,7 +15,8 @@ namespace Xpay.Api.Integrations.MiDecisor;
 //   3. obtiene el access token del IMiDecisorTokenProvider (1 llamada);
 //   4. envía EXACTAMENTE UNA petición HTTP POST con Bearer;
 //   5. clasifica por HTTP status ANTES de intentar interpretar el body;
-//   6. en 200, deserializa el envelope y lo mapea a MiDecisorResultado.
+//   6. en 200/202, deserializa el envelope y lo mapea a MiDecisorResultado
+//      (con el HTTP status real en MiDecisorResultado.HttpStatus).
 //
 // SIN reintentos (401/403/404/429/5xx → error controlado, 1 sola llamada).
 // SIN invalidar el token. SIN refresh_token. SIN decisión de crédito, edad,
@@ -55,11 +56,16 @@ public sealed class MiDecisorClient : IMiDecisorClient
         ArgumentNullException.ThrowIfNull(request);
 
         // ── 1. Validación LOCAL — sin token, sin HTTP.
-        var tipoXpay = (request.TipoIdentificacion ?? string.Empty).Trim();
-        var numero   = (request.NumeroIdentificacion ?? string.Empty).Trim();
-        var apellido = (request.ApellidoRazonSocial ?? string.Empty).Trim();
+        //    XPAY-647: el request ya trae el CÓDIGO MiDecisor (contrato de
+        //    alambre de MiDecisorConsultaRequest). La traducción tipo XPAY →
+        //    código vive SÓLO en PersonaMiDecisorRequestMapper; aquí únicamente
+        //    se verifica que el código sea uno de Persona Natural. Un tipo XPAY
+        //    ("CC") o un código PJ ("2"/"3") se rechazan — sin contrato dual.
+        var tipoCodigo = (request.TipoIdentificacion ?? string.Empty).Trim();
+        var numero     = (request.NumeroIdentificacion ?? string.Empty).Trim();
+        var apellido   = (request.ApellidoRazonSocial ?? string.Empty).Trim();
 
-        if (!TipoDocumentoMiDecisorMapper.TryMapPersonaNatural(tipoXpay, out var tipoCodigo))
+        if (!TipoDocumentoMiDecisorMapper.MapeosPersonaNatural.Values.Contains(tipoCodigo))
             throw new MiDecisorRequestValidationException(
                 "Tipo de identificación no soportado para Persona Natural.");
 
@@ -131,9 +137,15 @@ public sealed class MiDecisorClient : IMiDecisorClient
             var status = (int)response.StatusCode;
 
             // ── 5. Clasificación por HTTP status ANTES de interpretar el body.
+            //    XPAY-650: 200 y 202 son respuestas funcionales con el MISMO
+            //    envelope (manual: 202; Swagger: 200). Ambos pasan por las mismas
+            //    validaciones de envelope de abajo — aceptar 202 a nivel
+            //    transporte NO convierte cualquier body en éxito. Ningún otro
+            //    2xx/3xx se acepta. Sin polling, sin retry.
             switch (response.StatusCode)
             {
                 case HttpStatusCode.OK:
+                case HttpStatusCode.Accepted:
                     break;
 
                 case HttpStatusCode.Unauthorized:
@@ -172,12 +184,12 @@ public sealed class MiDecisorClient : IMiDecisorClient
                 throw new MiDecisorProtocolException("Respuesta del proveedor de riesgo no interpretable.");
             }
 
-            return MapearEnvelope(envelope);
+            return MapearEnvelope(envelope, status);
         }
     }
 
-    // ── 6. Mapeo del envelope 200 a MiDecisorResultado. Sin interpretar valores.
-    private MiDecisorResultado MapearEnvelope(MiDecisorRespuestaEnvelope? envelope)
+    // ── 6. Mapeo del envelope 200/202 a MiDecisorResultado. Sin interpretar valores.
+    private MiDecisorResultado MapearEnvelope(MiDecisorRespuestaEnvelope? envelope, int httpStatus)
     {
         var estado = envelope?.Status?.Trim();
 
@@ -234,6 +246,7 @@ public sealed class MiDecisorClient : IMiDecisorClient
             MontoSugeridoRaw: riesgo?.MontoSugerido,
             AlertasCount:     alertasCount)
         {
+            HttpStatus                         = httpStatus,
             TipoDocumentoRaw                   = datosBasicos?.TipoDocumento,
             EstadoDocumentoDatosBasicosRaw     = datosBasicos?.EstadoDocumento,
             EstadoDocumentoInfoDemograficaRaw  = infoDemo?.EstadoDocumento,

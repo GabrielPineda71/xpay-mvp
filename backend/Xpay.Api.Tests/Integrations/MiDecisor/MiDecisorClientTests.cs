@@ -18,7 +18,7 @@ public class MiDecisorClientTests
     };
 
     private static MiDecisorConsultaRequest ValidRequest() =>
-        new(TipoIdentificacion: "CC", NumeroIdentificacion: "1234567", ApellidoRazonSocial: "Rodriguez");
+        new(TipoIdentificacion: "1", NumeroIdentificacion: "1234567", ApellidoRazonSocial: "Rodriguez");
 
     private static MiDecisorClient CreateClient(
         FakeHttpMessageHandler handler,
@@ -110,7 +110,7 @@ public class MiDecisorClientTests
     }
 
     [Fact]
-    public async Task Query_RequestJsonFieldNamesExact_AndMapsType()
+    public async Task Query_RequestJsonFieldNamesExact_AndSendsTypeCodeVerbatim()
     {
         var handler = new FakeHttpMessageHandler(
             () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, AcceptedWithRisk()));
@@ -119,7 +119,7 @@ public class MiDecisorClientTests
         await client.ConsultarPersonaNaturalAsync(ValidRequest());
 
         var body = handler.LastRequestBody!;
-        Assert.Contains("\"tipoIdentificacion\":\"1\"", body);   // CC → "1"
+        Assert.Contains("\"tipoIdentificacion\":\"1\"", body);   // código recibido, sin re-traducir
         Assert.Contains("\"numeroIdentificacion\":\"1234567\"", body);
         Assert.Contains("\"apellidoRazonSocial\":\"Rodriguez\"", body);
         Assert.DoesNotContain(FakeMiDecisorTokenProvider.SyntheticToken, body);
@@ -237,6 +237,10 @@ public class MiDecisorClientTests
     [InlineData((HttpStatusCode)429)]
     [InlineData(HttpStatusCode.InternalServerError)]
     [InlineData(HttpStatusCode.BadGateway)]
+    // XPAY-650: sólo 200/202 son funcionales; el resto de 2xx/3xx sigue fail-closed.
+    [InlineData(HttpStatusCode.Created)]
+    [InlineData(HttpStatusCode.NoContent)]
+    [InlineData(HttpStatusCode.Found)]
     public async Task NonAuthErrorStatus_ThrowsTransport_NoRetry(HttpStatusCode code)
     {
         var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(code, "irrelevant"));
@@ -244,6 +248,59 @@ public class MiDecisorClientTests
 
         await Assert.ThrowsAsync<MiDecisorTransportException>(() => client.ConsultarPersonaNaturalAsync(ValidRequest()));
         Assert.Equal(1, handler.CallCount);
+    }
+
+    // ── D2. XPAY-650 — HTTP 200 vs 202 real ───────────────────────────────
+    [Theory]
+    [InlineData(HttpStatusCode.OK, 200)]
+    [InlineData(HttpStatusCode.Accepted, 202)]
+    public async Task AcceptedEnvelope_On200Or202_IsProcessed_WithRealHttpStatus(HttpStatusCode code, int expected)
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(code, AcceptedWithRisk()));
+        var token = new FakeMiDecisorTokenProvider();
+        var client = CreateClient(handler, ValidConfig(), token);
+
+        var r = await client.ConsultarPersonaNaturalAsync(ValidRequest());
+
+        Assert.Equal(expected, r.HttpStatus);
+        Assert.Equal("ACCEPTED", r.EstadoEnvelope);
+        Assert.Equal("202 ACCEPTED", r.ContentStatus);   // campo del body, independiente del HTTP
+        Assert.True(r.ConInformacion);
+        Assert.Equal("853", r.ScoreRaw);
+        Assert.Equal(2, r.AlertasCount);
+        Assert.Equal(1, handler.CallCount);   // sin polling, sin retry
+        Assert.Equal(1, token.CallCount);
+    }
+
+    // 202 a nivel transporte NO vuelve éxito un envelope inválido: mismas
+    // reglas de protocolo que en 200.
+    [Theory]
+    [InlineData("no-json")]
+    [InlineData("""{"status":"WEIRD","content":{}}""")]
+    [InlineData("""{"status":"ACCEPTED","content":null}""")]
+    [InlineData("""{"status":"ACCEPTED","content":{"status":"202 ACCEPTED"}}""")]
+    public async Task Http202_InvalidEnvelope_ThrowsProtocol_NoRetry(string body)
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.Accepted, body));
+        var token = new FakeMiDecisorTokenProvider();
+        var client = CreateClient(handler, ValidConfig(), token);
+
+        await Assert.ThrowsAsync<MiDecisorProtocolException>(() => client.ConsultarPersonaNaturalAsync(ValidRequest()));
+        Assert.Equal(1, handler.CallCount);
+        Assert.Equal(1, token.CallCount);
+    }
+
+    [Fact]
+    public async Task Http202_PreconditionFailed_ThrowsQueryRejected_NoRetry()
+    {
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(
+            HttpStatusCode.Accepted, """{"status":"PRECONDITION_FAILED","content":null}"""));
+        var token = new FakeMiDecisorTokenProvider();
+        var client = CreateClient(handler, ValidConfig(), token);
+
+        await Assert.ThrowsAsync<MiDecisorQueryRejectedException>(() => client.ConsultarPersonaNaturalAsync(ValidRequest()));
+        Assert.Equal(1, handler.CallCount);
+        Assert.Equal(1, token.CallCount);
     }
 
     [Theory]
@@ -332,13 +389,22 @@ public class MiDecisorClientTests
         var client = CreateClient(handler, ValidConfig(), token);
 
         await Assert.ThrowsAsync<MiDecisorRequestValidationException>(() =>
-            client.ConsultarPersonaNaturalAsync(new("CC", numero, "Rodriguez")));
+            client.ConsultarPersonaNaturalAsync(new("1", numero, "Rodriguez")));
         Assert.Equal(0, handler.CallCount);
         Assert.Equal(0, token.CallCount);
     }
 
-    [Fact]
-    public async Task UnsupportedDocumentType_ThrowsRequestValidation_NoHttpNoToken()
+    // XPAY-647: el cliente recibe CÓDIGOS MiDecisor. Códigos PJ ("2" NIT,
+    // "3" PJE), códigos inexistentes y tipos XPAY sin traducir ("CC", "NIT")
+    // se rechazan — no hay contrato dual.
+    [Theory]
+    [InlineData("2")]
+    [InlineData("3")]
+    [InlineData("0")]
+    [InlineData("")]
+    [InlineData("CC")]
+    [InlineData("NIT")]
+    public async Task UnsupportedDocumentType_ThrowsRequestValidation_NoHttpNoToken(string tipoIdentificacion)
     {
         var handler = new FakeHttpMessageHandler(
             () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, AcceptedWithRisk()));
@@ -346,7 +412,7 @@ public class MiDecisorClientTests
         var client = CreateClient(handler, ValidConfig(), token);
 
         await Assert.ThrowsAsync<MiDecisorRequestValidationException>(() =>
-            client.ConsultarPersonaNaturalAsync(new("NIT", "1234567", "Rodriguez")));
+            client.ConsultarPersonaNaturalAsync(new(tipoIdentificacion, "1234567", "Rodriguez")));
         Assert.Equal(0, handler.CallCount);
         Assert.Equal(0, token.CallCount);
     }
@@ -361,7 +427,7 @@ public class MiDecisorClientTests
         var client = CreateClient(handler, ValidConfig(), new FakeMiDecisorTokenProvider());
 
         await Assert.ThrowsAsync<MiDecisorRequestValidationException>(() =>
-            client.ConsultarPersonaNaturalAsync(new("CC", "1234567", apellido)));
+            client.ConsultarPersonaNaturalAsync(new("1", "1234567", apellido)));
         Assert.Equal(0, handler.CallCount);
     }
 
@@ -372,7 +438,7 @@ public class MiDecisorClientTests
             () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, AcceptedWithRisk()));
         var client = CreateClient(handler, ValidConfig(), new FakeMiDecisorTokenProvider());
 
-        var r = await client.ConsultarPersonaNaturalAsync(new("CC", "1234567", "Núñez-Peña"));
+        var r = await client.ConsultarPersonaNaturalAsync(new("1", "1234567", "Núñez-Peña"));
 
         Assert.Equal(1, handler.CallCount);
         Assert.Equal("ACCEPTED", r.EstadoEnvelope);

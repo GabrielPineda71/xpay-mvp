@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using System.Text;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
@@ -58,6 +59,8 @@ public class KycController : ControllerBase
     /// </summary>
     [HttpPost("qa/simular-estado")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - inexistente (404) en cualquier ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> SimularEstadoQa([FromBody] SimularEstadoKycRequest request)
     {
         _audit.LogSensitiveAction(HttpContext, "KYC_QA_SIMULATE_ATTEMPT",
@@ -104,7 +107,7 @@ public class KycController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            var code = ex.Message.StartsWith("Veriff sandbox no configurado") ? 503 : 400;
+            var code = ex.Message == KycService.MensajeVeriffNoDisponible ? 503 : 400;
             return StatusCode(code, new { success = false, message = ex.Message });
         }
         catch (KycUsuarioConcurrenteException ex)
@@ -235,6 +238,7 @@ public class KycController : ControllerBase
     /// Never logs: VERIFF_SHARED_SECRET, raw body, person data, biometrics, documents.
     /// </summary>
     [HttpPost("veriff/webhook")]
+    [AllowAnonymous]
     public async Task<IActionResult> VeriffWebhook()
     {
         // Read raw body before any model binding — required for HMAC computation

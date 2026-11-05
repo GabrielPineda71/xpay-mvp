@@ -125,6 +125,10 @@ public class RetiroComercioService
         if (!esAdministrativo)
         {
             var s = await _scope.RequireScopeAsync(idUsuario);
+            // P0-A: disponer de los fondos del comercio exige PuedeDisponerRecursos
+            // (solo ADMIN_COMERCIO); el controller lo traduce a 403.
+            if (!s.PuedeDisponerRecursos)
+                throw new UnauthorizedAccessException("Tu rol en el comercio no permite solicitar retiros.");
             request.IdComercio = s.IdComercioExistente
                 ?? throw new InvalidOperationException("Tu comercio operativo no tiene un comercio existente asociado.");
         }

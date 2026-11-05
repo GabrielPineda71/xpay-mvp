@@ -139,6 +139,36 @@ function validatePin(pin: string): string | null {
   return null;
 }
 
+// XPAY-712 - Idempotency-Key por intencion de desembolso.
+const AVANCE_IDEM_STORAGE = 'xpay_avance_wallet_idempotency';
+
+function claveAvance(intencion: string): string {
+  try {
+    const raw = sessionStorage.getItem(AVANCE_IDEM_STORAGE);
+    const guardada = raw ? JSON.parse(raw) : null;
+    if (guardada && guardada.intencion === intencion && guardada.key) {
+      return guardada.key;
+    }
+  } catch {
+    // sin storage o valor corrupto: se genera una clave nueva
+  }
+  const key = crypto.randomUUID();
+  try {
+    sessionStorage.setItem(AVANCE_IDEM_STORAGE, JSON.stringify({ key, intencion }));
+  } catch {
+    // sin storage: la clave vale solo para esta ejecucion
+  }
+  return key;
+}
+
+function olvidarClaveAvance(): void {
+  try {
+    sessionStorage.removeItem(AVANCE_IDEM_STORAGE);
+  } catch {
+    // sin storage
+  }
+}
+
 type ModoSimulador = 'compra' | 'desembolso';
 
 export function MiCarteraOrdinariaPage() {
@@ -166,7 +196,7 @@ export function MiCarteraOrdinariaPage() {
   const [confirmBusy, setConfirmBusy]   = useState(false);
   const [confirmError, setConfirmError] = useState('');
   const [confirmResult, setConfirmResult] = useState<ConfirmacionResult | null>(null);
-  const [confirmPin, setConfirmPin]     = useState('');
+  const [confirmAcepta, setConfirmAcepta] = useState(false);
 
   // Mis créditos / pago manual de cuotas
   const [creditos, setCreditos]           = useState<MiCredito[]>([]);
@@ -275,19 +305,35 @@ export function MiCarteraOrdinariaPage() {
 
   const confirmarAvanceWallet = async () => {
     if (!sim) return;
-    const pinErr = validatePin(confirmPin);
-    if (pinErr) { setConfirmError(pinErr); return; }
+    if (!confirmAcepta) {
+      setConfirmError('Marca la casilla de confirmación para continuar con el desembolso.');
+      return;
+    }
     setConfirmBusy(true); setConfirmError(''); setConfirmResult(null);
     try {
       // Usa los valores congelados de la simulación mostrada, no el estado
       // vivo de los inputs — evita confirmar un monto/plazo distinto al
       // que el usuario efectivamente vio y aprobó en pantalla.
-      const result = await post<ConfirmacionResult>('/api/cartera-ordinaria/confirmar-avance-wallet', {
-        tipoUtilizacion: sim.tipoUtilizacion,
-        valorCapital:    sim.valorCapital,
-        plazoMeses:      sim.plazoMeses,
-        frecuencia:      sim.frecuencia,
-      });
+      // XPAY-712 - misma intencion => misma Idempotency-Key.
+      const intencion = [
+        sim.tipoUtilizacion.trim().toUpperCase(),
+        sim.valorCapital.toFixed(2),
+        sim.plazoMeses,
+        sim.frecuencia.trim().toUpperCase(),
+      ].join('|');
+      const key = claveAvance(intencion);
+      const result = await post<ConfirmacionResult>(
+        '/api/cartera-ordinaria/confirmar-avance-wallet',
+        {
+          tipoUtilizacion: sim.tipoUtilizacion,
+          valorCapital:    sim.valorCapital,
+          plazoMeses:      sim.plazoMeses,
+          frecuencia:      sim.frecuencia,
+        },
+        { 'Idempotency-Key': key },
+      );
+      // Exito inequivoco (200, incluido replay): recien aqui se descarta.
+      olvidarClaveAvance();
       setConfirmResult(result);
       setCupo(prev => prev ? {
         ...prev,
@@ -296,7 +342,7 @@ export function MiCarteraOrdinariaPage() {
       } : prev);
     } catch (e: unknown) {
       setConfirmError(e instanceof Error ? e.message : 'Error al confirmar el desembolso');
-    } finally { setConfirmBusy(false); setConfirmPin(''); }
+    } finally { setConfirmBusy(false); setConfirmAcepta(false); }
   };
 
   // Derivar tipo de utilización según modo
@@ -311,7 +357,7 @@ export function MiCarteraOrdinariaPage() {
     if (!cupo)                   { setSimError('No tienes cupo activo'); return; }
     if (superaCupo)              { setSimError(`El valor supera tu cupo disponible (${fmt(cupoDisponible)})`); return; }
     setSimBusy(true); setSimError(''); setSim(null); setShowCuotas(false);
-    setConfirmResult(null); setConfirmError(''); setConfirmPin('');
+    setConfirmResult(null); setConfirmError(''); setConfirmAcepta(false);
     try {
       const result = await post<SimulacionResult>('/api/cartera-ordinaria/simular', {
         tipoUtilizacion,
@@ -333,7 +379,7 @@ export function MiCarteraOrdinariaPage() {
     setShowCuotas(false);
     setConfirmResult(null);
     setConfirmError('');
-    setConfirmPin('');
+    setConfirmAcepta(false);
     if (nuevoModo === 'compra') setMonto(qpValor);
     else setMonto('');
   };
@@ -524,26 +570,33 @@ export function MiCarteraOrdinariaPage() {
                 <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#fff8e1', borderRadius: 6, border: '1px solid #ffe082', fontSize: 13 }}>
                   Al confirmar, {fmt(sim.valorCapital)} se acreditará de inmediato a tu Wallet y se generará el plan de cuotas para el cobro.
                 </div>
-                <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, marginBottom: '0.75rem' }}>
-                  Clave de 7 dígitos
-                  <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span>
+                <div data-testid="resumen-desembolso" style={{ marginBottom: '0.75rem', fontSize: 13 }}>
+                  <div>Desembolso a tu Wallet: <strong>{fmt(sim.valorCapital)}</strong></div>
+                  <div>Plazo: <strong>{sim.plazoMeses} mes(es)</strong></div>
+                  <div>Frecuencia: <strong>{sim.frecuencia}</strong></div>
+                  <div>Tu saldo de Wallet aumentará en {fmt(sim.valorCapital)}.</div>
+                  <div>
+                    Tu cupo disponible bajará de {fmt(cupoDisponible)} a{' '}
+                    {fmt(Math.max(cupoDisponible - sim.valorCapital, 0))}.
+                  </div>
+                </div>
+                <label style={{ display: 'flex', gap: 8, fontSize: 13, marginBottom: '0.5rem' }}>
                   <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={7}
-                    value={confirmPin}
-                    onChange={e => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
-                    placeholder="·······"
-                    autoComplete="off"
-                    style={{ marginTop: 4, padding: '6px 8px', border: '1px solid #ccc', borderRadius: 4 }}
+                    type="checkbox"
+                    checked={confirmAcepta}
+                    onChange={e => setConfirmAcepta(e.target.checked)}
                   />
+                  <span>Confirmo que quiero desembolsar {fmt(sim.valorCapital)} a mi Wallet.</span>
                 </label>
-                <button onClick={confirmarAvanceWallet} disabled={confirmBusy || confirmPin.length !== 7}
+                <p style={{ fontSize: 11, color: '#666', margin: '0 0 0.75rem' }}>
+                  Esta confirmación no solicita un PIN adicional.
+                </p>
+                <button onClick={confirmarAvanceWallet} disabled={confirmBusy || !confirmAcepta}
                   style={{
                     padding: '8px 24px',
-                    background: confirmBusy || confirmPin.length !== 7 ? '#ccc' : '#388e3c',
+                    background: confirmBusy || !confirmAcepta ? '#ccc' : '#388e3c',
                     color: '#fff', border: 'none', borderRadius: 4,
-                    cursor: confirmBusy || confirmPin.length !== 7 ? 'not-allowed' : 'pointer', marginBottom: '0.75rem', fontSize: 14,
+                    cursor: confirmBusy || !confirmAcepta ? 'not-allowed' : 'pointer', marginBottom: '0.75rem', fontSize: 14,
                   }}>
                   {confirmBusy ? 'Desembolsando…' : 'Desembolsar a Wallet'}
                 </button>

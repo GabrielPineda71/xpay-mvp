@@ -15,15 +15,32 @@ using Xpay.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
-builder.Services.AddDbContext<XpayDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("XpayConnection")));
+builder.Services.AddControllers(o => o.Filters.Add<OperacionFinancieraBloqueadaFilter>());
+// Bloqueo financiero, fase visual: BloqueoFinancieroInterceptor rechaza en
+// SaveChanges cualquier escritura de dinero u obligaciones con el interruptor
+// XPAY_OPERACIONES_FINANCIERAS_HABILITADAS cerrado (ver ControlOperacionesFinancieras).
+builder.Services.AddSingleton<BloqueoFinancieroInterceptor>();
+builder.Services.AddDbContext<XpayDbContext>((sp, options) =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("XpayConnection"))
+        .AddInterceptors(sp.GetRequiredService<BloqueoFinancieroInterceptor>()));
 
 builder.Services.AddScoped<RegistroUsuarioFinalService>();
 builder.Services.AddScoped<RegistroInicialService>();
 builder.Services.AddScoped<PerfilService>(); // XPAY-399 — Perfil Fase 2A (mi-perfil self-service)
 builder.Services.AddScoped<AuthService>();
+// P0-B — tokens de un solo uso y envío de email. QA-IDENTIDAD-EMAIL-3: SMTP
+// solo en QA con Email:Modo=QaSmtp; en otro caso sender local o fail-closed.
+builder.Services.AddScoped<TokenUsuarioService>();
+builder.Services.AddEmailSenderXpay(builder.Environment.EnvironmentName, builder.Configuration);
+// P0-B1 — registro público + verificación de email (endpoints solo no
+// productivos hasta resolver consentimiento/términos).
+builder.Services.AddSingleton<PlantillasEmailIdentidad>();
+builder.Services.AddScoped<RegistroPublicoService>();
+// P0-B2 — recuperación universal de contraseña (misma frontera no
+// productiva e IdentidadPublicaPolicy que P0-B1).
+builder.Services.AddScoped<RecuperacionClaveService>();
 builder.Services.AddScoped<WalletService>();
+builder.Services.AddScoped<DestinatarioWalletService>();
 builder.Services.AddScoped<WalletOperacionService>();
 builder.Services.AddScoped<QrResolutionService>(); // XPAY-451 — resolución read-only compartida CodigoQr→Comercio/Tienda
 builder.Services.AddScoped<PagoQrService>();
@@ -34,10 +51,26 @@ builder.Services.AddScoped<AdminService>();
 builder.Services.AddScoped<UsuarioAdminService>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<KycService>();
+// XPAY-669 — preparación QA de identidad de prueba (fail-closed por configuración).
+builder.Services.AddScoped<IQaIdentidadPruebaStore, QaIdentidadPruebaStore>();
+builder.Services.AddScoped<QaIdentidadPruebaService>();
+// XPAY-702 - alta de cliente de prueba QA (fail-closed por configuracion).
+builder.Services.AddScoped<QaClientePruebaService>();
+// XPAY-717 - frontera central QA/PROD (lista cerrada Development/QA/Test).
+builder.Services.AddSingleton<IAmbienteXpay, AmbienteXpay>();
+// Piloto PROD — interruptor financiero y límites de retiro (lee la
+// configuración en cada llamada; sin estado propio).
+builder.Services.AddSingleton<ControlOperacionesFinancieras>();
+builder.Services.AddScoped<AltaUsuarioPilotoService>();
 builder.Services.AddScoped<BrebService>();
 builder.Services.AddScoped<LibranzaService>();
 builder.Services.AddScoped<LibranzaEmpleadosService>();
 builder.Services.AddScoped<LibranzaAnticipoService>();
+// P0 anticipo - lote de recaudo + QR dinámico (sin efecto financiero) y
+// aplicación del pago entrante (solo payment.inbound.settled validado).
+// Scoped: dependen de XpayDbContext.
+builder.Services.AddScoped<LibranzaRecaudoService>();
+builder.Services.AddScoped<LibranzaRecaudoAplicacionService>();
 builder.Services.AddScoped<ComercioAliadoService>();
 builder.Services.AddScoped<ComercioDisponibilidadService>();
 builder.Services.AddScoped<ComercioScopeService>();
@@ -150,6 +183,36 @@ builder.Services.AddSingleton<
     Xpay.Api.Integrations.Passport.PassportPaymentClient>();
 builder.Services.AddScoped<Xpay.Api.Services.BrebPaymentService>();
 
+// P0 anticipo - cuarto cliente de negocio Passport en DI: IPassportQrClient
+// (Create QR Code), consumido SOLO por LibranzaRecaudoService para el QR
+// dinámico del lote de recaudo. Mismo lifetime/patrón que IPassportKeyClient/
+// IPassportPaymentClient: wrapper puro y sin estado sobre IPassportHttpClient.
+// Fail-closed sin cambios: sin PASSPORT_BASE_URL/API_KEY/API_SECRET,
+// PASSPORT_CUSTOMER_ID o PASSPORT_COLLECTION_KEY_ID no hay llamada posible.
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.Passport.IPassportQrClient,
+    Xpay.Api.Integrations.Passport.PassportQrClient>();
+
+// XPAY-594 — M5-T6/T7: recepción del webhook de pago ENTRANTE de Passport
+// (pago hacia una llave XPAY o un QR). Componentes propios, sin acoplar KYC.
+//
+// AISLAMIENTO FINANCIERO: PassportWebhookService sólo escribe
+// passport_webhook_events. No llama ApplyPassportPaymentStatusAsync, no toca
+// Wallet/Ledger/breb_retiros, no usa BrebPaymentStateMachine y no realiza
+// ninguna llamada a la API de Passport — no depende de IPassportHttpClient.
+//
+// Fail-closed: sin PASSPORT_WEBHOOK_SECRET configurado, toda entrega se
+// considera no válida; y PASSPORT_WEBHOOK_SIGNATURE_MODE cae en ENFORCE ante
+// cualquier valor no reconocido, de modo que un modo permisivo nunca se
+// obtiene por omisión. Ninguna de las dos variables está configurada en ningún
+// ambiente todavía, y el callback NO está registrado en el Dashboard de
+// Passport: ninguna entrega real es posible hasta que se autorice
+// explícitamente en un ticket futuro.
+builder.Services.AddSingleton<
+    Xpay.Api.Integrations.Passport.IPassportWebhookSignatureValidator,
+    Xpay.Api.Integrations.Passport.PassportWebhookSignatureValidator>();
+builder.Services.AddScoped<Xpay.Api.Services.PassportWebhookService>();
+
 // CORS — orígenes desde configuración (Cors:AllowedOrigins o env Cors__AllowedOrigins__0 ...)
 // Guard: en ambientes no Development, si no hay orígenes configurados, falla rápido en startup.
 var configuredOrigins = builder.Configuration
@@ -186,6 +249,7 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod()));
 
 var jwtSection       = builder.Configuration.GetSection("Jwt");
+JwtKeyGuard.Validar(jwtSection["Key"]); // P0-A: fail-fast antes de AddJwtBearer
 var clockSkewSeconds = jwtSection.GetValue("ClockSkewSeconds", defaultValue: 60);
 if (clockSkewSeconds < 0) clockSkewSeconds = 60;
 builder.Services
@@ -204,6 +268,8 @@ builder.Services
             ValidateLifetime         = true,
             ClockSkew                = TimeSpan.FromSeconds(clockSkewSeconds)
         };
+        // P0-B — revocación: valida en vivo existencia, estado ACTIVO y claim "vs".
+        ValidadorVersionSeguridad.Registrar(opts);
     });
 
 // Fase USUARIOS-ADMIN-5: ClaveVigenteRequirement se agrega a la DefaultPolicy
@@ -221,14 +287,8 @@ builder.Services.AddScoped<IAuthorizationHandler, ClaveVigenteAuthorizationHandl
 // [Authorize(Policy = "KycAprobado")]. Ver Authorization/KycAprobadoRequirement.cs.
 builder.Services.AddScoped<IAuthorizationHandler, KycAprobadoAuthorizationHandler>();
 builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, KycAuthorizationResultHandler>();
-builder.Services.AddAuthorization(options =>
-{
-    options.DefaultPolicy = new AuthorizationPolicyBuilder(options.DefaultPolicy)
-        .AddRequirements(new ClaveVigenteRequirement())
-        .Build();
-    options.AddPolicy("SoloAutenticado", policy => policy.RequireAuthenticatedUser());
-    options.AddPolicy("KycAprobado", policy => policy.AddRequirements(new KycAprobadoRequirement()));
-});
+// P0-A: políticas centralizadas + FallbackPolicy (deny-by-default).
+builder.Services.AddAuthorization(AutorizacionPoliticas.Configurar);
 
 // Rate limiting — FixedWindow por IP para endpoints sensibles (login)
 var rlSection          = builder.Configuration.GetSection("RateLimiting");
@@ -250,6 +310,20 @@ var loginQueueLimit    = rlSection.GetValue("LoginQueueLimit",    defaultValue: 
 var cambiarClavePermitLimit   = rlSection.GetValue("CambiarClavePermitLimit",   defaultValue: 5);
 var cambiarClaveWindowSeconds = rlSection.GetValue("CambiarClaveWindowSeconds", defaultValue: 300);
 var cambiarClaveQueueLimit    = rlSection.GetValue("CambiarClaveQueueLimit",    defaultValue: 0);
+
+// P0-B1 — política dedicada por IP para los endpoints anónimos de identidad
+// (registro y verificación de email): separada de LoginPolicy para no
+// compartir cupo con el login. Configurable con el mismo patrón.
+var identidadPermitLimit   = rlSection.GetValue("IdentidadPublicaPermitLimit",   defaultValue: 10);
+var identidadWindowSeconds = rlSection.GetValue("IdentidadPublicaWindowSeconds", defaultValue: 300);
+var identidadQueueLimit    = rlSection.GetValue("IdentidadPublicaQueueLimit",    defaultValue: 0);
+
+// Vista previa de destinatario (GET /api/wallets/destinatario/{idWallet}):
+// por idUsuario, como CambiarClavePolicy — frena el recorrido masivo de
+// wallets para obtener titulares. Configurable con el mismo patrón.
+var destinatarioPermitLimit   = rlSection.GetValue("DestinatarioWalletPermitLimit",   defaultValue: 20);
+var destinatarioWindowSeconds = rlSection.GetValue("DestinatarioWalletWindowSeconds", defaultValue: 300);
+var destinatarioQueueLimit    = rlSection.GetValue("DestinatarioWalletQueueLimit",    defaultValue: 0);
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -277,6 +351,30 @@ builder.Services.AddRateLimiter(options =>
                 PermitLimit          = cambiarClavePermitLimit,
                 Window               = TimeSpan.FromSeconds(cambiarClaveWindowSeconds),
                 QueueLimit           = cambiarClaveQueueLimit,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
+    options.AddPolicy("IdentidadPublicaPolicy", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit          = identidadPermitLimit,
+                Window               = TimeSpan.FromSeconds(identidadWindowSeconds),
+                QueueLimit           = identidadQueueLimit,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
+    options.AddPolicy("DestinatarioWalletPolicy", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.User.FindFirst("idUsuario")?.Value
+                ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit          = destinatarioPermitLimit,
+                Window               = TimeSpan.FromSeconds(destinatarioWindowSeconds),
+                QueueLimit           = destinatarioQueueLimit,
                 QueueProcessingOrder = QueueProcessingOrder.OldestFirst
             }));
 
@@ -407,9 +505,11 @@ var enableSecurityHeaders = builder.Configuration.GetValue("SecurityHeaders:Enab
 if (enableSecurityHeaders)
     app.UseMiddleware<SecurityHeadersMiddleware>();
 
-// Swagger — habilitado por config (ApiDocs:EnableSwagger) o por defecto solo en Development
-var enableSwaggerConfig = builder.Configuration.GetValue<bool?>("ApiDocs:EnableSwagger");
-var enableSwagger       = enableSwaggerConfig ?? app.Environment.IsDevelopment();
+// Swagger — XPAY-717: sólo en ambiente no productivo (frontera central IAmbienteXpay).
+// En productivo ninguna configuración lo reactiva; ver Common/ApiDocsPolicy.cs.
+var enableSwaggerConfig = builder.Configuration.GetValue<bool?>(ApiDocsPolicy.ClaveEnableSwagger);
+var enableSwagger       = ApiDocsPolicy.SwaggerHabilitado(
+    app.Services.GetRequiredService<IAmbienteXpay>(), enableSwaggerConfig);
 
 if (enableSwagger)
 {
@@ -423,9 +523,12 @@ if (enableHsts && !app.Environment.IsDevelopment())
 if (enableHttpsRedirection)
     app.UseHttpsRedirection();
 app.UseCors("FrontendCorsPolicy");   // antes de autenticación — requerido para preflight
-if (enableRateLimiting)
-    app.UseRateLimiter();            // después de CORS, antes de autenticación
 app.UseAuthentication();
+// Después de autenticar: CambiarClavePolicy y DestinatarioWalletPolicy
+// particionan por el claim idUsuario, que antes de UseAuthentication aún no
+// existe (caían siempre a la IP). Las políticas por IP no cambian.
+if (enableRateLimiting)
+    app.UseRateLimiter();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();

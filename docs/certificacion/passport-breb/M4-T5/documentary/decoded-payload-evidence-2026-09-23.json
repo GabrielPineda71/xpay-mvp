@@ -1,0 +1,97 @@
+{
+  "certification_case": "M4-T5",
+  "description": "Decodificar QR dinámico (mismo QR exitoso de M4-T4) y validar la estructura JSON real",
+  "environment": "Passport Sandbox",
+  "execution_result": "PASS",
+  "passport_decode_calls": 1,
+  "passport_other_calls": 0,
+  "executed_at_utc": "2026-09-23T03:37:19Z",
+  "backend_commit_sha": "1b6b67d6b594af4c6d788f4a1ab457fb0b287ab2",
+  "operation": "POST /v1/qrcodes/decode",
+
+  "source_evidence": {
+    "file": "docs/certificacion/passport-breb/M4-T5/evidence-2026-09-23T03-37-19Z.json",
+    "sha256": "cc4eb5cf69f33c5495327170657155c798f617d93adf4b1a895036204a9c5267",
+    "note": "Este artefacto es DOCUMENTAL/COMPLEMENTARIO — no sustituye, altera ni reescribe la evidencia técnica original referenciada arriba. Todo dato incluido aquí proviene de esa evidencia técnica (ya saneada) y de una inspección ESTRUCTURAL local del JSON HTTP real preservado privadamente (XPAY-508/517) — nunca de una nueva llamada a Passport."
+  },
+
+  "source": "PRIVATE_REAL_DECODE_RESPONSE_SANITIZED",
+
+  "traceability": {
+    "m4_t4_case_id": "M4-T4",
+    "m4_t4_source_evidence_file": "docs/certificacion/passport-breb/M4-T4/evidence-2026-09-23T02-43-10Z.json",
+    "m4_t4_source_evidence_sha256": "94921a4917f63751cb21b3a08f11df77020fceef64f110bea584ec91ef64ecbc",
+    "decode_source": "M4-T4_PRIVATE_ARTIFACT",
+    "qr_code_data_fingerprint": "BE4235D91079",
+    "qr_code_reference_match_m4_t4": true,
+    "note": "M4-T5 decodificó, sin crear ningún QR nuevo, el mismo QR DYNAMIC ya creado y exitoso en M4-T4 — el qr_code_data usado como input de este Decode se leyó exclusivamente en memoria desde el artefacto privado de M4-T4, nunca copiado a ningún archivo versionado. El fingerprint mostrado corresponde al mismo valor ya registrado en la evidencia técnica de ambos casos (M4-T4 response y M4-T5 request) — confirma sin ambigüedad, y sin exponer el valor crudo, que se trata del mismo QR."
+  },
+
+  "decoded_payload_observed": {
+    "status": "ACTIVE",
+    "type": "DYNAMIC",
+    "channel": "MPOS",
+    "acquirer_network_identifier": "VISI",
+
+    "amount": {
+      "present": true,
+      "value_matches_certification_case": true,
+      "currency_matches_certification_case": true,
+      "note": "El caso de certificación M4-T5 espera amount.value=\"10000.00\"/currency=\"COP\" (mismo valor oficial del ejemplo Postman de Passport ya usado para crear el QR en M4-T4, XPAY-512). Ambos coincidieron. El valor crudo no se reproduce aquí — sólo el resultado booleano de la comparación, mismo criterio que la evidencia técnica original."
+    },
+
+    "vat": {
+      "present": true,
+      "note": "La evidencia técnica original únicamente preservó vat_present=true. Sus subcampos (vat_type/vat_value/vat_base_value) NUNCA fueron capturados por el evidence builder versionable — por diseño, para no exponer datos potencialmente sensibles — y por tanto NO se reconstruyen ni se infieren aquí, aunque la inspección estructural privada confirma que el objeto vat real sí contiene esos tres subcampos."
+    },
+
+    "inc": {
+      "present": true,
+      "note": "Mismo criterio que vat: sólo se preservó inc_present=true en la evidencia técnica original. La inspección estructural privada confirma que el objeto inc real contiene inc_type/inc_value, sin reproducir sus valores aquí."
+    },
+
+    "tip": {
+      "present_in_raw_http_response": true,
+      "shape": "OBJECT",
+      "properties_observed": ["tip_type", "tip_value"],
+      "note": "PassportDecodeQrCodeResponse no modelaba `tip` al momento de esta ejecución (XPAY-516) — por eso no aparece en la evidencia técnica sanitizada ni en ningún response_sanitized histórico. La captura privada del JSON HTTP real (XPAY-517/519) SÍ preservó este campo, y su shape (objeto con tip_type/tip_value) coincide con el ya modelado en el lado REQUEST de Create QR (PassportQrTipRequest) y en el response de Create QR (PassportQrTipResponse) — es decir, Passport SÍ envía tip en la respuesta de Decode para QR DYNAMIC, con la misma forma ya conocida. Este hallazgo no reinterpreta ni generaliza una regla de contrato de Passport más allá de esta observación puntual; tampoco implica ningún cambio al DTO productivo en este ticket."
+    },
+
+    "qr_code_reference": {
+      "present": true,
+      "matches_m4_t4": true,
+      "note": "Comparación realizada mediante fingerprint (SHA-256, 12 hex), nunca contra el valor crudo — mismo criterio que el resto del expediente. El fingerprint del qr_code_reference decodificado por M4-T5 es idéntico al fingerprint del qr_code_reference recibido y preservado por M4-T4 (AC56BCFB884C en ambos casos)."
+    },
+
+    "key": {
+      "present": true,
+      "key_type": "BCODE",
+      "note": "key_value NUNCA se preservó en texto plano en la evidencia técnica original — es un dato potencialmente PII directa. Sólo su categoría (key_type) se documenta aquí, mismo criterio ya establecido en M4-T2."
+    },
+
+    "merchant": {
+      "present": true,
+      "note": "merchant_category_code/merchant_country son categorías institucionales no identificantes por sí solas; merchant_name/merchant_city/merchant_post_code (que combinados podrían identificar el comercio/ubicación) NUNCA se reproducen aquí — mismo criterio ya establecido en M4-T2 para el mismo recurso Sandbox subyacente."
+    }
+  },
+
+  "validation": {
+    "json_valid": true,
+    "dynamic_qr_confirmed": true,
+    "channel_matches_m4_t4_creation_contract": true,
+    "qr_code_reference_roundtrip_confirmed": true,
+    "single_decode_call_confirmed": true,
+    "notes": "json_valid=true: la deserialización a PassportDecodeQrCodeResponse completó sin excepción sobre una respuesta HTTP 2xx real (http_status=null + result=PASS es la convención repo-wide para \"2xx validado\"). dynamic_qr_confirmed=true: type=DYNAMIC coincide exactamente con el tipo creado en M4-T4. channel_matches_m4_t4_creation_contract=true: channel=MPOS coincide exactamente con el contrato de creación confirmado por Passport para M4-T4. qr_code_reference_roundtrip_confirmed=true: el fingerprint del qr_code_reference decodificado por M4-T5 es idéntico al fingerprint recibido y preservado en la evidencia de M4-T4 (ver traceability arriba). single_decode_call_confirmed=true: passport_decode_calls=1, passport_other_calls=0, tomado directamente del reporte de ejecución real M4-T5/XPAY-519 (ningún reintento, ninguna segunda llamada)."
+  },
+
+  "improvement_over_m4_t2": {
+    "raw_http_json_preserved": true,
+    "note": "A diferencia de M4-T2 (donde el JSON HTTP crudo nunca se preservó — limitación documentada en su propio decoded-payload-evidence), M4-T5 SÍ preservó privadamente el JSON HTTP completo de la respuesta real (XPAY-517, PostWithRawCaptureAsync). Esto es lo que permitió confirmar con certeza, y no sólo por inferencia, que `tip` está presente en la respuesta real de Decode — sin necesidad de una segunda llamada a Passport."
+  },
+
+  "limitations": {
+    "vat_inc_subfields": "Sólo se preservó la presencia (vat_present/inc_present=true) en la evidencia técnica versionable. Los subcampos concretos (vat_type/vat_value/vat_base_value, inc_type/inc_value) existen en la respuesta real (confirmado por inspección estructural privada) pero deliberadamente no se reproducen en ningún artefacto versionado.",
+    "merchant_key_pii": "key_value y merchant_name/merchant_city/merchant_post_code existen en la respuesta real pero nunca se preservan en texto plano en ningún artefacto versionado — sólo sus fingerprints (ya presentes en la evidencia técnica original) o, para key_type/merchant_category_code/merchant_country, su valor categórico no identificante.",
+    "raw_response_scope": "Este documento describe únicamente los campos ya observados y saneados — no reproduce el JSON crudo completo preservado privadamente, que permanece fuera del repositorio en todo momento."
+  }
+}

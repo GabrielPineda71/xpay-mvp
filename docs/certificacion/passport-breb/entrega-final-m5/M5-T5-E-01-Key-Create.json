@@ -1,0 +1,29 @@
+{
+  "case_id": "M5-T5-E-KEY-PREP-CREATE",
+  "executed_at_utc": "2026-10-01T01:51:59Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "fd0b65426020122d942725b2f893628fea05e963",
+  "operation": "POST /v1/keys",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "key_type": "BCODE",
+    "account_id_fingerprint": "22308566F22C",
+    "key_value_fingerprint": "A0989C54075F",
+    "display_name_present": true
+  },
+  "response_sanitized": {
+    "status": "ACTIVE",
+    "key_id_present": true,
+    "key_id_fingerprint": "1FB4B0E9F2B3",
+    "private_artifact_captured": true,
+    "certification_test_result": "NOT_YET_EXECUTED",
+    "fixture_phase": "CREATED_NOT_DELETED",
+    "delete_key_real_calls": 0,
+    "resolve_real_calls": 0,
+    "payment_real_calls": 0
+  },
+  "automated_test_reference": null,
+  "notes": "M5-T5-E-KEY-PREP-CREATE: fixture desechable NUEVO creado para el futuro subcaso M5-T5-E (deleted key). NO representa que el caso de certificaci\u00F3n se haya ejecutado \u2014 la llave todav\u00EDa NO est\u00E1 eliminada. key_value preservado de forma recuperable en private capture: es precisamente lo que falt\u00F3 en el fixture hist\u00F3rico de M4-T3-B (XPAY-492), cuyo key_value se perdi\u00F3 de forma irrecuperable y por eso no puede reutilizarse para este caso.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

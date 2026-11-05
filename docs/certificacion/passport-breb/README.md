@@ -233,6 +233,83 @@ test dedicado). El logging seguro de XPAY-330 sigue aplicando sin
 cambios — el path de M3-T7 (`DELETE /v1/keys/{key_id}`) contiene el mismo
 tipo de identificador sensible que ya protege la corrección global.
 
+## Módulo M4 — Flujos de Códigos QR
+
+El Anexo oficial, sección 3.4 ("Módulo 4: Flujos de Códigos QR"), define
+para QR estático: (1) crear una clave Bre-B, (2) crear un QR con metadatos
+mínimos, (3) decodificar el QR, (4) validación de errores — QR con llave
+suspendida / QR con llave eliminada / QR con `customer_id` incorrecto. XPAY
+mapea internamente estos cuatro puntos a los casos `M4-T1` (creación),
+`M4-T2` (decodificación) y `M4-T3-A/B/C` (los tres subcasos negativos del
+punto 4). El Anexo ubica las pruebas de pago hacia llaves
+suspendidas/eliminadas en el **Módulo 5**, fuera del alcance de M4-T3.
+
+### M4-T1 (Create QR Static) — `REAL TECHNICAL PASS`, congelado
+
+Ejecución real `--execute` produjo `M4-T1/evidence-2026-09-21T20-08-12Z.json`
+con `result=PASS` (`review_status=PENDING_PASSPORT_REVIEW`). **No repetir.**
+Fixture de certificación: type STATIC/channel MPOS, vat/inc/tip FIXED
+(100.00/100.00/10.00/100.00, mismos valores confirmados por Passport para
+M4), sin amount/additional_info — factorizado en
+`QrStaticCertificationFixture.cs` y reutilizado sin cambios por M4-T2 y por
+los tres subcasos de M4-T3.
+
+### M4-T2 (Decode QR Static) — `REAL TECHNICAL PASS`, evidencia consolidada, congelado
+
+Ejecución real produjo `M4-T2/evidence-2026-09-21T21-27-24Z.json`
+(`result=PASS`) más una evidencia documental complementaria
+(`M4-T2/decoded-payload-evidence-2026-09-21T21-27-24Z.json`, XPAY-468),
+consolidadas y comprometidas al repositorio (commit `505e920c`, XPAY-469).
+**No repetir.**
+
+### M4-T3-A (Create QR Static — llave suspendida) — `PASS`, comportamiento esperado confirmado por Passport, congelado
+
+Preparación del fixture desechable (XPAY-474 implementación offline,
+XPAY-476 Create Key real, XPAY-477 Suspend Key real — mismo `key_id`,
+mismo fingerprint, en los tres pasos) y ejecución real del QR (XPAY-478):
+`M4-T3-A/evidence-2026-09-22T02-42-08Z.json`, `result=PASS`, QR generado
+`ACTIVE` pese a la llave suspendida.
+
+Este resultado fue inicialmente clasificado (auditoría forense offline
+XPAY-479) como `UNEXPECTED_SUCCESS_FOR_NEGATIVE_TEST_CASE` — sin defecto
+local encontrado, pendiente de revisión contractual explícita por Passport.
+Passport (Gustavo Muñoz) aclaró oficialmente que ésta **es** la conducta
+esperada: el QR se genera correctamente con la llave suspendida, y la
+validación de suspensión ocurre durante Payment (Módulo 5), no durante la
+creación del QR. Ver la nota documental complementaria
+`M4-T3-A/passport-official-clarification-2026-09-22.md` (XPAY-485/486) para
+la cita textual completa y la reinterpretación formal. Estado final:
+`EXPECTED_PASSPORT_BEHAVIOR_CONFIRMED_BY_PASSPORT`. **No repetir. No se
+ejecutó ni se ejecutará un Payment para cerrar este caso.**
+
+### M4-T3-B (Create QR Static — llave eliminada) — `PENDING_EXECUTION`
+
+Implementado offline (XPAY-471): `CreateQrStaticDeletedKeyExecutor`/
+`CreateQrStaticDeletedKeyEvidenceBuilder`, comando
+`create-qr-static-deleted-key`. Target exclusivo:
+`PASSPORT_TEST_NEW_KEY_ID` — la misma llave del ciclo histórico
+M3-T1→T3→T4→T5→T7 (creada, suspendida, reactivada, eliminada en M3-T5,
+segundo Delete confirmado 404 en M3-T7); se usa únicamente como referencia
+histórica ya eliminada, sin releerla ni re-verificarla con ninguna llamada
+nueva, y sin fallback hacia la llave activa ni hacia la suspendida de
+M4-T3-A. `customer_id` válido normal (`PASSPORT_TEST_CUSTOMER_ID`). No
+requiere ninguna preparación de fixture adicional — a diferencia de
+M4-T3-A, la llave ya existe en el estado necesario desde M3-T5.
+
+### M4-T3-C (Create QR Static — customer_id incorrecto) — `PENDING_EXECUTION`
+
+Implementado offline (XPAY-471): `CreateQrStaticInvalidCustomerExecutor`/
+`CreateQrStaticInvalidCustomerEvidenceBuilder`, comando
+`create-qr-static-invalid-customer`. Target: `PASSPORT_TEST_QR_KEY_ID` (la
+misma llave ACTIVA de M4-T1/M4-T2, usada solo de forma read/reference,
+nunca mutada) + un `customer_id` sintético inválido generado por
+`InvalidCustomerIdGenerator.Generate()` (nunca el `customer_id` real ni
+derivado de él).
+
+### M4-T4 / M4-T5 / M4-T6 — `NOT_EXECUTED`
+
+No implementados ni ejecutados. Sin evidencia de ningún tipo.
+
 ## Política de redacción
 
 **Nunca se escribe en `evidence.json`:**

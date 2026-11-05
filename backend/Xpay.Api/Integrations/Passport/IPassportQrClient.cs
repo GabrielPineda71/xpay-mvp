@@ -24,4 +24,13 @@ public interface IPassportQrClient
     // POST /v1/qrcodes/decode
     Task<PassportDecodeQrCodeResponse> DecodeQrCodeAsync(
         PassportDecodeQrCodeRequest request, CancellationToken cancellationToken = default);
+
+    // XPAY-517 — método ADITIVO, exclusivo de necesidades de certificación
+    // (M4-T5): mismo endpoint/validación/contrato que DecodeQrCodeAsync,
+    // pero además devuelve el JSON crudo de la respuesta exitosa (ver
+    // IPassportHttpClient.PostWithRawCaptureAsync). NINGÚN consumidor
+    // productivo usa este método — DecodeQrCodeAsync permanece sin cambios
+    // para todos los flujos existentes (M4-T2 incluido).
+    Task<(PassportDecodeQrCodeResponse? Response, string? RawResponseJson)> DecodeQrCodeWithRawCaptureAsync(
+        PassportDecodeQrCodeRequest request, CancellationToken cancellationToken = default);
 }

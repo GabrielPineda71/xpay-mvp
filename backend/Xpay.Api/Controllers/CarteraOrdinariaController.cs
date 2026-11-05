@@ -59,7 +59,6 @@ public class CarteraOrdinariaController(
     {
         "Ya tienes una solicitud de cupo en curso",
         "Idempotency-Key ya utilizada para otra solicitud.",
-        "Idempotency-Key ya utilizada con parámetros diferentes.",
         "Hay otra solicitud de cupo en proceso para este usuario. Intenta de nuevo en unos segundos.",
     };
 
@@ -120,8 +119,17 @@ public class CarteraOrdinariaController(
 
     [HttpPut("admin/politica")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
-    public async Task<IActionResult> UpsertPolitica([FromBody] UpsertPoliticaCreditoRequest req)
-        => Ok(await svc.UpsertPoliticaAsync(req, IdUsuarioActual));
+    // XPAY-676B — fail-closed: la política que gobierna el motor es
+    // CarteraPolicyParameters.Vigente() (working copy aprobada). Esta tabla
+    // NO gobierna CarteraDecisionEngine, así que no se permite aparentar que
+    // se modifica la política. Cualquier cambio de política requiere una nueva
+    // versión aprobada del motor.
+    public IActionResult UpsertPolitica()
+        => Conflict(new { error = MensajePoliticaNoEditable });
+
+    internal const string MensajePoliticaNoEditable =
+        "La política de crédito vigente está gobernada por la versión aprobada del motor " +
+        "y no se modifica desde este endpoint.";
 
     // ── ADMIN: Cupos ──────────────────────────────────────────────────
     [HttpGet("admin/cupos")]
@@ -129,8 +137,12 @@ public class CarteraOrdinariaController(
     public async Task<IActionResult> GetCupos()
         => Ok(await svc.GetCuposAsync());
 
+    [OperacionFinanciera]
     [HttpPost("admin/cupos")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    // XPAY-717 - inexistente (404) en cualquier ambiente productivo. La
+    // materialización legítima (revisión manual / orquestador) no pasa por aquí.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> AsignarCupo([FromBody] AsignarCupoRequest req)
     {
         try { return Ok(await svc.AsignarCupoAsync(req, IdUsuarioActual)); }
@@ -154,8 +166,9 @@ public class CarteraOrdinariaController(
     // creación atómica de solicitud + primer intento. Sin proveedor, sin
     // decisión crediticia, sin cálculo de edad, sin uso de score.
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("solicitar-cupo")]
-    public async Task<IActionResult> SolicitarCupo([FromBody] SolicitarCupoRequest req)
+    public async Task<IActionResult> SolicitarCupo()
     {
         if (!TryGetIdempotencyKey(out var idempotencyKey, out var idempotencyError))
             return BadRequest(new { error = idempotencyError });
@@ -168,7 +181,7 @@ public class CarteraOrdinariaController(
         try
         {
             var result = await svc.CrearSolicitudCupoAsync(
-                IdUsuarioActual, idempotencyKey, req.MontoSolicitado, correlationId);
+                IdUsuarioActual, idempotencyKey, correlationId);
             return Ok(result);
         }
         catch (ArgumentException ex)
@@ -203,6 +216,7 @@ public class CarteraOrdinariaController(
             CarteraAutorizacionConsultaRiesgoTextos.V1_HashSha256));
 
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("solicitudes/{idSolicitud:long}/autorizar-consulta-riesgo")]
     public async Task<IActionResult> AutorizarConsultaRiesgo(
         long idSolicitud, [FromBody] RegistrarAutorizacionConsultaRiesgoRequest req)
@@ -236,10 +250,13 @@ public class CarteraOrdinariaController(
     // RECIBIDA→CONSULTANDO_RIESGO del servicio de consulta, el no-auto-retry tras
     // ENVIO_INCIERTO y los guards YaConsumido/YaDecidido/YaMaterializado
     // downstream. Por eso NO se exige Idempotency-Key (repetir la llamada es
-    // seguro e idempotente). Con la DI actual la barrera de autorización
-    // (AutorizacionConsultaRiesgoNoDisponible) impide alcanzar MiDecisor: el
-    // consentimiento durable capturado NO basta.
+    // seguro e idempotente). Con la DI actual la barrera de autorización es el
+    // gate QA (AutorizacionConsultaRiesgoQaGate): sin configuración QA impide
+    // alcanzar MiDecisor y el consentimiento durable capturado NO basta. Con
+    // STOP_AFTER_CONSULTA activo el orquestador devuelve DetenidaTrasConsulta
+    // (solicitud en EN_EVALUACION, sin decisión ni cupo).
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("solicitudes/{idSolicitud:long}/iniciar-evaluacion")]
     public async Task<IActionResult> IniciarEvaluacion(long idSolicitud)
     {
@@ -257,17 +274,7 @@ public class CarteraOrdinariaController(
         audit.LogSensitiveAction(HttpContext, "CARTERA_EVALUACION_RESULTADO",
             new { idSolicitud, idUsuario, resultado = r.Resultado.ToString(), estado = r.EstadoSolicitud, correlationId });
 
-        var mensaje = r.Resultado switch
-        {
-            OrquestacionEvaluacionEstado.AutorizacionNoDisponible =>
-                "No pudimos completar la evaluación. La solicitud requiere revisión.",
-            OrquestacionEvaluacionEstado.DatosPersonaInsuficientes =>
-                "No pudimos completar la evaluación con la información disponible. La solicitud requiere revisión.",
-            OrquestacionEvaluacionEstado.RequiereReconciliacion =>
-                "La evaluación quedó en un estado que requiere revisión.",
-            _ when r.RequiereRevisionManual => "Tu solicitud pasó a revisión manual.",
-            _ => "Evaluación procesada.",
-        };
+        var mensaje = MensajeIniciarEvaluacion(r);
 
         return Ok(new IniciarEvaluacionResponse(
             idSolicitud,
@@ -278,6 +285,24 @@ public class CarteraOrdinariaController(
             r.RequiereRevisionManual,
             mensaje));
     }
+
+    // Mensaje de IniciarEvaluacion por resultado del orquestador. Extraído
+    // (XPAY-656) para poder probarlo sin construir el controller; mismo mapeo
+    // que antes más DetenidaTrasConsulta.
+    internal static string MensajeIniciarEvaluacion(OrquestacionEvaluacionResultado r) => r.Resultado switch
+    {
+        OrquestacionEvaluacionEstado.AutorizacionNoDisponible =>
+            "No pudimos completar la evaluación. La solicitud requiere revisión.",
+        OrquestacionEvaluacionEstado.DatosPersonaInsuficientes =>
+            "No pudimos completar la evaluación con la información disponible. La solicitud requiere revisión.",
+        OrquestacionEvaluacionEstado.RequiereReconciliacion =>
+            "La evaluación quedó en un estado que requiere revisión.",
+        // XPAY-656 — stop de orquestación: sin decisión crediticia ni cupo.
+        OrquestacionEvaluacionEstado.DetenidaTrasConsulta =>
+            "Evaluación detenida después de la consulta de riesgo y antes de la decisión crediticia.",
+        _ when r.RequiereRevisionManual => "Tu solicitud pasó a revisión manual.",
+        _ => "Evaluación procesada.",
+    };
 
     // ── USUARIO: Estado de una solicitud de cupo (M2.4d) ──────────────────
     // Proyección segura: nunca expone provider raw, P0, score crudo,
@@ -309,6 +334,7 @@ public class CarteraOrdinariaController(
     // correlación se registran vía AuditLogService (no hay columna durable
     // dedicada — gap conocido XPAY-204).
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    [OperacionFinanciera]
     [HttpPost("admin/solicitudes/{idSolicitud:long}/reconciliar-consulta-atascada")]
     public async Task<IActionResult> ReconciliarConsultaAtascada(
         long idSolicitud, [FromBody] ReconciliarConsultaAtascadaRequest req)
@@ -409,10 +435,23 @@ public class CarteraOrdinariaController(
 
     // ── USUARIO: Confirmación real de utilización (AVANCE_WALLET) ─────
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("confirmar-avance-wallet")]
     public async Task<IActionResult> ConfirmarAvanceWallet([FromBody] SimularUtilizacionRequest req)
     {
-        try { return Ok(await svc.ConfirmarAvanceWalletAsync(req, IdUsuarioActual)); }
+        // XPAY-712 - Idempotency-Key obligatoria (mismo patrón que QrController.Pagar).
+        if (!TryGetIdempotencyKey(out var idempotencyKey, out var idempotencyError))
+            return BadRequest(new { error = idempotencyError });
+
+        try
+        {
+            var r = await svc.ConfirmarAvanceWalletAsync(req, IdUsuarioActual, idempotencyKey);
+            if (r.Replayed)
+                Response.Headers["Idempotent-Replayed"] = "true";
+            return Ok(r.Data);
+        }
+        catch (IdempotencyConflictException ex) { return Conflict(new { error = ex.Message }); }
+        catch (IdempotencyUnavailableException ex) { return StatusCode(503, new { error = ex.Message }); }
         catch (KeyNotFoundException ex) { return NotFound(new { error = ex.Message }); }
         catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(new { error = ex.Message }); }
@@ -433,6 +472,7 @@ public class CarteraOrdinariaController(
     }
 
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("pagar-cuota-wallet")]
     public async Task<IActionResult> PagarCuotaWallet([FromBody] PagarCuotaWalletRequest req)
     {
@@ -444,6 +484,7 @@ public class CarteraOrdinariaController(
 
     // ── USUARIO: Compra QR con Cupo Ordinario ──────────────────────────
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("pagar-qr-con-cupo")]
     public async Task<IActionResult> PagarQrConCupo([FromBody] PagarQrConCupoRequest req)
     {

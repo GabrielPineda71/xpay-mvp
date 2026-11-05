@@ -1,0 +1,18 @@
+{
+  "case_id": "M4-T3-B",
+  "executed_at_utc": "2026-09-23T00:37:43Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "7d7bdcbdd0fa471af7b814a35695bad36216f53c",
+  "operation": "POST /v1/qrcodes",
+  "http_status": null,
+  "result": "FAIL",
+  "request_sanitized": {},
+  "response_sanitized": {
+    "observed_http_status": 404,
+    "error_code": "resource_not_found",
+    "error_message": "key not found."
+  },
+  "automated_test_reference": null,
+  "notes": "M4-T3-B: CERTIFICATION_EXPECTED_ERROR_CANDIDATE (transport_result=FAIL). PASSPORT_HTTP_FAILURE: Passport respondi\u00F3 con error HTTP 404. \u2014 Si este error corresponde espec\u00EDficamente al escenario de llave eliminada es una interpretaci\u00F3n de certificaci\u00F3n separada, no codificada aqu\u00ED.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

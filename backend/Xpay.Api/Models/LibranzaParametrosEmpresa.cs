@@ -12,6 +12,8 @@ public class LibranzaParametrosEmpresa
     public int      MaxAnticipacionesActivos  { get; set; } = 1;
     public decimal  IvaPorcentaje             { get; set; } = 19.00m;
     public string   MomentoCobroComision      { get; set; } = "VENCIDO";
+    // P0 anticipo (047) - minimo comercial de utilizacion/desembolso.
+    public decimal  MontoMinimoAnticipo       { get; set; } = 100000.00m;
     public string   Estado                    { get; set; } = "ACTIVO";
     public DateTime  CreatedAt                { get; set; }
     public DateTime? UpdatedAt                { get; set; }

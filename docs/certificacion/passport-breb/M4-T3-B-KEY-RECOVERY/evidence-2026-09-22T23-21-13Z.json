@@ -1,0 +1,24 @@
+{
+  "case_id": "M4-T3-B-KEY-RECOVERY",
+  "executed_at_utc": "2026-09-22T23:21:13Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "39267626b61456d9fb9d78a69f00f7fa217ff105",
+  "operation": "GET /v1/keys",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "account_id_fingerprint": "22308566F22C",
+    "key_type": "BCODE",
+    "key_value": "REDACTED"
+  },
+  "response_sanitized": {
+    "selection_outcome": "ExactlyOneMatch",
+    "match_found": true,
+    "matches_count": 1,
+    "status": "ACTIVE",
+    "id_fingerprint": "9315E012C94C"
+  },
+  "automated_test_reference": null,
+  "notes": "M4-T3-B-KEY-RECOVERY: coincidencia \u00FAnica encontrada. El campo \u0060status\u0060 de esta evidencia refleja literalmente lo que Passport devolvi\u00F3 \u2014 este builder NO asume que un valor concreto (p.ej. \u0022DELETED\u0022) sea el esperado; esa interpretaci\u00F3n es responsabilidad del revisor humano. El key_id real NO fue persistido \u2014 este comando NUNCA escribe ~/.passport-sandbox.env; configure PASSPORT_TEST_NEW_KEY_ID usted mismo, de forma manual, si decide usar este resultado.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

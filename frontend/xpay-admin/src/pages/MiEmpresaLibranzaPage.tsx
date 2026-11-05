@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { get, post, postForm } from '../api/client.ts';
 import { API_BASE_URL } from '../api/client.ts';
+import { SoloQa } from '../config/SoloQa.tsx';
 
 interface ConvenioItem {
   idConvenio: number;
@@ -452,7 +453,7 @@ export function MiEmpresaLibranzaPage() {
         </div>
       )}
 
-      <p className="user-wallet-footer">Ambiente QA/Demo · libranza activo · sin transacciones financieras reales</p>
+      <SoloQa><p className="user-wallet-footer">Ambiente QA/Demo · libranza activo · sin transacciones financieras reales</p></SoloQa>
     </div>
   );
 }

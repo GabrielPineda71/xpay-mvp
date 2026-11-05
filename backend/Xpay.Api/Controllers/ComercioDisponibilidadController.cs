@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -32,7 +33,7 @@ public class ComercioDisponibilidadController : ControllerBase
         if (idComercio <= 0) return BadRequest(new { success = false, message = "idComercio inválido." });
         try
         {
-            var s = await _scope.RequireScopeAsync(uid);
+            var s = await _scope.RequireScopeForComercioAsync(uid, idComercio);
             if (!s.PuedeLiquidarAnticipado)
                 return Forbid();
             return Ok(new { success = true, data = await _disp.GetMiDisponibilidadAsync(idComercio, desde, hasta) });
@@ -51,7 +52,7 @@ public class ComercioDisponibilidadController : ControllerBase
         if (idComercio <= 0) return BadRequest(new { success = false, message = "idComercio inválido." });
         try
         {
-            var s = await _scope.RequireScopeAsync(uid);
+            var s = await _scope.RequireScopeForComercioAsync(uid, idComercio);
             if (!s.PuedeLiquidarAnticipado)
                 return Forbid();
             return Ok(new { success = true, data = await _disp.ListarVentasNoDisponiblesAsync(idComercio, desde, hasta) });
@@ -60,6 +61,7 @@ public class ComercioDisponibilidadController : ControllerBase
         catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
     }
 
+    [OperacionFinanciera]
     [HttpPost("ventas-no-disponibles/{idDisponibilidad:long}/liquidar-ahora")]
     public async Task<IActionResult> LiquidarAhora(long idDisponibilidad, [FromQuery] long idComercio)
     {
@@ -67,7 +69,7 @@ public class ComercioDisponibilidadController : ControllerBase
         if (idComercio <= 0) return BadRequest(new { success = false, message = "idComercio inválido." });
         try
         {
-            var s = await _scope.RequireScopeAsync(uid);
+            var s = await _scope.RequireScopeForComercioAsync(uid, idComercio);
             if (!s.PuedeLiquidarAnticipado)
                 return Forbid();
             return Ok(new { success = true, data = await _disp.LiquidarAhoraAsync(idDisponibilidad, idComercio) });

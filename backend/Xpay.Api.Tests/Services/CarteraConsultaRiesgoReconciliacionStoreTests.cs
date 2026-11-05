@@ -227,7 +227,7 @@ public sealed class CarteraConsultaRiesgoReconciliacionStoreTests
 
         var solicitud = new CarteraSolicitudCupo
         {
-            IdUsuario = usuario.IdUsuario, IdPersona = persona.IdPersona, MontoSolicitado = 500_000m,
+            IdUsuario = usuario.IdUsuario, IdPersona = persona.IdPersona,
             EstadoSolicitud = estadoSolicitud, DecisionCrediticia = CarteraDecisionCrediticia.Pendiente,
             IdPoliticaAplicada = idPolitica, CupoMinimoAplicado = 0m, CupoMaximoAplicado = 1_000_000m,
             EdadMinimaAplicada = 18, EdadMaximaAplicada = 99, NumeroIntento = 1,

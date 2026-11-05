@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
 using Xpay.Api.Models;
@@ -8,11 +9,28 @@ namespace Xpay.Api.Services;
 public class RegistroUsuarioFinalService
 {
     private readonly XpayDbContext _db;
-    public RegistroUsuarioFinalService(XpayDbContext db) => _db = db;
+    private readonly IAmbienteXpay _ambiente;
+    public RegistroUsuarioFinalService(XpayDbContext db, IAmbienteXpay ambiente)
+    {
+        _db       = db;
+        _ambiente = ambiente;
+    }
+
+    // XPAY-717 - mensaje genérico: no revela reserva ni ambiente.
+    internal const string MensajeUsuarioNoDisponible = "El nombre de usuario no está disponible.";
 
     public async Task<long> RegistrarAsync(RegistroUsuarioFinalRequest request)
     {
-        await using var transaction = await _db.Database.BeginTransactionAsync();
+        // XPAY-717 - nombres "qa.*" reservados en ambiente productivo. Antes de
+        // cualquier transacción o lectura: sin efectos en BD.
+        if (!NombreUsuarioReservado.PermiteCrear(request.Usuario, _ambiente))
+            throw new InvalidOperationException(MensajeUsuarioNoDisponible);
+
+        // XPAY-702 - si ya hay una transaccion abierta (alta QA atomica), se une
+        // a ella y no hace commit/rollback propios; si no, comportamiento original.
+        await using var transaction = _db.Database.CurrentTransaction is null
+            ? await _db.Database.BeginTransactionAsync()
+            : null;
         try
         {
             var tipoDocumento = request.TipoDocumento.Trim().ToUpper();
@@ -98,12 +116,12 @@ public class RegistroUsuarioFinalService
             });
 
             await _db.SaveChangesAsync();
-            await transaction.CommitAsync();
+            if (transaction is not null) await transaction.CommitAsync();
             return usuario.IdUsuario;
         }
         catch
         {
-            await transaction.RollbackAsync();
+            if (transaction is not null) await transaction.RollbackAsync();
             throw;
         }
     }

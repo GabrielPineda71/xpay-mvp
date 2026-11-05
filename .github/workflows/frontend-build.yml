@@ -33,6 +33,7 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE_URL: http://localhost:5000
+          VITE_XPAY_ENV: QA
 
       # XPAY-413A — build QA-específico, separado del build de validación de
       # arriba (que usa localhost:5000 y no se conserva). VITE_API_BASE_URL
@@ -43,6 +44,7 @@ jobs:
         run: npm run build
         env:
           VITE_API_BASE_URL: https://api-qa.xpaycol.com
+          VITE_XPAY_ENV: QA
 
       # XPAY-413C — server.cjs/package.json recuperados del App Service QA
       # real (xpay-admin-qa, vía Kudu VFS de solo lectura, XPAY-413B) y
@@ -74,6 +76,7 @@ jobs:
             echo "GIT_SHA=${GITHUB_SHA}"
             echo "TARGET=QA"
             echo "VITE_API_BASE_URL=https://api-qa.xpaycol.com"
+            echo "VITE_XPAY_ENV=QA"
           } > "xpay-admin-qa-build-info.txt"
 
       # Solo conserva el artifact — NO despliega nada. XPAY-414 descarga
@@ -87,4 +90,59 @@ jobs:
             frontend/xpay-admin/xpay-admin-qa-${{ github.sha }}.sha256.txt
             frontend/xpay-admin/xpay-admin-qa-build-info.txt
           retention-days: 7
+          if-no-files-found: error
+
+      # Piloto PROD (fase visual) — artefacto PROD, separado del de QA y SIN
+      # despliegue: mismo servidor estático (qa-runtime/), API de PROD y
+      # VITE_XPAY_ENV=PROD (sin avisos de QA; QR y comprobantes de PROD).
+      # VITE_API_BASE_URL es configuración pública del bundle, no un secreto.
+      - name: Build PROD artifact
+        working-directory: frontend/xpay-admin
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: https://xpay-api-prod.azurewebsites.net
+          VITE_XPAY_ENV: PROD
+
+      # El bundle PROD debe apuntar a la API de PROD y nunca a la de QA.
+      - name: Verify PROD bundle targets
+        working-directory: frontend/xpay-admin
+        run: |
+          grep -rqF "https://xpay-api-prod.azurewebsites.net" dist/assets \
+            || { echo "El bundle PROD no contiene la URL de la API PROD"; exit 1; }
+          if grep -rqF "api-qa.xpaycol.com" dist/assets; then
+            echo "El bundle PROD contiene la URL de la API QA"; exit 1
+          fi
+
+      - name: Copy runtime files (PROD)
+        run: |
+          cp frontend/xpay-admin/qa-runtime/server.cjs frontend/xpay-admin/dist/server.cjs
+          cp frontend/xpay-admin/qa-runtime/package.json frontend/xpay-admin/dist/package.json
+
+      - name: Package PROD artifact
+        working-directory: frontend/xpay-admin/dist
+        run: zip -r "../xpay-admin-prod-${GITHUB_SHA}.zip" . -x "*.DS_Store"
+
+      - name: Compute PROD artifact checksum and build info
+        working-directory: frontend/xpay-admin
+        run: |
+          sha256sum "xpay-admin-prod-${GITHUB_SHA}.zip" > "xpay-admin-prod-${GITHUB_SHA}.sha256.txt"
+          echo "ZIP: xpay-admin-prod-${GITHUB_SHA}.zip"
+          echo "SHA-256: $(cut -d' ' -f1 "xpay-admin-prod-${GITHUB_SHA}.sha256.txt")"
+          {
+            echo "GIT_SHA=${GITHUB_SHA}"
+            echo "TARGET=PROD"
+            echo "VITE_API_BASE_URL=https://xpay-api-prod.azurewebsites.net"
+            echo "VITE_XPAY_ENV=PROD"
+          } > "xpay-admin-prod-build-info.txt"
+
+      # Solo conserva el artifact — NO despliega nada.
+      - name: Upload PROD artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xpay-admin-prod-${{ github.sha }}
+          path: |
+            frontend/xpay-admin/xpay-admin-prod-${{ github.sha }}.zip
+            frontend/xpay-admin/xpay-admin-prod-${{ github.sha }}.sha256.txt
+            frontend/xpay-admin/xpay-admin-prod-build-info.txt
+          retention-days: 30
           if-no-files-found: error

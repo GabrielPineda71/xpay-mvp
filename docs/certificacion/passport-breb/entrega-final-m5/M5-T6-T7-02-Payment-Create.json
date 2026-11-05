@@ -1,0 +1,32 @@
+{
+  "case_id": "M5-PAYMENT-CREATE",
+  "executed_at_utc": "2026-09-30T21:49:51Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "d2faff9b0cc2b82f7cfde0c28b26349fa16fe3f5",
+  "operation": "POST /v1/payments/breb",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "account_id_present": true,
+    "account_id_fingerprint": "22308566F22C",
+    "resolution_id_present": true,
+    "resolution_id_fingerprint": "E5AEF4D709F6",
+    "amount_present": true,
+    "currency": "COP",
+    "display_name_present": false
+  },
+  "response_sanitized": {
+    "request_executed": true,
+    "request_accepted": true,
+    "status": "PROCESSING",
+    "payment_id_present": true,
+    "payment_id_fingerprint": "746BDA2E6BDC",
+    "private_artifact_captured": true,
+    "retry_count": 0,
+    "payment_create_calls": 1,
+    "payment_retrieve_calls": 0
+  },
+  "automated_test_reference": null,
+  "notes": null,
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

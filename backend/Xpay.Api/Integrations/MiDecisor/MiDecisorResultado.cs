@@ -56,6 +56,12 @@ public sealed record MiDecisorResultado(
     public string? MesConsultaRaw { get; init; }
     public string? DiaConsultaRaw { get; init; }
 
+    // XPAY-650 — HTTP status REAL observado por MiDecisorClient (200 | 202).
+    // Lo asigna SÓLO el cliente a partir de la respuesta; NUNCA se deriva de
+    // `ContentStatus` ("202 ACCEPTED" es un campo del body, no el HTTP). Null
+    // = no observado (sólo posible con dobles de test que no lo asignan).
+    public int? HttpStatus { get; init; }
+
     // `comportamientoCrediticio.comportamientoPago.vectorComportamiento[]`.
     // Null cuando el bloque comportamientoPago no vino (ver
     // VectorComportamientoBloquePresente). Orden y duplicados preservados.
