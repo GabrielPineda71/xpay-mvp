@@ -3,7 +3,7 @@
 -- Origen: database/045_cartera_solicitud_sin_monto_y_politica_aplicada.sql
 -- SHA-256 del origen: 8f6909891af7b4e1bd62f3c8a05b229ca7cdfbe32b32edc168c322fc4774b42a
 -- Lineas conservadas del origen: 44-119, 145-162
--- Estado en el manifiesto: BLOQUEADO_PENDIENTE_AUTORIZACION
+-- Estado en el manifiesto: LISTO
 -- Generado por database/prod/tools/construir_paquete.py.
 -- NO EDITAR A MANO: modificar la especificacion y regenerar.
 -- El contenido despues de la marca es copia exacta de esas lineas.

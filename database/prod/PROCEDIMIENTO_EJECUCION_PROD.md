@@ -10,9 +10,9 @@
 
 1. Paquete commiteado (autorización aparte) y árbol limpio: `git status --short database/` sin cambios.
 2. Validador local en OK: `python3 database/prod/tools/validar_paquete.py` → `RESULTADO: OK`.
-3. Antes de B2–B5 (no aplica a B1): decisiones tomadas sobre 045a y
-   los datos pendientes 016b, 021b y 045b (README, "Decisiones
-   pendientes"). 009 y 034 ya están en el conjunto ejecutable.
+3. Antes de B2–B5 (no aplica a B1): decisiones tomadas sobre los
+   datos pendientes 016b, 021b y 045b (README, "Decisiones
+   pendientes"). 009, 034 y 045a ya están en el conjunto ejecutable.
 4. Base todavía vacía: comprobación de solo lectura antes del primer bloque (ver 3.1).
 5. Hora UTC de inicio registrada: es el punto de restauración (PITR 35 días configurado en C6).
 6. go-sqlcmd aislado verificado (`~/xpay-tools/go-sqlcmd-1.10.0/sqlcmd`, SHA conocido).
@@ -44,8 +44,8 @@ Para B1, el tratamiento del MFA y de la ventana está en 6.3 y 6.4.
 | B2 | 010 → 019 | 9 |
 | B3 | 021 → 031 (021b omitido) | 11 |
 | B4 | 032 → 040 | 9 |
-| B5 | 041 → 049 (045a y 045b omitidos) | 8 |
-| Posteriores | 045a; 016b / 021b / 045b | según autorización |
+| B5 | 041 → 049 (045b omitido) | 9 |
+| Posteriores | 016b / 021b / 045b | según autorización |
 
 Comando de plan (no conecta): `python3 database/prod/tools/ejecutar_migraciones.py --desde 010 --hasta 019 --omitir-bloqueados`
 
@@ -57,6 +57,7 @@ Comando de plan (no conecta): `python3 database/prod/tools/ejecutar_migraciones.
 4. El ejecutor, por cada script:
    - recalcula el SHA-256 y lo compara con el manifiesto (si difiere, se detiene sin ejecutar);
    - ejecuta `sqlcmd -S $XPAY_PROD_SQL_SERVIDOR -d $XPAY_PROD_SQL_BASE --authentication-method ActiveDirectoryInteractive -U $XPAY_PROD_SQL_ADMIN -N mandatory -b -i <archivo>`;
+     con `--autenticacion ActiveDirectoryAzCli` usa el token de la sesión de Azure CLI, sin `-U` y sin MFA por script (validado en T6E);
    - guarda la salida completa en `logs/<sello>_<id>.log` y una línea en `logs/ejecucion_<sello>_<bloque>.tsv` (inicio, fin, id, archivo, SHA, código);
    - **se detiene ante el primer código distinto de 0.**
 5. Nunca se reintenta automáticamente. Ante un fallo: no reejecutar 001–007 (sin guardas) ni 013 (ver README); analizar el log y decidir.

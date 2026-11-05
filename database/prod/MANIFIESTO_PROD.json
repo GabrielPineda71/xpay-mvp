@@ -3,7 +3,7 @@
   "base_datos_objetivo": "XPAY PROD (nombre real fuera del repositorio)",
   "commit_origen": "26f4894a717d8ec7a484c8847bf5f070c5e22cd8",
   "commit_origen_significado": "ultimo commit que modifico los scripts originales de database/",
-  "sha256_especificacion": "f612ab00eb3e5a8b5d4f94ccc3bd21b262fee9158e7428cc165436d546b4d4e6",
+  "sha256_especificacion": "81a740cc59d5404492bf9f76e4ae5fe1ca5fb513c4b52232b98cd24324fd4d51",
   "nota": "ejecutable=true solo indica preparacion tecnica. Ninguna ejecucion esta autorizada (autorizacion_ejecucion=NO_OTORGADA).",
   "scripts": [
     {
@@ -943,7 +943,7 @@
       "origen": "database/045_cartera_solicitud_sin_monto_y_politica_aplicada.sql",
       "sha256_origen": "8f6909891af7b4e1bd62f3c8a05b229ca7cdfbe32b32edc168c322fc4774b42a",
       "archivo": "database/prod/variantes/045a_cartera_solicitud_sin_monto_y_politica_aplicada.prod.sql",
-      "sha256_archivo": "f520c3265d28be2ac1329309ef7d198fbf83ba4451763a8351cded9a034f30e5",
+      "sha256_archivo": "d1d2fdd888c6ffc35ee38a4c54cbc56e1caa45978234495cb0590a83e48666a3",
       "rangos_conservados": [
         [
           44,
@@ -958,11 +958,11 @@
         "021",
         "035"
       ],
-      "estado": "BLOQUEADO_PENDIENTE_AUTORIZACION",
-      "ejecutable": false,
+      "estado": "LISTO",
+      "ejecutable": true,
       "autorizacion_ejecucion": "NO_OTORGADA",
       "eliminado": "Encabezado original L1-42, paso 3 (alineacion de politica) L120-143 y verificacion de politica L164-174.",
-      "notas": "Solo estructura: monto_solicitado NULL y CHECK (NULL o > 0). 045 completo esta pendiente de decision."
+      "notas": "Solo estructura: monto_solicitado NULL y CHECK (NULL o > 0). Estado LISTO por autorizacion del usuario; 045b sigue pendiente de decision."
     },
     {
       "orden": 45,

@@ -13,7 +13,8 @@ Garantias:
 - Usa go-sqlcmd con -b (sale ante error) y -N mandatory (cifrado obligatorio, sin -C).
 - Se detiene ante el primer codigo de salida distinto de 0.
 - Registra cada paso (hora UTC, id, archivo, SHA, codigo) y la salida completa.
-- No recibe ni guarda credenciales: la autenticacion es interactiva de Entra.
+- No recibe ni guarda credenciales: la autenticacion es de Entra, interactiva
+  (por defecto) o con la sesion de Azure CLI (--autenticacion ActiveDirectoryAzCli).
 - Los valores del entorno (servidor, base y administrador) se leen de variables de
   entorno y nunca se guardan en el repositorio (ver ENTORNO).
 
@@ -41,6 +42,9 @@ VALIDADOR = os.path.join(RAIZ, "database", "prod", "tools", "validar_paquete.py"
 #   XPAY_PROD_SQL_BASE      nombre de la base PROD
 #   XPAY_PROD_SQL_ADMIN     administrador de Entra del servidor
 ENTORNO = ("XPAY_PROD_SQL_SERVIDOR", "XPAY_PROD_SQL_BASE", "XPAY_PROD_SQL_ADMIN")
+# ActiveDirectoryInteractive pide inicio de sesion (y posiblemente MFA) por script;
+# ActiveDirectoryAzCli usa el token de la sesion de Azure CLI y no lleva -U.
+AUTENTICACIONES = ("ActiveDirectoryInteractive", "ActiveDirectoryAzCli")
 MARCADORES = {"XPAY_PROD_SQL_SERVIDOR": "<servidor>", "XPAY_PROD_SQL_BASE": "<base>",
               "XPAY_PROD_SQL_ADMIN": "<admin>"}
 
@@ -60,6 +64,7 @@ def main():
     p.add_argument("--hasta", required=True, help="id final del bloque (inclusive)")
     p.add_argument("--modo", choices=["plan", "ejecutar"], default="plan")
     p.add_argument("--omitir-bloqueados", action="store_true")
+    p.add_argument("--autenticacion", choices=AUTENTICACIONES, default=AUTENTICACIONES[0])
     p.add_argument("--sqlcmd", default=os.path.expanduser("~/xpay-tools/go-sqlcmd-1.10.0/sqlcmd"))
     p.add_argument("--log-dir", default=os.path.expanduser("~/xpay-tools/xpay-prod-migraciones/logs"))
     p.add_argument("--limite-inicio-utc",
@@ -105,11 +110,12 @@ def main():
     SERVIDOR = valores["XPAY_PROD_SQL_SERVIDOR"]
     BASE = valores["XPAY_PROD_SQL_BASE"]
     USUARIO = valores["XPAY_PROD_SQL_ADMIN"]
+    usuario_args = ["-U", USUARIO] if a.autenticacion == "ActiveDirectoryInteractive" else []
 
     print("")
     print("Comando por script:")
-    print("  %s -S %s -d %s --authentication-method ActiveDirectoryInteractive -U %s -N mandatory -b -i <archivo>"
-          % (a.sqlcmd, SERVIDOR, BASE, USUARIO))
+    print("  %s -S %s -d %s --authentication-method %s %s-N mandatory -b -i <archivo>"
+          % (a.sqlcmd, SERVIDOR, BASE, a.autenticacion, "".join(x + " " for x in usuario_args)))
     if faltan:
         print("AVISO: variables de entorno no definidas: %s" % ", ".join(faltan))
     print("Limite de inicio: %s | Archivo DETENER: %s (%s)"
@@ -167,8 +173,8 @@ def main():
             with open(salida, "wb") as out:
                 codigo = subprocess.call(
                     [a.sqlcmd, "-S", SERVIDOR, "-d", BASE,
-                     "--authentication-method", "ActiveDirectoryInteractive",
-                     "-U", USUARIO, "-N", "mandatory", "-b", "-i", ruta],
+                     "--authentication-method", a.autenticacion]
+                    + usuario_args + ["-N", "mandatory", "-b", "-i", ruta],
                     stdout=out, stderr=subprocess.STDOUT)
             reg.write("%s\t%s\t%s\t%s\t%s\t%d\t%s\n" % (inicio, ahora(), e["id"], e["archivo"], actual, codigo, salida))
             reg.flush()

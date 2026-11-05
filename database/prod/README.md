@@ -39,7 +39,8 @@ El validador no sustituye una prueba real de SQL: no compila ni ejecuta T-SQL.
 - **Variantes PROD (B):** 003, 004, 011, 012, 013, 014, 015, 016, 017, 019, 021. Solo se quitaron bloques demo/QA y operaciones con IDs de prueba (ver `eliminado` en la especificación).
 - **Variante PROD de 009 (D, resuelto):** sin el encabezado "NO EJECUTAR EN PRODUCCIÓN", sin la consulta de usuarios QA y sin mensajes QA. Estado `LISTO` por autorización del usuario; 034 pasa también a `LISTO`.
 - **Excluidos (C):** 008, 018, 020, `scripts/ci/ci_admin_xpay_fixture.sql`, `scripts/ci/ci_comercio_caja_fixture.sql`.
-- **Bloqueados:** 045a (autorización); 016b, 021b y 045b (decisión de negocio).
+- **Variante PROD de 045a (D, resuelto):** solo estructura. Estado `LISTO` por autorización del usuario.
+- **Bloqueados:** 016b, 021b y 045b (decisión de negocio).
 
 ### Desviación respecto a "conservar catálogos": 016 y 021
 
@@ -82,7 +83,7 @@ Roles de la tabla `roles` usados por el backend: `USUARIO_FINAL`, `SUPERUSUARIO`
 
 ## Script 045 (pendiente de decisión)
 
-- **045a (variante, estructura):** `monto_solicitado` pasa a NULL y su CHECK a `NULL o > 0`, en una transacción. Bloqueado por autorización.
+- **045a (variante, estructura):** `monto_solicitado` pasa a NULL y su CHECK a `NULL o > 0`, en una transacción. Estado `LISTO` (sin autorización de ejecución todavía).
 - **045b (pendiente, datos):** alinea la fila ACTIVA de `cartera_politicas_credito` a 200000–700000 y 18–65. Requiere exactamente una política ACTIVA (la de 021b). Bloqueado por decisión de negocio.
 - **Hallazgo:** según el propio código (`CarteraOrdinariaService.cs`, comentario XPAY-676B), los valores de esa fila **no gobiernan el motor**: el motor usa `CarteraPoliticaAplicada.Vigente()` (código). La fila solo aporta `id_politica_aplicada` para trazabilidad. Por tanto, hoy **no existe** administración de políticas variables desde la base: cambiar la política exige cambiar código. Conservar esa posibilidad implica, como mínimo, mantener la tabla y una fila ACTIVA; hacerla efectiva requeriría un cambio de backend (fuera de este paquete).
 
@@ -99,7 +100,7 @@ No se introdujo ningún cambio estructural nuevo. Efectos documentados, pendient
 ## Decisiones pendientes (resumen)
 
 1. ~~Autorizar 009~~ **Resuelto:** variante 009 y 034 en estado LISTO (sin autorización de ejecución todavía).
-2. Autorizar 045a (estructura).
+2. ~~Autorizar 045a (estructura)~~ **Resuelto:** variante 045a en estado LISTO (sin autorización de ejecución todavía).
 3. Aprobar o sustituir los valores de 016b, 021b y 045b.
 4. Aprobar o descartar las correcciones de integridad propuestas (013, 014, 019).
 5. Confirmar a qué cuenta bancaria real corresponde 110102 "Banco Coopcentral XPAY" en PROD, y la configuración de `PASSPORT_ACCOUNT_ID` (el arranque inserta en `cuentas_operativas` si está definida).
