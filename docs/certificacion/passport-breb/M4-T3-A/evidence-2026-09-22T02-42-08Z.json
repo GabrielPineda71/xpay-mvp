@@ -1,0 +1,37 @@
+{
+  "case_id": "M4-T3-A",
+  "executed_at_utc": "2026-09-22T02:42:08Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "d5b7715563f5b077938b9f43a7872cc00fe2f88a",
+  "operation": "POST /v1/qrcodes",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "key_id_fingerprint": "E2B083E0FD76",
+    "customer_id_fingerprint": "99A710894D3B",
+    "type": "STATIC",
+    "channel": "MPOS",
+    "amount_present": false,
+    "additional_info_present": false,
+    "vat_present": true,
+    "inc_present": true,
+    "tip_present": true,
+    "qr_code_reference_present": true,
+    "qr_code_reference_fingerprint": "B458C20B36E3"
+  },
+  "response_sanitized": {
+    "qr_id_fingerprint": "A66752ADA2C1",
+    "status": "ACTIVE",
+    "type": "STATIC",
+    "qr_code_data_present": true,
+    "qr_code_data_fingerprint": "EAC6501C227B",
+    "qr_code_image_present": true,
+    "qr_code_image_fingerprint": "E5AEE53B80D2",
+    "key_id_fingerprint": "E2B083E0FD76",
+    "customer_id_fingerprint": "99A710894D3B",
+    "qr_code_reference_fingerprint": "18D6DD16EAF1"
+  },
+  "automated_test_reference": null,
+  "notes": "M4-T3-A: UNEXPECTED_SUCCESS_FOR_NEGATIVE_TEST_CASE \u2014 Passport acept\u00F3 la operaci\u00F3n pese a que el target era una llave suspendida. Esto NO certifica autom\u00E1ticamente ni \u00E9xito ni fallo del caso M4-T3-A; requiere revisi\u00F3n contractual expl\u00EDcita.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

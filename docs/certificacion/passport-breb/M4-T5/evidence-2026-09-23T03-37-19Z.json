@@ -1,0 +1,39 @@
+{
+  "case_id": "M4-T5",
+  "executed_at_utc": "2026-09-23T03:37:19Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "1b6b67d6b594af4c6d788f4a1ab457fb0b287ab2",
+  "operation": "POST /v1/qrcodes/decode",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "customer_id_fingerprint": "99A710894D3B",
+    "qr_code_data_present": true,
+    "qr_code_data_fingerprint": "BE4235D91079",
+    "decode_source": "M4-T4_PRIVATE_ARTIFACT"
+  },
+  "response_sanitized": {
+    "status": "ACTIVE",
+    "type": "DYNAMIC",
+    "channel": "MPOS",
+    "acquirer_network_identifier": "VISI",
+    "amount_present": true,
+    "amount_value_matches_expected": true,
+    "amount_currency_matches_expected": true,
+    "vat_present": true,
+    "inc_present": true,
+    "qr_code_reference_present": true,
+    "qr_code_reference_fingerprint": "AC56BCFB884C",
+    "qr_code_reference_match_m4_t4": true,
+    "key_present": true,
+    "key_type": "BCODE",
+    "key_value_fingerprint": "41962CECC119",
+    "private_artifact_captured": true,
+    "limitations": {
+      "tip_not_modeled_by_decode_dto": "PassportDecodeQrCodeResponse no modela \u0060tip\u0060 a la fecha de esta ejecuci\u00F3n. Esto NO demuestra que Passport no lo haya enviado en el JSON real \u2014 System.Text.Json descarta silenciosamente propiedades no modeladas. Si private_artifact_captured=true, el JSON crudo (que s\u00ED puede contener \u0060tip\u0060 si Passport lo envi\u00F3) qued\u00F3 preservado privadamente, fuera de este expediente versionable."
+    }
+  },
+  "automated_test_reference": null,
+  "notes": null,
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

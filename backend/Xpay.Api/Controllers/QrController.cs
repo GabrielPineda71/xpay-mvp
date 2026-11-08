@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
@@ -67,6 +68,7 @@ public class QrController : ControllerBase
     // del cliente sin validar ownership (IDOR de escritura — ver
     // docs/security/FASE_71.2_E_B_AUTORIZACION_IDOR.md, V18).
     [Authorize(Policy = "KycAprobado")]
+    [OperacionFinanciera]
     [HttpPost("pagar")]
     public async Task<IActionResult> Pagar([FromBody] PagoQrRequest request)
     {

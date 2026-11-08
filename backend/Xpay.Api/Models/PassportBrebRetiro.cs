@@ -33,4 +33,11 @@ public class PassportBrebRetiro
     public long?   IdTransaccionLedger  { get; set; }
     public long?   CreatedByUsuario     { get; set; }
     public long?   UpdatedByUsuario     { get; set; }
+
+    // P0 (047) - resolucion controlada de un envio incierto (ENVIADO_PASSPORT
+    // sin payment_id). Ver BrebPaymentService.ResolverEnvioInciertoAsync.
+    public string?   ResolucionInciertaTipo      { get; set; }
+    public string?   ResolucionInciertaEvidencia { get; set; }
+    public long?     ResolucionInciertaPor       { get; set; }
+    public DateTime? ResolucionInciertaFecha     { get; set; }
 }

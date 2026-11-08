@@ -49,6 +49,14 @@ public static class HarnessOrchestrator
                                     or HarnessCommand.CreateQrStaticInvalidCustomer
                                     or HarnessCommand.CreateM4T3SuspendedFixtureKey
                                     or HarnessCommand.SuspendM4T3FixtureKey
+                                    or HarnessCommand.RecoverDeletedKeyId
+                                    or HarnessCommand.CreateM4T3DeletedFixtureKey
+                                    or HarnessCommand.DeleteM4T3FixtureKey
+                                    or HarnessCommand.CreateQrDynamic
+                                    or HarnessCommand.DecodeQrDynamic
+                                    or HarnessCommand.CreateQrDynamicSuspendedKey
+                                    or HarnessCommand.CreateQrDynamicDeletedKey
+                                    or HarnessCommand.CreateQrDynamicInvalidCustomer
             ? HarnessTargetConfig.FromConfiguration(configuration)
             : null;
 
@@ -117,6 +125,42 @@ public static class HarnessOrchestrator
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Target de create-qr-static incompleto — PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
 
+        // XPAY-506 — create-qr-dynamic (M4-T4): target propio (mismos dos
+        // targets que create-qr-static) — ver
+        // HarnessTargetConfig.AllPresentForCreateQrDynamic. Misma
+        // prohibición de fallback hacia PASSPORT_TEST_NEW_KEY_ID/_VALUE,
+        // PASSPORT_TEST_QR_SUSPENDED_KEY_ID o PASSPORT_TEST_QR_DELETED_KEY_ID.
+        if (command == HarnessCommand.CreateQrDynamic && targetConfig is not null && !targetConfig.AllPresentForCreateQrDynamic)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-dynamic incompleto — PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        // XPAY-517 — decode-qr-dynamic (M4-T5): mismo par de targets que
+        // create-qr-dynamic — ver HarnessTargetConfig.AllPresentForDecodeQrDynamic.
+        // Las validaciones de artefacto privado M4-T4/destino privado M4-T5
+        // ocurren exclusivamente dentro de DecodeQrDynamicExecutor.ExecuteAsync.
+        if (command == HarnessCommand.DecodeQrDynamic && targetConfig is not null && !targetConfig.AllPresentForDecodeQrDynamic)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de decode-qr-dynamic incompleto — PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        // XPAY-522 — M4-T6, tres subcasos negativos DYNAMIC. El fingerprint
+        // fail-closed adicional (contra la fixture histórica esperada) se
+        // valida exclusivamente dentro de cada executor — aquí sólo se
+        // verifica presencia, mismo criterio que M4-T3.
+        if (command == HarnessCommand.CreateQrDynamicSuspendedKey && targetConfig is not null
+            && !targetConfig.AllPresentForCreateQrDynamicSuspendedKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-dynamic-suspended incompleto — PASSPORT_TEST_QR_SUSPENDED_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        if (command == HarnessCommand.CreateQrDynamicDeletedKey && targetConfig is not null
+            && !targetConfig.AllPresentForCreateQrDynamicDeletedKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-dynamic-deleted incompleto — PASSPORT_TEST_QR_DELETED_KEY_ID/PASSPORT_TEST_CUSTOMER_ID ausente(s).");
+
+        if (command == HarnessCommand.CreateQrDynamicInvalidCustomer && targetConfig is not null
+            && !targetConfig.AllPresentForCreateQrDynamicInvalidCustomer)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-qr-dynamic-invalid-customer incompleto — PASSPORT_TEST_QR_KEY_ID ausente.");
+
         // XPAY-465 — decode-qr-static (M4-T2): target propio
         // (PASSPORT_TEST_QR_DECODE_DATA_FILE + PASSPORT_TEST_CUSTOMER_ID) —
         // ver HarnessTargetConfig.AllPresentForDecodeQrStatic. Completamente
@@ -169,6 +213,33 @@ public static class HarnessOrchestrator
             && !targetConfig.AllPresentForSuspendM4T3FixtureKey)
             return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
                 "Target de suspend-m4-t3-fixture-key incompleto — PASSPORT_TEST_QR_SUSPENDED_KEY_ID ausente.");
+
+        // XPAY-489 — recover-deleted-key-id: target propio (PASSPORT_TEST_ACCOUNT_ID
+        // + PASSPORT_TEST_NEW_KEY_TYPE + PASSPORT_TEST_NEW_KEY_VALUE). NUNCA
+        // exige PASSPORT_TEST_NEW_KEY_ID — ese es el valor que este comando
+        // existe para validar/reemplazar, no una precondición suya.
+        if (command == HarnessCommand.RecoverDeletedKeyId && targetConfig is not null
+            && !targetConfig.AllPresentForRecoverDeletedKeyId)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de recover-deleted-key-id incompleto — PASSPORT_TEST_ACCOUNT_ID/PASSPORT_TEST_NEW_KEY_TYPE/PASSPORT_TEST_NEW_KEY_VALUE ausente(s).");
+
+        // XPAY-492 — create-m4-t3-deleted-fixture-key: target propio
+        // (ÚNICAMENTE PASSPORT_TEST_ACCOUNT_ID — key_type es constante
+        // BCODE, key_value se genera internamente).
+        if (command == HarnessCommand.CreateM4T3DeletedFixtureKey && targetConfig is not null
+            && !targetConfig.AllPresentForCreateM4T3DeletedFixtureKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de create-m4-t3-deleted-fixture-key incompleto — PASSPORT_TEST_ACCOUNT_ID ausente.");
+
+        // XPAY-492 — delete-m4-t3-fixture-key: target propio (ÚNICAMENTE
+        // PASSPORT_TEST_QR_DELETED_KEY_ID). NUNCA cae en fallback hacia
+        // PASSPORT_TEST_NEW_KEY_ID (contaminada/abandonada), PASSPORT_TEST_QR_KEY_ID
+        // (llave activa protegida) ni PASSPORT_TEST_QR_SUSPENDED_KEY_ID
+        // (llave suspendida protegida de M4-T3-A).
+        if (command == HarnessCommand.DeleteM4T3FixtureKey && targetConfig is not null
+            && !targetConfig.AllPresentForDeleteM4T3FixtureKey)
+            return new(command, Outcome.AbortedTargetMissing, configStatus, targetConfig,
+                "Target de delete-m4-t3-fixture-key incompleto — PASSPORT_TEST_QR_DELETED_KEY_ID ausente.");
 
         var baseUrl = configuration[Xpay.Api.Integrations.Passport.PassportOptions.EnvBaseUrl];
         if (!SandboxHostGuard.IsAuthorizedSandboxHost(baseUrl))

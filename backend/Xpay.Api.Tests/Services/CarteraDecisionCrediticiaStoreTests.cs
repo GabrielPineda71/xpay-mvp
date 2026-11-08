@@ -91,7 +91,7 @@ public sealed class CarteraDecisionCrediticiaStoreTests
 
         var solicitud = new CarteraSolicitudCupo
         {
-            IdUsuario = usuario.IdUsuario, IdPersona = persona.IdPersona, MontoSolicitado = 500_000m,
+            IdUsuario = usuario.IdUsuario, IdPersona = persona.IdPersona,
             EstadoSolicitud = o.EstadoSolicitud, DecisionCrediticia = o.DecisionCrediticia, FechaDecision = o.FechaDecision,
             IdPoliticaAplicada = idPolitica, CupoMinimoAplicado = 0m, CupoMaximoAplicado = 1_000_000m,
             EdadMinimaAplicada = 18, EdadMaximaAplicada = 99, NumeroIntento = 1,
@@ -370,7 +370,7 @@ public sealed class CarteraDecisionCrediticiaStoreTests
 
             ctx.CarteraSolicitudesCupo.Add(new CarteraSolicitudCupo
             {
-                IdUsuario = idUsuario, IdPersona = idPersona, MontoSolicitado = 300_000m,
+                IdUsuario = idUsuario, IdPersona = idPersona,
                 EstadoSolicitud = CarteraSolicitudCupoEstados.Recibida, DecisionCrediticia = CarteraDecisionCrediticia.Pendiente,
                 IdPoliticaAplicada = idPolitica, CupoMinimoAplicado = 0m, CupoMaximoAplicado = 1_000_000m,
                 EdadMinimaAplicada = 18, EdadMaximaAplicada = 99, NumeroIntento = 1,

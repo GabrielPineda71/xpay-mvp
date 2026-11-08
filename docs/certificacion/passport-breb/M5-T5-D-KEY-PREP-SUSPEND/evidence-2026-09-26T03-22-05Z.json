@@ -1,0 +1,33 @@
+{
+  "case_id": "M5-T5-D-KEY-PREP-SUSPEND",
+  "executed_at_utc": "2026-09-26T03:22:05Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "d209d5baf2e3032c938c4127009f03533bbd2275",
+  "operation": "PATCH /v1/keys/{key_id}/suspend",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "fixture_source": "XPAY_575_PRIVATE_CAPTURE",
+    "fixture_key_id_fingerprint": "0326AFB905CB",
+    "fixture_key_value_fingerprint": "816264C840B0",
+    "key_type": "BCODE"
+  },
+  "response_sanitized": {
+    "passport_response_received": true,
+    "returned_status": "SUSPENDED",
+    "retry_count": 0,
+    "oauth_real_token_requests": 1,
+    "create_key_real_calls": 0,
+    "suspend_key_real_calls": 1,
+    "resolve_real_calls": 0,
+    "payment_real_calls": 0,
+    "retrieve_real_calls": 0,
+    "delete_key_real_calls": 0,
+    "repeat_guard_consumed": true,
+    "certification_test_result": "NOT_YET_EXECUTED",
+    "fixture_phase": "SUSPENDED_NOT_TESTED"
+  },
+  "automated_test_reference": null,
+  "notes": "M5-T5-D-KEY-PREP-SUSPEND: Fase 2 del fixture nuevo de M5-T5-D (XPAY-575 Create -\u003E XPAY-576 Suspend). NO representa que el caso de certificaci\u00F3n M5-T5-D se haya ejecutado \u2014 el Resolve real sobre esta key ya suspendida requiere una Fase 3 separada y autorizada expl\u00EDcitamente.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

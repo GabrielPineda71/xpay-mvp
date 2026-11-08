@@ -1,0 +1,35 @@
+{
+  "case_id": "M4-T6-B",
+  "executed_at_utc": "2026-09-23T11:48:35Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "88ce42df74ceadea851a45661742d958185e735f",
+  "operation": "POST /v1/qrcodes",
+  "http_status": null,
+  "result": "FAIL",
+  "request_sanitized": {
+    "type": "DYNAMIC",
+    "channel": "MPOS",
+    "key_id_fingerprint": "8A15DB69E7E0",
+    "customer_id_fingerprint": "99A710894D3B",
+    "customer_id_kind": "REAL",
+    "vat_present": true,
+    "inc_present": true,
+    "tip_present": true,
+    "amount_present": true,
+    "amount_currency_present": true,
+    "additional_info_present": false,
+    "qr_code_reference_present": true,
+    "qr_code_reference_fingerprint": "856385847D13"
+  },
+  "response_sanitized": {
+    "execution_completed": true,
+    "request_accepted": false,
+    "passport_behavior_observed": "HTTP_ERROR_RECEIVED",
+    "observed_http_status": 404,
+    "safe_error_code": "resource_not_found",
+    "safe_error_message": "key not found."
+  },
+  "automated_test_reference": null,
+  "notes": "PASSPORT_HTTP_FAILURE: Passport respondi\u00F3 con error HTTP 404.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

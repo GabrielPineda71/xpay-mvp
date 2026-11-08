@@ -4,7 +4,7 @@
 // (vi.mock) — ninguna llamada llega jamás a Passport/Payment/Wallet
 // reales. `qrcode` y `html5-qrcode` también se mockean: ninguna prueba
 // depende de canvas real ni de acceso a cámara.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
@@ -104,6 +104,8 @@ const CUENTA_BASE = {
 };
 
 function apiRoutedGet(path: string) {
+  const destinatario = /^\/api\/wallets\/destinatario\/(\d+)$/.exec(path);
+  if (destinatario) return Promise.resolve({ success: true, data: { idWallet: Number(destinatario[1]), usuario: 'qa.usuario2', nombreVisible: 'Usuario D.' } });
   if (path === '/api/wallets/mi-wallet') return Promise.resolve({ success: true, data: { idWallet: 2, idPersona: 3, nombreWallet: 'Wallet qa.usuario1', estado: 'ACTIVA' } });
   if (path === '/api/reportes/mi-estado-cuenta') return Promise.resolve({ success: true, data: CUENTA_BASE });
   if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc: 'APROBADO' } });
@@ -269,7 +271,7 @@ describe('UserWalletPage — handlers/endpoints financieros sin modificar (XPAY-
     await user.click(screen.getByText('Ingresar destino manualmente →'));
     await user.type(screen.getByLabelText('ID de wallet destino'), '3');
     await user.click(screen.getByRole('button', { name: 'Confirmar destino' }));
-    await user.type(screen.getByLabelText('Valor a transferir (COP ficticio)'), '500');
+    await user.type(await screen.findByLabelText('Valor a transferir (COP ficticio)'), '500');
     await user.type(screen.getByLabelText(/Clave de 7 dígitos/), '1234567');
     await user.click(screen.getByRole('button', { name: 'Enviar dinero' }));
 
@@ -463,5 +465,177 @@ describe('UserWalletPage — XPAY-422B: cámara física única (Enviar ⇄ Compr
     expect(construct1At).toBeGreaterThan(clear0At);
 
     startDeferreds[1].resolve();
+  });
+});
+
+// Lector QR a pantalla completa (QrScannerOverlay): la cámara se monta en una
+// capa fija en document.body; cerrar la detiene sin reabrirse sola, y leer un
+// QR solo cierra la capa y rellena el formulario — nunca paga ni transfiere.
+describe('UserWalletPage — lector QR a pantalla completa', () => {
+  it('Enviar: el lector se abre a pantalla completa con botón de cierre', async () => {
+    renderWalletAt('enviar');
+    await waitFor(() => expect(constructedIds).toContain('env-qr-reader'));
+    const dialog = screen.getByRole('dialog', { name: 'Escanea el QR del receptor' });
+    expect(dialog).toHaveClass('qr-fullscreen');
+    expect(dialog.parentElement).toBe(document.body);
+    expect(dialog.querySelector('#env-qr-reader')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Cerrar escáner' })).toBeInTheDocument();
+    startDeferreds[0].resolve();
+  });
+
+  it('Enviar: "Cerrar escáner" detiene la cámara y no la vuelve a abrir sola', async () => {
+    const user = userEvent.setup();
+    renderWalletAt('enviar');
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await waitFor(() => expect(callLog).toContain('start:0'));
+
+    await user.click(screen.getByRole('button', { name: 'Cerrar escáner' }));
+
+    await waitFor(() => expect(callLog).toContain('stop:0'));
+    expect(screen.queryByRole('dialog', { name: 'Escanea el QR del receptor' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Activar cámara/ })).toBeInTheDocument();
+    expect(constructedIds).toEqual(['env-qr-reader']);
+  });
+
+  it('Enviar: tras cerrar, "Activar cámara" vuelve a abrir el lector', async () => {
+    const user = userEvent.setup();
+    renderWalletAt('enviar');
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await user.click(await screen.findByRole('button', { name: 'Cerrar escáner' }));
+    await waitFor(() => expect(callLog).toContain('clear:0'));
+
+    await user.click(screen.getByRole('button', { name: /Activar cámara/ }));
+
+    await waitFor(() => expect(constructedIds).toEqual(['env-qr-reader', 'env-qr-reader']));
+    expect(screen.getByRole('dialog', { name: 'Escanea el QR del receptor' })).toBeInTheDocument();
+    startDeferreds[1].resolve();
+  });
+
+  it('Comprar: Escape cierra el lector y detiene la cámara', async () => {
+    const user = userEvent.setup();
+    renderWalletAt('pagar');
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await waitFor(() => expect(callLog).toContain('start:0'));
+
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(callLog).toContain('stop:0'));
+    expect(screen.queryByRole('dialog', { name: 'Escanea el QR del comercio' })).toBeNull();
+    expect(constructedIds).toEqual(['pag-qr-reader']);
+  });
+
+  it('Enviar: leer un QR cierra el lector y no ejecuta ninguna transferencia', async () => {
+    renderWalletAt('enviar');
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await waitFor(() => expect(callLog).toContain('start:0'));
+    const onDecode = startSpy.mock.calls[0][2] as (text: string) => void;
+
+    act(() => {
+      onDecode(JSON.stringify({ type: 'XPAY_TRANSFER', env: 'QA', receiverWalletId: 3, receiverUser: 'qa.usuario2' }));
+    });
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Escanea el QR del receptor' })).toBeNull());
+    await waitFor(() => expect(callLog).toContain('stop:0'));
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('Comprar: leer un QR cierra el lector y no ejecuta ningún pago', async () => {
+    renderWalletAt('pagar');
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await waitFor(() => expect(callLog).toContain('start:0'));
+    const onDecode = startSpy.mock.calls[0][2] as (text: string) => void;
+
+    act(() => {
+      onDecode(JSON.stringify({ type: 'XPAY_MERCHANT_PAYMENT', env: 'QA', qrCode: 'QR-PRUEBA-001', amount: 15000 }));
+    });
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Escanea el QR del comercio' })).toBeNull());
+    await waitFor(() => expect(callLog).toContain('stop:0'));
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+});
+
+// Separación de ambientes: el QR lleva el ambiente del build (VITE_XPAY_ENV)
+// y un QR de otro ambiente se rechaza — su wallet destino es un número que
+// en el otro ambiente es de otra persona.
+describe('UserWalletPage — QR separados por ambiente (QA / PROD)', () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  async function leerQr(tab: 'enviar' | 'pagar', contenido: object) {
+    renderWalletAt(tab);
+    await waitFor(() => expect(startDeferreds.length).toBe(1));
+    startDeferreds[0].resolve();
+    await waitFor(() => expect(callLog).toContain('start:0'));
+    const onDecode = startSpy.mock.calls[0][2] as (text: string) => void;
+    act(() => { onDecode(JSON.stringify(contenido)); });
+  }
+
+  it('Recibir en PROD: el QR generado lleva env PROD', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    renderWalletAt('recibir');
+    const img = await waitFor(() => screen.getByAltText('QR para recibir dinero') as HTMLImageElement);
+    expect(decodeMockQr(img.src)).toMatchObject({ type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 2 });
+  });
+
+  it('Enviar en PROD: un QR de QA se rechaza y no fija destino', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'QA', receiverWalletId: 3, receiverUser: 'qa.usuario2' });
+    expect(await screen.findByText('El QR no corresponde al ambiente PROD.')).toBeInTheDocument();
+    expect(screen.queryByText('Destino verificado')).toBeNull();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('Enviar en PROD: un QR de PROD fija el destino, verificado por el backend, sin transferir', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 3, receiverUser: 'qa.usuario2' });
+    expect(await screen.findByText('Destino verificado')).toBeInTheDocument();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('Enviar en QA: un QR de PROD se rechaza', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'QA');
+    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 3, receiverUser: 'qa.usuario2' });
+    expect(await screen.findByText('El QR no corresponde al ambiente QA.')).toBeInTheDocument();
+    expect(screen.queryByText('Destino verificado')).toBeNull();
+  });
+
+  it('Comprar en PROD: un QR de comercio de QA se rechaza', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await leerQr('pagar', { type: 'XPAY_MERCHANT_PAYMENT', env: 'QA', qrCode: 'QR-PRUEBA-QA', amount: 15000 });
+    expect(await screen.findByText('El QR no corresponde al ambiente PROD.')).toBeInTheDocument();
+    expect(screen.queryByText('QR-PRUEBA-QA')).toBeNull();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('QA conserva el pie de página de ambiente; PROD no muestra avisos de QA/Demo ni "ficticio"', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'QA');
+    const qa = renderWalletAt('saldo');
+    await waitFor(() => expect(screen.getByText('Disponible')).toBeInTheDocument());
+    expect(screen.getByText(/Ambiente QA\/Demo/)).toBeInTheDocument();
+    qa.unmount();
+
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    renderWalletAt('saldo');
+    await waitFor(() => expect(screen.getByText('Disponible')).toBeInTheDocument());
+    expect(document.body.textContent).not.toMatch(/QA\/Demo|ficticio/i);
+  });
+
+  it('Enviar en PROD: etiqueta "(COP)" y sin aviso QA/Demo del PIN', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await leerQr('enviar', { type: 'XPAY_TRANSFER', env: 'PROD', receiverWalletId: 3, receiverUser: 'qa.usuario2' });
+    expect(await screen.findByText('Valor a transferir (COP)')).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/QA\/Demo|ficticio/i);
+  });
+
+  it('Comprar en PROD: un QR de comercio de PROD carga el código sin pagar', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await leerQr('pagar', { type: 'XPAY_MERCHANT_PAYMENT', env: 'PROD', qrCode: 'QR-PRUEBA-PROD', amount: 15000 });
+    expect(await screen.findByText('QR-PRUEBA-PROD')).toBeInTheDocument();
+    expect(mockPost).not.toHaveBeenCalled();
   });
 });

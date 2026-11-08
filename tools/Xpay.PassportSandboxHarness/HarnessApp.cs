@@ -25,7 +25,14 @@ public static class HarnessApp
         // deliberadamente: todo llamador (Program.cs real, y cada test que
         // construye Dependencies) debe proveerlo explícitamente, igual que
         // los demás clientes.
-        IPassportQrClient QrClient);
+        IPassportQrClient QrClient,
+        // XPAY-529 — M5 (Payment): mismo stack HTTP/OAuth subyacente,
+        // cliente tipado ya existente (PassportPaymentClient, XPAY-373,
+        // usado en producción por BrebPaymentService) — este harness NUNCA
+        // pasa por BrebPaymentService; construye requests directamente y
+        // llama a este cliente, igual que QrClient/KeyClient. Nullable NO
+        // se usa deliberadamente, mismo criterio que los demás.
+        IPassportPaymentClient PaymentClient);
 
     public static async Task RunAsync(
         string[] args, IConfiguration configuration, Dependencies dependencies, TextWriter output)
@@ -60,6 +67,29 @@ public static class HarnessApp
                 output.WriteLine("     create-qr-static-invalid-customer [--execute --confirm-create-qr-static-invalid-customer]");
                 output.WriteLine("     create-m4-t3-suspended-fixture-key [--execute --confirm-create-m4-t3-suspended-fixture-key]");
                 output.WriteLine("     suspend-m4-t3-fixture-key          [--execute --confirm-suspend-m4-t3-fixture-key]");
+                output.WriteLine("     recover-deleted-key-id             [--execute --confirm-recover-deleted-key]");
+                output.WriteLine("     create-m4-t3-deleted-fixture-key   [--execute --confirm-create-m4-t3-deleted-fixture-key]");
+                output.WriteLine("     delete-m4-t3-fixture-key           [--execute --confirm-delete-m4-t3-fixture-key]");
+                output.WriteLine("     create-qr-dynamic                  [--execute --confirm-create-qr-dynamic]");
+                output.WriteLine("     create-qr-dynamic-suspended        [--execute --confirm-create-qr-dynamic-suspended]");
+                output.WriteLine("     create-qr-dynamic-deleted          [--execute --confirm-create-qr-dynamic-deleted]");
+                output.WriteLine("     create-qr-dynamic-invalid-customer [--execute --confirm-create-qr-dynamic-invalid-customer]");
+                output.WriteLine("     create-breb-payment-cert           [--execute --confirm-create-breb-payment-cert]");
+                output.WriteLine("     retrieve-breb-payment-cert         [--execute --confirm-retrieve-breb-payment-cert]");
+                output.WriteLine("     create-m5-customer-b                [--execute --confirm-create-m5-customer-b]");
+                output.WriteLine("     create-m5-account-b                 [--execute --confirm-create-m5-account-b]");
+                output.WriteLine("     resolve-key-m5-t2                   [--execute --confirm-resolve-key-m5-t2]");
+                output.WriteLine("     configure-m5-payment-resolution     [--execute --confirm-configure-m5-payment-resolution]");
+                output.WriteLine("     create-payment-missing-amount       [--execute --confirm-create-payment-missing-amount]");
+                output.WriteLine("     create-payment-missing-account      [--execute --confirm-create-payment-missing-account]");
+                output.WriteLine("     create-payment-invalid-resolution   [--execute --confirm-create-payment-invalid-resolution]");
+                output.WriteLine("     create-m5-t5-suspended-fixture      [--execute --confirm-create-m5-t5-suspended-fixture]");
+                output.WriteLine("     suspend-m5-t5-fixture               [--execute --confirm-suspend-m5-t5-fixture]");
+                output.WriteLine("     resolve-m5-t5-suspended-key         [--execute --confirm-resolve-m5-t5-suspended-key]");
+                output.WriteLine("     create-m5-t5-deleted-fixture        [--execute --confirm-create-m5-t5-deleted-fixture]");
+                output.WriteLine("     delete-m5-t5-fixture                [--execute --confirm-delete-m5-t5-fixture]");
+                output.WriteLine("     resolve-m5-t5-deleted-key           [--execute --confirm-resolve-m5-t5-deleted-key]");
+                output.WriteLine("     create-payment-over-limit           [--execute --confirm-create-payment-over-limit]");
                 output.WriteLine("Sin argumentos o sin ambas banderas: modo dry-run (sin HTTP).");
                 return;
 
@@ -215,6 +245,359 @@ public static class HarnessApp
                 output.WriteLine("note=M4-T1: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-351)");
                 return;
 
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrDynamic:
+                // XPAY-506 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID en este
+                // modo: sólo ya se confirmó su PRESENCIA (impreso arriba).
+                // No se construye ningún PassportCreateQrCodeRequest, no se
+                // obtiene token, no hay HTTP, no hay evidencia.
+                output.WriteLine("case=M4-T4 (Create QR Code — DINÁMICO)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-506)");
+                output.WriteLine("requires=--execute --confirm-create-qr-dynamic");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T4: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-506)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrDynamic:
+                // XPAY-517 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_QR_KEY_ID/PASSPORT_TEST_CUSTOMER_ID en este
+                // modo, y mucho menos resuelve/abre el artefacto privado de
+                // M4-T4 — eso sólo ocurre en ReadyToExecute, dentro de
+                // DecodeQrDynamicExecutor. No se construye ningún
+                // PassportDecodeQrCodeRequest, no se obtiene token, no hay
+                // HTTP, no hay evidencia.
+                output.WriteLine("case=M4-T5 (Decode QR Code — DINÁMICO, reutiliza el QR de M4-T4)");
+                output.WriteLine("endpoint=POST /v1/qrcodes/decode");
+                output.WriteLine("mutating=NO (read-only, decodifica un QR ya existente)");
+                output.WriteLine("requires=--execute --confirm-decode-qr-dynamic");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T5: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-517)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrDynamicSuspendedKey:
+                // XPAY-522 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_QR_SUSPENDED_KEY_ID/PASSPORT_TEST_CUSTOMER_ID
+                // en este modo, y mucho menos calcula/compara ningún
+                // fingerprint — eso sólo ocurre en ReadyToExecute, dentro
+                // de CreateQrDynamicSuspendedKeyExecutor. No se construye
+                // ningún request, no se obtiene token, no hay HTTP.
+                output.WriteLine("case=M4-T6-A (Create QR Code DYNAMIC — llave Bre-B suspendida)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-522)");
+                output.WriteLine("requires=--execute --confirm-create-qr-dynamic-suspended");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T6-A: DYNAMIC_EXPECTED_RESULT=UNKNOWN_UNTIL_REAL_EXECUTION (histórico STATIC produjo QR ACTIVE — Gustavo confirmó que el rechazo ocurre en Payment, no en Create QR; esto NO se extrapola automáticamente a DYNAMIC)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrDynamicDeletedKey:
+                output.WriteLine("case=M4-T6-B (Create QR Code DYNAMIC — llave Bre-B eliminada)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-522)");
+                output.WriteLine("requires=--execute --confirm-create-qr-dynamic-deleted");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T6-B: DYNAMIC_EXPECTED_RESULT=UNKNOWN_UNTIL_REAL_EXECUTION (histórico STATIC produjo HTTP 404 resource_not_found — contexto histórico, no expectativa contractual codificada para DYNAMIC)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateQrDynamicInvalidCustomer:
+                output.WriteLine("case=M4-T6-C (Create QR Code DYNAMIC — customer_id incorrecto)");
+                output.WriteLine("endpoint=POST /v1/qrcodes");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-522)");
+                output.WriteLine("requires=--execute --confirm-create-qr-dynamic-invalid-customer");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T6-C: DYNAMIC_EXPECTED_RESULT=UNKNOWN_UNTIL_REAL_EXECUTION (histórico STATIC produjo HTTP 400 invalid_parameter_value \"UUID version 4 expected\" — contexto histórico, no expectativa contractual codificada para DYNAMIC)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateBrebPaymentCert:
+                // XPAY-529 — NUNCA lee PASSPORT_ACCOUNT_ID/
+                // PASSPORT_TEST_M5_PAYMENT_RESOLUTION_ID/
+                // PASSPORT_TEST_M5_PAYMENT_AMOUNT_VALUE en este modo — esas
+                // sólo se leen dentro de CreateBrebPaymentCertificationExecutor,
+                // en ReadyToExecute. No se construye ningún
+                // PassportCreatePaymentRequest, no se obtiene token, no hay
+                // HTTP. Aislado de BrebPaymentService/Wallet/ledger por diseño
+                // — ver CreateBrebPaymentCertificationExecutor.
+                output.WriteLine("case=M5-PAYMENT-CREATE (Create Bre-B Payment — infraestructura de certificación)");
+                output.WriteLine("endpoint=POST /v1/payments/breb");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-529)");
+                output.WriteLine("requires=--execute --confirm-create-breb-payment-cert");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=Aislado de BrebPaymentService/PassportBrebRetiro/Wallet/ledger — llamada directa harness -> IPassportPaymentClient -> Passport");
+                output.WriteLine("note=M5-PAYMENT-CREATE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-529)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.RetrieveBrebPaymentCert:
+                // XPAY-529 — NUNCA resuelve/abre el artefacto privado de
+                // M5-PAYMENT-CREATE en este modo — eso sólo ocurre en
+                // ReadyToExecute, dentro de RetrieveBrebPaymentCertificationExecutor.
+                output.WriteLine("case=M5-PAYMENT-RETRIEVE (Retrieve Bre-B Payment — infraestructura de certificación)");
+                output.WriteLine("endpoint=GET /v1/payments/{payment_id}");
+                output.WriteLine("mutating=NO (read-only, consulta un payment ya existente)");
+                output.WriteLine("requires=--execute --confirm-retrieve-breb-payment-cert");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=payment_id proviene EXCLUSIVAMENTE del artefacto privado M5-PAYMENT-CREATE — nunca hardcoded, nunca histórico");
+                output.WriteLine("note=M5-PAYMENT-RETRIEVE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-529)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateM5CustomerB:
+                // XPAY-531 — NUNCA lee PASSPORT_TEST_M5_CUSTOMER_B_FIXTURE_FILE
+                // en este modo, y mucho menos su CONTENIDO — eso sólo ocurre
+                // en ReadyToExecute, dentro de CreateM5CustomerBExecutor. No
+                // se construye ningún PassportLinkMerchantRequest, no se
+                // obtiene token, no hay HTTP. Aislado de todo servicio de
+                // producto XPAY — llamada directa harness ->
+                // IPassportCustomerAccountClient -> Passport.
+                output.WriteLine("case=M5-T1-A (Create/Link Customer B — infraestructura de certificación)");
+                output.WriteLine("endpoint=POST /v1/customers/business/link");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-531)");
+                output.WriteLine("requires=--execute --confirm-create-m5-customer-b");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=Customer B es un cliente SINTÉTICO dedicado a certificación — nunca el Customer A ni datos de identificación reales");
+                output.WriteLine("note=M5-T1-A: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-531)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateM5AccountB:
+                // XPAY-531 — NUNCA lee PASSPORT_TEST_M5_ACCOUNT_B_ACCOUNT_NUMBER
+                // ni resuelve/abre el artefacto privado de Customer B (M5-T1-A)
+                // en este modo — eso sólo ocurre en ReadyToExecute, dentro de
+                // CreateM5AccountBExecutor.
+                output.WriteLine("case=M5-T1-B (Create/Link Account B — infraestructura de certificación)");
+                output.WriteLine("endpoint=POST /v1/accounts/link");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-531)");
+                output.WriteLine("requires=--execute --confirm-create-m5-account-b");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=customer_id proviene EXCLUSIVAMENTE del artefacto privado M5-T1-A — nunca hardcoded, nunca Customer A, nunca un argumento CLI");
+                output.WriteLine("note=account_number NUNCA es PASSPORT_ACCOUNT_ID (la cuenta operativa de XPAY) — Account B no es la cuenta operativa");
+                output.WriteLine("note=M5-T1-B: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-531)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.ResolveKeyM5T2:
+                // XPAY-545 — NUNCA lee PASSPORT_TEST_CUSTOMER_ID/
+                // PASSPORT_TEST_BREB_KEY_TYPE/PASSPORT_TEST_BREB_KEY ni
+                // M5PaymentPrivateCapture.EnvPrivateCaptureDir en este modo,
+                // y mucho menos resuelve/abre ningún artefacto privado —
+                // eso sólo ocurre en ReadyToExecute, dentro de
+                // M5ResolveExecutor. No se construye ningún request, no se
+                // obtiene token, no hay HTTP.
+                output.WriteLine("case=M5-T2-RESOLVE (Resolve Key — dedicado a certificación Payment B->A)");
+                output.WriteLine("endpoint=POST /v1/resolve-key");
+                output.WriteLine("mutating=NO (read-only, resuelve la misma llave KEY_A ya usada desde M3-T2)");
+                output.WriteLine("requires=--execute --confirm-resolve-key-m5-t2");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=Independiente de M3-T2 (congelado/ACCEPTED) — evidencia propia bajo case_id=M5-T2-RESOLVE, nunca escrita en docs/certificacion/passport-breb/M3-T2/");
+                output.WriteLine("note=M5-T2-RESOLVE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-545)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.ConfigureM5PaymentResolution:
+                // XPAY-546 — NUNCA resuelve/abre el artefacto privado
+                // M5-T2-RESOLVE en este modo, ni el archivo de entorno real
+                // — eso sólo ocurre en ReadyToExecute, dentro de
+                // ConfigureM5PaymentResolutionExecutor. Operación puramente
+                // LOCAL — NUNCA llama a Passport, en ningún modo.
+                output.WriteLine("case=CONFIGURE-M5-PAYMENT-RESOLUTION (transferencia LOCAL de resolution_id a env)");
+                output.WriteLine("endpoint=NINGUNO — operación 100% local de archivos, nunca llama a Passport");
+                output.WriteLine("mutating=YES (modifica ~/.passport-sandbox.env — nunca Passport, nunca el repo)");
+                output.WriteLine("requires=--execute --confirm-configure-m5-payment-resolution");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO passport_calls=0");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (este comando NUNCA genera evidence.json — no es una llamada Passport)");
+                output.WriteLine("note=Única fuente autorizada: el artefacto privado M5-T2-RESOLVE ya capturado — nunca argumento CLI, nunca stdin, nunca evidencia sanitizada");
+                output.WriteLine("note=CONFIGURE-M5-PAYMENT-RESOLUTION: IMPLEMENTED_OFFLINE (XPAY-546)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreatePaymentMissingAmount:
+                // XPAY-570 — NUNCA lee PASSPORT_ACCOUNT_ID en este modo,
+                // sólo ya se confirmó su PRESENCIA (impreso arriba). El
+                // request con amount ausente sólo se construye en
+                // ReadyToExecute, dentro de CreatePaymentMissingAmountExecutor.
+                // No hay token, no hay HTTP, no hay evidencia.
+                output.WriteLine("case=M5-T5-MISSING-AMOUNT (Create Bre-B Payment sin amount)");
+                output.WriteLine("endpoint=POST /v1/payments/breb — blocked before transport (esperado)");
+                output.WriteLine("mutating=NO (bloqueo local esperado, nunca llega a Passport)");
+                output.WriteLine("requires=--execute --confirm-create-payment-missing-amount");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreatePaymentMissingAccount:
+                // XPAY-571 — NUNCA lee PASSPORT_ACCOUNT_ID en este modo (ni
+                // en ReadyToExecute — este subcaso nunca lee esa variable,
+                // AccountId ES el campo bajo prueba). No hay token, no hay
+                // HTTP, no hay evidencia en dry-run.
+                output.WriteLine("case=M5-T5-MISSING-ACCOUNT (Create Bre-B Payment sin account_id)");
+                output.WriteLine("endpoint=POST /v1/payments/breb — blocked before transport (esperado)");
+                output.WriteLine("mutating=NO (bloqueo local esperado, nunca llega a Passport)");
+                output.WriteLine("requires=--execute --confirm-create-payment-missing-account");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreatePaymentInvalidResolution:
+                // XPAY-572 — NUNCA construye el resolution_id sintético ni
+                // lee PASSPORT_ACCOUNT_ID/PASSPORT_TEST_M5_PAYMENT_AMOUNT_VALUE
+                // en este modo, ni verifica el marcador de repeat guard —
+                // eso sólo ocurre en ReadyToExecute, dentro de
+                // CreatePaymentInvalidResolutionExecutor. A diferencia de
+                // MissingAmount/MissingAccount, este comando SÍ es mutating
+                // (alcanza Passport real) — el dry-run lo deja explícito.
+                output.WriteLine("case=M5-T5-INVALID-RESOLUTION (Create Bre-B Payment con resolution_id sintético inválido)");
+                output.WriteLine("endpoint=POST /v1/payments/breb");
+                output.WriteLine("mutating=YES (llamada real a Passport — resolution_id sintético nunca vacío, no bloqueado localmente)");
+                output.WriteLine("requires=--execute --confirm-create-payment-invalid-resolution");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=Repeat guard PERMANENTE — a lo sumo UNA ejecución real en la vida de este directorio privado (XPAY-572)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateM5T5SuspendedKeyFixture:
+                // XPAY-575 — NUNCA genera el key_value sintético ni lee
+                // PASSPORT_TEST_ACCOUNT_ID en este modo, ni verifica el
+                // repeat guard — eso sólo ocurre en ReadyToExecute, dentro
+                // de CreateM5T5SuspendedKeyFixtureExecutor. FASE 1 SOLAMENTE
+                // (Create Key) — nunca Suspend/Resolve/Payment/Delete.
+                output.WriteLine("case=M5-T5-D-KEY-PREP-CREATE (fixture NUEVO desechable para M5-T5-D — FASE 1: Create Key)");
+                output.WriteLine("endpoint=POST /v1/keys");
+                output.WriteLine("mutating=YES (llamada real a Passport — crea una llave Sandbox NUEVA, nunca la suspende)");
+                output.WriteLine("requires=--execute --confirm-create-m5-t5-suspended-fixture");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia ni fixture en este modo)");
+                output.WriteLine("note=Repeat guard PERMANENTE — a lo sumo UNA ejecución real en la vida de este directorio privado (XPAY-575)");
+                output.WriteLine("note=FASE 1 SOLAMENTE — Suspend Key requiere un ticket separado con autorización explícita");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.SuspendM5T5FixtureKey:
+                // XPAY-576 — NUNCA lee el private capture de XPAY-575 ni
+                // verifica el repeat guard en este modo — eso sólo ocurre
+                // en ReadyToExecute, dentro de SuspendM5T5FixtureKeyExecutor.
+                // FASE 2 SOLAMENTE (Suspend) — nunca Resolve/Payment/Delete.
+                output.WriteLine("case=M5-T5-D-KEY-PREP-SUSPEND (Fase 2 del fixture nuevo de M5-T5-D — Suspend Key)");
+                output.WriteLine("endpoint=PATCH /v1/keys/{key_id}/suspend");
+                output.WriteLine("mutating=YES (llamada real a Passport — suspende el fixture creado en XPAY-575, nunca lo elimina/reactiva)");
+                output.WriteLine("requires=--execute --confirm-suspend-m5-t5-fixture");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia ni se modifica el fixture en este modo)");
+                output.WriteLine("note=Repeat guard PERMANENTE propio de esta Fase 2 — a lo sumo UNA ejecución real (XPAY-576)");
+                output.WriteLine("note=FASE 2 SOLAMENTE — el Resolve real (Fase 3) requiere un ticket separado con autorización explícita");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.ResolveM5T5SuspendedKey:
+                // XPAY-577 — NUNCA lee el private capture de XPAY-575/576
+                // ni verifica correlación/repeat guard en este modo — eso
+                // sólo ocurre en ReadyToExecute, dentro de
+                // ResolveM5T5SuspendedKeyExecutor. FASE 3 — ejecución final
+                // del subcaso M5-T5-D. NUNCA Payment bajo ninguna
+                // circunstancia (este executor no conoce IPassportPaymentClient).
+                output.WriteLine("case=M5-T5-SUSPENDED-KEY (Fase 3 final de M5-T5-D — Resolve sobre key suspendida)");
+                output.WriteLine("endpoint=POST /v1/resolve-key");
+                output.WriteLine("mutating=NO (read-only, resuelve el fixture ya suspendido en XPAY-576)");
+                output.WriteLine("requires=--execute --confirm-resolve-m5-t5-suspended-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=Repeat guard PERMANENTE propio de esta Fase 3 — a lo sumo UNA ejecución real (XPAY-577)");
+                output.WriteLine("note=NUNCA Payment — este comando no puede alcanzar IPassportPaymentClient bajo ninguna circunstancia");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateM5T5DeletedKeyFixture:
+                // XPAY-613 — NUNCA genera el key_value sintético ni lee
+                // PASSPORT_TEST_ACCOUNT_ID en este modo, ni verifica el
+                // repeat guard — eso sólo ocurre en ReadyToExecute, dentro
+                // de CreateM5T5DeletedKeyFixtureExecutor. FASE A SOLAMENTE
+                // (Create Key) — nunca Delete/Resolve/Payment/Suspend.
+                output.WriteLine("case=M5-T5-E-KEY-PREP-CREATE (fixture NUEVO desechable para M5-T5-E — FASE A: Create Key)");
+                output.WriteLine("endpoint=POST /v1/keys");
+                output.WriteLine("mutating=YES (llamada real a Passport — crea una llave Sandbox NUEVA, nunca la elimina)");
+                output.WriteLine("requires=--execute --confirm-create-m5-t5-deleted-fixture");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia ni fixture en este modo)");
+                output.WriteLine("note=Repeat guard PERMANENTE — a lo sumo UNA ejecución real en la vida de este directorio privado (XPAY-613)");
+                output.WriteLine("note=FASE A SOLAMENTE — Delete Key requiere un ticket separado con autorización explícita");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DeleteM5T5FixtureKey:
+                // XPAY-613 — NUNCA lee el private capture de la Fase A ni
+                // verifica el repeat guard en este modo — eso sólo ocurre en
+                // ReadyToExecute, dentro de DeleteM5T5FixtureKeyExecutor.
+                // FASE B SOLAMENTE (Delete) — nunca Resolve/Payment/Create.
+                output.WriteLine("case=M5-T5-E-KEY-PREP-DELETE (Fase B del fixture nuevo de M5-T5-E — Delete Key)");
+                output.WriteLine("endpoint=DELETE /v1/keys/{key_id}");
+                output.WriteLine("mutating=YES IRREVERSIBLE (llamada real a Passport — elimina físicamente el fixture creado en la Fase A)");
+                output.WriteLine("requires=--execute --confirm-delete-m5-t5-fixture");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia ni se modifica el fixture en este modo)");
+                output.WriteLine("note=Repeat guard PERMANENTE propio de esta Fase B — a lo sumo UNA ejecución real (XPAY-613)");
+                output.WriteLine("note=key_id leído SOLO del private capture de la Fase A — nunca de env, nunca de CLI, nunca hardcodeado");
+                output.WriteLine("note=FASE B SOLAMENTE — el Resolve real (Fase C) requiere un ticket separado con autorización explícita");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.ResolveM5T5DeletedKey:
+                // XPAY-613 — NUNCA lee el private capture de las Fases A/B
+                // ni verifica correlación/repeat guard en este modo — eso
+                // sólo ocurre en ReadyToExecute, dentro de
+                // ResolveM5T5DeletedKeyExecutor. FASE C — ejecución final
+                // del subcaso M5-T5-E. NUNCA Payment bajo ninguna
+                // circunstancia (este executor no conoce IPassportPaymentClient).
+                output.WriteLine("case=M5-T5-DELETED-KEY (Fase C final de M5-T5-E — Resolve sobre key eliminada)");
+                output.WriteLine("endpoint=POST /v1/resolve-key");
+                output.WriteLine("mutating=NO (read-only, resuelve el fixture ya eliminado en la Fase B)");
+                output.WriteLine("requires=--execute --confirm-resolve-m5-t5-deleted-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=Repeat guard PERMANENTE propio de esta Fase C — a lo sumo UNA ejecución real (XPAY-613)");
+                output.WriteLine("note=Exige correlación Create->Delete confirmada (Fase A -> Fase B) antes de cualquier HTTP");
+                output.WriteLine("note=NUNCA Payment — este comando no puede alcanzar IPassportPaymentClient bajo ninguna circunstancia");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreatePaymentOverLimit:
+                // XPAY-619 — en dry-run NUNCA se lee la captura privada de
+                // Resolve, nunca se verifica el repeat guard real y nunca se
+                // escribe su marcador — eso sólo ocurre en ReadyToExecute,
+                // dentro de CreatePaymentOverLimitExecutor. Las únicas
+                // validaciones que se muestran aquí son las PURAS (monto),
+                // seguras de evaluar sin credenciales ni artefactos.
+                output.WriteLine("case=M5-T5-OVER-LIMIT (M5-T5-C — Payment por encima del umbral certificable del Anexo)");
+                output.WriteLine("endpoint=POST /v1/payments/breb");
+                output.WriteLine("mutating=YES FINANCIAL (llamada real a la API de pagos — se ESPERA rechazo por exceso de monto)");
+                output.WriteLine($"amount_value={CreatePaymentOverLimitExecutor.CertificationAmountValue} currency=COP");
+                output.WriteLine($"annex_threshold_cop=12000000.00 amount_above_threshold={CreatePaymentOverLimitExecutor.ValidateAmount(CreatePaymentOverLimitExecutor.CertificationAmountValue, "COP") == CreatePaymentOverLimitExecutor.AmountValidation.Valid}");
+                output.WriteLine("requires=--execute --confirm-create-payment-over-limit");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia ni se consume el repeat guard en este modo)");
+                output.WriteLine("note=Repeat guard PERMANENTE propio, consumido ANTES del HTTP — a lo sumo UNA ejecución real (XPAY-619)");
+                output.WriteLine("note=Exige una resolución NUEVA, no consumida y vigente con margen, leída SOLO de la captura privada de resolve-key-m5-t2");
+                output.WriteLine("note=NUNCA Resolve, NUNCA Retrieve, NUNCA mutación de llaves — este comando no puede alcanzar IPassportKeyClient");
+                output.WriteLine("note=Si Passport ACEPTA el pago: T5_C_RESULT=INCONCLUSIVE, se detiene, no hay segundo Payment ni Retrieve");
+                return;
+
             case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DecodeQrStatic:
                 // XPAY-465 — NUNCA lee los valores reales de
                 // PASSPORT_TEST_CUSTOMER_ID/PASSPORT_TEST_QR_DECODE_DATA_FILE
@@ -316,6 +699,53 @@ public static class HarnessApp
                 output.WriteLine("result=DRY_RUN");
                 output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
                 output.WriteLine("note=M4-T3-A-KEY-PREP-SUSPEND: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-474)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.RecoverDeletedKeyId:
+                // XPAY-489 — NUNCA lee los valores reales de
+                // PASSPORT_TEST_ACCOUNT_ID/PASSPORT_TEST_NEW_KEY_TYPE/
+                // PASSPORT_TEST_NEW_KEY_VALUE en este modo. Read-only por
+                // diseño — ni siquiera en ReadyToExecute muta nada.
+                output.WriteLine("case=RECOVERY (List Keys read-only — localizar key_id DELETED del ciclo M3)");
+                output.WriteLine("endpoint=GET /v1/keys");
+                output.WriteLine("mutating=NO (read-only — ninguna mutación de llave es alcanzable desde este comando)");
+                output.WriteLine("requires=--execute --confirm-recover-deleted-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-B-KEY-RECOVERY: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-489)");
+                output.WriteLine("note=Fail-closed en 0 o >1 coincidencias — nunca selecciona automáticamente ni cae en fallback");
+                output.WriteLine("note=Este comando NUNCA escribe ~/.passport-sandbox.env — la reparación de PASSPORT_TEST_NEW_KEY_ID es un paso manual separado");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.CreateM4T3DeletedFixtureKey:
+                // XPAY-492 — NUNCA lee el valor real de
+                // PASSPORT_TEST_ACCOUNT_ID en este modo. CRÍTICO: el
+                // key_value (DisposableBcodeGenerator) NUNCA se genera aquí
+                // — sólo dentro de CreateM4T3DeletedFixtureKeyExecutor,
+                // exclusivamente en ReadyToExecute.
+                output.WriteLine("case=M4-T3-B PREP (Create Key — llave desechable dedicada)");
+                output.WriteLine("endpoint=POST /v1/keys");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-492)");
+                output.WriteLine("requires=--execute --confirm-create-m4-t3-deleted-fixture-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-B-KEY-PREP-CREATE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-492)");
+                output.WriteLine("note=Esta llave NO se elimina automáticamente — ver delete-m4-t3-fixture-key (paso separado)");
+                return;
+
+            case HarnessOrchestrator.Outcome.DryRun when decision.Command == HarnessCommand.DeleteM4T3FixtureKey:
+                // XPAY-492 — NUNCA lee el valor real de
+                // PASSPORT_TEST_QR_DELETED_KEY_ID en este modo.
+                output.WriteLine("case=M4-T3-B PREP (Delete Key — llave desechable dedicada)");
+                output.WriteLine("endpoint=DELETE /v1/keys/{key_id}");
+                output.WriteLine("mutating=YES (llamada real futura — NO ejecutada en XPAY-492)");
+                output.WriteLine("requires=--execute --confirm-delete-m4-t3-fixture-key");
+                output.WriteLine("dry_run=YES http_call=NO oauth_token_requested=NO");
+                output.WriteLine("result=DRY_RUN");
+                output.WriteLine("note=DRY-RUN != CERTIFICATION EVIDENCE (no se genera evidencia en este modo)");
+                output.WriteLine("note=M4-T3-B-KEY-PREP-DELETE: IMPLEMENTED_OFFLINE / NOT_EXECUTED_IN_SANDBOX (XPAY-492)");
                 return;
 
             case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateCustomer:
@@ -525,6 +955,541 @@ public static class HarnessApp
                 return;
             }
 
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrDynamic:
+            {
+                var execution = await CreateQrDynamicExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-506 — un bloqueo LOCAL (target ausente, commit
+                    // SHA no resoluble) NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var dynamicPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={dynamicPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.DecodeQrDynamic:
+            {
+                var execution = await DecodeQrDynamicExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-517 — un bloqueo LOCAL (target ausente, artefacto
+                    // privado M4-T4 ausente/no coincidente, destino privado
+                    // M4-T5 inválido, commit SHA no resoluble) NUNCA escribe
+                    // evidence.json. `Detail` nunca incluye rutas privadas
+                    // ni material crudo.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m4T5Path = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m4T5Path}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrDynamicSuspendedKey:
+            {
+                var execution = await CreateQrDynamicSuspendedKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-522 — un bloqueo LOCAL (target ausente, fingerprint
+                    // no coincidente con la fixture suspendida histórica,
+                    // commit SHA no resoluble) NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m4T6APath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m4T6APath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrDynamicDeletedKey:
+            {
+                var execution = await CreateQrDynamicDeletedKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m4T6BPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m4T6BPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateQrDynamicInvalidCustomer:
+            {
+                var execution = await CreateQrDynamicInvalidCustomerExecutor
+                    .ExecuteAsync(configuration, dependencies.QrClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m4T6CPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m4T6CPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateBrebPaymentCert:
+            {
+                var execution = await CreateBrebPaymentCertificationExecutor
+                    .ExecuteAsync(configuration, dependencies.PaymentClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-529 — un bloqueo LOCAL (PASSPORT_ACCOUNT_ID/
+                    // resolution_id/amount ausente, resolución vencida,
+                    // destino privado inválido, commit SHA no resoluble)
+                    // NUNCA escribe evidence.json. `Detail` nunca incluye
+                    // valores crudos ni rutas privadas.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m5CreatePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m5CreatePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.RetrieveBrebPaymentCert:
+            {
+                var execution = await RetrieveBrebPaymentCertificationExecutor
+                    .ExecuteAsync(configuration, dependencies.PaymentClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m5RetrievePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m5RetrievePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateM5CustomerB:
+            {
+                var execution = await CreateM5CustomerBExecutor
+                    .ExecuteAsync(configuration, dependencies.CustomerAccountClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-531 — un bloqueo LOCAL (fixture ausente/incompleta,
+                    // destino privado inválido, commit SHA no resoluble)
+                    // NUNCA escribe evidence.json. `Detail` nunca incluye
+                    // datos de identificación ni rutas privadas.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m5CustomerBPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m5CustomerBPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateM5AccountB:
+            {
+                var execution = await CreateM5AccountBExecutor
+                    .ExecuteAsync(configuration, dependencies.CustomerAccountClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-531 — un bloqueo LOCAL (account_number ausente,
+                    // artefacto privado Customer B ausente/no válido, destino
+                    // privado Account B inválido, commit SHA no resoluble)
+                    // NUNCA escribe evidence.json. `Detail` nunca incluye
+                    // valores crudos ni rutas privadas.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m5AccountBPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m5AccountBPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=Account B NO se asume equivalente a la cuenta operativa de XPAY, ni account_id_B se usará automáticamente como Payment.account_id");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.ResolveKeyM5T2:
+            {
+                var execution = await M5ResolveExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-545 — un bloqueo LOCAL (destino privado inválido,
+                    // lock ya sostenido, resolución previa vigente/no
+                    // consumida, target de KEY_A ausente, commit SHA no
+                    // resoluble) NUNCA escribe evidence.json. `Detail` nunca
+                    // incluye resolution_id/customer_id/key_value ni rutas
+                    // privadas.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var m5ResolvePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={m5ResolvePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=resolution_id crudo preservado EXCLUSIVAMENTE en el artefacto privado — nunca impreso, nunca en evidence.json");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.ConfigureM5PaymentResolution:
+            {
+                // XPAY-546 — operación 100% local, NUNCA llama a Passport.
+                // Por eso NO pasa por EvidenceWriter (no hay evidencia de
+                // certificación que generar) — se imprime el resultado
+                // directamente. `Detail`/resultado NUNCA incluyen el
+                // resolution_id, ninguna ruta privada completa, ni el
+                // contenido del archivo de entorno.
+                var result = ConfigureM5PaymentResolutionExecutor.Execute(
+                    configuration, repositoryRootAbsolutePath: Directory.GetCurrentDirectory());
+
+                if (result.Outcome == ConfigureM5PaymentResolutionExecutor.Outcome.LocalBlocked)
+                {
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={result.Detail}");
+                    return;
+                }
+
+                output.WriteLine("result=TRANSFERRED");
+                output.WriteLine("note=PASSPORT_TEST_M5_PAYMENT_RESOLUTION_ID configurado desde el artefacto privado M5-T2-RESOLVE — valor nunca impreso");
+                output.WriteLine("note=Backup privado creado antes de escribir; artefacto original nunca modificado; marcador de consumo separado escrito");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreatePaymentMissingAmount:
+            {
+                var execution = await CreatePaymentMissingAmountExecutor
+                    .ExecuteAsync(configuration, dependencies.PaymentClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-570 — bloqueo operativo GENUINO (PASSPORT_ACCOUNT_ID
+                    // ausente, commit SHA no resoluble, o el guard productivo
+                    // no disparó como se esperaba) — NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                // Outcome.Success aquí significa: el guard productivo de
+                // CreateBrebPaymentAsync SÍ rechazó el request por amount
+                // ausente, ANTES de HTTP — éxito del subcaso M5-T5-MISSING-AMOUNT.
+                var missingAmountPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={missingAmountPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=M5-T5-MISSING-AMOUNT: bloqueo LOCAL confirmado antes de cualquier HTTP a Passport");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreatePaymentMissingAccount:
+            {
+                var execution = await CreatePaymentMissingAccountExecutor
+                    .ExecuteAsync(configuration, dependencies.PaymentClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-571 — bloqueo operativo GENUINO (commit SHA no
+                    // resoluble, o el guard productivo no disparó como se
+                    // esperaba) — NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                // Outcome.Success aquí significa: el guard productivo de
+                // CreateBrebPaymentAsync SÍ rechazó el request por
+                // account_id ausente, ANTES de HTTP — éxito del subcaso
+                // M5-T5-MISSING-ACCOUNT.
+                var missingAccountPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={missingAccountPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=M5-T5-MISSING-ACCOUNT: bloqueo LOCAL confirmado antes de cualquier HTTP a Passport");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreatePaymentInvalidResolution:
+            {
+                var execution = await CreatePaymentInvalidResolutionExecutor
+                    .ExecuteAsync(configuration, dependencies.PaymentClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-572 — bloqueo operativo GENUINO (destino privado
+                    // inválido, repeat guard ya consumido, PASSPORT_ACCOUNT_ID/
+                    // PASSPORT_TEST_M5_PAYMENT_AMOUNT_VALUE ausente, o commit
+                    // SHA no resoluble) — NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                // Outcome.Success (UNEXPECTED_ACCEPTANCE) u
+                // Outcome.PassportFailure (EXPECTED_PROVIDER_REJECTION):
+                // ambos casos SÍ representan una respuesta REAL de Passport
+                // y ambos escriben evidence.json — el `Result` (PASS/FAIL)
+                // y las notas explícitas del Evidence distinguen cuál
+                // ocurrió, nunca este bloque.
+                var invalidResolutionPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={invalidResolutionPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                if (execution.Outcome == KeyOperationOutcome.Success)
+                    output.WriteLine("note=M5-T5-INVALID-RESOLUTION: UNEXPECTED_ACCEPTANCE — requiere revisión inmediata del director");
+                else
+                    output.WriteLine("note=M5-T5-INVALID-RESOLUTION: rechazo esperado de Passport confirmado (EXPECTED_PROVIDER_REJECTION)");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateM5T5SuspendedKeyFixture:
+            {
+                var execution = await CreateM5T5SuspendedKeyFixtureExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-575 — bloqueo operativo GENUINO (destino privado
+                    // inválido, repeat guard ya consumido, PASSPORT_ACCOUNT_ID
+                    // ausente, colisión con la key activa, fallo al persistir
+                    // el registro PREPARED, o commit SHA no resoluble) —
+                    // NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var fixturePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={fixturePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=FASE 1 completada (Create Key) — fixture NUEVO todavía NO suspendido, NO ejecuta el caso M5-T5-D");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.SuspendM5T5FixtureKey:
+            {
+                var execution = await SuspendM5T5FixtureKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-576 — bloqueo operativo GENUINO (destino privado
+                    // inválido, repeat guard ya consumido, artifact CREATED
+                    // de XPAY-575 ausente/ambiguo/inválido, coincidencia con
+                    // la key activa, o commit SHA no resoluble) — NUNCA
+                    // escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var suspendPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={suspendPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=FASE 2 completada (Suspend Key) — fixture suspendido, todavía NO se ejecutó el caso M5-T5-D (Fase 3 pendiente)");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.ResolveM5T5SuspendedKey:
+            {
+                var execution = await ResolveM5T5SuspendedKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-577 — bloqueo operativo GENUINO (destino privado
+                    // inválido, repeat guard ya consumido, artifact CREATED
+                    // ausente/ambiguo/inválido, correlación Create->Suspend
+                    // inválida, PASSPORT_TEST_CUSTOMER_ID ausente,
+                    // coincidencia con la key activa, o commit SHA no
+                    // resoluble) — NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                // Outcome.PassportFailure (EXPECTED_PROVIDER_REJECTION) u
+                // Outcome.Success (UNEXPECTED_RESOLVE_SUCCESS): ambos
+                // representan una respuesta REAL de Passport y ambos
+                // escriben evidence.json — este es el JSON FINAL de
+                // certificación de M5-T5-D (case_id="M5-T5-SUSPENDED-KEY").
+                var resolvePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={resolvePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                if (execution.Outcome == KeyOperationOutcome.Success)
+                    output.WriteLine("note=M5-T5-SUSPENDED-KEY: UNEXPECTED_RESOLVE_SUCCESS — requiere revisión inmediata del director");
+                else
+                    output.WriteLine("note=M5-T5-SUSPENDED-KEY: rechazo esperado de Passport confirmado (EXPECTED_PROVIDER_REJECTION) — M5-T5-D técnicamente documentado");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateM5T5DeletedKeyFixture:
+            {
+                var execution = await CreateM5T5DeletedKeyFixtureExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-613 — bloqueo operativo GENUINO (destino privado
+                    // inválido, repeat guard ya consumido, PASSPORT_TEST_ACCOUNT_ID
+                    // ausente, colisión con la key activa, fallo al persistir
+                    // el registro PREPARED, o commit SHA no resoluble) —
+                    // NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var deletedFixturePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={deletedFixturePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=FASE A completada (Create Key) — fixture NUEVO todavía NO eliminado, NO ejecuta el caso M5-T5-E");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.DeleteM5T5FixtureKey:
+            {
+                var execution = await DeleteM5T5FixtureKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-613 — bloqueo operativo GENUINO (destino privado
+                    // inválido, repeat guard ya consumido, artifact CREATED
+                    // de la Fase A ausente/ambiguo/inválido, coincidencia con
+                    // la key activa, o commit SHA no resoluble) — NUNCA
+                    // escribe evidence.json. Crítico aquí: la operación es
+                    // irreversible, así que un bloqueo local NUNCA se
+                    // reintenta automáticamente.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var deletePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={deletePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=FASE B completada (Delete Key) — fixture eliminado, todavía NO se ejecutó el caso M5-T5-E (Fase C pendiente)");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.ResolveM5T5DeletedKey:
+            {
+                var execution = await ResolveM5T5DeletedKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-613 — bloqueo operativo GENUINO (destino privado
+                    // inválido, repeat guard ya consumido, artifact CREATED
+                    // ausente/ambiguo/inválido, correlación Create->Delete
+                    // inválida, PASSPORT_TEST_CUSTOMER_ID ausente,
+                    // coincidencia con la key activa, o commit SHA no
+                    // resoluble) — NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                // Outcome.PassportFailure (EXPECTED_PROVIDER_REJECTION) u
+                // Outcome.Success (UNEXPECTED_RESOLVE_SUCCESS): ambos
+                // representan una respuesta REAL de Passport y ambos
+                // escriben evidence.json — este es el JSON FINAL de
+                // certificación de M5-T5-E (case_id="M5-T5-DELETED-KEY").
+                var resolveDeletedPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={resolveDeletedPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                if (execution.Outcome == KeyOperationOutcome.Success)
+                    output.WriteLine("note=M5-T5-DELETED-KEY: UNEXPECTED_RESOLVE_SUCCESS — requiere revisión inmediata del director");
+                else
+                    output.WriteLine("note=M5-T5-DELETED-KEY: rechazo esperado de Passport confirmado (EXPECTED_PROVIDER_REJECTION) — M5-T5-E técnicamente documentado");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreatePaymentOverLimit:
+            {
+                var execution = await CreatePaymentOverLimitExecutor
+                    .ExecuteAsync(configuration, dependencies.PaymentClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-619 — bloqueo operativo GENUINO (destino privado
+                    // inválido, repeat guard ya consumido, monto que no pasa
+                    // la validación local, cuenta operativa ausente,
+                    // resolución ausente/ambigua/ilegible/inválida/consumida/
+                    // vencida/no correlacionada con la llave positiva, fallo
+                    // al escribir el marcador, o commit SHA no resoluble) —
+                    // NUNCA escribe evidence.json y NUNCA llama a Passport.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                // Outcome.PassportFailure (rechazo, con o sin señal de
+                // límite) u Outcome.Success (aceptación inesperada): ambos
+                // representan una respuesta REAL de Passport y ambos
+                // escriben evidence.json — éste es el JSON de certificación
+                // de M5-T5-C (case_id="M5-T5-OVER-LIMIT").
+                var overLimitPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={overLimitPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine($"limit_rejection={execution.Evidence.ResponseSanitized["limit_rejection"] ?? "UNKNOWN"}");
+                output.WriteLine($"t5_c_result={execution.Evidence.ResponseSanitized["t5_c_result"]}");
+                output.WriteLine($"note={execution.Detail}");
+                return;
+            }
+
             case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.DecodeQrStatic:
             {
                 var execution = await DecodeQrStaticExecutor
@@ -649,6 +1614,68 @@ public static class HarnessApp
                 var suspendFixturePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
                 output.WriteLine($"result={execution.Evidence!.Result}");
                 output.WriteLine($"evidence_path={suspendFixturePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.RecoverDeletedKeyId:
+            {
+                var execution = await RecoverDeletedKeyIdExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-489 — un bloqueo LOCAL NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var recoveryPath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={recoveryPath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=Este comando NUNCA escribió ~/.passport-sandbox.env — revise la evidencia sanitizada para el resultado (match_found/matches_count/status/id_fingerprint) y, si corresponde, configure PASSPORT_TEST_NEW_KEY_ID usted mismo, manualmente");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.CreateM4T3DeletedFixtureKey:
+            {
+                var execution = await CreateM4T3DeletedFixtureKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-492 — un bloqueo LOCAL NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var createFixturePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={createFixturePath}");
+                output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
+                output.WriteLine("note=Recupere el key_id real manualmente desde Passport Sandbox Dashboard y configure PASSPORT_TEST_QR_DELETED_KEY_ID usted mismo — este harness nunca lo persiste");
+                return;
+            }
+
+            case HarnessOrchestrator.Outcome.ReadyToExecute when decision.Command == HarnessCommand.DeleteM4T3FixtureKey:
+            {
+                var execution = await DeleteM4T3FixtureKeyExecutor
+                    .ExecuteAsync(configuration, dependencies.KeyClient, dependencies.CommitShaProvider, DateTime.UtcNow)
+                    .ConfigureAwait(false);
+
+                if (execution.Outcome == KeyOperationOutcome.LocalBlocked)
+                {
+                    // XPAY-492 — un bloqueo LOCAL NUNCA escribe evidence.json.
+                    output.WriteLine($"result=LOCAL_BLOCKED detail={execution.Detail}");
+                    return;
+                }
+
+                var deleteFixturePath = EvidenceWriter.Write(dependencies.EvidenceBaseDirectory, execution.Evidence!);
+                output.WriteLine($"result={execution.Evidence!.Result}");
+                output.WriteLine($"evidence_path={deleteFixturePath}");
                 output.WriteLine($"review_status={execution.Evidence.ReviewStatus}");
                 return;
             }

@@ -17,5 +17,8 @@ public sealed record VeriffDecisionParsed(
     string?   LastName,
     string?   DocumentType,
     string?   DocumentNumber,
-    DateOnly? DateOfBirth
+    DateOnly? DateOfBirth,
+    // Diseño A — document.country (ISO 3166 alfa-2). Al final y opcional
+    // para no romper construcciones posicionales existentes.
+    string?   DocumentCountry = null
 );

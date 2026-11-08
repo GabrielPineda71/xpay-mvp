@@ -15,15 +15,18 @@ namespace Xpay.Api.Common;
 // existen en TransferenciaWalletRequest/PagoQrRequest desde 71.2-E-C/D.
 public static class IdempotencyHashHelper
 {
-    public static byte[] ComputeTransferenciaHash(long idUsuario, long idWalletOrigen, long idWalletDestino, decimal valor, string? descripcion) =>
+    // v2: incluye el destinatario confirmado — repetir la clave con otro
+    // destinatario esperado es un payload distinto, nunca un replay.
+    public static byte[] ComputeTransferenciaHash(long idUsuario, long idWalletOrigen, long idWalletDestino, decimal valor, string? descripcion, string usuarioDestinoEsperado) =>
         ComputeHash(new SortedDictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["op"] = "wallets.transferencia.v1",
+            ["op"] = "wallets.transferencia.v2",
             ["idUsuario"] = idUsuario,
             ["idWalletOrigen"] = idWalletOrigen,
             ["idWalletDestino"] = idWalletDestino,
             ["valor"] = NormalizarValor(valor),
             ["descripcion"] = NormalizarTexto(descripcion),
+            ["usuarioDestinoEsperado"] = NormalizarTexto(usuarioDestinoEsperado),
         });
 
     public static byte[] ComputePagoQrHash(long idUsuario, long idWalletPagadora, string codigoQr, decimal valor, string? descripcion) =>
@@ -35,6 +38,31 @@ public static class IdempotencyHashHelper
             ["codigoQr"] = codigoQr,
             ["valor"] = NormalizarValor(valor),
             ["descripcion"] = NormalizarTexto(descripcion),
+        });
+
+    // XPAY-712 - desembolso AVANCE_WALLET. idUsuario lo resuelve el servidor
+    // desde el JWT; tipo/monto/plazo/frecuencia son la intencion del cliente.
+    public static byte[] ComputeAvanceWalletHash(long idUsuario, string tipoUtilizacion, decimal valorCapital, int plazoMeses, string? frecuencia) =>
+        ComputeHash(new SortedDictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["op"] = "cartera.avance_wallet.v1",
+            ["idUsuario"] = idUsuario,
+            ["tipoUtilizacion"] = NormalizarTexto(tipoUtilizacion)?.ToUpperInvariant(),
+            ["valorCapital"] = NormalizarValor(valorCapital),
+            ["plazoMeses"] = plazoMeses,
+            ["frecuencia"] = NormalizarTexto(frecuencia)?.ToUpperInvariant(),
+        });
+
+    // P0 anticipo - desembolso de anticipo de sueldo. idUsuario lo resuelve el
+    // servidor desde el JWT; valor y fecha simulada (solo no productivo, ya
+    // normalizada a ISO por el controller) son la intencion del cliente.
+    public static byte[] ComputeAnticipoLibranzaHash(long idUsuario, decimal valorSolicitado, string? fechaSimulada) =>
+        ComputeHash(new SortedDictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["op"] = "libranza.anticipo_desembolso.v1",
+            ["idUsuario"] = idUsuario,
+            ["valorSolicitado"] = NormalizarValor(valorSolicitado),
+            ["fechaSimulada"] = NormalizarTexto(fechaSimulada),
         });
 
     // Formato invariante, dos decimales fijos — evita que variaciones de

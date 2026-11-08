@@ -77,7 +77,7 @@ public sealed class CarteraOrdinariaEstadosActivosTests
 
                 var solicitud = new CarteraSolicitudCupo
                 {
-                    IdUsuario = usuario.IdUsuario, IdPersona = persona.IdPersona, MontoSolicitado = 500_000m,
+                    IdUsuario = usuario.IdUsuario, IdPersona = persona.IdPersona,
                     EstadoSolicitud = CarteraSolicitudCupoEstados.PendienteRevisionManual,
                     DecisionCrediticia = CarteraDecisionCrediticia.NoDecidible,
                     CodigoMotivoDecision = CarteraMotivoDecision.EdadRequiereRevisionManual,
@@ -108,9 +108,88 @@ public sealed class CarteraOrdinariaEstadosActivosTests
                 NullLogger<CarteraOrdinariaService>.Instance);
 
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-                () => svc.CrearSolicitudCupoAsync(idUsuario, Guid.NewGuid(), 400_000m, "corr-2"));
+                () => svc.CrearSolicitudCupoAsync(idUsuario, Guid.NewGuid(), "corr-2"));
 
             Assert.Contains("Ya tienes una solicitud de cupo en curso", ex.Message);
+        }
+        finally { await LimpiarAsync(cs, pe, us, so); }
+    }
+
+    // XPAY-676B — SQL: la creación sin monto persiste monto_solicitado NULL,
+    // copia como aplicada la política efectiva del motor, hace replay con la
+    // misma Idempotency-Key y rechaza esa key desde otro usuario.
+    [Fact]
+    public async Task Creacion_sin_monto_persiste_null_y_politica_del_motor()
+    {
+        if (!TryConnString(out var cs)) return;
+
+        var pe = new List<long>(); var us = new List<long>(); var so = new List<long>();
+        try
+        {
+            var ids = new List<long>();
+            await using (var seed = NuevoContexto(cs))
+            {
+                var ahora = DateTime.UtcNow;
+                var idUnidad = await seed.Database.SqlQueryRaw<long>(
+                    "SELECT id_unidad_negocio AS Value FROM unidades_negocio WHERE codigo = {0}", "XPAY_COL").SingleAsync();
+                for (var i = 0; i < 2; i++)
+                {
+                    var sufijo = Guid.NewGuid().ToString("N")[..12];
+                    var persona = new Persona
+                    {
+                        IdUnidadNegocio = idUnidad, TipoDocumento = "CC",
+                        NumeroDocumento = $"79{(uint)Guid.NewGuid().GetHashCode() % 10_000_000:D7}",
+                        PrimerNombre = "SinMonto", PrimerApellido = "Sintetico", Celular = "3000000000",
+                        Pais = "Colombia", Estado = "ACTIVA", FechaCreacion = ahora,
+                    };
+                    seed.Personas.Add(persona);
+                    await seed.SaveChangesAsync();
+                    pe.Add(persona.IdPersona);
+
+                    var usuario = new Usuario
+                    {
+                        IdPersona = persona.IdPersona, NombreUsuario = $"sinmonto_test_{sufijo}",
+                        PasswordHash = "x", Estado = "ACTIVO", FechaCreacion = ahora,
+                    };
+                    seed.Usuarios.Add(usuario);
+                    await seed.SaveChangesAsync();
+                    us.Add(usuario.IdUsuario);
+                    ids.Add(usuario.IdUsuario);
+                }
+            }
+
+            var key = Guid.NewGuid();
+            await using var ctx = NuevoContexto(cs);
+            var svc = new CarteraOrdinariaService(
+                ctx,
+                new PagoQrService(ctx, NullLogger<PagoQrService>.Instance),
+                NullLogger<CarteraOrdinariaService>.Instance);
+
+            var creada = await svc.CrearSolicitudCupoAsync(ids[0], key, "corr-676b");
+            Assert.Equal(CarteraSolicitudCupoEstados.Recibida, creada.EstadoSolicitud);
+            Assert.Equal(CarteraDecisionCrediticia.Pendiente, creada.DecisionCrediticia);
+
+            var replay = await svc.CrearSolicitudCupoAsync(ids[0], key, "corr-676b-replay");
+            Assert.Equal(creada.IdSolicitud, replay.IdSolicitud);
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => svc.CrearSolicitudCupoAsync(ids[1], key, "corr-676b-otro"));
+            Assert.Equal("Idempotency-Key ya utilizada para otra solicitud.", ex.Message);
+
+            await using var v = NuevoContexto(cs);
+            var montoNulo = await v.Database.SqlQueryRaw<int>(
+                "SELECT CASE WHEN monto_solicitado IS NULL THEN 1 ELSE 0 END AS Value FROM dbo.cartera_solicitudes_cupo WHERE id_solicitud = {0}",
+                creada.IdSolicitud).SingleAsync();
+            Assert.Equal(1, montoNulo);
+
+            var s = await v.CarteraSolicitudesCupo.AsNoTracking().SingleAsync(x => x.IdSolicitud == creada.IdSolicitud);
+            var motor = CarteraPolicyParameters.Vigente();
+            Assert.Equal(motor.CupoMinimo, s.CupoMinimoAplicado);
+            Assert.Equal(motor.CupoMaximo, s.CupoMaximoAplicado);
+            Assert.Equal(CarteraPoliticaAplicada.EdadElegibleMinima, s.EdadMinimaAplicada);
+            Assert.Equal(CarteraPoliticaAplicada.EdadElegibleMaxima, s.EdadMaximaAplicada);
+            Assert.Null(s.ScoreDatacreditoMinimoAplicado);
+            Assert.Equal(1, await v.CarteraSolicitudCupoIntentos.CountAsync(i => i.IdSolicitud == creada.IdSolicitud));
         }
         finally { await LimpiarAsync(cs, pe, us, so); }
     }

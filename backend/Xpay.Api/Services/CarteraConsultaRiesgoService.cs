@@ -128,6 +128,20 @@ public sealed class CarteraConsultaRiesgoService(
         // se ejecuta y la solicitud queda CONSULTANDO_RIESGO / intento
         // ENVIO_INCIERTO para reconciliación.
 
+        // XPAY-652 — contrato del límite: un resultado funcional SÓLO continúa
+        // con el HTTP status real 200 o 202. Null u otro valor (nunca lo
+        // produce MiDecisorClient) se trata como error de protocolo: se
+        // finaliza el intento como ERROR_PROTOCOLO, sin crudos, NUNCA como
+        // éxito. No se infiere de ContentStatus ni se asume un default.
+        if (resultado is not null && resultado.HttpStatus is not (200 or 202))
+        {
+            logger.LogWarning(
+                "midecisor.orq: resultado del proveedor sin HTTP status funcional (200/202) — se clasifica ERROR_PROTOCOLO sin persistir crudos.");
+            falla = new MiDecisorProtocolException(
+                "El resultado del proveedor de riesgo no trae un HTTP status funcional.");
+            resultado = null;
+        }
+
         var elapsedMs = timeProvider.GetElapsedTime(startedAt).TotalMilliseconds;
 
         var outcome = resultado is not null
@@ -144,7 +158,7 @@ public sealed class CarteraConsultaRiesgoService(
         return new ConsultaRiesgoResultado(outcome.EstadoSolicitudFinal, outcome.ResultadoTecnico, outcome.EsResultadoUtil);
     }
 
-    // Clasificación de un resultado 200/ACCEPTED usando SÓLO la semántica
+    // Clasificación de un resultado 200|202/ACCEPTED usando SÓLO la semántica
     // estructurada (ConInformacion). NUNCA convierte ni interpreta los crudos:
     // sólo verifica que quepan en su columna. Si alguno se desborda, TODA la
     // invocación es ERROR_PROTOCOLO y NINGÚN crudo se persiste.
@@ -181,7 +195,9 @@ public sealed class CarteraConsultaRiesgoService(
         return new ResultadoIntentoDurable(
             CarteraSolicitudCupoEstados.EnEvaluacion,
             resultadoTecnico,
-            HttpStatusObservado: 200,
+            // XPAY-650: el HTTP status REAL que observó el cliente (200 | 202),
+            // nunca un valor fijo ni derivado de content.status.
+            HttpStatusObservado: r.HttpStatus,
             ContentStatusObservado: contentStatus,
             EsResultadoUtil: true,
             FechaFinUtc: timeProvider.GetUtcNow().UtcDateTime,

@@ -1,0 +1,30 @@
+{
+  "case_id": "M5-PAYMENT-RETRIEVE",
+  "executed_at_utc": "2026-09-26T01:38:16Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "d209d5baf2e3032c938c4127009f03533bbd2275",
+  "operation": "GET /v1/payments/{payment_id}",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "payment_id_present": true,
+    "payment_id_fingerprint": "6E76FA23B8FA",
+    "payment_id_source": "M5_PAYMENT_CREATE_PRIVATE_ARTIFACT"
+  },
+  "response_sanitized": {
+    "request_executed": true,
+    "request_accepted": true,
+    "status": "SETTLED",
+    "amount_present": true,
+    "currency": "COP",
+    "error_present": false,
+    "safe_error_code": null,
+    "safe_error_message": null,
+    "retry_count": 0,
+    "payment_create_calls": 0,
+    "payment_retrieve_calls": 1
+  },
+  "automated_test_reference": null,
+  "notes": null,
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}

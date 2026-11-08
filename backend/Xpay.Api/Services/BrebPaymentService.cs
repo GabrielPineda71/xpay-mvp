@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
 using Xpay.Api.Integrations.Passport;
@@ -33,16 +34,25 @@ public class BrebPaymentService
     private readonly IPassportPaymentClient    _paymentClient;
     private readonly IConfiguration            _config;
     private readonly ILogger<BrebPaymentService> _logger;
+    private readonly ControlOperacionesFinancieras _control;
+
+    // Piloto PROD — estados que devolvieron (o nunca tomaron) la reserva: no
+    // cuentan para el límite diario. Todo lo demás cuenta, incluido un envío
+    // incierto (ENVIADO_PASSPORT sin confirmación).
+    internal static readonly string[] EstadosSinSalidaDeDinero = ["RECHAZADO", "ERROR", "CANCELADO"];
 
     public BrebPaymentService(
         XpayDbContext db, IPassportPaymentClient paymentClient, IConfiguration config,
-        ILogger<BrebPaymentService> logger)
+        ILogger<BrebPaymentService> logger, ControlOperacionesFinancieras control)
     {
         _db            = db;
         _paymentClient = paymentClient;
         _config        = config;
         _logger        = logger;
+        _control       = control;
     }
+
+    internal static string ClaveLockRetiroUsuario(long idUsuario) => $"XPAY:BREB_RETIRO_USUARIO:{idUsuario}";
 
     // ═══════════════════════════════════════════════════════════════════
     // FASE 4/6 — Solicitar retiro real: valida llave RESUELTA REALMENTE
@@ -73,6 +83,10 @@ public class BrebPaymentService
         if (monto <= 0)
             throw new InvalidOperationException("El valor del retiro debe ser mayor a cero.");
 
+        // Piloto PROD — corte rápido de la pausa antes de cualquier lectura;
+        // los límites se vuelven a evaluar completos bajo lock más abajo.
+        _control.ExigirInterruptor();
+
         var wallet = await _db.Wallets.FirstOrDefaultAsync(
             w => w.IdPersona == idPersona && w.TipoWallet == "PERSONA" && w.Estado == "ACTIVA",
             cancellationToken)
@@ -101,6 +115,14 @@ public class BrebPaymentService
         await using var dbTx = await _db.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            // Piloto PROD — serializa los retiros reales del MISMO usuario
+            // (aunque tuviera varias wallets) para que el acumulado diario se
+            // lea y se supere bajo exclusión mutua. Siempre antes del UPDLOCK
+            // de saldo; ningún otro camino toma esta clave, así que no hay ciclo.
+            var lockUsuario = await AppLockHelper.AdquirirAsync(_db, ClaveLockRetiroUsuario(idUsuario), cancellationToken);
+            if (lockUsuario < 0)
+                throw new InvalidOperationException("Hay otro retiro en curso. Intenta de nuevo en unos segundos.");
+
             // Mismo patrón de lock pesimista ya probado en
             // WalletOperacionService.TransferirWalletAsync/
             // RecargarWalletManualAsync — necesario para que dos
@@ -110,6 +132,17 @@ public class BrebPaymentService
                 .FromSqlInterpolated($"SELECT * FROM wallet_saldos WITH (UPDLOCK, ROWLOCK) WHERE id_wallet = {wallet.IdWallet}")
                 .FirstOrDefaultAsync(cancellationToken)
                 ?? throw new InvalidOperationException("La wallet no tiene registro de saldo.");
+
+            // Piloto PROD — tope por operación (1.000 UVB) y límite diario
+            // interno XPAY, evaluados bajo los dos locks.
+            var inicioDiaUtc = ControlOperacionesFinancieras.InicioDiaColombiaUtc(nowUtc);
+            var finDiaUtc    = inicioDiaUtc.AddDays(1);
+            var acumuladoDia = await _db.PassportBrebRetiros
+                .Where(r => r.IdUsuario == idUsuario && r.TipoSujeto == "USUARIO"
+                    && r.FechaSolicitud >= inicioDiaUtc && r.FechaSolicitud < finDiaUtc
+                    && !EstadosSinSalidaDeDinero.Contains(r.Estado))
+                .SumAsync(r => (decimal?)r.Valor, cancellationToken) ?? 0m;
+            _control.ExigirRetiro(monto, acumuladoDia, nowUtc);
 
             var reserva = WalletReservationCalculator.TryReserve(saldo.SaldoDisponible, saldo.SaldoRetenido, monto);
             if (!reserva.Success)
@@ -235,9 +268,18 @@ public class BrebPaymentService
         // resolution_id nunca crea un segundo payment — pero esta marca
         // local es una segunda capa de defensa, no depende únicamente de
         // esa garantía de Passport.
-        retiro.Estado             = "ENVIADO_PASSPORT";
-        retiro.FechaEnvioPassport = nowUtc;
-        await _db.SaveChangesAsync(cancellationToken);
+        // P0 J.6 - transición CONDICIONAL (compare-and-set) PENDIENTE → ENVIADO:
+        // si una liberación de huérfano (LiberarPendienteEnvioHuerfanoAsync) ya
+        // movió el retiro a ERROR, no se sobrescribe y NO se llama a Passport.
+        var marcados = await _db.PassportBrebRetiros
+            .Where(r => r.IdBrebRetiro == retiro.IdBrebRetiro && r.Estado == "PENDIENTE_ENVIO_PASSPORT")
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(r => r.Estado, "ENVIADO_PASSPORT")
+                .SetProperty(r => r.FechaEnvioPassport, nowUtc), cancellationToken);
+        await _db.Entry(retiro).ReloadAsync(cancellationToken);
+        if (marcados != 1)
+            throw new InvalidOperationException(
+                $"El retiro {retiro.IdBrebRetiro} dejó de estar PENDIENTE_ENVIO_PASSPORT (estado: {retiro.Estado}); no se envía a Passport.");
 
         PassportPaymentResponse response;
         try
@@ -412,6 +454,44 @@ public class BrebPaymentService
         catch { await dbTx.RollbackAsync(cancellationToken); throw; }
     }
 
+    // P0 J.1 - SOLO LECTURA: envíos inciertos que requieren revisión humana.
+    // Filtro completo en SQL con el MISMO predicado compartido que el aviso del
+    // reconciliador (BrebPaymentReconciliationSelector.RequiereRevisionHumana).
+    // AsNoTracking + proyección mínima. No escribe, no llama a Passport, no
+    // toca Wallet/Ledger y no lee resolucion_incierta_* ni resolution_id/payment_id.
+    public async Task<List<RetiroEnvioInciertoResponse>> ListarEnviosInciertosSinPaymentIdAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var ahoraUtc = DateTime.UtcNow;
+        var corte    = BrebPaymentReconciliationSelector.CorteRevisionHumana(ahoraUtc);
+
+        var filas = await _db.PassportBrebRetiros
+            .AsNoTracking()
+            .Where(BrebPaymentReconciliationSelector.RequiereRevisionHumana(corte))
+            .OrderBy(r => r.FechaEnvioPassport ?? r.FechaSolicitud)
+            .Select(r => new
+            {
+                r.IdBrebRetiro,
+                r.Valor,
+                r.Estado,
+                r.FechaSolicitud,
+                r.FechaEnvioPassport,
+                r.PassportResolutionExpiresAtUtc,
+            })
+            .ToListAsync(cancellationToken);
+
+        return filas.Select(r => new RetiroEnvioInciertoResponse
+        {
+            IdBrebRetiro        = r.IdBrebRetiro,
+            Valor               = r.Valor,
+            Estado              = r.Estado,
+            FechaSolicitud      = r.FechaSolicitud,
+            FechaEnvioPassport  = r.FechaEnvioPassport,
+            ResolucionExpiraUtc = r.PassportResolutionExpiresAtUtc,
+            AntiguedadMinutos   = (ahoraUtc - (r.FechaEnvioPassport ?? r.FechaSolicitud)).TotalMinutes,
+        }).ToList();
+    }
+
     // ── Helpers privados ──────────────────────────────────────────────────
 
     // FASE 7 — SETTLED: SaldoRetenido baja; SaldoDisponible NUNCA vuelve a
@@ -530,20 +610,32 @@ public class BrebPaymentService
     // POR Passport (FASE 5: "no inventar un FAILED local que pueda ocultar
     // un payment creado" — aquí no hay ambigüedad posible, así que ERROR
     // es honesto: nunca se intentó el envío).
-    private async Task LiberarPorFalloLocalAsync(long idBrebRetiro, string motivo, CancellationToken ct)
+    // P0 J.6 - true solo si ESTA llamada liberó la reserva; la relectura con
+    // UPDLOCK serializa liberaciones concurrentes (la segunda ve ERROR → false).
+    private async Task<bool> LiberarPorFalloLocalAsync(
+        long idBrebRetiro, string motivo, CancellationToken ct, TimeSpan? antiguedadMinima = null)
     {
         await using var dbTx = await _db.Database.BeginTransactionAsync(ct);
         try
         {
-            var retiro = await _db.PassportBrebRetiros.FindAsync([idBrebRetiro], ct)
+            var retiro = await _db.PassportBrebRetiros
+                .FromSqlInterpolated($"SELECT * FROM passport_breb_retiros WITH (UPDLOCK, ROWLOCK) WHERE id_breb_retiro = {idBrebRetiro}")
+                .FirstOrDefaultAsync(ct)
                 ?? throw new InvalidOperationException($"Retiro {idBrebRetiro} no encontrado.");
+            await _db.Entry(retiro).ReloadAsync(ct);
             // Defensa en profundidad — sólo se libera un retiro que
             // realmente nunca fue marcado ENVIADO_PASSPORT.
             if (retiro.Estado != "PENDIENTE_ENVIO_PASSPORT")
             {
                 await dbTx.RollbackAsync(ct);
-                return;
+                return false;
             }
+            // P0 J.6 - antigüedad validada sobre la fila bloqueada (misma
+            // transacción y UPDLOCK que la compensación). La excepción la
+            // revierte el catch del método.
+            if (antiguedadMinima is { } minima && DateTime.UtcNow - retiro.FechaSolicitud <= minima)
+                throw new InvalidOperationException(
+                    $"El retiro tiene menos de {minima.TotalMinutes:0} minutos; podría estar en envío.");
 
             var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == retiro.IdWallet, ct)
                 ?? throw new InvalidOperationException("Wallet no encontrada.");
@@ -595,8 +687,114 @@ public class BrebPaymentService
             await dbTx.CommitAsync(ct);
 
             _logger.LogWarning("BREB_RETIRO_REAL_ERROR_LOCAL: retiro={Retiro} motivo={Motivo}", retiro.IdBrebRetiro, motivo);
+            return true;
         }
         catch { await dbTx.RollbackAsync(ct); throw; }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // P0 J.6 - libera un retiro HUÉRFANO en PENDIENTE_ENVIO_PASSPORT (el
+    // proceso murió entre el commit de la reserva y el de ENVIADO_PASSPORT).
+    // PENDIENTE implica que Passport NUNCA fue llamado: ENVIADO_PASSPORT se
+    // confirma antes del HTTP mediante una transición condicional desde
+    // PENDIENTE. Estado y antigüedad (> 15 min) se validan sobre la fila
+    // bloqueada en LiberarPorFalloLocalAsync, misma transacción que la
+    // compensación (DR 210204 / CR 210101, estado ERROR). La lectura previa
+    // sin lock solo sirve para idempotencia y mensajes; no autoriza nada.
+    // ═══════════════════════════════════════════════════════════════════
+    public const string MotivoOrphanPendienteEnvio = "ORPHAN_PENDIENTE_ENVIO";
+    public static readonly TimeSpan UmbralOrphanPendienteEnvio = TimeSpan.FromMinutes(15);
+
+    public async Task<PassportBrebRetiro> LiberarPendienteEnvioHuerfanoAsync(
+        long idBrebRetiro, long idAdmin, CancellationToken cancellationToken = default)
+    {
+        var previo = await _db.PassportBrebRetiros.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.IdBrebRetiro == idBrebRetiro, cancellationToken)
+            ?? throw new KeyNotFoundException($"Retiro {idBrebRetiro} no encontrado.");
+        if (previo.Estado == "ERROR" && previo.MotivoRechazo == MotivoOrphanPendienteEnvio)
+            return previo;
+
+        var liberado = await LiberarPorFalloLocalAsync(
+            idBrebRetiro, MotivoOrphanPendienteEnvio, cancellationToken, UmbralOrphanPendienteEnvio);
+
+        var final = await _db.PassportBrebRetiros.AsNoTracking()
+            .FirstAsync(r => r.IdBrebRetiro == idBrebRetiro, cancellationToken);
+        if (!liberado && !(final.Estado == "ERROR" && final.MotivoRechazo == MotivoOrphanPendienteEnvio))
+            throw new InvalidOperationException(
+                $"Solo se libera un retiro PENDIENTE_ENVIO_PASSPORT huérfano. Estado actual: {final.Estado}.");
+        if (liberado)
+            _logger.LogWarning("BREB_RETIRO_REAL_ORPHAN_LIBERADO: retiro={Retiro} admin={Admin}", idBrebRetiro, idAdmin);
+        return final;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // P0 J.3 - RECHAZO_CONFIRMADO de un envío incierto (ENVIADO_PASSPORT sin
+    // payment_id). Decisión operativa privilegiada: el administrador certifica
+    // que dispone de evidencia FIRME de Passport de que el pago no fue
+    // creado/ejecutado. La evidencia no se interpreta por contenido. Revisión
+    // humana J.1 (> 2 h) y resolution vencida son PRECONDICIONES de seguridad,
+    // no la prueba del rechazo. Todo se valida sobre la fila bloqueada
+    // (UPDLOCK) en la misma transacción que la compensación, que reutiliza
+    // AplicarRechazoAsync (Held → Disponible, DR 210204 / CR 210101,
+    // RETIRO_BREB_REAL_RECHAZADO, RECHAZADO). Idempotente.
+    // ═══════════════════════════════════════════════════════════════════
+    public const string TipoResolucionRechazoConfirmado = "RECHAZO_CONFIRMADO";
+    public const int EvidenciaMinLen = 20;
+    public const int EvidenciaMaxLen = 500;
+
+    public async Task<PassportBrebRetiro> ResolverRechazoConfirmadoAsync(
+        long idBrebRetiro, string? evidencia, long idAdmin, CancellationToken cancellationToken = default)
+    {
+        var evid = evidencia?.Trim() ?? string.Empty;
+        if (evid.Length < EvidenciaMinLen || evid.Length > EvidenciaMaxLen)
+            throw new InvalidOperationException(
+                $"La evidencia es obligatoria ({EvidenciaMinLen}-{EvidenciaMaxLen} caracteres).");
+
+        await using var dbTx = await _db.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var retiro = await _db.PassportBrebRetiros
+                .FromSqlInterpolated($"SELECT * FROM passport_breb_retiros WITH (UPDLOCK, ROWLOCK) WHERE id_breb_retiro = {idBrebRetiro}")
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? throw new KeyNotFoundException($"Retiro {idBrebRetiro} no encontrado.");
+            await _db.Entry(retiro).ReloadAsync(cancellationToken);
+            var nowUtc = DateTime.UtcNow;
+
+            if (retiro.Estado == BrebPaymentStateMachine.RetiroEstadoRechazado
+                && retiro.ResolucionInciertaTipo == TipoResolucionRechazoConfirmado)
+            {
+                await dbTx.RollbackAsync(cancellationToken);
+                return retiro;
+            }
+            if (retiro.ResolucionInciertaTipo is not null)
+                throw new InvalidOperationException("El retiro ya tiene una resolución de envío incierto registrada.");
+            if (retiro.Estado != BrebPaymentReconciliationSelector.EstadoCandidato)
+                throw new InvalidOperationException(
+                    $"Solo se resuelve un retiro ENVIADO_PASSPORT. Estado actual: {retiro.Estado}.");
+            if (!string.IsNullOrWhiteSpace(retiro.PassportPaymentId))
+                throw new InvalidOperationException(
+                    "El retiro tiene payment_id: su estado se obtiene consultando a Passport, no por resolución manual.");
+            var corte = BrebPaymentReconciliationSelector.CorteRevisionHumana(nowUtc);
+            if (!BrebPaymentReconciliationSelector.RequiereRevisionHumana(corte).Compile()(retiro))
+                throw new InvalidOperationException(
+                    $"El envío tiene menos de {BrebPaymentReconciliationSelector.UmbralRevisionHumana.TotalHours:0} h; aún no requiere revisión humana.");
+            if (retiro.PassportResolutionExpiresAtUtc is null || retiro.PassportResolutionExpiresAtUtc >= nowUtc)
+                throw new InvalidOperationException(
+                    "La resolution_id no ha vencido (o se desconoce su vencimiento); el intento original aún podría materializarse.");
+
+            retiro.ResolucionInciertaTipo      = TipoResolucionRechazoConfirmado;
+            retiro.ResolucionInciertaEvidencia = evid;
+            retiro.ResolucionInciertaPor       = idAdmin;
+            retiro.ResolucionInciertaFecha     = nowUtc;
+            await AplicarRechazoAsync(retiro, $"{TipoResolucionRechazoConfirmado} por admin #{idAdmin}", nowUtc, cancellationToken);
+
+            await _db.SaveChangesAsync(cancellationToken);
+            await dbTx.CommitAsync(cancellationToken);
+
+            _logger.LogWarning("BREB_RETIRO_REAL_RECHAZO_CONFIRMADO: retiro={Retiro} admin={Admin}", retiro.IdBrebRetiro, idAdmin);
+            return retiro;
+        }
+        catch { await dbTx.RollbackAsync(cancellationToken); throw; }
     }
 
     private async Task<LedgerCuenta> RequireCuenta(long idUnidadNegocio, string codigo, string nombreDescriptivo, CancellationToken ct) =>

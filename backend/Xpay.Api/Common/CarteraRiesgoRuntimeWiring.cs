@@ -1,4 +1,6 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Xpay.Api.Integrations.MiDecisor;
 using Xpay.Api.Services;
 
@@ -6,16 +8,26 @@ namespace Xpay.Api.Common;
 
 // M2.4d — registro DI del pipeline de riesgo/decisión de Cartera Ordinaria.
 //
-// CRÍTICO — NO ACTIVACIÓN: IConsultaRiesgoAutorizacion permanece ligada al stub
-// fail-closed AutorizacionConsultaRiesgoNoDisponible (devuelve false siempre).
-// Mientras esa línea no cambie, ningún endpoint puede alcanzar una llamada real
-// a MiDecisor: el pre-flight de CarteraConsultaRiesgoService aborta antes de
-// TX-A y antes de cualquier HTTP. Registrar las primitivas downstream (consumo
-// M2.4a / decisión M2.4b / materialización M2.4c) NO equivale a autorizar el
-// proveedor — sólo permite que el orquestador compile y sea probado.
+// CRÍTICO — ACTIVACIÓN QA ACOTADA (XPAY-656): IConsultaRiesgoAutorizacion se
+// liga a AutorizacionConsultaRiesgoQaGate, que decora la autorización durable
+// AutorizacionConsultaRiesgoDurable. El gate autoriza EXCLUSIVAMENTE la única
+// solicitud configurada en MIDECISOR_QA_ALLOWED_SOLICITUD_ID, sólo si
+// MIDECISOR_STOP_AFTER_CONSULTA vale exactamente "true" y sólo si el
+// consentimiento durable V1 es válido (sigue siendo obligatorio). Sin esa
+// configuración el gate devuelve false siempre (fail-closed, mismo efecto que el
+// stub AutorizacionConsultaRiesgoNoDisponible, que se conserva pero ya no se
+// registra): el pre-flight de CarteraConsultaRiesgoService aborta antes de TX-A
+// y antes de cualquier HTTP. Registrar las primitivas downstream (consumo M2.4a /
+// decisión M2.4b / materialización M2.4c) NO equivale a autorizar el proveedor.
 //
-// La activación real (swap del stub por AutorizacionConsultaRiesgoDurable) es
-// una decisión separada, fuera del alcance de XPAY-204.
+// Esto NO es la activación general de MiDecisor: habilitar consultas sin
+// allowlist sigue siendo una decisión separada.
+//
+// XPAY-717 — FRONTERA QA/PROD: la factory elige la compuerta con IAmbienteXpay
+// (única autoridad). PermiteMecanismosNoProductivos == true → el gate QA de
+// arriba, sin cambios. Cualquier otro caso (productivo, o IAmbienteXpay no
+// registrado) → AutorizacionConsultaRiesgoProduccion, fail-closed, que no lee
+// ninguna variable QA.
 public static class CarteraRiesgoRuntimeWiring
 {
     public static IServiceCollection AddCarteraRiesgoRuntime(this IServiceCollection services)
@@ -23,9 +35,35 @@ public static class CarteraRiesgoRuntimeWiring
         // Orquestación estructural Cartera ↔ MiDecisor (M2.3a/b1).
         services.AddScoped<CarteraConsultaRiesgoService>();
         services.AddScoped<ICarteraConsultaRiesgoStore, CarteraConsultaRiesgoStore>();
+        // XPAY-702 - lecturas de marca de cliente QA para el gate (solo lectura).
+        services.AddScoped<IQaClienteRiesgoStore, QaClienteRiesgoStore>();
+        // XPAY-702 - revision manual (bandeja, detalle, resolucion auditada).
+        services.AddScoped<ICarteraRevisionManualStore, CarteraRevisionManualStore>();
 
-        // BARRERA DE AUTORIZACIÓN — STUB FAIL-CLOSED. NO reemplazar aquí.
-        services.AddScoped<IConsultaRiesgoAutorizacion, AutorizacionConsultaRiesgoNoDisponible>();
+        // BARRERA DE AUTORIZACIÓN — gate QA fail-closed (XPAY-656). La durable
+        // se registra SÓLO como tipo concreto (no como IConsultaRiesgoAutorizacion)
+        // y la factory la pasa explícitamente como dependencia interna: el gate
+        // nunca se resuelve a sí mismo.
+        services.AddScoped<AutorizacionConsultaRiesgoDurable>();
+        // XPAY-717 - lecturas del gate productivo (solo lectura).
+        services.AddScoped<IRiesgoProduccionStore, RiesgoProduccionStore>();
+        services.AddScoped<IConsultaRiesgoAutorizacion>(sp =>
+        {
+            var ambiente = sp.GetService<IAmbienteXpay>();
+            if (ambiente is { PermiteMecanismosNoProductivos: true })
+                return new AutorizacionConsultaRiesgoQaGate(
+                    sp.GetRequiredService<AutorizacionConsultaRiesgoDurable>(),
+                    sp.GetRequiredService<IConfiguration>(),
+                    sp.GetRequiredService<ILogger<AutorizacionConsultaRiesgoQaGate>>(),
+                    sp.GetRequiredService<IQaClienteRiesgoStore>());
+
+            return new AutorizacionConsultaRiesgoProduccion(
+                sp.GetRequiredService<AutorizacionConsultaRiesgoDurable>(),
+                sp.GetRequiredService<IRiesgoProduccionStore>(),
+                sp.GetRequiredService<IConfiguration>(),
+                sp.GetService<TimeProvider>() ?? TimeProvider.System,
+                sp.GetRequiredService<ILogger<AutorizacionConsultaRiesgoProduccion>>());
+        });
 
         // Primitivas downstream del pipeline (M2.4a/b/c) — antes DORMIDAS (0 DI).
         // Se registran para el orquestador M2.4d. Cada una gestiona su propia

@@ -36,7 +36,7 @@ public sealed class CarteraConsultaRiesgoConcurrencyTests
     private static readonly MiDecisorResultado ResultadoSintetico =
         new("ACCEPTED", "202 ACCEPTED", ConInformacion: true,
             ScoreRaw: "777", Viabilidad: "ALTA", RatingRecaudos: "A",
-            MontoSugeridoRaw: "1500000", AlertasCount: 0);
+            MontoSugeridoRaw: "1500000", AlertasCount: 0) { HttpStatus = 200 };
 
     // ── T1 — MISMA solicitud, dos ejecuciones concurrentes ────────────────
     // Sólo una gana TX-A (sp_getapplock + guard de estado durable); sólo una
@@ -265,7 +265,6 @@ public sealed class CarteraConsultaRiesgoConcurrencyTests
         {
             IdUsuario          = usuario.IdUsuario,
             IdPersona          = persona.IdPersona,
-            MontoSolicitado    = 500_000m,
             EstadoSolicitud    = CarteraSolicitudCupoEstados.Recibida,
             DecisionCrediticia = "PENDIENTE",
             IdPoliticaAplicada = idPolitica,

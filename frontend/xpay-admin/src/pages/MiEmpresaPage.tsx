@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.tsx';
+import { SoloQa } from '../config/SoloQa.tsx';
 
 export function MiEmpresaPage() {
   const { user } = useAuth();
@@ -9,7 +10,7 @@ export function MiEmpresaPage() {
       <h2>Mi Empresa — Libranza</h2>
       <p className="dashboard-subtitle">
         {user?.usuario ?? '—'}
-        {' · '}<span className="badge badge-info">QA / Demo</span>
+        <SoloQa>{' · '}<span className="badge badge-info">QA / Demo</span></SoloQa>
         {' · '}<span className="badge badge-ok">Módulo activo</span>
       </p>
 
@@ -84,9 +85,11 @@ export function MiEmpresaPage() {
         </table>
       </div>
 
-      <p className="user-wallet-footer">
-        Ambiente QA/Demo · libranza activo · sin transacciones en producción
-      </p>
+      <SoloQa>
+        <p className="user-wallet-footer">
+          Ambiente QA/Demo · libranza activo · sin transacciones en producción
+        </p>
+      </SoloQa>
     </div>
   );
 }

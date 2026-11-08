@@ -59,6 +59,10 @@ public class CreateQrStaticExecutorTests
             DecodeQrCodeCallCount++;
             throw new InvalidOperationException("DecodeQrCodeAsync NUNCA debe invocarse desde create-qr-static.");
         }
+
+        public Task<(PassportDecodeQrCodeResponse? Response, string? RawResponseJson)> DecodeQrCodeWithRawCaptureAsync(
+            PassportDecodeQrCodeRequest request, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("DecodeQrCodeWithRawCaptureAsync NUNCA debe invocarse desde create-qr-static.");
     }
 
     private const string SyntheticKeyId      = "synthetic-executor-key-id-001";

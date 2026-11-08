@@ -732,7 +732,6 @@ public sealed class CarteraMaterializacionCupoTests
             {
                 IdUsuario = usuario.IdUsuario,
                 IdPersona = persona.IdPersona,
-                MontoSolicitado = 500_000m,
                 EstadoSolicitud = o.EstadoSolicitud,
                 DecisionCrediticia = o.DecisionCrediticia,
                 MontoAprobado = o.MontoAprobado,
@@ -786,7 +785,6 @@ public sealed class CarteraMaterializacionCupoTests
             {
                 IdUsuario = baseS.IdUsuario,
                 IdPersona = baseS.IdPersona,
-                MontoSolicitado = 500_000m,
                 EstadoSolicitud = "APROBADA_PENDIENTE_CUPO",
                 DecisionCrediticia = "APROBADA",
                 MontoAprobado = montoNuevoB,

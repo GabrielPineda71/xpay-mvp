@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -314,6 +315,7 @@ public class ComerciosAliadosController : ControllerBase
         catch { return StatusCode(500, new { success = false, message = "Error interno." }); }
     }
 
+    [OperacionFinanciera]
     [HttpPost("disponibilidad/{idDisponibilidad:long}/liberar")]
     public async Task<IActionResult> LiberarManual(long idDisponibilidad)
     {
@@ -363,6 +365,8 @@ public class ComerciosAliadosController : ControllerBase
     }
 
     [HttpPost("ventas-contexto/backfill-demo")]
+    // XPAY-717 - inexistente (404) en cualquier ambiente productivo.
+    [SoloAmbienteNoProductivo]
     public async Task<IActionResult> BackfillDemoContexto([FromBody] BackfillDemoContextoRequest req)
     {
         if (!TryGetAdminId(out _)) return Unauthorized(new { success = false, message = "Token inválido." });
@@ -431,6 +435,7 @@ public class ComerciosAliadosController : ControllerBase
 
     // ── Liquidación automática ─────────────────────────────────────────────────
 
+    [OperacionFinanciera]
     [HttpPost("liquidacion-automatica/ejecutar")]
     public async Task<IActionResult> EjecutarLiquidacionAutomatica(
         [FromBody] EjecutarLiquidacionAutomaticaRequest? req)

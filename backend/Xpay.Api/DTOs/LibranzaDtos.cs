@@ -80,6 +80,7 @@ public class ParametrosResponse
     public int      MaxAnticipacionesActivos  { get; set; }
     public decimal  IvaPorcentaje             { get; set; }
     public string   MomentoCobroComision      { get; set; } = string.Empty;
+    public decimal  MontoMinimoAnticipo       { get; set; }
     public string   Estado                    { get; set; } = string.Empty;
     public DateTime  CreatedAt                { get; set; }
     public DateTime? UpdatedAt                { get; set; }
@@ -95,6 +96,8 @@ public class CrearParametrosRequest
     public int      MaxAnticipacionesActivos  { get; set; } = 1;
     public decimal  IvaPorcentaje             { get; set; } = 19.00m;
     public string   MomentoCobroComision      { get; set; } = "VENCIDO";
+    // P0 anticipo - minimo de utilizacion (047). Default 100.000 COP.
+    public decimal  MontoMinimoAnticipo       { get; set; } = 100000.00m;
     public string   Estado                    { get; set; } = "ACTIVO";
 }
 
@@ -108,6 +111,7 @@ public class ActualizarParametrosRequest
     public int?      MaxAnticipacionesActivos  { get; set; }
     public decimal?  IvaPorcentaje             { get; set; }
     public string?   MomentoCobroComision      { get; set; }
+    public decimal?  MontoMinimoAnticipo       { get; set; }
     public string?   Estado                    { get; set; }
 }
 

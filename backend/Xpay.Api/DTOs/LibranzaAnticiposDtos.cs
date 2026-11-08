@@ -134,6 +134,8 @@ public class DiagnosticoCorteItem
 
 public class AsociarEmpleadoUsuarioRequest
 {
-    public long  IdUsuario { get; set; }
-    public long? IdWallet  { get; set; }
+    public long  IdUsuario  { get; set; }
+    public long? IdWallet   { get; set; }
+    // P0 anticipo - convenio esperado del empleado (obligatorio).
+    public long? IdConvenio { get; set; }
 }

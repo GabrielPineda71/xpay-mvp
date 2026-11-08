@@ -657,7 +657,6 @@ public sealed class CarteraResultadoPurgaTests
         {
             IdUsuario          = usuario.IdUsuario,
             IdPersona          = persona.IdPersona,
-            MontoSolicitado    = 500_000m,
             EstadoSolicitud    = esFinalizado ? "EN_EVALUACION" : CarteraSolicitudCupoEstados.Recibida,
             DecisionCrediticia = "PENDIENTE",
             IdPoliticaAplicada = idPolitica,

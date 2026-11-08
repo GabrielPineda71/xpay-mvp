@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Xpay.Api.Controllers;
@@ -16,6 +17,7 @@ public class VersionController : ControllerBase
     }
 
     [HttpGet("version")]
+    [AllowAnonymous]
     public IActionResult Version() => Ok(new
     {
         success = true,

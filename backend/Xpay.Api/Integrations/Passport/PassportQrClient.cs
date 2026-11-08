@@ -86,6 +86,26 @@ public sealed class PassportQrClient : IPassportQrClient
         return response;
     }
 
+    // XPAY-517 — mismo contrato/validación que DecodeQrCodeAsync, vía
+    // PostWithRawCaptureAsync en vez de PostAsync. Exclusivo del harness de
+    // certificación (M4-T5) — DecodeQrCodeAsync permanece sin cambios.
+    public async Task<(PassportDecodeQrCodeResponse? Response, string? RawResponseJson)> DecodeQrCodeWithRawCaptureAsync(
+        PassportDecodeQrCodeRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateDecodeRequest(request);
+
+        var (response, rawJson) = await _http
+            .PostWithRawCaptureAsync<PassportDecodeQrCodeRequest, PassportDecodeQrCodeResponse>(
+                DecodeQrCodePath, request, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (response is null)
+            throw new PassportProtocolException("Respuesta de Passport vacía o ilegible (Decode QR Code, raw capture).");
+
+        return (response, rawJson);
+    }
+
     // XPAY-305 — validación de presencia únicamente, sin inventar reglas no
     // documentadas: ni formato UUID para customer_id, ni longitud/regex
     // EMVCo para qr_code_data (XPAY-304 confirmó que la documentación no

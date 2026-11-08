@@ -1,0 +1,36 @@
+{
+  "case_id": "M5-T5-E-KEY-PREP-DELETE",
+  "executed_at_utc": "2026-10-01T01:57:36Z",
+  "environment": "sandbox",
+  "backend_commit_sha": "fd0b65426020122d942725b2f893628fea05e963",
+  "operation": "DELETE /v1/keys/{key_id}",
+  "http_status": null,
+  "result": "PASS",
+  "request_sanitized": {
+    "fixture_source": "M5_T5_E_PHASE_A_PRIVATE_CAPTURE",
+    "fixture_key_id_fingerprint": "1FB4B0E9F2B3",
+    "fixture_key_value_fingerprint": "A0989C54075F",
+    "key_type": "BCODE"
+  },
+  "response_sanitized": {
+    "passport_response_received": true,
+    "delete_acknowledged": true,
+    "response_body_expected": false,
+    "retry_count": 0,
+    "oauth_real_token_requests": 1,
+    "create_key_real_calls": 0,
+    "suspend_key_real_calls": 0,
+    "activate_key_real_calls": 0,
+    "delete_key_real_calls": 1,
+    "list_keys_real_calls": 0,
+    "resolve_real_calls": 0,
+    "payment_real_calls": 0,
+    "retrieve_real_calls": 0,
+    "repeat_guard_consumed": true,
+    "certification_test_result": "NOT_YET_EXECUTED",
+    "fixture_phase": "DELETED_NOT_TESTED"
+  },
+  "automated_test_reference": null,
+  "notes": "M5-T5-E-KEY-PREP-DELETE: Fase B del fixture nuevo de M5-T5-E (Fase A Create -\u003E Fase B Delete). Operaci\u00F3n irreversible por contrato de Passport (XPAY-292). NO representa que el caso de certificaci\u00F3n M5-T5-E se haya ejecutado \u2014 el Resolve real sobre esta key ya eliminada requiere una Fase C separada y autorizada expl\u00EDcitamente.",
+  "review_status": "PENDING_PASSPORT_REVIEW"
+}
