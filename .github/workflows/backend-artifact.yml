@@ -1,0 +1,83 @@
+name: Backend Artifact
+
+# Artefacto desplegable de la API (dotnet publish Release) para un commit EXACTO de main.
+# Solo manual (workflow_dispatch). No despliega, no usa secretos y solo lee el repositorio.
+# Mismo empaquetado que scripts/build-backend-qa.sh; la configuración de cada ambiente
+# vive en los app settings de Azure, no en el artefacto.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "SHA completo (40 hex) de un commit de main"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  backend-artifact:
+    name: Publish xpay-api
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validar SHA de entrada
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          [[ "$REF" =~ ^[0-9a-f]{40}$ ]] || { echo "ref debe ser un SHA completo de 40 hex"; exit 1; }
+
+      - name: Checkout del commit exacto
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verificar commit y pertenencia a main
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          [ "$(git rev-parse HEAD)" = "$REF" ] || { echo "HEAD no coincide con el SHA pedido"; exit 1; }
+          git merge-base --is-ancestor "$REF" origin/main || { echo "el commit no pertenece a main"; exit 1; }
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: dotnet restore
+        run: dotnet restore backend/Xpay.Api/Xpay.Api.csproj
+
+      - name: dotnet build (Release)
+        run: dotnet build backend/Xpay.Api/Xpay.Api.csproj -c Release --no-restore
+
+      - name: dotnet publish (Release)
+        run: dotnet publish backend/Xpay.Api/Xpay.Api.csproj -c Release -o publish --no-build
+
+      - name: Empaquetar, checksum y origen
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          # Contenido de publish/ en la raíz del ZIP: App Service lo espera en /home/site/wwwroot/.
+          (cd publish && zip -qr "../xpay-api-${REF}.zip" .)
+          sha256sum "xpay-api-${REF}.zip" > "xpay-api-${REF}.zip.sha256"
+          {
+            echo "SOURCE_COMMIT=${REF}"
+            echo "WORKFLOW_RUN=${GITHUB_RUN_ID}"
+            echo "BUILT_AT_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "DOTNET_SDK=$(dotnet --version)"
+          } > "xpay-api-${REF}-build-info.txt"
+          cat "xpay-api-${REF}.zip.sha256" "xpay-api-${REF}-build-info.txt"
+
+      - name: Subir artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: xpay-api-${{ inputs.ref }}
+          path: |
+            xpay-api-${{ inputs.ref }}.zip
+            xpay-api-${{ inputs.ref }}.zip.sha256
+            xpay-api-${{ inputs.ref }}-build-info.txt
+          if-no-files-found: error
+          retention-days: 30
