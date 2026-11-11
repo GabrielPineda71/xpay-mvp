@@ -218,7 +218,7 @@ public class LibranzaController : ControllerBase
     {
         try
         {
-            var data = await _empleados.GetEmpleadosAsync(id);
+            var data = await _empleados.GetEmpleadosConVinculoAsync(id);
             return Ok(new { success = true, data, total = data.Count });
         }
         catch (Exception ex)

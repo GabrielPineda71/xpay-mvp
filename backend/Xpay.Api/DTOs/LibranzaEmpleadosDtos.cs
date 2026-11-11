@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Xpay.Api.DTOs;
 
 // ── Empleados ──────────────────────────────────────────────────────────────
@@ -28,6 +30,10 @@ public class EmpleadoResponse
     public string?  Observaciones        { get; set; }
     public DateTime  CreatedAt           { get; set; }
     public DateTime? UpdatedAt           { get; set; }
+    // D2 — solo en la lista ADMIN (GetEmpleadosConVinculoAsync); null = sin vínculo activo.
+    // Omitido del JSON cuando es null: la vista de empresa nunca recibe la clave.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long?    IdUsuarioVinculado   { get; set; }
 }
 
 public class CrearEmpleadoRequest

@@ -92,9 +92,14 @@ public class AuthService
             Estado    = usuario.Estado,
             Roles     = roles,
             Token     = token,
-            RequiereCambioClave = usuario.RequiereCambioClave
+            RequiereCambioClave = usuario.RequiereCambioClave,
+            EsUsuarioEmpresa    = await EsUsuarioEmpresaAsync(usuario.IdUsuario)
         };
     }
+
+    // D10 — mismo criterio que LibranzaEmpleadosService.GetAsociacionAsync.
+    private Task<bool> EsUsuarioEmpresaAsync(long idUsuario) =>
+        _db.LibranzaUsuariosEmpresa.AnyAsync(a => a.IdUsuario == idUsuario && a.Estado == "ACTIVO");
 
     // Fase USUARIOS-ADMIN-5: cambio obligatorio de contraseña tras un
     // restablecimiento administrativo. Opera siempre sobre el usuario del
@@ -141,7 +146,8 @@ public class AuthService
             Estado    = usuario.Estado,
             Roles     = roles,
             Token     = token,
-            RequiereCambioClave = usuario.RequiereCambioClave
+            RequiereCambioClave = usuario.RequiereCambioClave,
+            EsUsuarioEmpresa    = await EsUsuarioEmpresaAsync(usuario.IdUsuario)
         };
     }
 

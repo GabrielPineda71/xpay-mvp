@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get } from '../api/client.ts';
 import { fmtDate } from '../utils.ts';
+import { useAuth } from '../auth/AuthContext.tsx';
+import { AltaUsuarioPilotoForm, type AltaPilotoResultado } from '../components/AltaUsuarioPilotoForm.tsx';
 
 interface UsuarioItem {
   idUsuario:        number;
@@ -38,6 +40,12 @@ function estadoBadge(estado: string) {
 
 export function AdminUsuariosListPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // D1 — el backend vuelve a validar SUPERUSUARIO contra la BD; aquí solo se
+  // evita mostrar el formulario a quien no podría usarlo.
+  const esSuperusuario = user?.roles.includes('SUPERUSUARIO') ?? false;
+  const [mostrarAlta, setMostrarAlta] = useState(false);
+  const [altaCreada,  setAltaCreada]  = useState<AltaPilotoResultado | null>(null);
   const [form,    setForm]    = useState<Filters>(EMPTY);
   const [applied, setApplied] = useState<Filters>(EMPTY);
   const [page,    setPage]    = useState(1);
@@ -80,6 +88,33 @@ export function AdminUsuariosListPage() {
   return (
     <div className="page">
       <h2>Usuarios</h2>
+
+      {esSuperusuario && (
+        <div style={{ marginBottom: '1rem' }}>
+          <button type="button" className="btn-search"
+            onClick={() => { setMostrarAlta(v => !v); setAltaCreada(null); }}>
+            {mostrarAlta ? 'Cerrar alta de usuario del piloto' : 'Alta de usuario del piloto'}
+          </button>
+        </div>
+      )}
+
+      {altaCreada && (
+        <div role="status" style={{ background: '#f0fff4', color: '#276749', padding: '0.75rem 1rem', borderRadius: '6px', borderLeft: '3px solid #48bb78', marginBottom: '1rem' }}>
+          Usuario #{altaCreada.idUsuario} creado con wallet #{altaCreada.idWallet}. Siguiente paso: emite su clave
+          temporal desde el detalle; el usuario debe completar la verificación de identidad.{' '}
+          <button type="button" className="btn-link" onClick={() => navigate(`/admin/usuarios/${altaCreada.idUsuario}`)}>
+            Ir al detalle para emitir la clave temporal
+          </button>
+        </div>
+      )}
+
+      {esSuperusuario && mostrarAlta && (
+        <AltaUsuarioPilotoForm onCreado={r => {
+          setAltaCreada(r);
+          setMostrarAlta(false);
+          setApplied(a => ({ ...a }));
+        }} />
+      )}
 
       <form className="filter-form" onSubmit={handleBuscar}>
         <div className="filter-field">

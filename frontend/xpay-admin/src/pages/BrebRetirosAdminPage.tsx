@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { get, post } from '../api/client.ts';
 import { fmtDate, fmtMoney } from '../utils.ts';
+import { SoloQa } from '../config/SoloQa.tsx';
+import { RetirosRevisionAdmin } from '../components/RetirosRevisionAdmin.tsx';
 
 interface RetiroAdmin {
   idBrebRetiro:        number;
@@ -19,6 +21,8 @@ interface RetiroAdmin {
   fechaConfirmacion:   string | null;
   fechaLiquidacion:    string | null;
   fechaRechazo:        string | null;
+  paymentIdFingerprint?: string | null;
+  fechaEnvioPassport?:   string | null;
 }
 
 interface ListaResp   { success: boolean; data: RetiroAdmin[]; }
@@ -98,10 +102,15 @@ export function BrebRetirosAdminPage() {
 
   return (
     <div className="page">
-      <h2>Retiros Bre-B QA</h2>
-      <p style={{ color: '#718096', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-        QA · sin Passport real · movimientos contables simulados · sin producción
-      </p>
+      <h2>Retiros Bre-B</h2>
+      <SoloQa>
+        <p style={{ color: '#718096', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+          QA · sin Passport real · movimientos contables simulados · sin producción
+        </p>
+      </SoloQa>
+
+      {/* D5 — retiros reales que requieren intervención humana. */}
+      <RetirosRevisionAdmin retiros={retiros} onCambio={cargar} />
 
       {msg && (
         <div style={{
@@ -163,6 +172,8 @@ export function BrebRetirosAdminPage() {
                       <td className="mono">{r.idTransaccionLedger ?? '—'}</td>
                       <td className="mono">{fmtDate(r.fechaSolicitud)}</td>
                       <td>
+                        {/* Flujo simulado (CREADO/CONFIRMADO): backend 404 en productivo. */}
+                        <SoloQa>
                         {r.estado === 'CREADO' && (
                           <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
                             <button
@@ -203,6 +214,7 @@ export function BrebRetirosAdminPage() {
                             </button>
                           </div>
                         )}
+                        </SoloQa>
                         {(r.estado === 'LIQUIDADO' || r.estado === 'RECHAZADO') && (
                           <span style={{ color: '#a0aec0', fontSize: '0.82rem' }}>
                             {r.estado === 'RECHAZADO' && r.motivoRechazo
