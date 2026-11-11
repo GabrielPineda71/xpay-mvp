@@ -1910,8 +1910,10 @@ export function UserWalletPage() {
                 </button>.
               </p>
 
-              {/* Formulario retiro — solo si llave VALIDADA */}
+              {/* Formulario retiro simulado — solo si llave VALIDADA y solo en QA
+                  (POST /api/breb/retiros/simular responde 404 fuera de QA) */}
               {brebLlave?.estado === 'VALIDADA' && (
+                <SoloQa>
                 <form className="breb-retiro-form" onSubmit={(e) => void handleSolicitarRetiro(e)}>
                   <h4 style={{ margin: '0', fontSize: '0.88rem', color: '#2d3748' }}>Solicitar retiro</h4>
                   <p className="breb-retiro-note">
@@ -1935,6 +1937,7 @@ export function UserWalletPage() {
                     <span className={brebRetMsg.ok ? 'breb-msg-ok' : 'breb-msg-err'}>{brebRetMsg.text}</span>
                   )}
                 </form>
+                </SoloQa>
               )}
 
               {brebLlave && brebLlave.estado !== 'VALIDADA' && (

@@ -3,7 +3,7 @@
 // completamente mockeado (vi.mock) — ninguna llamada llega jamás a
 // Passport/Payment/Wallet reales. Cubre exactamente los escenarios pedidos
 // por XPAY-375 FASE 9.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -392,5 +392,36 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     // payment_id ni ningún identificador Passport.
     const call = mockPost.mock.calls.find(c => c[0] === '/api/breb/mis-retiros/42/actualizar-estado');
     expect(call?.[1]).toEqual({});
+  });
+});
+
+// D4 — el formulario "Solicitar retiro simulado" (tab Banco) llama a
+// POST /api/breb/retiros/simular, que solo existe en QA: en PROD no se muestra.
+describe('UserWalletPage — retiro simulado solo en QA (D4)', () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  async function renderBanco() {
+    mockGet.mockImplementation(apiRoutedGet);
+    render(
+      <MemoryRouter initialEntries={['/mi-wallet?tab=banco']}>
+        <UserWalletPage />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('button', { name: 'Perfil → Mi llave Bre-B' });
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/breb/mi-llave'));
+  }
+
+  it('en QA, con la llave VALIDADA, muestra el formulario de retiro simulado', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'QA');
+    await renderBanco();
+    expect(await screen.findByRole('button', { name: 'Solicitar retiro simulado' })).toBeInTheDocument();
+  });
+
+  it('en PROD, con la llave VALIDADA, no muestra el formulario de retiro simulado', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    await renderBanco();
+    await waitFor(() => expect(screen.getByText(/0268/)).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Solicitar retiro simulado' })).toBeNull();
+    expect(screen.queryByPlaceholderText('Ej: 50000')).toBeNull();
   });
 });
