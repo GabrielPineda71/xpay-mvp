@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { get, post, put } from '../api/client.ts';
 import { fmtDate, fmtMoney } from '../utils.ts';
+import { SoloQa } from '../config/SoloQa.tsx';
+import { VincularEmpleadoUsuario } from '../components/VincularEmpleadoUsuario.tsx';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -70,6 +72,7 @@ interface Empleado {
   loteImportacion?: string;
   createdAt: string;
   updatedAt?: string;
+  idUsuarioVinculado?: number | null;
 }
 
 interface Importacion {
@@ -441,9 +444,11 @@ export function LibranzaConveniosAdminPage() {
   if (vista === 'lista') return (
     <div className="page">
       <h2>Convenios Libranza</h2>
-      <p style={{ color:'#718096', fontSize:'0.9rem', marginBottom:'1.5rem' }}>
-        QA · sin dinero real · sin empleados todavía · solo parametrización
-      </p>
+      <SoloQa>
+        <p style={{ color:'#718096', fontSize:'0.9rem', marginBottom:'1.5rem' }}>
+          QA · sin dinero real · sin empleados todavía · solo parametrización
+        </p>
+      </SoloQa>
       <Notif />
       <div style={{ display:'flex', gap:'0.75rem', marginBottom:'1.25rem', flexWrap:'wrap' }}>
         {btn('+ Nuevo convenio', () => { setFormConv(EMPTY_FORM_CONV); limpiarMsg(); setVista('crear'); })}
@@ -768,6 +773,7 @@ export function LibranzaConveniosAdminPage() {
                 <thead><tr>
                   <th>Doc</th><th>Nombres</th><th>Cargo</th><th>Salario</th>
                   <th>Cupo prelim.</th><th>Período</th><th>Estado</th><th>Origen</th><th>Lote</th>
+                  <th>Usuario (anticipos)</th>
                 </tr></thead>
                 <tbody>
                   {empleados.map(e => (
@@ -781,6 +787,12 @@ export function LibranzaConveniosAdminPage() {
                       <td>{estadoBadge(e.estado)}</td>
                       <td><span className={`badge ${e.origenCarga === 'EXCEL' ? 'badge-info' : 'badge-warn'}`}>{e.origenCarga}</span></td>
                       <td className="mono" style={{ fontSize:'0.75rem', color:'#718096' }}>{e.loteImportacion ?? '—'}</td>
+                      <td>
+                        <VincularEmpleadoUsuario
+                          idEmpleado={e.idEmpleado} idConvenio={selected.idConvenio}
+                          estadoEmpleado={e.estado} idUsuarioVinculado={e.idUsuarioVinculado}
+                          onVinculado={() => { setMsg('Empleado vinculado al usuario.'); cargarEmpleados(selected.idConvenio); }} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

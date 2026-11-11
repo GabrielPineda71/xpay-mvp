@@ -9,4 +9,8 @@ public class LoginResponse
     public List<string> Roles { get; set; } = new();
     public string Token { get; set; } = string.Empty;
     public bool RequiereCambioClave { get; set; }
+    // D10 — tiene una asociación ACTIVA en libranza_usuarios_empresa. Solo
+    // orienta la navegación del frontend; la autorización real sigue en
+    // LibranzaEmpresaController (asociación + rol_empresa en cada petición).
+    public bool EsUsuarioEmpresa { get; set; }
 }

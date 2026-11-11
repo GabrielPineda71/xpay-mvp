@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { get, post, postForm } from '../api/client.ts';
 import { API_BASE_URL } from '../api/client.ts';
 import { SoloQa } from '../config/SoloQa.tsx';
+import { RecaudoLotesEmpresa } from '../components/RecaudoLotesEmpresa.tsx';
 
 interface ConvenioItem {
   idConvenio: number;
@@ -102,7 +103,7 @@ export function MiEmpresaLibranzaPage() {
   const [loadingConv, setLoadingConv]     = useState(true);
   const [loadingEmp, setLoadingEmp]       = useState(false);
   const [error, setError]                 = useState<string | null>(null);
-  const [tab, setTab]                     = useState<'empleados' | 'importar' | 'cobros'>('empleados');
+  const [tab, setTab]                     = useState<'empleados' | 'importar' | 'cobros' | 'recaudo'>('empleados');
   const [importResult, setImportResult]   = useState<ImportResult | null>(null);
   const [importing, setImporting]         = useState(false);
   const [importErr, setImportErr]         = useState<string | null>(null);
@@ -234,7 +235,7 @@ export function MiEmpresaLibranzaPage() {
   if (!convenio) return <div className="page"><h2>Mi Empresa — Libranza</h2><p>No tienes un convenio activo asignado.</p></div>;
 
   const diasPago = [convenio.diaPago1, convenio.diaPago2, convenio.diaPago3, convenio.diaPago4].filter(Boolean).join(' / ') || '—';
-  const tabs = ['empleados', 'importar', 'cobros'] as const;
+  const tabs = ['empleados', 'importar', 'cobros', 'recaudo'] as const;
 
   return (
     <div className="page">
@@ -288,7 +289,7 @@ export function MiEmpresaLibranzaPage() {
               fontWeight: tab === t ? 600 : 400,
               cursor: 'pointer', fontSize: '0.9rem', marginBottom: '-2px'
             }}>
-            {t === 'empleados' ? `Empleados (${empleados.length})` : t === 'importar' ? 'Importar CSV' : 'Cobros'}
+            {t === 'empleados' ? `Empleados (${empleados.length})` : t === 'importar' ? 'Importar CSV' : t === 'cobros' ? 'Cobros' : 'Recaudo (lote y QR)'}
           </button>
         ))}
       </div>
@@ -425,6 +426,8 @@ export function MiEmpresaLibranzaPage() {
                 </div>
               </div>
 
+              {/* D4 — pago simulado: backend 404 en productivo; en PROD no se muestra. */}
+              <SoloQa>
               <div style={{ padding: '1rem', background: '#fefce8', border: '1px solid #fde68a', borderRadius: '0.5rem' }}>
                 <h4 style={{ margin: '0 0 0.75rem', color: '#92400e' }}>Aplicar pago QA (simulado)</h4>
                 <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -444,12 +447,22 @@ export function MiEmpresaLibranzaPage() {
                   </div>
                 )}
               </div>
+              </SoloQa>
+              <p style={{ marginTop: '0.75rem', fontSize: '0.85rem', color: '#4a5568' }}>
+                Para cobrar estos anticipos usa la pestaña "Recaudo (lote y QR)".
+              </p>
             </>
           )}
 
           {!loadingCobros && cobros.length === 0 && fechaCobro && !cobroErr && (
             <p style={{ color: '#718096', fontSize: '0.9rem' }}>No hay anticipos DESEMBOLSADOS para la fecha {fechaCobro}.</p>
           )}
+        </div>
+      )}
+
+      {tab === 'recaudo' && (
+        <div className="info-section" style={{ marginTop: '1rem' }}>
+          <RecaudoLotesEmpresa idConvenio={convenio.idConvenio} rolEmpresa={convenio.rolEmpresa} />
         </div>
       )}
 

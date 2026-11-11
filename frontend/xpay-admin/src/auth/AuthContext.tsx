@@ -9,6 +9,9 @@ export interface AuthUser {
   roles:               string[];
   token:               string;
   requiereCambioClave: boolean;
+  // D10 — asociación ACTIVA a un convenio de empresa (LoginResponse). Ausente
+  // en sesiones guardadas antes del cambio: se trata como false.
+  esUsuarioEmpresa?:   boolean;
 }
 
 interface AuthCtx {
@@ -103,6 +106,7 @@ export function isAdminUser(user: AuthUser): boolean {
 export function getViewForUser(user: AuthUser): UserView {
   if (user.roles.includes('ADMIN_XPAY') || user.roles.includes('OPERADOR_XPAY') || user.roles.includes('SUPERUSUARIO')) return 'admin';
   if (user.roles.includes('COMERCIO') || user.usuario === 'qa.comercio1') return 'comercio';
-  if (user.usuario === 'qa.empresa1') return 'empresa';
+  // D10 — antes dependía del nombre fijo qa.empresa1, inexistente en PROD.
+  if (user.esUsuarioEmpresa === true) return 'empresa';
   return 'wallet';
 }

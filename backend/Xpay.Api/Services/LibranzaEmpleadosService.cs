@@ -120,6 +120,22 @@ public class LibranzaEmpleadosService
             .ToListAsync();
     }
 
+    // D2 — lista ADMIN: además indica el usuario con vínculo ACTIVO (el mismo
+    // vínculo que exige LibranzaAnticipoService). La vista de empresa sigue
+    // usando GetEmpleadosAsync, sin identificadores de usuario.
+    public async Task<List<EmpleadoResponse>> GetEmpleadosConVinculoAsync(long idConvenio)
+    {
+        var empleados = await GetEmpleadosAsync(idConvenio);
+        var ids = empleados.Select(e => e.IdEmpleado).ToList();
+        var vinculos = await _db.LibranzaEmpleadoUsuarios
+            .Where(a => ids.Contains(a.IdEmpleado) && a.Estado == "ACTIVO")
+            .Select(a => new { a.IdEmpleado, a.IdUsuario })
+            .ToDictionaryAsync(a => a.IdEmpleado, a => a.IdUsuario);
+        foreach (var e in empleados)
+            e.IdUsuarioVinculado = vinculos.TryGetValue(e.IdEmpleado, out var u) ? u : null;
+        return empleados;
+    }
+
     // ── Plantilla CSV ─────────────────────────────────────────────────────
 
     public byte[] GenerarPlantillaCsv()
