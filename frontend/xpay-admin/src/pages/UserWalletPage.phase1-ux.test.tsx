@@ -272,7 +272,7 @@ describe('UserWalletPage — handlers/endpoints financieros sin modificar (XPAY-
     await user.type(screen.getByLabelText('ID de wallet destino'), '3');
     await user.click(screen.getByRole('button', { name: 'Confirmar destino' }));
     await user.type(await screen.findByLabelText('Valor a transferir (COP ficticio)'), '500');
-    await user.type(screen.getByLabelText(/Clave de 7 dígitos/), '1234567');
+    await user.type(screen.getByLabelText(/PIN transaccional/), '1234567');
     await user.click(screen.getByRole('button', { name: 'Enviar dinero' }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(

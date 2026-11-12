@@ -4,7 +4,7 @@ namespace Xpay.Api.DTOs;
 // wallet origen y el autor se resuelven exclusivamente en el controller desde
 // los claims idPersona/idUsuario del JWT (WalletsController.Transferir), nunca
 // desde el cliente. Ver docs/security/FASE_71.2_E_B_AUTORIZACION_IDOR.md.
-public class TransferenciaWalletRequest
+public class TransferenciaWalletRequest : IConPinTransaccional
 {
     public long IdWalletDestino { get; set; }
     public decimal Valor { get; set; }
@@ -13,4 +13,6 @@ public class TransferenciaWalletRequest
     // Obligatorio: la transferencia se rechaza si falta o si ya no es el
     // titular de la wallet destino (ver DestinatarioWalletService).
     public string? UsuarioDestinoEsperado { get; set; }
+    // PIN transaccional: lo verifica y borra RequierePinTransaccional antes de la action.
+    public string? Pin { get; set; }
 }

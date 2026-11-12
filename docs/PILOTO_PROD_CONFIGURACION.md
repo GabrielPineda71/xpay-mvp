@@ -52,3 +52,21 @@ separadas: el administrador no puede restablecer su propia clave.
   reintente la entrega, y durante cuánto tiempo, no está verificado: no cerrar el
   interruptor con lotes en `PENDIENTE_PAGO` o `PAGO_EN_PROCESO`.
 - Respuestas: pausa o configuración inválida → 503; tope o límite diario → 400.
+
+## Corrección 4 — PIN transaccional
+
+Sin claves de configuración: usa la tabla existente `pin_transaccional`
+(migración 001; no requiere migración nueva).
+
+| Pieza | Regla |
+|---|---|
+| PIN | 7 dígitos; se rechazan dígitos todos iguales o consecutivos. Solo se guarda el hash BCrypt. |
+| Crear | `POST api/pin` con la contraseña de ingreso del usuario (Perfil → PIN transaccional). |
+| Cambiar | `POST api/pin/cambiar` con el PIN actual (cuenta intentos). |
+| Exigido en | `POST api/libranza/cliente/anticipos`, `POST api/breb/retiros/real`, `POST api/wallets/transferencia`, `POST api/qr/pagar` (`[RequierePinTransaccional]`, después de `[OperacionFinanciera]`). |
+| Respuestas | 400 `PIN_REQUERIDO` / `PIN_INCORRECTO` (con intentos restantes), 428 `PIN_NO_CONFIGURADO`, 423 `PIN_BLOQUEADO`. |
+| Bloqueo | 5 intentos fallidos. Cada intento se reserva con un UPDATE atómico antes de comparar: ni en paralelo se prueban más de 5. Un acierto reinicia el contador. |
+| Restablecer | `POST api/admin/usuarios/{id}/restablecer-pin` (ADMIN_XPAY/SUPERUSUARIO, nunca sobre la propia cuenta). El PIN queda `RESTABLECIDO` y el usuario crea uno nuevo. Auditoría `PIN_RESTABLECER`. |
+
+Fuera de alcance: la cartera ordinaria (aplazada) y la recarga en comercio
+siguen validando solo el formato del campo `pin` que ya traían.

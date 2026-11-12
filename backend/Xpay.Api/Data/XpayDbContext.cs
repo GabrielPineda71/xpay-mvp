@@ -104,6 +104,7 @@ public class XpayDbContext : DbContext
     public DbSet<CatalogoDepartamento>                    CatalogoDepartamentos                      => Set<CatalogoDepartamento>();
     public DbSet<CatalogoCiudad>                          CatalogoCiudades                           => Set<CatalogoCiudad>();
     public DbSet<UsuarioToken> UsuarioTokens => Set<UsuarioToken>();
+    public DbSet<PinTransaccional> PinesTransaccionales => Set<PinTransaccional>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -177,6 +178,7 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<CatalogoDepartamento>(e => { e.ToTable("catalogo_departamentos"); e.HasKey(x => x.IdDepartamento); MapCatalogoDepartamento(e); });
         modelBuilder.Entity<CatalogoCiudad>(e => { e.ToTable("catalogo_ciudades"); e.HasKey(x => x.IdCiudad); MapCatalogoCiudad(e); });
         modelBuilder.Entity<UsuarioToken>(e => { e.ToTable("usuario_tokens"); e.HasKey(x => x.IdToken); MapUsuarioToken(e); });
+        modelBuilder.Entity<PinTransaccional>(e => { e.ToTable("pin_transaccional"); e.HasKey(x => x.IdPin); MapPinTransaccional(e); });
     }
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)
@@ -366,6 +368,20 @@ public class XpayDbContext : DbContext
     // P0-B — ver database/048_usuario_tokens.sql (no ejecutado en QA/PROD).
     // fecha_creacion la fija siempre la aplicación (TimeProvider); el DEFAULT
     // SQL de 048 no se modela a propósito para que EF envíe siempre el valor.
+    // PIN transaccional — tabla de database/001_security_identity.sql. Las fechas
+    // las fija siempre la aplicación (los DEFAULT SQL no se modelan).
+    private static void MapPinTransaccional(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<PinTransaccional> e)
+    {
+        e.Property(x => x.IdPin).HasColumnName("id_pin");
+        e.Property(x => x.IdUsuario).HasColumnName("id_usuario");
+        e.Property(x => x.PinHash).HasColumnName("pin_hash").HasMaxLength(500).IsUnicode(false).IsRequired();
+        e.Property(x => x.IntentosFallidos).HasColumnName("intentos_fallidos");
+        e.Property(x => x.Bloqueado).HasColumnName("bloqueado");
+        e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion");
+        e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion");
+        e.Property(x => x.FechaBloqueo).HasColumnName("fecha_bloqueo");
+        e.Property(x => x.Estado).HasColumnName("estado").HasMaxLength(30).IsUnicode(false).IsRequired();
+    }
     private static void MapUsuarioToken(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<UsuarioToken> e)
     {
         e.Property(x => x.IdToken).HasColumnName("id_token");

@@ -40,6 +40,8 @@ interface UsuarioDetalle {
   fechaCreacion:       string;
   fechaActualizacion:  string | null;
   roles:               RolDetalle[];
+  pinConfigurado:      boolean;
+  pinBloqueado:        boolean;
 }
 
 interface ApiResp { success: boolean; data: UsuarioDetalle; }
@@ -47,12 +49,13 @@ interface AccionResp { success: boolean; message: string; data: UsuarioDetalle; 
 interface RolesAsignablesResp { success: boolean; data: RolAsignable[]; }
 interface RestablecerClaveResp { success: boolean; message: string; data: { usuario: UsuarioDetalle; claveTemporal: string } }
 
-type Accion = 'activar' | 'inactivar' | 'desbloquear';
+type Accion = 'activar' | 'inactivar' | 'desbloquear' | 'restablecer-pin';
 
 const CONFIRMACION: Record<Accion, (usuario: string) => string> = {
   activar:      u => `¿Confirmas activar a ${u}? Podrá iniciar sesión nuevamente.`,
   inactivar:    u => `¿Confirmas inactivar a ${u}? No podrá iniciar sesión hasta que sea reactivado.`,
   desbloquear:  u => `¿Confirmas desbloquear a ${u}? Se reiniciarán sus intentos fallidos y podrá iniciar sesión nuevamente.`,
+  'restablecer-pin': u => `¿Confirmas restablecer el PIN transaccional de ${u}? Su PIN actual deja de servir y deberá crear uno nuevo en Perfil antes de operar.`,
 };
 
 // Fase USUARIOS-ADMIN-5: la clave anterior deja de servir de inmediato — se
@@ -242,6 +245,8 @@ export function AdminUsuarioDetallePage() {
               <dt>Motivo de bloqueo</dt><dd>{data.motivoBloqueo ?? '—'}</dd>
               <dt>Último ingreso</dt><dd className="mono">{fmtDate(data.ultimoIngreso)}</dd>
               <dt>Requiere cambio de clave</dt><dd>{boolTexto(data.requiereCambioClave)}</dd>
+              <dt>PIN transaccional</dt>
+              <dd>{data.pinConfigurado ? (data.pinBloqueado ? 'Bloqueado por intentos fallidos' : 'Activo') : 'Sin PIN'}</dd>
               <dt>Fecha de creación</dt><dd className="mono">{fmtDate(data.fechaCreacion)}</dd>
               <dt>Última actualización</dt><dd className="mono">{fmtDate(data.fechaActualizacion)}</dd>
             </dl>
@@ -290,6 +295,17 @@ export function AdminUsuarioDetallePage() {
                   onClick={restablecerClave}
                 >
                   {resetBusy ? 'Procesando...' : 'Restablecer contraseña'}
+                </button>
+              )}
+              {data.pinConfigurado && (
+                <button
+                  type="button"
+                  className="btn-search"
+                  disabled={actionBusy || esPropiaCuenta}
+                  title={esPropiaCuenta ? 'No puedes restablecer tu propio PIN.' : undefined}
+                  onClick={() => ejecutarAccion('restablecer-pin')}
+                >
+                  {actionBusy ? 'Procesando...' : 'Restablecer PIN'}
                 </button>
               )}
               {esPropiaCuenta && (

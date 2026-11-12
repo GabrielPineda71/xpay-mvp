@@ -94,9 +94,11 @@ public class BrebRetiroResponse
 // monto: account_id/resolution_id/destination key se obtienen 100%
 // server-side (ver BrebPaymentService) — no existe ningún campo en este
 // DTO por el que el frontend pueda influirlos.
-public class SolicitarRetiroRealRequest
+public class SolicitarRetiroRealRequest : IConPinTransaccional
 {
     public decimal Monto { get; set; }
+    // PIN transaccional: lo verifica y borra RequierePinTransaccional antes de la action.
+    public string? Pin { get; set; }
 }
 
 // XPAY-373 FASE 13 — respuesta sanitizada de un retiro real. Nunca expone

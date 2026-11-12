@@ -141,6 +141,24 @@ public class UsuariosAdminController : ControllerBase
         catch { return StatusCode(500, new { success = false, message = "Error interno desbloqueando el usuario." }); }
     }
 
+    [HttpPost("{id:long}/restablecer-pin")]
+    public async Task<IActionResult> RestablecerPin(long id)
+    {
+        if (!TryGetUsuarioId(out var idAdmin)) return Unauthorized(new { success = false, message = "Token inválido." });
+        _audit.LogSensitiveAction(HttpContext, "PIN_RESTABLECER_ATTEMPT", new { idUsuario = id });
+        try
+        {
+            var data = await _usuarioAdminService.RestablecerPinAsync(id, idAdmin);
+            _audit.LogSensitiveAction(HttpContext, "PIN_RESTABLECER_SUCCESS", new { idUsuario = id });
+            return Ok(new { success = true, message = "PIN restablecido: el usuario debe crear uno nuevo.", data });
+        }
+        catch (KeyNotFoundException ex)              { return NotFound(new { success = false, message = ex.Message }); }
+        catch (TransicionUsuarioInvalidaException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (UnauthorizedAccessException)           { return Forbid(); }
+        catch (InvalidOperationException ex)          { return BadRequest(new { success = false, message = ex.Message }); }
+        catch { return StatusCode(500, new { success = false, message = "Error interno restableciendo el PIN." }); }
+    }
+
     // Fase USUARIOS-ADMIN-5: la clave temporal solo viaja en esta respuesta,
     // una única vez — el backend nunca vuelve a poder devolverla.
     [HttpPost("{id:long}/restablecer-clave")]

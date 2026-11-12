@@ -207,10 +207,11 @@ function retiroRealMensaje(estado: string, motivoRechazo?: string | null): strin
   return 'Tu retiro está siendo procesado.';
 }
 
-// PIN: format-only validation for QA/Demo phase
-// Full cryptographic validation (backend hash, attempt limits, lockout) is pending for production
+// PIN transaccional: aquí solo se valida el formato para no enviar algo
+// imposible; el backend verifica el PIN (hash, 5 intentos y bloqueo) en cada
+// operación — ver RequierePinTransaccional. Se crea en Perfil → Seguridad.
 function validatePin(pin: string): string | null {
-  if (!/^\d{7}$/.test(pin)) return 'La clave debe ser exactamente 7 dígitos numéricos.';
+  if (!/^\d{7}$/.test(pin)) return 'El PIN transaccional debe tener exactamente 7 dígitos.';
   return null;
 }
 
@@ -394,6 +395,7 @@ export function UserWalletPage() {
   const [realMontoErr,      setRealMontoErr]      = useState<string | null>(null);
   const [realStep,          setRealStep]          = useState<'monto' | 'confirmar'>('monto');
   const [realConfirmBusy,   setRealConfirmBusy]   = useState(false);
+  const [realPin,           setRealPin]           = useState('');
   const [realConfirmMsg,    setRealConfirmMsg]    = useState<Msg | null>(null);
   const [realRetiroResult,  setRealRetiroResult]  = useState<RetiroReal | null>(null);
   // XPAY-377 FASE 4 — true SÓLO tras un timeout del cliente (HttpUncertainError):
@@ -883,6 +885,7 @@ export function UserWalletPage() {
         valor:                  Number(envValor),
         descripcion,
         usuarioDestinoEsperado: verificado.usuario,
+        pin:                    envPin,
       }, { 'Idempotency-Key': envIdemRef.current.key });
       if (r.success) {
         envIdemRef.current = null;
@@ -955,6 +958,7 @@ export function UserWalletPage() {
           codigoQr:    pagQrCode,
           valor:       Number(pagValor),
           descripcion: 'Pago a Comercio Demo XPAY QA',
+          pin:         pagPin,
         }, { 'Idempotency-Key': pagIdemRef.current.key });
       if (r.success && r.data) {
         // XPAY-451 §7/9 (fix P1) — pagIdemRef se limpia igual que antes
@@ -1098,13 +1102,15 @@ export function UserWalletPage() {
     if (realConfirmBusy) return; // protección contra doble clic — se mantiene intacta
     const val = Number(realMonto);
     if (!val || val <= 0) { setRealConfirmMsg({ ok: false, text: 'Monto inválido.' }); return; }
+    const pinErr = validatePin(realPin);
+    if (pinErr) { setRealConfirmMsg({ ok: false, text: pinErr }); return; }
     setRealConfirmBusy(true);
     setRealConfirmMsg(null);
     setRealUncertain(false);
     try {
       const r = await post<{ success: boolean; data?: RetiroReal; message?: string; warning?: string }>(
         '/api/breb/retiros/real',
-        { Monto: val },
+        { Monto: val, Pin: realPin },
         undefined,
         CONFIRMAR_RETIRO_TIMEOUT_MS,
       );
@@ -1127,6 +1133,7 @@ export function UserWalletPage() {
       }
     } finally {
       setRealConfirmBusy(false);
+      setRealPin('');
     }
   }
 
@@ -1583,8 +1590,7 @@ export function UserWalletPage() {
                 </label>
                 <label className="wallet-send-field">
                   <span className="wallet-send-field-label">
-                    Clave de 7 dígitos
-                    <SoloQa><span className="wallet-send-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span></SoloQa>
+                    PIN transaccional (7 dígitos)
                   </span>
                   <input
                     type="password"
@@ -1777,8 +1783,7 @@ export function UserWalletPage() {
                     </label>
                     <label className="wallet-pay-field">
                       <span className="wallet-pay-field-label">
-                        Clave de 7 dígitos
-                        <SoloQa><span className="wallet-pay-pin-hint"> — QA/Demo: solo se valida formato, no hay backend PIN en esta fase</span></SoloQa>
+                        PIN transaccional (7 dígitos)
                       </span>
                       <input
                         type="password"
@@ -2116,11 +2121,24 @@ export function UserWalletPage() {
                   <p className="breb-confirm-text">
                     Esta acción moverá dinero real desde la cuenta operativa de XPAY hacia tu llave Bre-B.
                   </p>
+                  <label className="wallet-send-field">
+                    <span className="wallet-send-field-label">PIN transaccional (7 dígitos)</span>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={7}
+                      className="wallet-send-input"
+                      value={realPin}
+                      onChange={e => setRealPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
+                      placeholder="·······"
+                      autoComplete="off"
+                    />
+                  </label>
                   <div className="breb-real-confirm-actions">
                     <button
                       type="button"
                       className="btn-breb btn-breb--financial"
-                      disabled={realConfirmBusy}
+                      disabled={realConfirmBusy || realPin.length !== 7}
                       onClick={() => void handleConfirmarRetiroReal()}
                     >
                       {realConfirmBusy ? 'Procesando...' : 'Confirmar retiro'}

@@ -112,7 +112,7 @@ async function completarPagoExitoso(user: ReturnType<typeof userEvent.setup>, va
   await waitFor(() => expect(screen.getByText('QA UAT Comercio 1 Operativo')).toBeInTheDocument());
   await user.click(screen.getByRole('button', { name: '💳 Pagar con Wallet' }));
   await user.type(screen.getByLabelText('Valor a pagar (COP ficticio)'), valor);
-  await user.type(screen.getByLabelText(/Clave de 7 dígitos/), '1234567');
+  await user.type(screen.getByLabelText(/PIN transaccional/), '1234567');
   await user.click(screen.getByRole('button', { name: 'Pagar QR con Wallet' }));
 }
 
@@ -205,7 +205,7 @@ describe('UserWalletPage — Comprar con QR: preview del receptor + confirmació
     await waitFor(() => expect(screen.getByText('✓ Pago realizado')).toBeInTheDocument());
 
     expect(screen.queryByRole('button', { name: 'Pagar QR con Wallet' })).toBeNull();
-    expect(screen.queryByLabelText(/Clave de 7 dígitos/)).toBeNull();
+    expect(screen.queryByLabelText(/PIN transaccional/)).toBeNull();
     expect(mockPost).toHaveBeenCalledTimes(1); // ninguna llamada adicional se disparó sola.
   });
 

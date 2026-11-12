@@ -178,6 +178,7 @@ public class WalletsController : ControllerBase
     // un tercero — único consumidor confirmado es UserWalletPage.tsx.
     [Authorize(Policy = "KycAprobado")]
     [OperacionFinanciera]
+    [RequierePinTransaccional]
     [HttpPost("transferencia")]
     public async Task<IActionResult> Transferir([FromBody] TransferenciaWalletRequest request)
     {

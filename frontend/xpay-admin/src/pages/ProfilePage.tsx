@@ -2,11 +2,13 @@ import { useNavigate } from 'react-router-dom';
 import { BrebMyKeySection } from '../components/profile/BrebMyKeySection.tsx';
 import { MiInformacionSection } from '../components/profile/MiInformacionSection.tsx';
 import { CambiarContrasenaSection } from '../components/profile/CambiarContrasenaSection.tsx';
+import { PinTransaccionalSection } from '../components/profile/PinTransaccionalSection.tsx';
 
 // XPAY-401 (Perfil Fase 2C) — página real de Perfil (ruta mi-wallet/perfil).
 // Misma página de siempre (XPAY-392), ahora con 3 secciones completas:
 //   A. Mi información  -> MiInformacionSection (GET/PATCH /api/usuarios/mi-perfil, XPAY-399)
 //   B. Seguridad        -> CambiarContrasenaSection (POST /api/auth/cambiar-clave, XPAY-400)
+//                          y PinTransaccionalSection (PIN de 7 dígitos, /api/pin)
 //   C. Mi llave Bre-B   -> BrebMyKeySection (XPAY-392, SIN CAMBIOS — GET/POST
 //                          /api/breb/mi-llave; nunca llama a /resolver, eso
 //                          sigue exclusivamente en Retirar)
@@ -44,6 +46,9 @@ export function ProfilePage() {
 
       {/* B. Seguridad */}
       <CambiarContrasenaSection />
+
+      {/* PIN transaccional (GET /api/pin/estado, POST /api/pin y /api/pin/cambiar). */}
+      <PinTransaccionalSection />
 
       {/* C. Mi llave Bre-B — componente de XPAY-392, sin ninguna
           modificación de comportamiento (solo se conserva su posición ya

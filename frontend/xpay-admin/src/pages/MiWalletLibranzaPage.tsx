@@ -122,6 +122,7 @@ export function MiWalletLibranzaPage() {
   const [error, setError]             = useState<string | null>(null);
   const [valor, setValor]             = useState('');
   const [solicitando, setSolicitando] = useState(false);
+  const [pin, setPin]                 = useState('');
   const enCursoRef = useRef(false);
   const [solicErr, setSolicErr]       = useState<string | null>(null);
   const [solicOk, setSolicOk]         = useState<AnticipoResponse | null>(null);
@@ -145,6 +146,8 @@ export function MiWalletLibranzaPage() {
     if (enCursoRef.current) return;
     const v = Number(valor);
     if (!Number.isFinite(v) || v <= 0) { setSolicErr('Ingresa un valor numérico.'); return; }
+    // PIN transaccional: el backend lo verifica (5 intentos y bloqueo).
+    if (!/^\d{7}$/.test(pin)) { setSolicErr('Ingresa tu PIN transaccional de 7 dígitos.'); return; }
     if (cupo?.corteVigente && v > cupo.corteVigente.cupoDisponible) {
       setSolicErr(`El valor supera tu cupo disponible (${fmt(cupo.corteVigente.cupoDisponible)}).`);
       return;
@@ -160,6 +163,7 @@ export function MiWalletLibranzaPage() {
         {
           valorSolicitado: v,
           ...(fecha ? { fechaSimulada: fecha } : {}),
+          pin,
         },
         { 'Idempotency-Key': key },
       );
@@ -180,6 +184,7 @@ export function MiWalletLibranzaPage() {
     } finally {
       enCursoRef.current = false;
       setSolicitando(false);
+      setPin('');
     }
   }
 
@@ -292,7 +297,20 @@ export function MiWalletLibranzaPage() {
                             style={{ padding: '0.35rem 0.6rem', border: '1px solid #93c5fd', borderRadius: '0.375rem', fontSize: '0.9rem', width: '180px' }}
                           />
                         </div>
-                        <button type="submit" disabled={solicitando}
+                        <div>
+                          <label htmlFor="anticipo-pin" style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, marginBottom: '0.2rem' }}>
+                            PIN transaccional (7 dígitos)
+                          </label>
+                          <input
+                            id="anticipo-pin"
+                            type="password" inputMode="numeric" maxLength={7} autoComplete="off"
+                            value={pin}
+                            onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
+                            placeholder="·······"
+                            style={{ padding: '0.35rem 0.6rem', border: '1px solid #93c5fd', borderRadius: '0.375rem', fontSize: '0.9rem', width: '140px' }}
+                          />
+                        </div>
+                        <button type="submit" disabled={solicitando || pin.length !== 7}
                           style={{ padding: '0.4rem 1rem', background: '#1e40af', color: '#fff', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: 600, opacity: solicitando ? 0.7 : 1 }}>
                           {solicitando ? 'Solicitando...' : 'Solicitar anticipo'}
                         </button>
