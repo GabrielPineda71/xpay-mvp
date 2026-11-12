@@ -539,13 +539,50 @@ STATUS_DEST_404=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
 [[ "$STATUS_DEST_404" == "404" ]] || fail "destinatario inexistente → esperado 404, obtenido $STATUS_DEST_404"
 ok "destinatario inexistente → 404"
 
+# PIN transaccional: las operaciones de dinero del usuario lo exigen
+# (RequierePinTransaccional) antes de cualquier otra validación. Ninguno de
+# estos rechazos mueve dinero — lo confirman los saldos de abajo.
+PIN_A="2580147"
+transferir_status() { # body -> código HTTP; cuerpo en /tmp/ci_pin_body.json
+  curl -s -o /tmp/ci_pin_body.json -w "%{http_code}" -X POST "$API_URL/api/wallets/transferencia" \
+    -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_A" \
+    -H "Idempotency-Key: $(python3 -c 'import uuid; print(uuid.uuid4())')" --max-time 15 -d "$1"
+}
+
+info "POST /api/wallets/transferencia sin PIN → 400 PIN_REQUERIDO"
+STATUS_PIN=$(transferir_status "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"usuarioDestinoEsperado\": \"$USUARIO_DESTINO_B\"}")
+[[ "$STATUS_PIN" == "400" ]] && jq -e '.codigo == "PIN_REQUERIDO"' /tmp/ci_pin_body.json > /dev/null \
+  || fail "transferencia sin PIN → esperado 400 PIN_REQUERIDO, obtenido $STATUS_PIN $(cat /tmp/ci_pin_body.json)"
+ok "transferencia sin PIN → 400 PIN_REQUERIDO"
+
+info "POST /api/wallets/transferencia con PIN sin haberlo creado → 428 PIN_NO_CONFIGURADO"
+STATUS_PIN=$(transferir_status "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"usuarioDestinoEsperado\": \"$USUARIO_DESTINO_B\", \"pin\": \"$PIN_A\"}")
+[[ "$STATUS_PIN" == "428" ]] && jq -e '.codigo == "PIN_NO_CONFIGURADO"' /tmp/ci_pin_body.json > /dev/null \
+  || fail "transferencia sin PIN creado → esperado 428 PIN_NO_CONFIGURADO, obtenido $STATUS_PIN $(cat /tmp/ci_pin_body.json)"
+ok "transferencia sin PIN creado → 428 PIN_NO_CONFIGURADO"
+
+info "POST /api/pin (carlos crea su PIN con su contraseña de ingreso)"
+CREAR_PIN=$(post_auth_json "$TOKEN_A" "$API_URL/api/pin" \
+  "{\"claveActual\": \"Xpay@Test1!\", \"pin\": \"$PIN_A\", \"confirmacionPin\": \"$PIN_A\"}") \
+  || fail "POST /api/pin no respondió"
+assert_ok "$CREAR_PIN" "crear PIN carlos"
+echo "$CREAR_PIN" | jq -e '.data.configurado == true and .data.intentosRestantes == 5' > /dev/null \
+  || fail "estado del PIN tras crearlo inesperado: $CREAR_PIN"
+ok "PIN de carlos creado (5 intentos disponibles)"
+
+info "POST /api/wallets/transferencia con PIN incorrecto → 400 PIN_INCORRECTO"
+STATUS_PIN=$(transferir_status "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"usuarioDestinoEsperado\": \"$USUARIO_DESTINO_B\", \"pin\": \"1111112\"}")
+[[ "$STATUS_PIN" == "400" ]] && jq -e '.codigo == "PIN_INCORRECTO" and .intentosRestantes == 4' /tmp/ci_pin_body.json > /dev/null \
+  || fail "transferencia con PIN incorrecto → esperado 400 PIN_INCORRECTO (4 restantes), obtenido $STATUS_PIN $(cat /tmp/ci_pin_body.json)"
+ok "transferencia con PIN incorrecto → 400 PIN_INCORRECTO, quedan 4 intentos"
+
 # Sin usuarioDestinoEsperado (400) y con un destinatario distinto del titular
 # (409): ninguna de las dos mueve dinero — lo confirman los saldos de abajo.
 info "POST /api/wallets/transferencia sin usuarioDestinoEsperado → 400"
 STATUS_SIN_DEST=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL/api/wallets/transferencia" \
   -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_A" \
   -H "Idempotency-Key: $(python3 -c 'import uuid; print(uuid.uuid4())')" --max-time 15 \
-  -d "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"descripcion\": \"CI sin destinatario\"}")
+  -d "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"descripcion\": \"CI sin destinatario\", \"pin\": \"$PIN_A\"}")
 [[ "$STATUS_SIN_DEST" == "400" ]] || fail "transferencia sin destinatario → esperado 400, obtenido $STATUS_SIN_DEST"
 ok "transferencia sin destinatario confirmado → 400"
 
@@ -553,13 +590,13 @@ info "POST /api/wallets/transferencia con destinatario distinto del titular → 
 STATUS_OTRO_DEST=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API_URL/api/wallets/transferencia" \
   -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_A" \
   -H "Idempotency-Key: $(python3 -c 'import uuid; print(uuid.uuid4())')" --max-time 15 \
-  -d "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"descripcion\": \"CI destinatario incorrecto\", \"usuarioDestinoEsperado\": \"ci_destinatario_incorrecto\"}")
+  -d "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"descripcion\": \"CI destinatario incorrecto\", \"usuarioDestinoEsperado\": \"ci_destinatario_incorrecto\", \"pin\": \"$PIN_A\"}")
 [[ "$STATUS_OTRO_DEST" == "409" ]] || fail "transferencia a destinatario distinto → esperado 409, obtenido $STATUS_OTRO_DEST"
 ok "transferencia con destinatario que no coincide → 409"
 
 info "POST /api/wallets/transferencia (25.000)"
 TRANSFERENCIA=$(post_auth_json "$TOKEN_A" "$API_URL/api/wallets/transferencia" \
-  "{\"idWalletOrigen\": $ID_WALLET_A, \"idWalletDestino\": $ID_WALLET_B, \"valor\": 25000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Transferencia CI fase 2\", \"usuarioDestinoEsperado\": \"$USUARIO_DESTINO_B\"}" \
+  "{\"idWalletOrigen\": $ID_WALLET_A, \"idWalletDestino\": $ID_WALLET_B, \"valor\": 25000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Transferencia CI fase 2\", \"usuarioDestinoEsperado\": \"$USUARIO_DESTINO_B\", \"pin\": \"$PIN_A\"}" \
   "$IDEMPOTENCY_KEY_TRANSFERENCIA") \
   || fail "POST transferencia no respondió"
 echo "$TRANSFERENCIA" | jq .
@@ -588,7 +625,7 @@ phase "FASE 3: Pago a comercio por QR"
 IDEMPOTENCY_KEY_PAGAR_QR=$(python3 -c 'import uuid; print(uuid.uuid4())')
 info "POST /api/qr/pagar (30.000)"
 PAGO_QR=$(post_auth_json "$TOKEN_A" "$API_URL/api/qr/pagar" \
-  "{\"codigoQr\": \"QR-DEMO-XPAY-001\", \"idWalletUsuario\": $ID_WALLET_A, \"valor\": 30000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Pago QR CI fase 3\"}" \
+  "{\"codigoQr\": \"QR-DEMO-XPAY-001\", \"idWalletUsuario\": $ID_WALLET_A, \"valor\": 30000, \"creadoPor\": $ID_USUARIO_A, \"descripcion\": \"Pago QR CI fase 3\", \"pin\": \"$PIN_A\"}" \
   "$IDEMPOTENCY_KEY_PAGAR_QR") \
   || fail "POST /api/qr/pagar no respondió"
 echo "$PAGO_QR" | jq .
