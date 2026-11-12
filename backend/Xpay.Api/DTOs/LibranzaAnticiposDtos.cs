@@ -59,10 +59,12 @@ public class AnticipoResponse
     public DateTime? UpdatedAt             { get; set; }
 }
 
-public class SolicitarAnticipoRequest
+public class SolicitarAnticipoRequest : IConPinTransaccional
 {
     public decimal ValorSolicitado { get; set; }
     public string? FechaSimulada   { get; set; }
+    // PIN transaccional: lo verifica y borra RequierePinTransaccional antes de la action.
+    public string? Pin { get; set; }
 }
 
 // ── Cobros empresa ────────────────────────────────────────────────────────────

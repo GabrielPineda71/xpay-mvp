@@ -143,10 +143,11 @@ public class BrebPaymentRequestBuilderTests
     [Fact]
     public void SolicitarRetiroRealRequest_SoloExponeMonto_NuncaIdentificadoresSensibles()
     {
+        // PIN transaccional: Pin es la única propiedad añadida; la consume y
+        // borra RequierePinTransaccional antes de la action.
         var propiedades = typeof(SolicitarRetiroRealRequest).GetProperties()
-            .Select(p => p.Name).ToArray();
+            .Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
 
-        Assert.Single(propiedades);
-        Assert.Equal("Monto", propiedades[0]);
+        Assert.Equal(new[] { "Monto", "Pin" }, propiedades);
     }
 }

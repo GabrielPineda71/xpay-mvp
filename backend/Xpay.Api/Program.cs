@@ -31,6 +31,7 @@ builder.Services.AddScoped<AuthService>();
 // P0-B — tokens de un solo uso y envío de email. QA-IDENTIDAD-EMAIL-3: SMTP
 // solo en QA con Email:Modo=QaSmtp; en otro caso sender local o fail-closed.
 builder.Services.AddScoped<TokenUsuarioService>();
+builder.Services.AddScoped<PinTransaccionalService>();
 builder.Services.AddEmailSenderXpay(builder.Environment.EnvironmentName, builder.Configuration);
 // P0-B1 — registro público + verificación de email (endpoints solo no
 // productivos hasta resolver consentimiento/términos).

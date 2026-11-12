@@ -150,6 +150,9 @@ public class UsuarioAdminService
             }
         ).ToListAsync();
 
+        var pin = await _db.PinesTransaccionales.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.IdUsuario == idUsuario);
+
         var usuarioEntidad = registro.u;
         var personaEntidad = registro.p;
         return new UsuarioAdminDetalleDto
@@ -176,7 +179,9 @@ public class UsuarioAdminService
             RequiereCambioClave = usuarioEntidad.RequiereCambioClave,
             FechaCreacion       = usuarioEntidad.FechaCreacion,
             FechaActualizacion  = usuarioEntidad.FechaActualizacion,
-            Roles               = roles
+            Roles               = roles,
+            PinConfigurado      = pin is { Estado: EstadosPin.Activo },
+            PinBloqueado        = pin is { Estado: EstadosPin.Activo, Bloqueado: true }
         };
     }
 
@@ -290,6 +295,37 @@ public class UsuarioAdminService
             "Desbloqueo manual por administrador.");
 
         await GuardarYRevocarAsync(idUsuario);
+        return (await ObtenerDetalleAsync(idUsuario))!;
+    }
+
+    // PIN transaccional: anula el PIN de otro usuario (bloqueado u olvidado).
+    // El administrador nunca ve ni elige el PIN: el usuario crea uno nuevo
+    // con su contraseña de ingreso (PinTransaccionalService.CrearAsync).
+    public async Task<UsuarioAdminDetalleDto> RestablecerPinAsync(long idUsuario, long idAdmin)
+    {
+        if (idUsuario == idAdmin)
+            throw new InvalidOperationException("No puedes restablecer tu propio PIN.");
+
+        _ = await _db.Usuarios.FindAsync(idUsuario)
+            ?? throw new KeyNotFoundException($"Usuario {idUsuario} no encontrado.");
+
+        await ExigirAutoridadSobreAsync(idAdmin, idUsuario);
+
+        var pin = await _db.PinesTransaccionales.FirstOrDefaultAsync(x => x.IdUsuario == idUsuario);
+        if (pin is not { Estado: EstadosPin.Activo })
+            throw new TransicionUsuarioInvalidaException("El usuario no tiene un PIN transaccional activo.");
+
+        var anterior = pin.Bloqueado ? "ACTIVO_BLOQUEADO" : "ACTIVO";
+        pin.Estado             = EstadosPin.Restablecido;
+        pin.Bloqueado          = false;
+        pin.IntentosFallidos   = 0;
+        pin.FechaBloqueo       = null;
+        pin.FechaActualizacion = DateTime.UtcNow;
+
+        RegistrarAuditoria(idAdmin, "PIN_RESTABLECER", idUsuario, anterior, EstadosPin.Restablecido,
+            "Restablecimiento de PIN transaccional por administrador.", entidad: "pin_transaccional");
+
+        await _db.SaveChangesAsync();
         return (await ObtenerDetalleAsync(idUsuario))!;
     }
 

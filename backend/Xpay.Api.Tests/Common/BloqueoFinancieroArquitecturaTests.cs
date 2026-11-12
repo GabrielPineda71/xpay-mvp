@@ -33,7 +33,9 @@ public sealed class BloqueoFinancieroArquitecturaTests
         "UsuariosAdminController.AltaUsuarioPiloto", "UsuariosAdminController.Activar",
         "UsuariosAdminController.Inactivar", "UsuariosAdminController.Desbloquear",
         "UsuariosAdminController.RestablecerClave", "UsuariosAdminController.AsignarRol",
-        "UsuariosAdminController.RevocarRol",
+        "UsuariosAdminController.RevocarRol", "UsuariosAdminController.RestablecerPin",
+        // PIN transaccional propio: crear/cambiar no mueve dinero (se crea antes de operar).
+        "PinController.Crear", "PinController.Cambiar",
         // Solo ambientes no productivos (404 en productivo).
         "QaClientePruebaController.Crear", "QaIdentidadPruebaController.Preparar",
         "ComerciosAliadosController.BackfillDemoContexto",

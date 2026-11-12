@@ -118,7 +118,7 @@ async function pegarQr(user: ReturnType<typeof userEvent.setup>, contenido: obje
 
 async function completarYEnviar(user: ReturnType<typeof userEvent.setup>, valor = '500') {
   await user.type(screen.getByLabelText('Valor a transferir (COP ficticio)'), valor);
-  await user.type(screen.getByLabelText(/Clave de 7 dígitos/), '1234567');
+  await user.type(screen.getByLabelText(/PIN transaccional/), '1234567');
   await user.click(screen.getByRole('button', { name: 'Enviar dinero' }));
 }
 
@@ -172,7 +172,7 @@ describe('UserWalletPage — Enviar: modal de transferencia exitosa (XPAY-426 Bl
     await pegarQr(user, { type: 'XPAY_TRANSFER', env: 'QA', receiverWalletId: 3, receiverUser: 'qa.usuario2', amount: 700 });
     await screen.findByText('Destino verificado');
 
-    await user.type(screen.getByLabelText(/Clave de 7 dígitos/), '1234567');
+    await user.type(screen.getByLabelText(/PIN transaccional/), '1234567');
     await user.click(screen.getByRole('button', { name: 'Enviar dinero' }));
 
     await waitFor(() => expect(screen.getByText('Transferencia exitosa')).toBeInTheDocument());
@@ -287,7 +287,7 @@ describe('UserWalletPage — Enviar: modal de transferencia exitosa (XPAY-426 Bl
 
     await llegarAFormularioManual(user);
     await user.type(screen.getByLabelText('Valor a transferir (COP ficticio)'), '500');
-    await user.type(screen.getByLabelText(/Clave de 7 dígitos/), '1234567');
+    await user.type(screen.getByLabelText(/PIN transaccional/), '1234567');
 
     const btn = screen.getByRole('button', { name: 'Enviar dinero' });
     await user.click(btn);
@@ -319,7 +319,7 @@ describe('UserWalletPage — Enviar: verificación del destinatario', () => {
 
     expect(await screen.findByText('Verificando destinatario…')).toBeInTheDocument();
     expect(screen.queryByLabelText('Valor a transferir (COP ficticio)')).toBeNull();
-    expect(screen.queryByLabelText(/Clave de 7 dígitos/)).toBeNull();
+    expect(screen.queryByLabelText(/PIN transaccional/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Enviar dinero' })).toBeNull();
   });
 
@@ -365,6 +365,7 @@ describe('UserWalletPage — Enviar: verificación del destinatario', () => {
         idWalletDestino: 3, valor: 500,
         descripcion: 'Enviado a qa.usuario2 — Wallet #3',
         usuarioDestinoEsperado: 'qa.usuario2',
+        pin: '1234567',
       },
       expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
     ));

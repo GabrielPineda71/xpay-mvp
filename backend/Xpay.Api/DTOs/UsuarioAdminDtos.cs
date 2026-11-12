@@ -90,4 +90,7 @@ public class UsuarioAdminDetalleDto
     public DateTime FechaCreacion { get; set; }
     public DateTime? FechaActualizacion { get; set; }
     public List<UsuarioAdminRolDto> Roles { get; set; } = new();
+    // PIN transaccional: solo el estado, nunca el hash.
+    public bool PinConfigurado { get; set; }
+    public bool PinBloqueado { get; set; }
 }

@@ -150,11 +150,12 @@ describe('UserWalletPage — Resolve y endpoints financieros permanecen en Retir
 
     await user.type(await screen.findByPlaceholderText('Ej: 5000'), '5000');
     await user.click(screen.getByRole('button', { name: 'Continuar' }));
+    await user.type(await screen.findByLabelText(/PIN transaccional/), '2580147');
     await user.click(await screen.findByRole('button', { name: 'Confirmar retiro' }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
       '/api/breb/retiros/real',
-      { Monto: 5000 },
+      { Monto: 5000, Pin: '2580147' },
       undefined,
       45_000,
     ));
