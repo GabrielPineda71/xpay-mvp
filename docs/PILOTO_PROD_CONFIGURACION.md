@@ -43,6 +43,12 @@ separadas: el administrador no puede restablecer su propia clave.
   código). El acumulado diario cuenta todo salvo `RECHAZADO`, `ERROR` y
   `CANCELADO`; los envíos inciertos cuentan. Se calcula bajo el AppLock
   `XPAY:BREB_RETIRO_USUARIO:{id}` y el `UPDLOCK` del saldo.
-- Nunca se pausan: lotes y QR de recaudo, webhook de Passport, aplicación del
-  recaudo, conciliación y resolución de envíos inciertos.
+- Con el interruptor cerrado también responden 503: crear un lote de recaudo,
+  generar su QR, el pago simulado de empresa (solo QA) y, en la revisión de
+  retiros, el rechazo confirmado, liberar un pendiente de envío y actualizar el
+  estado. Siguen disponibles las consultas y cancelar un lote.
+- El webhook de Passport exige el interruptor para aplicar el recaudo: con el
+  interruptor cerrado la aplicación falla y el webhook responde 500. Que Passport
+  reintente la entrega, y durante cuánto tiempo, no está verificado: no cerrar el
+  interruptor con lotes en `PENDIENTE_PAGO` o `PAGO_EN_PROCESO`.
 - Respuestas: pausa o configuración inválida → 503; tope o límite diario → 400.
