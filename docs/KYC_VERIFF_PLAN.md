@@ -242,7 +242,7 @@ Requerimientos para producción:
 | `VERIFF_API_KEY`      | Header `X-AUTH-CLIENT` en llamada a Veriff `/v1/sessions`      |
 | `VERIFF_SHARED_SECRET`| Validación HMAC-SHA256 webhook — **NUNCA en repo ni logs**     |
 | `VERIFF_BASE_URL`     | Base URL Veriff sandbox (ej. `https://stationapi.veriff.com`)  |
-| `VERIFF_CALLBACK_URL` | **Obligatoria desde el piloto PROD.** URL `https` absoluta del webhook de decisión de ESTE ambiente, con ruta exacta `/api/kyc/veriff/webhook` (sin query ni credenciales). Sin ella, o inválida, no se crean sesiones (503). **Configurarla en QA antes de desplegar este cambio.** |
+| `VERIFF_CALLBACK_URL` | **Obligatoria desde el piloto PROD.** Retorno del navegador al terminar Veriff (`verification.callback`): página del frontend `https` absoluta, sin credenciales, query ni fragmento, fuera de `/api/` (p. ej. `https://app.xpaycol.com/mi-wallet`). El webhook se configura aparte en Veriff Station. Sin ella, o inválida, no se crean sesiones (503). |
 
 `vendorData` se envía como `XPAY-QA-USUARIO-{id}` en ambientes no productivos y
 `XPAY-PROD-USUARIO-{id}` en productivo.

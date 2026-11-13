@@ -108,9 +108,13 @@ public class KycService
         };
     }
 
-    // Piloto PROD — corrección 1. El callback viene de VERIFF_CALLBACK_URL:
-    // https absoluto, sin credenciales en la URL, sin query/fragment y con la
-    // ruta exacta del webhook de decisión. Cualquier otra cosa es inválida.
+    // VERIFF_CALLBACK_URL es el `verification.callback` de POST /v1/sessions:
+    // la URL a la que Veriff REDIRIGE EL NAVEGADOR del usuario al terminar el
+    // flujo (contrato de Veriff), no el webhook. El webhook de eventos y de
+    // decisiones se configura en Veriff Station y apunta a RutaWebhookVeriff.
+    // Debe ser una página del frontend: https absoluto, sin credenciales,
+    // query ni fragmento, y nunca una ruta de la API (/api/...), que ante un
+    // GET del navegador solo devolvería un error.
     internal static bool EsCallbackVeriffValido(string? url)
     {
         if (!Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri)) return false;
@@ -118,7 +122,8 @@ public class KycService
             && string.IsNullOrEmpty(uri.UserInfo)
             && string.IsNullOrEmpty(uri.Query)
             && string.IsNullOrEmpty(uri.Fragment)
-            && string.Equals(uri.AbsolutePath, RutaWebhookVeriff, StringComparison.Ordinal);
+            && !uri.AbsolutePath.Equals("/api", StringComparison.OrdinalIgnoreCase)
+            && !uri.AbsolutePath.StartsWith("/api/", StringComparison.OrdinalIgnoreCase);
     }
 
     // vendorData sin PII: solo ambiente + id interno.
