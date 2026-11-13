@@ -10,24 +10,27 @@ public sealed class PilotoProdConfiguracionTests
 {
     // ── Corrección 1 ───────────────────────────────────────────────────────
 
+    // VERIFF_CALLBACK_URL = retorno del navegador a una página del frontend.
     [Theory]
-    [InlineData("https://api.ejemplo.com/api/kyc/veriff/webhook")]
-    [InlineData(" https://api.ejemplo.com/api/kyc/veriff/webhook ")]
-    [InlineData("https://api.ejemplo.com:8443/api/kyc/veriff/webhook")]
-    public void Callback_https_absoluto_con_ruta_exacta_es_valido(string url) =>
+    [InlineData("https://app.ejemplo.com/mi-wallet")]
+    [InlineData(" https://app.ejemplo.com/mi-wallet ")]
+    [InlineData("https://app.ejemplo.com:8443/mi-wallet")]
+    [InlineData("https://app.ejemplo.com/")]
+    public void Callback_https_a_pagina_del_frontend_es_valido(string url) =>
         Assert.True(KycService.EsCallbackVeriffValido(url));
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    [InlineData("http://api.ejemplo.com/api/kyc/veriff/webhook")]
-    [InlineData("/api/kyc/veriff/webhook")]
-    [InlineData("https://api.ejemplo.com/api/kyc/veriff/webhook/")]
-    [InlineData("https://api.ejemplo.com/otra/ruta")]
-    [InlineData("https://api.ejemplo.com/api/kyc/veriff/webhook?x=1")]
-    [InlineData("https://api.ejemplo.com/api/kyc/veriff/webhook#f")]
-    [InlineData("https://user:pass@api.ejemplo.com/api/kyc/veriff/webhook")]
-    [InlineData("ftp://api.ejemplo.com/api/kyc/veriff/webhook")]
+    [InlineData("http://app.ejemplo.com/mi-wallet")]
+    [InlineData("/mi-wallet")]
+    [InlineData("https://api.ejemplo.com/api/kyc/veriff/webhook")] // el webhook no es un retorno de navegador
+    [InlineData("https://api.ejemplo.com/API/kyc/veriff/webhook")]
+    [InlineData("https://api.ejemplo.com/api")]
+    [InlineData("https://app.ejemplo.com/mi-wallet?x=1")]
+    [InlineData("https://app.ejemplo.com/mi-wallet#f")]
+    [InlineData("https://user:pass@app.ejemplo.com/mi-wallet")]
+    [InlineData("ftp://app.ejemplo.com/mi-wallet")]
     public void Callback_invalido_se_rechaza(string? url) =>
         Assert.False(KycService.EsCallbackVeriffValido(url));
 

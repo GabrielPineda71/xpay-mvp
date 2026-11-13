@@ -9,7 +9,8 @@ es el tiempo de reacción del interruptor.
 
 | Clave | Regla |
 |---|---|
-| `VERIFF_CALLBACK_URL` | Obligatoria en todo ambiente. `https` absoluta, sin credenciales, query ni fragmento, ruta exacta `/api/kyc/veriff/webhook`. Si falta o es inválida, no se crean sesiones (503). |
+| `VERIFF_CALLBACK_URL` | Obligatoria en todo ambiente. Es el **retorno del navegador** al terminar Veriff (`verification.callback`), no el webhook: página del frontend `https` absoluta, sin credenciales, query ni fragmento y fuera de `/api/` (PROD: `https://app.xpaycol.com/mi-wallet`). Si falta o es inválida, no se crean sesiones (503). |
+| Webhook Veriff | Se configura en Veriff Station (eventos y decisiones) → `https://<api>/api/kyc/veriff/webhook`. Las decisiones actualizan el KYC; los eventos se aceptan con firma válida (200) y no cambian estado. |
 
 `vendorData`: `XPAY-PROD-USUARIO-{id}` en productivo, `XPAY-QA-USUARIO-{id}` en el resto.
 
