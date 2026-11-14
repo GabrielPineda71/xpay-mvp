@@ -32,6 +32,12 @@ builder.Services.AddScoped<AuthService>();
 // solo en QA con Email:Modo=QaSmtp; en otro caso sender local o fail-closed.
 builder.Services.AddScoped<TokenUsuarioService>();
 builder.Services.AddScoped<PinTransaccionalService>();
+// Verificación de correo (ACS Email) y celular (WhatsApp Cloud API). Sin
+// configuración cada canal queda NoConfigurado; el requisito de contactos
+// verificados solo aplica con ambos canales operativos.
+builder.Services.AddCanalesCodigoContacto(builder.Configuration);
+builder.Services.AddScoped<ContactoVerificacionService>();
+builder.Services.AddSingleton<RequisitoContactosVerificados>();
 builder.Services.AddEmailSenderXpay(builder.Environment.EnvironmentName, builder.Configuration);
 // P0-B1 — registro público + verificación de email (endpoints solo no
 // productivos hasta resolver consentimiento/términos).
@@ -326,8 +332,27 @@ var destinatarioPermitLimit   = rlSection.GetValue("DestinatarioWalletPermitLimi
 var destinatarioWindowSeconds = rlSection.GetValue("DestinatarioWalletWindowSeconds", defaultValue: 300);
 var destinatarioQueueLimit    = rlSection.GetValue("DestinatarioWalletQueueLimit",    defaultValue: 0);
 
+// Verificación de contactos (solicitar y confirmar códigos): por idUsuario.
+// Complementa los límites propios de ContactoVerificacionService (enfriamiento,
+// cupo diario, intentos por código).
+var contactosPermitLimit   = rlSection.GetValue("ContactosCodigoPermitLimit",   defaultValue: 10);
+var contactosWindowSeconds = rlSection.GetValue("ContactosCodigoWindowSeconds", defaultValue: 300);
+
 builder.Services.AddRateLimiter(options =>
 {
+    options.AddPolicy("ContactosCodigoPolicy", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.User.FindFirst("idUsuario")?.Value
+                ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit          = contactosPermitLimit,
+                Window               = TimeSpan.FromSeconds(contactosWindowSeconds),
+                QueueLimit           = 0,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            }));
+
     options.AddPolicy("LoginPolicy", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",

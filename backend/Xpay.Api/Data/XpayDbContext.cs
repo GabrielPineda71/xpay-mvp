@@ -105,6 +105,8 @@ public class XpayDbContext : DbContext
     public DbSet<CatalogoCiudad>                          CatalogoCiudades                           => Set<CatalogoCiudad>();
     public DbSet<UsuarioToken> UsuarioTokens => Set<UsuarioToken>();
     public DbSet<PinTransaccional> PinesTransaccionales => Set<PinTransaccional>();
+    public DbSet<ContactoCodigoVerificacion> ContactoCodigosVerificacion => Set<ContactoCodigoVerificacion>();
+    public DbSet<UsuarioConsentimientoComunicacion> ConsentimientosComunicacion => Set<UsuarioConsentimientoComunicacion>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -179,6 +181,8 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<CatalogoCiudad>(e => { e.ToTable("catalogo_ciudades"); e.HasKey(x => x.IdCiudad); MapCatalogoCiudad(e); });
         modelBuilder.Entity<UsuarioToken>(e => { e.ToTable("usuario_tokens"); e.HasKey(x => x.IdToken); MapUsuarioToken(e); });
         modelBuilder.Entity<PinTransaccional>(e => { e.ToTable("pin_transaccional"); e.HasKey(x => x.IdPin); MapPinTransaccional(e); });
+        modelBuilder.Entity<ContactoCodigoVerificacion>(e => { e.ToTable("contacto_codigos_verificacion"); e.HasKey(x => x.IdCodigo); MapContactoCodigo(e); });
+        modelBuilder.Entity<UsuarioConsentimientoComunicacion>(e => { e.ToTable("usuario_consentimientos_comunicacion"); e.HasKey(x => x.IdConsentimiento); MapConsentimientoComunicacion(e); });
     }
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)
@@ -381,6 +385,34 @@ public class XpayDbContext : DbContext
         e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion");
         e.Property(x => x.FechaBloqueo).HasColumnName("fecha_bloqueo");
         e.Property(x => x.Estado).HasColumnName("estado").HasMaxLength(30).IsUnicode(false).IsRequired();
+    }
+    // Verificación de contactos — database/050. Fechas siempre desde la aplicación.
+    private static void MapContactoCodigo(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<ContactoCodigoVerificacion> e)
+    {
+        e.Property(x => x.IdCodigo).HasColumnName("id_codigo");
+        e.Property(x => x.IdUsuario).HasColumnName("id_usuario");
+        e.Property(x => x.Canal).HasColumnName("canal").HasMaxLength(20).IsUnicode(false).IsRequired();
+        e.Property(x => x.Destino).HasColumnName("destino").HasMaxLength(200).IsUnicode(false).IsRequired();
+        e.Property(x => x.CodigoSal).HasColumnName("codigo_sal").HasColumnType("binary(16)").IsRequired();
+        e.Property(x => x.CodigoHash).HasColumnName("codigo_hash").HasColumnType("binary(32)").IsRequired();
+        e.Property(x => x.IntentosFallidos).HasColumnName("intentos_fallidos");
+        e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion");
+        e.Property(x => x.FechaExpiracion).HasColumnName("fecha_expiracion");
+        e.Property(x => x.FechaUso).HasColumnName("fecha_uso");
+        e.Property(x => x.FechaInvalidacion).HasColumnName("fecha_invalidacion");
+        e.Property(x => x.MotivoInvalidacion).HasColumnName("motivo_invalidacion").HasMaxLength(30).IsUnicode(false);
+        e.Property(x => x.IpSolicitud).HasColumnName("ip_solicitud").HasMaxLength(100).IsUnicode(false);
+    }
+    private static void MapConsentimientoComunicacion(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<UsuarioConsentimientoComunicacion> e)
+    {
+        e.Property(x => x.IdConsentimiento).HasColumnName("id_consentimiento");
+        e.Property(x => x.IdUsuario).HasColumnName("id_usuario");
+        e.Property(x => x.Canal).HasColumnName("canal").HasMaxLength(20).IsUnicode(false).IsRequired();
+        e.Property(x => x.Finalidad).HasColumnName("finalidad").HasMaxLength(20).IsUnicode(false).IsRequired();
+        e.Property(x => x.Otorgado).HasColumnName("otorgado");
+        e.Property(x => x.Origen).HasColumnName("origen").HasMaxLength(40).IsUnicode(false).IsRequired();
+        e.Property(x => x.FechaRegistro).HasColumnName("fecha_registro");
+        e.Property(x => x.IpSolicitud).HasColumnName("ip_solicitud").HasMaxLength(100).IsUnicode(false);
     }
     private static void MapUsuarioToken(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<UsuarioToken> e)
     {
