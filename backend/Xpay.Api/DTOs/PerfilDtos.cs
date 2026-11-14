@@ -35,6 +35,13 @@ public class MiPerfilResponseDto
 
     // Resumen de identidad — nunca el detalle crudo de Veriff.
     public bool IdentidadVerificada { get; set; }
+
+    // Identidad verificada por Veriff — solo con IdentidadVerificada=true.
+    // El número viaja enmascarado (últimos 4); el tipo es una etiqueta legible,
+    // nunca el valor crudo de Veriff.
+    public string? NombreVerificado { get; set; }
+    public string? TipoDocumentoVerificado { get; set; }
+    public string? NumeroDocumentoVerificadoMasked { get; set; }
     public string EstadoKycActual { get; set; } = string.Empty;
 
     public bool EmailVerificado { get; set; }

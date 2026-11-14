@@ -20,6 +20,10 @@ export interface MiPerfil {
   departamento: string | null;
   pais: string;
   identidadVerificada: boolean;
+  // Solo con identidadVerificada=true; el número llega enmascarado.
+  nombreVerificado?: string | null;
+  tipoDocumentoVerificado?: string | null;
+  numeroDocumentoVerificadoMasked?: string | null;
   estadoKycActual: string;
   emailVerificado: boolean;
   celularVerificado: boolean;
