@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useMiPerfil, type MiPerfil } from '../../hooks/useMiPerfil.ts';
+import { VerificarContacto } from './VerificarContacto.tsx';
 
 // XPAY-401 — fecha_nacimiento es una columna DATE pura (sin componente
 // horario) — NO debe pasar por fmtDate (utils.ts), que asume timestamps con
@@ -150,11 +151,13 @@ export function MiInformacionSection() {
             <dd>
               {perfil.celular}{' '}
               <span className="profile-verificado-badge">{perfil.celularVerificado ? 'Verificado' : 'No verificado'}</span>
+              {!perfil.celularVerificado && <VerificarContacto canal="celular" onVerificado={() => void cargar()} />}
             </dd>
             <dt>Email</dt>
             <dd>
               {perfil.email ?? '—'}{' '}
               <span className="profile-verificado-badge">{perfil.emailVerificado ? 'Verificado' : 'No verificado'}</span>
+              {!perfil.emailVerificado && perfil.email && <VerificarContacto canal="email" onVerificado={() => void cargar()} />}
             </dd>
             <dt>Dirección</dt><dd>{perfil.direccion ?? '—'}</dd>
             <dt>Ciudad</dt><dd>{perfil.ciudad ?? '—'}</dd>

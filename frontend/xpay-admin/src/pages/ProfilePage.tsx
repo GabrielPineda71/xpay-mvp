@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { BrebMyKeySection } from '../components/profile/BrebMyKeySection.tsx';
 import { MiInformacionSection } from '../components/profile/MiInformacionSection.tsx';
+import { ComunicacionesSection } from '../components/profile/ComunicacionesSection.tsx';
 import { CambiarContrasenaSection } from '../components/profile/CambiarContrasenaSection.tsx';
 import { PinTransaccionalSection } from '../components/profile/PinTransaccionalSection.tsx';
 
@@ -41,8 +42,11 @@ export function ProfilePage() {
         <h2 className="profile-header-title">Perfil</h2>
       </div>
 
-      {/* A. Mi información */}
+      {/* A. Mi información (incluye verificar correo y celular) */}
       <MiInformacionSection />
+
+      {/* Preferencias de comunicación (servicio y publicidad, aparte de la verificación). */}
+      <ComunicacionesSection />
 
       {/* B. Seguridad */}
       <CambiarContrasenaSection />

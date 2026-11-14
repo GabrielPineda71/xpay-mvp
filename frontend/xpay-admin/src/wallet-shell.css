@@ -1663,9 +1663,19 @@
 .profile-edit-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--sp-3);
   margin-top: var(--sp-1);
 }
+/* Verificación de contactos y preferencias de comunicación. */
+.profile-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: 0.85rem;
+  margin: var(--sp-1) 0;
+}
+.profile-checkbox input { margin-top: 0.2rem; }
 .profile-save-feedback {
   font-size: 0.82rem;
   font-weight: 600;

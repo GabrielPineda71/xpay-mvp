@@ -23,9 +23,9 @@ namespace Xpay.Api.Services;
 //                        RequiereCambioClave/username).
 //
 // Esta clase NUNCA llama a Veriff/Passport, NUNCA activa EmailVerificado/
-// CelularVerificado a true (no existe mecanismo real de verificación aún),
-// y siempre los deja en false cuando el dato declarado correspondiente
-// cambia — ver XPAY-399 PASO 4.
+// CelularVerificado a true (eso solo lo hace ContactoVerificacionService con
+// el código correcto), y siempre los deja en false cuando el dato declarado
+// correspondiente cambia — ver XPAY-399 PASO 4.
 //
 // El cómputo de "qué cambia" vive en PerfilActualizacionPlanner (puro, sin
 // XpayDbContext) — esta clase solo orquesta: cargar entidades, aplicar el
@@ -102,6 +102,14 @@ public class PerfilService
             });
 
             await _db.SaveChangesAsync();
+
+            // El código pendiente del contacto anterior deja de servir (además
+            // de quedar atado a su destino en ContactoVerificacionService).
+            var ahora = DateTime.UtcNow;
+            if (plan.ResetearCelularVerificado)
+                await ContactoVerificacionService.InvalidarPendientesAsync(_db, idUsuario, CanalContacto.WhatsApp, ContactoVerificacionService.MotivoContactoCambio, ahora);
+            if (plan.ResetearEmailVerificado)
+                await ContactoVerificacionService.InvalidarPendientesAsync(_db, idUsuario, CanalContacto.Email, ContactoVerificacionService.MotivoContactoCambio, ahora);
         }
         // Sin cambios reales -> no se escribe nada (ni Persona ni auditoría):
         // evita una fila de auditoría engañosa que sugiera una modificación

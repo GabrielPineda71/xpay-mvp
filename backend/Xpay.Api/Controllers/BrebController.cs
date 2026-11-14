@@ -621,6 +621,7 @@ public class BrebController : ControllerBase
     // Passport.
     // ──────────────────────────────────────────────────────────────────────
     [OperacionFinanciera]
+    [RequiereContactosVerificados]
     [RequierePinTransaccional]
     [HttpPost("api/breb/retiros/real")]
     [Authorize]

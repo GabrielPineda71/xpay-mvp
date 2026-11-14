@@ -69,6 +69,7 @@ public class QrController : ControllerBase
     // docs/security/FASE_71.2_E_B_AUTORIZACION_IDOR.md, V18).
     [Authorize(Policy = "KycAprobado")]
     [OperacionFinanciera]
+    [RequiereContactosVerificados]
     [RequierePinTransaccional]
     [HttpPost("pagar")]
     public async Task<IActionResult> Pagar([FromBody] PagoQrRequest request)
