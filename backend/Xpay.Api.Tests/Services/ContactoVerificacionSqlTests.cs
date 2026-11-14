@@ -1,4 +1,6 @@
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
@@ -191,6 +193,160 @@ public sealed class ContactoVerificacionSqlTests
     }
 
     [Fact]
+    public async Task ConfirmarCodigo_YEditarPerfilConcurrentemente_NoVerificaElDatoNuevo()
+    {
+        if (!TryConnString(out var cs)) return;
+        var s = new Sembrados();
+        try
+        {
+            var id = await SembrarUsuarioAsync(cs, s);
+            await using var solicitud = NuevoContexto(cs);
+            var email = new CanalFalso(CanalContacto.Email);
+            var servicio = new ContactoVerificacionService(solicitud, [email], TimeProvider.System);
+            Assert.Equal(ResultadoSolicitudCodigo.Enviado,
+                (await servicio.SolicitarAsync(id, CanalContacto.Email, false, null)).Resultado);
+
+            var pausa = new PausaConsultaSql(sql =>
+                sql.Contains("JOIN [personas]", StringComparison.OrdinalIgnoreCase)
+                && sql.Contains("email_verificado", StringComparison.OrdinalIgnoreCase));
+            await using var confirmacion = NuevoContexto(cs, pausa);
+            await using var edicion = NuevoContexto(cs);
+            var nuevaDireccion = $"edicion.{id}@correo.com";
+            var confirmar = new ContactoVerificacionService(confirmacion, [email], TimeProvider.System)
+                .ConfirmarAsync(id, CanalContacto.Email, email.UltimoCodigo);
+            Task<MiPerfilResponseDto>? editar = null;
+            try
+            {
+                await pausa.Iniciada.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                editar = new PerfilService(edicion).ActualizarAsync(id, s.Personas.Single(),
+                    new ActualizarMiPerfilRequest(null, nuevaDireccion, null, null, null));
+                await ComprobarEnEsperaAsync(editar);
+            }
+            finally
+            {
+                pausa.Continuar.TrySetResult();
+                await confirmar;
+                if (editar is not null) await editar;
+            }
+
+            Assert.Equal(ResultadoConfirmacionCodigo.Verificado, (await confirmar).Resultado);
+            await using var verificacion = NuevoContexto(cs);
+            Assert.Equal(nuevaDireccion,
+                (await verificacion.Personas.AsNoTracking().SingleAsync(p => p.IdPersona == s.Personas.Single())).Email);
+            Assert.False((await verificacion.Usuarios.AsNoTracking().SingleAsync(u => u.IdUsuario == id)).EmailVerificado);
+        }
+        finally { await LimpiarAsync(cs, s); }
+    }
+
+    [Fact]
+    public async Task CuentasConcurrentes_SoloUnaPuedeConfirmarElMismoDestino()
+    {
+        if (!TryConnString(out var cs)) return;
+        var s = new Sembrados();
+        try
+        {
+            var destino = $"compartido.{Guid.NewGuid():N}@correo.com";
+            var id1 = await SembrarUsuarioAsync(cs, s, destino);
+            var id2 = await SembrarUsuarioAsync(cs, s, destino.ToUpperInvariant());
+            var email1 = new CanalFalso(CanalContacto.Email);
+            var email2 = new CanalFalso(CanalContacto.Email);
+            await using (var solicitudes = NuevoContexto(cs))
+            {
+                Assert.Equal(ResultadoSolicitudCodigo.Enviado, (await new ContactoVerificacionService(solicitudes, [email1], TimeProvider.System)
+                    .SolicitarAsync(id1, CanalContacto.Email, false, null)).Resultado);
+                Assert.Equal(ResultadoSolicitudCodigo.Enviado, (await new ContactoVerificacionService(solicitudes, [email2], TimeProvider.System)
+                    .SolicitarAsync(id2, CanalContacto.Email, false, null)).Resultado);
+            }
+
+            var pausa = new PausaConsultaSql(sql =>
+                sql.Contains("JOIN [personas]", StringComparison.OrdinalIgnoreCase)
+                && sql.Contains("email_verificado", StringComparison.OrdinalIgnoreCase));
+            await using var ctx1 = NuevoContexto(cs, pausa);
+            await using var ctx2 = NuevoContexto(cs);
+            var confirmar1 = new ContactoVerificacionService(ctx1, [email1], TimeProvider.System)
+                .ConfirmarAsync(id1, CanalContacto.Email, email1.UltimoCodigo);
+            Task<ConfirmacionCodigoResultado>? confirmar2 = null;
+            try
+            {
+                await pausa.Iniciada.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                confirmar2 = new ContactoVerificacionService(ctx2, [email2], TimeProvider.System)
+                    .ConfirmarAsync(id2, CanalContacto.Email, email2.UltimoCodigo);
+                await ComprobarEnEsperaAsync(confirmar2);
+            }
+            finally
+            {
+                pausa.Continuar.TrySetResult();
+                await confirmar1;
+                if (confirmar2 is not null) await confirmar2;
+            }
+
+            Assert.Equal(ResultadoConfirmacionCodigo.Verificado, (await confirmar1).Resultado);
+            Assert.Equal(ResultadoConfirmacionCodigo.ContactoEnUsoPorOtro, (await confirmar2!).Resultado);
+        }
+        finally { await LimpiarAsync(cs, s); }
+    }
+
+    [Fact]
+    public async Task EnviosConcurrentes_RespetanCupoDiarioPorDestino()
+    {
+        if (!TryConnString(out var cs)) return;
+        var s = new Sembrados();
+        try
+        {
+            var destino = $"compartido.{Guid.NewGuid():N}@correo.com";
+            var id1 = await SembrarUsuarioAsync(cs, s, destino);
+            var id2 = await SembrarUsuarioAsync(cs, s, destino.ToUpperInvariant());
+            var reloj = new RelojMovil(DateTimeOffset.UtcNow);
+            await using (var semillas = NuevoContexto(cs))
+            {
+                for (var i = 0; i < ContactoVerificacionService.MaxEnviosDestinoDia - 1; i++)
+                {
+                    semillas.ContactoCodigosVerificacion.Add(new ContactoCodigoVerificacion
+                    {
+                        IdUsuario = i % 2 == 0 ? id1 : id2,
+                        Canal = CanalContacto.Email,
+                        Destino = destino,
+                        CodigoSal = new byte[16],
+                        CodigoHash = new byte[32],
+                        FechaCreacion = reloj.GetUtcNow().UtcDateTime.AddMinutes(-30),
+                        FechaExpiracion = reloj.GetUtcNow().UtcDateTime.AddMinutes(-20),
+                    });
+                }
+                await semillas.SaveChangesAsync();
+            }
+
+            var pausa = new PausaConsultaSql(sql =>
+                sql.Contains("COUNT(*)", StringComparison.OrdinalIgnoreCase)
+                && sql.Contains("[destino]", StringComparison.OrdinalIgnoreCase));
+            await using var ctx1 = NuevoContexto(cs, pausa);
+            await using var ctx2 = NuevoContexto(cs);
+            var email1 = new CanalFalso(CanalContacto.Email);
+            var email2 = new CanalFalso(CanalContacto.Email);
+            var enviar1 = new ContactoVerificacionService(ctx1, [email1], reloj)
+                .SolicitarAsync(id1, CanalContacto.Email, false, null);
+            Task<SolicitudCodigoResultado>? enviar2 = null;
+            try
+            {
+                await pausa.Iniciada.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                enviar2 = new ContactoVerificacionService(ctx2, [email2], reloj)
+                    .SolicitarAsync(id2, CanalContacto.Email, false, null);
+                await ComprobarEnEsperaAsync(enviar2);
+            }
+            finally
+            {
+                pausa.Continuar.TrySetResult();
+                await enviar1;
+                if (enviar2 is not null) await enviar2;
+            }
+
+            Assert.Equal(ResultadoSolicitudCodigo.Enviado, (await enviar1).Resultado);
+            Assert.Equal(ResultadoSolicitudCodigo.LimiteDiario, (await enviar2!).Resultado);
+            Assert.Null(email2.UltimoCodigo);
+        }
+        finally { await LimpiarAsync(cs, s); }
+    }
+
+    [Fact]
     public async Task WhatsApp_SinConsentimiento_NoEnvia_YConConsentimientoLoRegistraYVerifica()
     {
         if (!TryConnString(out var cs)) return;
@@ -216,6 +372,29 @@ public sealed class ContactoVerificacionSqlTests
             // Verificar no otorga publicidad.
             Assert.False(await Servicio(cs).svc.ConsentimientoVigenteAsync(id, CanalContacto.WhatsApp, FinalidadComunicacion.Publicidad));
             Assert.True((await v.Usuarios.AsNoTracking().SingleAsync(x => x.IdUsuario == id)).CelularVerificado);
+        }
+        finally { await LimpiarAsync(cs, s); }
+    }
+
+    [Fact]
+    public async Task WhatsApp_ConservaNuevoConsentimiento_SiElReenvioDebeEsperar()
+    {
+        if (!TryConnString(out var cs)) return;
+        var s = new Sembrados();
+        try
+        {
+            var id = await SembrarUsuarioAsync(cs, s);
+            var reloj = new RelojMovil(DateTimeOffset.UtcNow);
+            var (servicio, _, _) = Servicio(cs, reloj);
+            Assert.Equal(ResultadoSolicitudCodigo.Enviado,
+                (await servicio.SolicitarAsync(id, CanalContacto.WhatsApp, true, null)).Resultado);
+            await Servicio(cs).svc.RegistrarConsentimientoAsync(id, CanalContacto.WhatsApp,
+                FinalidadComunicacion.Servicio, false, "PERFIL", null);
+
+            Assert.Equal(ResultadoSolicitudCodigo.Espera,
+                (await Servicio(cs).svc.SolicitarAsync(id, CanalContacto.WhatsApp, true, null)).Resultado);
+            Assert.True(await Servicio(cs).svc.ConsentimientoVigenteAsync(id, CanalContacto.WhatsApp,
+                FinalidadComunicacion.Servicio));
         }
         finally { await LimpiarAsync(cs, s); }
     }
@@ -300,6 +479,23 @@ public sealed class ContactoVerificacionSqlTests
     }
 
     // ── Infraestructura ─────────────────────────────────────────────────
+
+    private static async Task ComprobarEnEsperaAsync(Task operacion) =>
+        Assert.NotSame(operacion, await Task.WhenAny(operacion, Task.Delay(TimeSpan.FromMilliseconds(200))));
+
+    private sealed class PausaConsultaSql(Func<string, bool> coincide) : DbCommandInterceptor
+    {
+        public TaskCompletionSource Iniciada { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continuar { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            if (coincide(command.CommandText) && Iniciada.TrySetResult())
+                await Continuar.Task.WaitAsync(cancellationToken);
+            return result;
+        }
+    }
 
     private sealed class CanalFalso(string canal) : ICanalCodigoContacto
     {
@@ -408,6 +604,6 @@ public sealed class ContactoVerificacionSqlTests
         return false;
     }
 
-    private static XpayDbContext NuevoContexto(string cs)
-        => new(new DbContextOptionsBuilder<XpayDbContext>().UseSqlServer(cs).Options);
+    private static XpayDbContext NuevoContexto(string cs, params IInterceptor[] interceptores)
+        => new(new DbContextOptionsBuilder<XpayDbContext>().UseSqlServer(cs).AddInterceptors(interceptores).Options);
 }

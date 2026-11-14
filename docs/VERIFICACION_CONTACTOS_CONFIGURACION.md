@@ -35,19 +35,26 @@ marginal, pero cada recurso facturable se crea solo con tu aprobación.
      buzón `xpay@xpaycol.com`), **se agrega** el `include` de Azure al registro
      existente; nunca dos registros SPF.
    - DKIM: dos CNAME (`selector1-…` y `selector2-…`).
-   - Recomendado: DMARC.
-   Esperar a que los cinco estados queden «Verified».
-4. **Remitente:** en el dominio, *MailFrom addresses* → `no-reply@xpaycol.com`
-   con nombre visible «XPAY».
+   - Revisar el DMARC existente por separado. Conservar los registros MX
+     y las autorizaciones SPF de los proveedores que ya usa el dominio.
+   Confirmar en Azure la verificación del dominio, SPF y DKIM.
+4. **Remitente:** en *MailFrom addresses*, copiar la dirección predeterminada
+   que aparece para el dominio (normalmente `donotreply@xpaycol.com`).
+   Usar `no-reply@xpaycol.com` solo si se crea en Azure. Los remitentes
+   adicionales requieren límites de envío superiores a los predeterminados.
+   [Guía de remitentes de Microsoft](https://learn.microsoft.com/en-us/azure/communication-services/quickstarts/email/add-multiple-senders).
 5. **Communication Services:** crear el recurso en `rg-xpay-prod` y en
    *Email → Domains* conectar el dominio `xpaycol.com`.
-6. **Permiso para la API (sin secretos):** en el recurso Communication
-   Services → *Access control (IAM)* → asignar el rol
-   **Communication and Email Service Owner** a la identidad administrada del
-   App Service de la API. El permiso puede tardar en propagarse.
+6. **Permiso para la API (sin secretos):** asignar a la identidad
+   administrada de la API un rol limitado al recurso Communication Services.
+   El [ejemplo de Microsoft para enviar correo con identidad administrada](https://learn.microsoft.com/en-us/samples/azure-samples/communication-services-dotnet-quickstarts/email-sample-send-email-with-managed-identity/)
+   documenta un rol personalizado con las acciones
+   `Microsoft.Communication/CommunicationServices/Read` y
+   `Microsoft.Communication/CommunicationServices/Write`, o el rol
+   **Contributor** en ese recurso. Comprobar el permiso con un envío de prueba.
 7. **App Settings de la API** (no son secretos):
-   - `XPAY_CONTACTOS_EMAIL_ACS_ENDPOINT` = `https://<recurso>.<región>.communication.azure.com`
-   - `XPAY_CONTACTOS_EMAIL_REMITENTE` = `no-reply@xpaycol.com`
+   - `XPAY_CONTACTOS_EMAIL_ACS_ENDPOINT` = `https://<recurso>.communication.azure.com` (copiar el endpoint del recurso)
+   - `XPAY_CONTACTOS_EMAIL_REMITENTE` = dirección exacta de *MailFrom addresses*
 
 La API valida que el endpoint sea `https://…communication.azure.com` y que el
 remitente termine en `@xpaycol.com`; si no, el canal queda no disponible.
@@ -89,9 +96,18 @@ cuando el usuario escribe el código, no cuando WhatsApp confirma la entrega.
 
 ## C. Base de datos
 
-- Aplicar `database/050_verificacion_contactos.sql` en PROD con el mismo
-  procedimiento de las migraciones anteriores (idempotente; aborta ante
-  cualquier incompatibilidad).
+- Desde el commit que se va a desplegar, validar el manifiesto y planificar
+  exclusivamente la migración 050 para la base existente con 049 aplicada:
+
+  ```sh
+  python3 database/prod/tools/validar_paquete.py
+  python3 database/prod/tools/ejecutar_migraciones.py --desde 050 --hasta 050
+  ```
+
+- Ejecutar ese rango por la vía privada del procedimiento de PROD. Verificar
+  el código de salida y la presencia de `dbo.contacto_codigos_verificacion`
+  y `dbo.usuario_consentimientos_comunicacion` antes de desplegar la API:
+  el perfil y las preferencias ya usan esas tablas con los canales apagados.
 
 ## D. Activación del requisito (último paso)
 

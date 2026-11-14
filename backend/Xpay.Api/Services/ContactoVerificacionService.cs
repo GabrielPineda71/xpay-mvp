@@ -84,26 +84,25 @@ public sealed class ContactoVerificacionService(
         if (proveedor is not { Disponible: true })
             return new(ResultadoSolicitudCodigo.CanalNoDisponible);
 
-        var (usuario, persona) = await CargarAsync(idUsuario, ct);
-        if (YaVerificado(usuario, canal)) return new(ResultadoSolicitudCodigo.YaVerificado);
-
-        var crudo = canal == CanalContacto.Email ? persona.Email : persona.Celular;
-        if (string.IsNullOrWhiteSpace(crudo)) return new(ResultadoSolicitudCodigo.SinContacto);
-        if (!TryNormalizarDestino(canal, crudo, out var destino))
-            return new(ResultadoSolicitudCodigo.ContactoInvalido);
-
-        if (await EnUsoPorOtroAsync(idUsuario, canal, destino, ct))
-            return new(ResultadoSolicitudCodigo.ContactoEnUsoPorOtro);
-
-        var ahora = tiempo.GetUtcNow().UtcDateTime;
+        string destino;
         string codigo;
         ContactoCodigoVerificacion fila;
 
         await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
-            if (await AppLockHelper.AdquirirAsync(db, ClaveLock(idUsuario, canal), ct) < 0)
-                throw new InvalidOperationException("No se pudo serializar la solicitud del código.");
+            var (usuario, persona) = await CargarBajoBloqueoAsync(idUsuario, ct);
+            if (YaVerificado(usuario, canal)) return new(ResultadoSolicitudCodigo.YaVerificado);
 
+            var crudo = canal == CanalContacto.Email ? persona.Email : persona.Celular;
+            if (string.IsNullOrWhiteSpace(crudo)) return new(ResultadoSolicitudCodigo.SinContacto);
+            if (!TryNormalizarDestino(canal, crudo, out destino))
+                return new(ResultadoSolicitudCodigo.ContactoInvalido);
+
+            await BloquearDestinoAsync(canal, destino, ct);
+            if (await EnUsoPorOtroAsync(idUsuario, canal, destino, ct))
+                return new(ResultadoSolicitudCodigo.ContactoEnUsoPorOtro);
+
+            var ahora = tiempo.GetUtcNow().UtcDateTime;
             if (canal == CanalContacto.WhatsApp
                 && !await ConsentimientoVigenteAsync(idUsuario, CanalContacto.WhatsApp, FinalidadComunicacion.Servicio, ct))
             {
@@ -111,6 +110,7 @@ public sealed class ContactoVerificacionService(
                     return new(ResultadoSolicitudCodigo.ConsentimientoRequerido);
                 db.ConsentimientosComunicacion.Add(NuevoConsentimiento(
                     idUsuario, CanalContacto.WhatsApp, FinalidadComunicacion.Servicio, true, "VERIFICACION_CELULAR", ip, ahora));
+                await db.SaveChangesAsync(ct);
             }
 
             var ultimo = await db.ContactoCodigosVerificacion.AsNoTracking()
@@ -168,7 +168,7 @@ public sealed class ContactoVerificacionService(
             await db.ContactoCodigosVerificacion
                 .Where(c => c.IdCodigo == fila.IdCodigo && c.FechaUso == null && c.FechaInvalidacion == null)
                 .ExecuteUpdateAsync(s => s
-                    .SetProperty(c => c.FechaInvalidacion, ahora)
+                    .SetProperty(c => c.FechaInvalidacion, tiempo.GetUtcNow().UtcDateTime)
                     .SetProperty(c => c.MotivoInvalidacion, MotivoErrorEnvio), CancellationToken.None);
             return new(ResultadoSolicitudCodigo.ErrorEnvio);
         }
@@ -184,14 +184,9 @@ public sealed class ContactoVerificacionService(
         if (limpio is null || limpio.Length != Digitos || !limpio.All(char.IsAsciiDigit))
             return new(ResultadoConfirmacionCodigo.FormatoInvalido);
 
-        var ahora = tiempo.GetUtcNow().UtcDateTime;
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        if (await AppLockHelper.AdquirirAsync(db, ClaveLock(idUsuario, canal), ct) < 0)
-            throw new InvalidOperationException("No se pudo serializar la confirmación del código.");
-
-        var usuario = await db.Usuarios.SingleOrDefaultAsync(u => u.IdUsuario == idUsuario, ct)
-            ?? throw new KeyNotFoundException("Usuario no encontrado.");
-        var persona = await db.Personas.AsNoTracking().SingleAsync(p => p.IdPersona == usuario.IdPersona, ct);
+        var (usuario, persona) = await CargarBajoBloqueoAsync(idUsuario, ct);
+        var ahora = tiempo.GetUtcNow().UtcDateTime;
         if (YaVerificado(usuario, canal)) return new(ResultadoConfirmacionCodigo.YaVerificado);
 
         var fila = await db.ContactoCodigosVerificacion
@@ -221,6 +216,11 @@ public sealed class ContactoVerificacionService(
                 ? new(ResultadoConfirmacionCodigo.Agotado)
                 : new(ResultadoConfirmacionCodigo.Incorrecto, MaxIntentos - fila.IntentosFallidos);
         }
+
+        await BloquearDestinoAsync(canal, fila.Destino, ct);
+        ahora = tiempo.GetUtcNow().UtcDateTime;
+        if (fila.FechaExpiracion <= ahora)
+            return new(ResultadoConfirmacionCodigo.SinCodigoVigente);
 
         if (await EnUsoPorOtroAsync(idUsuario, canal, fila.Destino, ct))
         {
@@ -270,12 +270,14 @@ public sealed class ContactoVerificacionService(
         await db.SaveChangesAsync(ct);
     }
 
-    // Llamado también por PerfilService cuando cambia el contacto.
-    public static Task<int> InvalidarPendientesAsync(
+    internal static Task<int> InvalidarPendientesAsync(
         XpayDbContext db, long idUsuario, string canal, string motivo, DateTime ahora, CancellationToken ct = default) =>
-        db.ContactoCodigosVerificacion
-            .Where(c => c.IdUsuario == idUsuario && c.Canal == canal
-                     && c.FechaUso == null && c.FechaInvalidacion == null)
+        InvalidarPendientesAsync(db.ContactoCodigosVerificacion
+            .Where(c => c.IdUsuario == idUsuario && c.Canal == canal), motivo, ahora, ct);
+
+    internal static Task<int> InvalidarPendientesAsync(
+        IQueryable<ContactoCodigoVerificacion> codigos, string motivo, DateTime ahora, CancellationToken ct = default) =>
+        codigos.Where(c => c.FechaUso == null && c.FechaInvalidacion == null)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(c => c.FechaInvalidacion, ahora)
                 .SetProperty(c => c.MotivoInvalidacion, motivo), ct);
@@ -325,11 +327,21 @@ public sealed class ContactoVerificacionService(
     private static bool YaVerificado(Usuario u, string canal) =>
         canal == CanalContacto.Email ? u.EmailVerificado : u.CelularVerificado;
 
-    private async Task<(Usuario, Persona)> CargarAsync(long idUsuario, CancellationToken ct)
+    private async Task<(Usuario, Persona)> CargarBajoBloqueoAsync(long idUsuario, CancellationToken ct)
     {
-        var usuario = await db.Usuarios.AsNoTracking().SingleOrDefaultAsync(u => u.IdUsuario == idUsuario, ct)
+        var idPersona = await db.Usuarios.AsNoTracking()
+            .Where(u => u.IdUsuario == idUsuario)
+            .Select(u => (long?)u.IdPersona)
+            .SingleOrDefaultAsync(ct)
             ?? throw new KeyNotFoundException("Usuario no encontrado.");
-        var persona = await db.Personas.AsNoTracking().SingleAsync(p => p.IdPersona == usuario.IdPersona, ct);
+        await BloquearPersonaAsync(db, idPersona, ct);
+
+        var usuario = db.Usuarios.Local.SingleOrDefault(u => u.IdUsuario == idUsuario);
+        if (usuario is null)
+            usuario = await db.Usuarios.SingleAsync(u => u.IdUsuario == idUsuario, ct);
+        else
+            await db.Entry(usuario).ReloadAsync(ct);
+        var persona = await db.Personas.AsNoTracking().SingleAsync(p => p.IdPersona == idPersona, ct);
         return (usuario, persona);
     }
 
@@ -342,13 +354,14 @@ public sealed class ContactoVerificacionService(
             return await db.Usuarios.AsNoTracking()
                 .Where(u => u.IdUsuario != idUsuario && u.EmailVerificado)
                 .Join(db.Personas, u => u.IdPersona, p => p.IdPersona, (u, p) => p.Email)
-                .AnyAsync(e => e == destino, ct);
+                .AnyAsync(e => e != null && e.Trim().ToLower() == destino, ct);
         }
         var ultimos10 = destino[^10..];
         var candidatos = await db.Usuarios.AsNoTracking()
             .Where(u => u.IdUsuario != idUsuario && u.CelularVerificado)
             .Join(db.Personas, u => u.IdPersona, p => p.IdPersona, (u, p) => p.Celular)
-            .Where(c => c.EndsWith(ultimos10))
+            .Where(c => c.Replace(" ", "").Replace("-", "").Replace("(", "")
+                .Replace(")", "").Replace(".", "").EndsWith(ultimos10))
             .ToListAsync(ct);
         return candidatos.Any(c => TryNormalizarDestino(CanalContacto.WhatsApp, c, out var n) && n == destino);
     }
@@ -371,7 +384,22 @@ public sealed class ContactoVerificacionService(
         IpSolicitud   = NormalizarIp(ip),
     };
 
-    private static string ClaveLock(long idUsuario, string canal) => $"XPAY:CONTACTO_CODIGO:{idUsuario}:{canal}";
+    // Perfil comparte el bloqueo de persona porque ahí se guardan los contactos.
+    // Cuando se necesitan ambos bloqueos: primero persona, luego destino.
+    internal static Task BloquearPersonaAsync(XpayDbContext db, long idPersona, CancellationToken ct = default) =>
+        BloquearAsync(db, $"XPAY:CONTACTO_PERSONA:{idPersona}", ct);
+
+    private Task BloquearDestinoAsync(string canal, string destino, CancellationToken ct)
+    {
+        var huella = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(destino)));
+        return BloquearAsync(db, $"XPAY:CONTACTO_DESTINO:{canal}:{huella}", ct);
+    }
+
+    private static async Task BloquearAsync(XpayDbContext db, string clave, CancellationToken ct)
+    {
+        if (await AppLockHelper.AdquirirAsync(db, clave, ct) < 0)
+            throw new InvalidOperationException("No se pudo sincronizar la operación de contacto. Intenta nuevamente.");
+    }
 
     private static string? NormalizarIp(string? ip)
     {

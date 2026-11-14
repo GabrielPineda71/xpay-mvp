@@ -27,13 +27,9 @@ namespace Xpay.Api.Services;
 // el código correcto), y siempre los deja en false cuando el dato declarado
 // correspondiente cambia — ver XPAY-399 PASO 4.
 //
-// El cómputo de "qué cambia" vive en PerfilActualizacionPlanner (puro, sin
-// XpayDbContext) — esta clase solo orquesta: cargar entidades, aplicar el
-// plan, persistir entidad+auditoría en un único SaveChangesAsync (mismo
-// patrón ya usado por UsuarioAdminService.RegistrarAuditoria: ambas
-// entidades comparten el ChangeTracker de EF Core, por lo que una sola
-// llamada las confirma de forma atómica — sin transacción explícita
-// adicional, consistente con "no infraestructura compleja innecesaria").
+// El cómputo de "qué cambia" vive en PerfilActualizacionPlanner. El servicio
+// serializa los cambios con la verificación y guarda perfil, auditoría y
+// revocación de códigos en una sola transacción.
 public class PerfilService
 {
     private readonly XpayDbContext _db;
@@ -51,10 +47,25 @@ public class PerfilService
 
     public async Task<MiPerfilResponseDto> ActualizarAsync(long idUsuario, long idPersona, ActualizarMiPerfilRequest request)
     {
-        var persona = await _db.Personas.FirstOrDefaultAsync(p => p.IdPersona == idPersona)
-            ?? throw new KeyNotFoundException("No se encontró la persona asociada a este usuario.");
-        var usuario = await _db.Usuarios.FirstOrDefaultAsync(u => u.IdPersona == idPersona)
-            ?? throw new KeyNotFoundException("No se encontró el usuario asociado a esta persona.");
+        await using var transaccion = _db.Database.IsSqlServer()
+            ? await _db.Database.BeginTransactionAsync()
+            : null;
+        if (transaccion is not null)
+            await ContactoVerificacionService.BloquearPersonaAsync(_db, idPersona);
+
+        var persona = _db.Personas.Local.SingleOrDefault(p => p.IdPersona == idPersona);
+        if (persona is null)
+            persona = await _db.Personas.FirstOrDefaultAsync(p => p.IdPersona == idPersona)
+                ?? throw new KeyNotFoundException("No se encontró la persona asociada a este usuario.");
+        else if (transaccion is not null)
+            await _db.Entry(persona).ReloadAsync();
+
+        var usuario = _db.Usuarios.Local.SingleOrDefault(u => u.IdPersona == idPersona && u.IdUsuario == idUsuario);
+        if (usuario is null)
+            usuario = await _db.Usuarios.FirstOrDefaultAsync(u => u.IdPersona == idPersona && u.IdUsuario == idUsuario)
+                ?? throw new KeyNotFoundException("No se encontró el usuario asociado a esta persona.");
+        else if (transaccion is not null)
+            await _db.Entry(usuario).ReloadAsync();
 
         var actuales = new PerfilActualizacionPlanner.CamposActuales(
             persona.Celular, persona.Email, persona.Direccion, persona.Ciudad, persona.Departamento);
@@ -103,19 +114,41 @@ public class PerfilService
 
             await _db.SaveChangesAsync();
 
-            // El código pendiente del contacto anterior deja de servir (además
-            // de quedar atado a su destino en ContactoVerificacionService).
-            var ahora = DateTime.UtcNow;
-            if (plan.ResetearCelularVerificado)
-                await ContactoVerificacionService.InvalidarPendientesAsync(_db, idUsuario, CanalContacto.WhatsApp, ContactoVerificacionService.MotivoContactoCambio, ahora);
-            if (plan.ResetearEmailVerificado)
-                await ContactoVerificacionService.InvalidarPendientesAsync(_db, idUsuario, CanalContacto.Email, ContactoVerificacionService.MotivoContactoCambio, ahora);
+            if (transaccion is not null && (plan.ResetearCelularVerificado || plan.ResetearEmailVerificado))
+                await RevocarContactosAsync(idPersona, plan);
         }
         // Sin cambios reales -> no se escribe nada (ni Persona ni auditoría):
         // evita una fila de auditoría engañosa que sugiera una modificación
         // que nunca ocurrió (ver XPAY-399 PASO 10, caso de test explícito).
 
+        if (transaccion is not null)
+            await transaccion.CommitAsync();
+
         return MapearRespuesta(persona, usuario);
+    }
+
+    private async Task RevocarContactosAsync(long idPersona, PerfilActualizacionPlanner.Plan plan)
+    {
+        var usuarios = _db.Usuarios.Where(u => u.IdPersona == idPersona);
+        var ids = usuarios.Select(u => u.IdUsuario);
+        var codigos = _db.ContactoCodigosVerificacion.Where(c => ids.Contains(c.IdUsuario));
+        var ahora = DateTime.UtcNow;
+
+        // El dato pertenece a la persona y puede estar asociado a más de un usuario.
+        if (plan.ResetearCelularVerificado)
+        {
+            await usuarios.Where(u => u.CelularVerificado)
+                .ExecuteUpdateAsync(s => s.SetProperty(u => u.CelularVerificado, false));
+            await ContactoVerificacionService.InvalidarPendientesAsync(codigos.Where(c => c.Canal == CanalContacto.WhatsApp),
+                ContactoVerificacionService.MotivoContactoCambio, ahora);
+        }
+        if (plan.ResetearEmailVerificado)
+        {
+            await usuarios.Where(u => u.EmailVerificado)
+                .ExecuteUpdateAsync(s => s.SetProperty(u => u.EmailVerificado, false));
+            await ContactoVerificacionService.InvalidarPendientesAsync(codigos.Where(c => c.Canal == CanalContacto.Email),
+                ContactoVerificacionService.MotivoContactoCambio, ahora);
+        }
     }
 
     private static MiPerfilResponseDto MapearRespuesta(Persona persona, Usuario usuario) => new()

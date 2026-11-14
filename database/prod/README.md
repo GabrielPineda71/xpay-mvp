@@ -1,6 +1,6 @@
 # Paquete de migraciones XPAY PROD
 
-Paquete reproducible para crear el esquema de la base XPAY PROD (vacía) a partir de los scripts `database/001`–`049`, **sin datos QA/demo y sin valores comerciales no aprobados**.
+Paquete reproducible para crear el esquema de la base XPAY PROD (vacía) a partir de los scripts `database/001`–`050`, **sin datos QA/demo y sin valores comerciales no aprobados**.
 
 > Nada de este directorio se ha ejecutado contra la base de PROD.
 > B1 (001–009) se ha probado solo en un SQL Server 2022 local
@@ -35,7 +35,7 @@ El validador no sustituye una prueba real de SQL: no compila ni ejecuta T-SQL.
 
 ## Clasificación aplicada
 
-- **Originales sin cambios (A):** 001, 002, 005, 006, 007, 010, 022–033, 035–044, 046–049.
+- **Originales sin cambios (A):** 001, 002, 005, 006, 007, 010, 022–033, 035–044, 046–050.
 - **Variantes PROD (B):** 003, 004, 011, 012, 013, 014, 015, 016, 017, 019, 021. Solo se quitaron bloques demo/QA y operaciones con IDs de prueba (ver `eliminado` en la especificación).
 - **Variante PROD de 009 (D, resuelto):** sin el encabezado "NO EJECUTAR EN PRODUCCIÓN", sin la consulta de usuarios QA y sin mensajes QA. Estado `LISTO` por autorización del usuario; 034 pasa también a `LISTO`.
 - **Excluidos (C):** 008, 018, 020, `scripts/ci/ci_admin_xpay_fixture.sql`, `scripts/ci/ci_comercio_caja_fixture.sql`.

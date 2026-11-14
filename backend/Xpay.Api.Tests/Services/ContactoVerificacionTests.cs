@@ -117,6 +117,7 @@ public sealed class ContactoVerificacionTests
 
     [Theory]
     [InlineData(ConfiguracionCanalesContacto.ClaveWhatsAppToken, null)]
+    [InlineData(ConfiguracionCanalesContacto.ClaveWhatsAppToken, "@Microsoft.KeyVault(SecretUri=https://test.vault.azure.net/secrets/whatsapp/)")]
     [InlineData(ConfiguracionCanalesContacto.ClaveWhatsAppNumeroId, "12345/../x")]
     [InlineData(ConfiguracionCanalesContacto.ClaveWhatsAppGraphVer, "23")]
     [InlineData(ConfiguracionCanalesContacto.ClaveWhatsAppPlantilla, "Plantilla Con Espacios")]

@@ -58,7 +58,8 @@
     {"id": "046", "origen": "database/046_cartera_solicitud_revision_manual.sql", "tipo": "ORIGINAL", "clase": "A", "estado": "LISTO", "depende_de": ["001", "035"]},
     {"id": "047", "origen": "database/047_libranza_recaudo_p0.sql", "tipo": "ORIGINAL", "clase": "A", "estado": "LISTO", "depende_de": ["010", "011", "012", "013", "044"], "notas": "Mas de 15 lotes sin transaccion: exige sqlcmd -b. Default monto_minimo_anticipo 100000 (valor de negocio en DEFAULT de columna)."},
     {"id": "048", "origen": "database/048_usuario_tokens.sql", "tipo": "ORIGINAL", "clase": "A", "estado": "LISTO", "depende_de": ["001"]},
-    {"id": "049", "origen": "database/049_usuario_version_seguridad.sql", "tipo": "ORIGINAL", "clase": "A", "estado": "LISTO", "depende_de": ["001"]}
+    {"id": "049", "origen": "database/049_usuario_version_seguridad.sql", "tipo": "ORIGINAL", "clase": "A", "estado": "LISTO", "depende_de": ["001"]},
+    {"id": "050", "origen": "database/050_verificacion_contactos.sql", "tipo": "ORIGINAL", "clase": "A", "estado": "LISTO", "depende_de": ["001"], "notas": "Crea las tablas de codigos y consentimientos. En una base existente con 049 aplicada, seleccionar solo 050."}
   ],
   "excluidos": [
     {"ruta": "database/008_seed_qa_dataset.sql", "clase": "C", "motivo": "Dataset QA: usuarios QA activos (uno con ADMIN_XPAY), hash marcador y contrasena QA documentada en comentarios."},

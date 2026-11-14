@@ -115,6 +115,8 @@ public sealed record OpcionesWhatsAppCloud(string NumeroId, string Plantilla, st
         if (string.IsNullOrEmpty(numeroId) || string.IsNullOrEmpty(plantilla) || string.IsNullOrEmpty(idioma)
             || string.IsNullOrEmpty(version) || string.IsNullOrEmpty(token))
             return null;
+        // App Service puede dejar la referencia literal si Key Vault no la resuelve.
+        if (token.StartsWith("@Microsoft.KeyVault(", StringComparison.OrdinalIgnoreCase)) return null;
         // Identificadores que viajan en la URL: solo formatos esperados.
         if (!numeroId.All(char.IsAsciiDigit)) return null;
         if (version.Length < 2 || version[0] != 'v' || !version[1..].All(c => char.IsAsciiDigit(c) || c == '.')) return null;
