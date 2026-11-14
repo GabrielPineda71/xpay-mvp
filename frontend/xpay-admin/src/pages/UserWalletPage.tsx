@@ -1993,11 +1993,11 @@ export function UserWalletPage() {
         <div className="breb-real-section">
           {brebLlaveLoad ? (
             <div className="loading">Cargando llave Bre-B...</div>
-          ) : !brebLlave || brebLlave.keyType !== 'BCODE' ? (
+          ) : !brebLlave ? (
             // XPAY-392 — CTA hacia Perfil (antes dirigía al tab 'banco', que
-            // ya no tiene entrada en la franja verde desde XPAY-390). No
-            // cambia la condición (misma regla: requiere una llave BCODE
-            // apta), solo el mensaje/destino.
+            // ya no tiene entrada en la franja verde desde XPAY-390). Aplica
+            // a cualquier tipo de llave: el backend resuelve ID, PHONE,
+            // EMAIL, ALPHA y BCODE (PassportKeyType); antes solo BCODE.
             <div className="breb-no-key-card">
               <p className="breb-retiro-note">Primero configura tu llave Bre-B.</p>
               <button
@@ -2048,7 +2048,7 @@ export function UserWalletPage() {
                     type="text"
                     value={realKeyValueInput}
                     onChange={e => setRealKeyValueInput(e.target.value)}
-                    placeholder="Valor de tu llave BCODE"
+                    placeholder="Escríbela igual que al registrarla"
                     autoComplete="off"
                   />
                 </label>

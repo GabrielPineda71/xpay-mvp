@@ -127,8 +127,38 @@ public class PerfilService
         Departamento        = persona.Departamento,
         Pais                = persona.Pais,
         IdentidadVerificada = persona.IdentidadVerificada,
+        NombreVerificado    = persona.IdentidadVerificada ? NombreVerificado(persona) : null,
+        TipoDocumentoVerificado = persona.IdentidadVerificada ? EtiquetaTipoDocumentoVeriff(persona.TipoDocumentoVeriffRaw) : null,
+        NumeroDocumentoVerificadoMasked = persona.IdentidadVerificada ? EnmascararDocumento(persona.NumeroDocumentoVerificado) : null,
         EstadoKycActual     = usuario.EstadoKycActual,
         EmailVerificado     = usuario.EmailVerificado,
         CelularVerificado   = usuario.CelularVerificado,
     };
+
+    private static string? NombreVerificado(Persona persona)
+    {
+        var partes = new[] { persona.NombreVerificadoCompleto, persona.ApellidoVerificadoCompleto }
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v!.Trim())
+            .ToArray();
+        return partes.Length > 0 ? string.Join(' ', partes) : null;
+    }
+
+    internal static string? EtiquetaTipoDocumentoVeriff(string? raw) =>
+        (raw ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            ""                 => null,
+            "ID_CARD"          => "Documento de identidad",
+            "PASSPORT"         => "Pasaporte",
+            "DRIVERS_LICENSE"  => "Licencia de conducción",
+            "RESIDENCE_PERMIT" => "Permiso de residencia",
+            _                  => "Otro documento",
+        };
+
+    internal static string? EnmascararDocumento(string? numero)
+    {
+        var n = (numero ?? string.Empty).Trim();
+        if (n.Length == 0) return null;
+        return n.Length <= 4 ? new string('*', n.Length) : "***" + n[^4..];
+    }
 }

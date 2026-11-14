@@ -850,7 +850,8 @@ public class LibranzaAnticipoService
 
             var persona = await _db.Personas.FirstOrDefaultAsync(p => p.IdPersona == usuario.IdPersona)
                 ?? throw new InvalidOperationException("El usuario no tiene persona asociada.");
-            if (!DocumentoCoincide(empleado.TipoDocumento, empleado.NumeroDocumento, persona.TipoDocumento, persona.NumeroDocumento))
+            if (!DocumentoCoincide(empleado.TipoDocumento, empleado.NumeroDocumento, persona.TipoDocumento, persona.NumeroDocumento)
+                && !DocumentoVerificadoCoincide(empleado, persona))
                 throw new InvalidOperationException("El documento del empleado no corresponde al usuario indicado.");
             if (!string.IsNullOrWhiteSpace(persona.NumeroDocumentoVerificado)
                 && NormalizarDocumento(persona.NumeroDocumentoVerificado) != NormalizarDocumento(empleado.NumeroDocumento))
@@ -914,6 +915,26 @@ public class LibranzaAnticipoService
 
     internal static string NormalizarDocumento(string? numero) =>
         new string((numero ?? string.Empty).Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+
+    // Persona sin documento legal (p. ej. alta del piloto cuyo documento legal
+    // no se consolidó desde Veriff): se admite el documento verificado por
+    // VERIFF. Solo tipos con correspondencia cerrada (TipoDocumentoVeriffMapper).
+    internal static bool DocumentoVerificadoCoincide(LibranzaEmpleado empleado, Persona persona)
+    {
+        if (!string.IsNullOrWhiteSpace(persona.TipoDocumento) || !string.IsNullOrWhiteSpace(persona.NumeroDocumento))
+            return false;
+        if (!persona.IdentidadVerificada || persona.IdentidadVerificadaProveedor != "VERIFF")
+            return false;
+
+        var tipo = (persona.TipoDocumentoVeriffRaw ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "ID_CARD"  => "CC",
+            "PASSPORT" => "PASAPORTE",
+            _          => null,
+        };
+        return tipo is not null
+            && DocumentoCoincide(empleado.TipoDocumento, empleado.NumeroDocumento, tipo, persona.NumeroDocumentoVerificado);
+    }
 
     internal static bool DocumentoCoincide(string? tipoEmpleado, string? numeroEmpleado, string? tipoPersona, string? numeroPersona)
     {

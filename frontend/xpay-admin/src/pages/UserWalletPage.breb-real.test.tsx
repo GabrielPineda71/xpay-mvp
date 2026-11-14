@@ -69,7 +69,7 @@ async function renderPage(initialTab = 'retirar-breb', getImpl: (path: string) =
   // esta vista; el placeholder del formulario de verificación es una ancla
   // igual de estable para el estado "ya cargó, hay llave BCODE" que usan
   // todos los tests de este archivo.
-  await waitFor(() => expect(screen.getByPlaceholderText(/Valor de tu llave BCODE/i)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i)).toBeInTheDocument());
   return utils;
 }
 
@@ -136,7 +136,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     const user = userEvent.setup();
     await renderPage();
 
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'valor-sintetico-de-prueba');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'valor-sintetico-de-prueba');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
 
     await waitFor(() => expect(screen.getByTestId('breb-real-destino')).toBeInTheDocument());
@@ -159,7 +159,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     const user = userEvent.setup();
     await renderPage();
 
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'valor-sintetico');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'valor-sintetico');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
 
     await waitFor(() => expect(screen.getByText(/vencida o ausente/i)).toBeInTheDocument());
@@ -176,7 +176,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
         : Promise.reject(new Error('no debería llamarse')));
     const user = userEvent.setup();
     await renderPage();
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'v');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
     await waitFor(() => expect(screen.getByTestId('breb-real-destino')).toBeInTheDocument());
 
@@ -196,7 +196,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
         : Promise.reject(new Error('no debería llamarse todavía')));
     const user = userEvent.setup();
     await renderPage();
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'v');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
@@ -223,7 +223,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     });
     const user = userEvent.setup();
     await renderPage();
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'v');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
@@ -257,7 +257,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     });
     const user = userEvent.setup();
     await renderPage();
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'v');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
@@ -278,7 +278,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     });
     const user = userEvent.setup();
     await renderPage();
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'v');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
@@ -306,7 +306,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     });
     const user = userEvent.setup();
     await renderPage();
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'v');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
@@ -332,7 +332,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     });
     const user = userEvent.setup();
     await renderPage();
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'v');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
@@ -355,7 +355,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     });
     const user = userEvent.setup();
     await renderPage();
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'v');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
@@ -382,7 +382,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     });
     const user = userEvent.setup();
     await renderPage();
-    await user.type(screen.getByPlaceholderText(/Valor de tu llave BCODE/i), 'v');
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'v');
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
