@@ -91,9 +91,10 @@ describe('UserWalletPage — Retirar sin llave apta → CTA a Perfil (XPAY-392 G
     expect(screen.getByRole('button', { name: 'Configurar mi llave Bre-B' })).toBeInTheDocument();
   });
 
-  it('G: con una llave registrada pero NO BCODE, también muestra el CTA (regla existente sin cambios)', async () => {
+  it('G: con una llave de cédula (ID) pendiente, ofrece "Verificar mi llave" y no el CTA', async () => {
     renderWalletAt('retirar-breb', { ...LLAVE_BCODE, keyType: 'ID', keyValueMasked: '***7890' });
-    expect(await screen.findByText('Primero configura tu llave Bre-B.')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Verificar mi llave' })).toBeInTheDocument();
+    expect(screen.queryByText('Primero configura tu llave Bre-B.')).not.toBeInTheDocument();
   });
 
   it('H: el CTA navega a /mi-wallet/perfil', async () => {
@@ -118,7 +119,7 @@ describe('UserWalletPage — Resolve y endpoints financieros permanecen en Retir
       data: { idBrebLlave: 8, keyType: 'BCODE', keyValueMasked: '***0268', estado: 'VALIDADA', resolucionVerificadaPassport: true, titularNombreMasked: 'J*** P***' },
     });
     renderWalletAt('retirar-breb', LLAVE_BCODE);
-    await user.type(await screen.findByPlaceholderText('Valor de tu llave BCODE'), '3001234567890');
+    await user.type(await screen.findByPlaceholderText('Escríbela igual que al registrarla'), '3001234567890');
     await user.click(screen.getByRole('button', { name: 'Verificar mi llave' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
       '/api/breb/mi-llave/resolver',
@@ -144,7 +145,7 @@ describe('UserWalletPage — Resolve y endpoints financieros permanecen en Retir
       return Promise.reject(new Error(`unmocked POST ${path}`));
     });
     renderWalletAt('retirar-breb', LLAVE_BCODE);
-    await user.type(await screen.findByPlaceholderText('Valor de tu llave BCODE'), '3001234567890');
+    await user.type(await screen.findByPlaceholderText('Escríbela igual que al registrarla'), '3001234567890');
     await user.click(screen.getByRole('button', { name: 'Verificar mi llave' }));
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/api/breb/mi-llave/resolver', expect.anything()));
 

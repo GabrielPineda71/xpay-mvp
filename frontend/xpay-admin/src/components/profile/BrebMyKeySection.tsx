@@ -64,6 +64,11 @@ export function BrebMyKeySection() {
           {llave?.fechaValidacion && (
             <div className="breb-profile-meta">Validada: {fmtDate(llave.fechaValidacion)}</div>
           )}
+          {llave?.estado === 'PENDIENTE_VALIDACION' && (
+            <p className="breb-profile-note" data-testid="breb-pendiente-ayuda">
+              Registrarla no la valida. Para validarla ve a «Retirar a mi llave Bre-B» y usa «Verificar mi llave».
+            </p>
+          )}
 
           <h4 className="profile-section-subtitle">
             {llave ? 'Actualizar llave Bre-B' : 'Registrar llave Bre-B'}
