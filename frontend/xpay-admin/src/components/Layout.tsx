@@ -86,7 +86,7 @@ export function Layout() {
     };
 
     const activeNav: WalletNavItem | undefined =
-      pathname === '/mi-wallet/cartera' ? 'products' :
+      pathname === '/mi-wallet/cartera' || pathname === '/mi-wallet/libranza' ? 'products' :
       pathname === '/mi-wallet' ? 'home' :
       undefined;
 

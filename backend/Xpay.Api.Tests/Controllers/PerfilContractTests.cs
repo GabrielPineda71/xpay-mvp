@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Xpay.Api.Controllers;
 using Xpay.Api.DTOs;
+using Xpay.Api.Services;
 using Xunit;
 
 namespace Xpay.Api.Tests.Controllers;
@@ -131,5 +132,26 @@ public class PerfilContractTests
         var propiedades = typeof(MiPerfilResponseDto).GetProperties().Select(p => p.Name).ToHashSet();
         Assert.Contains("IdentidadVerificada", propiedades); // bool — resumen, no el detalle crudo
         Assert.Contains("EstadoKycActual", propiedades);     // string — resumen de usuarios.estado_kyc_actual
+    }
+
+    // ── Identidad verificada visible: nombre, etiqueta de tipo y número enmascarado ──
+    [Theory]
+    [InlineData("1088123456", "***3456")]
+    [InlineData(" 1234 ", "****")]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void EnmascararDocumento_SoloDejaVerLosUltimosCuatro(string? numero, string? esperado)
+    {
+        Assert.Equal(esperado, PerfilService.EnmascararDocumento(numero));
+    }
+
+    [Theory]
+    [InlineData("ID_CARD", "Documento de identidad")]
+    [InlineData("passport", "Pasaporte")]
+    [InlineData("ALGO_NUEVO", "Otro documento")]
+    [InlineData(null, null)]
+    public void EtiquetaTipoDocumentoVeriff_NuncaDevuelveElValorCrudo(string? raw, string? esperado)
+    {
+        Assert.Equal(esperado, PerfilService.EtiquetaTipoDocumentoVeriff(raw));
     }
 }

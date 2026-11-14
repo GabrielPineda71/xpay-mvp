@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { get, post } from '../api/client.ts';
 import '../cartera-ordinaria.css';
 
@@ -386,6 +386,12 @@ export function MiCarteraOrdinariaPage() {
 
   return (
     <div style={{ padding: '1.5rem', maxWidth: 900 }}>
+      {/* Acceso al anticipo de nómina desde "Productos": la franja principal
+          de la wallet no tiene entrada a /mi-wallet/libranza. */}
+      <Link to="/mi-wallet/libranza" className="btn-breb" style={{ display: 'inline-block', marginBottom: '1rem' }}>
+        Anticipo de nómina: ver mi cupo
+      </Link>
+
       <h2 style={{ marginBottom: '0.25rem' }}>Mi Cartera Ordinaria</h2>
       <p style={{ fontSize: 13, color: '#666', margin: '0 0 1.5rem' }}>
         El simulador nunca mueve saldo ni cupo. La confirmación real de "Desembolsar a Wallet" sí acredita

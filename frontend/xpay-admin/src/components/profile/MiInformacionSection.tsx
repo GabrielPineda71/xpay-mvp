@@ -15,15 +15,21 @@ function fmtFechaNacimiento(iso: string | null): string {
   return `${d}/${m}/${y}`;
 }
 
+// Prioridad: dato declarado/legal si existe; si no, el verificado por Veriff
+// (el alta del piloto no captura nombre ni documento).
 function nombreCompleto(p: MiPerfil): string {
   const partes = [p.primerNombre, p.segundoNombre, p.primerApellido, p.segundoApellido]
     .filter((v): v is string => !!v && v.trim().length > 0);
-  return partes.length > 0 ? partes.join(' ') : '—';
+  if (partes.length > 0) return partes.join(' ');
+  return p.nombreVerificado?.trim() || '—';
 }
 
 function textoDocumento(p: MiPerfil): string {
-  if (!p.tipoDocumento && !p.numeroDocumento) return '—';
-  return [p.tipoDocumento, p.numeroDocumento].filter(Boolean).join(' ');
+  if (p.tipoDocumento || p.numeroDocumento) return [p.tipoDocumento, p.numeroDocumento].filter(Boolean).join(' ');
+  if (p.numeroDocumentoVerificadoMasked) {
+    return [p.tipoDocumentoVerificado, p.numeroDocumentoVerificadoMasked].filter(Boolean).join(' ');
+  }
+  return '—';
 }
 
 // Estado de edición: solo los 5 campos editables (XPAY-399). Celular nunca
