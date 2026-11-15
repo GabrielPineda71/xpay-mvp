@@ -164,7 +164,15 @@ public class BrebController : ControllerBase
         {
             _audit.LogSensitiveAction(HttpContext, "BREB_LLAVE_RESOLVER_PASSPORT_ERROR",
                 new { idUsuario, tipo = ex.GetType().Name });
-            return StatusCode(502, new { success = false, message = ex.Message });
+            var message = ex.Message;
+            if (ex is Xpay.Api.Integrations.Passport.PassportAuthenticationException authError)
+            {
+                if (authError.SupportReference is { } reference)
+                    message += $" Referencia de Passport {reference}.";
+                if (authError.OAuthErrorCode is { } code)
+                    message += $" Código OAuth {code}.";
+            }
+            return StatusCode(502, new { success = false, message });
         }
         catch
         { return StatusCode(500, new { success = false, message = "Error interno resolviendo la llave." }); }
