@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { get, post, ApiError } from '../../api/client.ts';
+import {
+  esPinActualValido, esPinValido, LONGITUD_PIN, LONGITUD_PIN_ANTERIOR,
+  MENSAJE_ACTUALIZAR_PIN, MENSAJE_FORMATO_PIN, soloDigitosPin,
+} from '../../utils/pinTransaccional.ts';
 
 interface EstadoPin {
   configurado: boolean;
@@ -10,7 +14,6 @@ interface EstadoPin {
 interface Msg { ok: boolean; text: string; }
 
 const VACIO = { claveActual: '', pinActual: '', pin: '', confirmacion: '' };
-const soloDigitos = (v: string) => v.replace(/\D/g, '').slice(0, 7);
 
 // PIN transaccional — sección de Perfil: crear el PIN (con la contraseña de
 // ingreso) o cambiarlo (con el PIN actual). Consume GET /api/pin/estado,
@@ -53,11 +56,11 @@ export function PinTransaccionalSection() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (crear ? !form.claveActual : form.pinActual.length !== 7) {
-      setErrorLocal(crear ? 'Ingresa tu contraseña de ingreso.' : 'Ingresa tu PIN actual de 7 dígitos.');
+    if (crear ? !form.claveActual : !esPinActualValido(form.pinActual)) {
+      setErrorLocal(crear ? 'Ingresa tu contraseña de ingreso.' : `Ingresa tu PIN actual de ${LONGITUD_PIN} o ${LONGITUD_PIN_ANTERIOR} dígitos.`);
       return;
     }
-    if (form.pin.length !== 7) { setErrorLocal('El PIN debe tener exactamente 7 dígitos.'); return; }
+    if (!esPinValido(form.pin)) { setErrorLocal(MENSAJE_FORMATO_PIN); return; }
     if (form.pin !== form.confirmacion) { setErrorLocal('El PIN y su confirmación no coinciden.'); return; }
     setErrorLocal(null);
     setMensaje(null);
@@ -106,6 +109,9 @@ export function PinTransaccionalSection() {
                 : 'Aún no tienes PIN transaccional. Créalo para poder operar.'}
         </p>
       )}
+      {estado?.configurado && !estado.bloqueado && !abierto && (
+        <p className="profile-placeholder-note">{MENSAJE_ACTUALIZAR_PIN}</p>
+      )}
 
       {estado && !estado.bloqueado && (!abierto ? (
         <button type="button" className="btn-breb" onClick={abrir}>
@@ -125,31 +131,31 @@ export function PinTransaccionalSection() {
             </label>
           ) : (
             <label>
-              PIN actual
+              PIN actual ({LONGITUD_PIN} o {LONGITUD_PIN_ANTERIOR} dígitos)
               <input
-                type="password" inputMode="numeric" maxLength={7} autoComplete="off"
+                type="password" inputMode="numeric" autoComplete="off"
                 value={form.pinActual}
-                onChange={e => setForm(f => ({ ...f, pinActual: soloDigitos(e.target.value) }))}
+                onChange={e => setForm(f => ({ ...f, pinActual: soloDigitosPin(e.target.value) }))}
               />
             </label>
           )}
           <label>
-            {crear ? 'Nuevo PIN (7 dígitos)' : 'PIN nuevo (7 dígitos)'}
+            {crear ? 'Nuevo PIN' : 'PIN nuevo'} ({LONGITUD_PIN} dígitos)
             <input
-              type="password" inputMode="numeric" maxLength={7} autoComplete="off"
+              type="password" inputMode="numeric" autoComplete="off"
               value={form.pin}
-              onChange={e => setForm(f => ({ ...f, pin: soloDigitos(e.target.value) }))}
+              onChange={e => setForm(f => ({ ...f, pin: soloDigitosPin(e.target.value) }))}
             />
           </label>
           <label>
             Confirmar PIN
             <input
-              type="password" inputMode="numeric" maxLength={7} autoComplete="off"
+              type="password" inputMode="numeric" autoComplete="off"
               value={form.confirmacion}
-              onChange={e => setForm(f => ({ ...f, confirmacion: soloDigitos(e.target.value) }))}
+              onChange={e => setForm(f => ({ ...f, confirmacion: soloDigitosPin(e.target.value) }))}
             />
           </label>
-          <p className="profile-placeholder-note">No uses dígitos repetidos ni consecutivos (por ejemplo 1111111 o 1234567).</p>
+          <p className="profile-placeholder-note">Evita los PIN con un solo dígito repetido o con dígitos consecutivos, como 11111 o 12345.</p>
 
           {errorLocal && <span className="breb-msg-err">{errorLocal}</span>}
           {mensaje && !mensaje.ok && <span className="breb-msg-err">{mensaje.text}</span>}

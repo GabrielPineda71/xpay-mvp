@@ -16,7 +16,8 @@ namespace Xpay.Api.Common;
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
 public sealed class RequierePinTransaccionalAttribute : Attribute, IAsyncActionFilter
 {
-    internal const string MensajeRequerido     = "Ingresa tu PIN transaccional de 7 dígitos.";
+    internal const string MensajeRequerido     = "Ingresa tu PIN transaccional de 5 dígitos.";
+    internal const string MensajeCambiado = "Tu PIN se actualizó durante la solicitud. Intenta de nuevo con el PIN vigente.";
     internal const string MensajeNoConfigurado = "Debes crear tu PIN transaccional antes de operar.";
     internal const string MensajeBloqueado     = "Tu PIN transaccional está bloqueado por intentos fallidos. Solicita a XPAY su restablecimiento.";
 
@@ -51,6 +52,7 @@ public sealed class RequierePinTransaccionalAttribute : Attribute, IAsyncActionF
             // 428 y no 409: el frontend trata 409 como "conflicto de la operación" (p. ej. destinatario cambiado).
             ResultadoPin.NoConfigurado   => Respuesta(StatusCodes.Status428PreconditionRequired, "PIN_NO_CONFIGURADO", MensajeNoConfigurado),
             ResultadoPin.Bloqueado       => Respuesta(StatusCodes.Status423Locked, "PIN_BLOQUEADO", MensajeBloqueado),
+            ResultadoPin.CambiadoConcurrentemente => Respuesta(StatusCodes.Status400BadRequest, "PIN_CAMBIADO", MensajeCambiado),
             _ => new ObjectResult(new
             {
                 success = false, codigo = "PIN_INCORRECTO", intentosRestantes = v.IntentosRestantes,

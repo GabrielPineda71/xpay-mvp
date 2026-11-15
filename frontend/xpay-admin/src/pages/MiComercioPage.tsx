@@ -6,6 +6,7 @@ import { fmtMoney, fmtDate } from '../utils.ts';
 import { ambienteXpay, monedaVisible } from '../config/ambiente.ts';
 import { SoloQa } from '../config/SoloQa.tsx';
 import { generarComprobantePdfCierre } from '../utils/comprobanteCierrePdf.ts';
+import { esPinValido, LONGITUD_PIN, MENSAJE_FORMATO_PIN, soloDigitosPin } from '../utils/pinTransaccional.ts';
 
 // Fuente: GET /api/comercio/dashboard (ComercioViewController, rol COMERCIO).
 // /api/reportes/comercios/{id}/resumen quedó restringido a ADMIN_XPAY/SUPERUSUARIO
@@ -151,12 +152,6 @@ interface RecargaResumen {
   idTienda?:           number;
   idUsuarioCajero:     number;
   fechaRecarga:        string;
-}
-
-// PIN: format-only validation for QA/Demo phase — same convention as UserWalletPage/MiCarteraOrdinariaPage.
-function validatePin(pin: string): string | null {
-  if (!/^\d{7}$/.test(pin)) return 'La clave debe ser exactamente 7 dígitos numéricos.';
-  return null;
 }
 
 // ── Cierre Diario de Comercio (Fase 70.3) ─────────────────────────────────
@@ -550,8 +545,7 @@ export function MiComercioPage() {
     const valorNum = Number(rcValor) || 0;
     if (valorNum < 1000) { setRcMsg({ ok: false, text: 'El valor mínimo de recarga es $1.000.' }); return; }
     if (valorNum > 2000000) { setRcMsg({ ok: false, text: 'El valor máximo por operación es $2.000.000.' }); return; }
-    const pinErr = validatePin(rcPin);
-    if (pinErr) { setRcMsg({ ok: false, text: pinErr }); return; }
+    if (!esPinValido(rcPin)) { setRcMsg({ ok: false, text: MENSAJE_FORMATO_PIN }); return; }
 
     setRcBusy(true); setRcMsg(null);
     try {
@@ -1289,15 +1283,14 @@ export function MiComercioPage() {
                 <input type="number" min={1000} max={2000000} value={rcValor} onChange={e => setRcValor(e.target.value)} placeholder="Ej: 100000" />
               </label>
               <label style={{ display: 'flex', flexDirection: 'column', fontSize: '0.82rem', marginBottom: '0.5rem', maxWidth: 200 }}>
-                Clave de 7 dígitos
+                PIN transaccional ({LONGITUD_PIN} dígitos)
                 <SoloQa><span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}> — QA/Demo: solo se valida formato</span></SoloQa>
                 <input
                   type="password"
                   inputMode="numeric"
-                  maxLength={7}
                   value={rcPin}
-                  onChange={e => setRcPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
-                  placeholder="·······"
+                  onChange={e => setRcPin(soloDigitosPin(e.target.value))}
+                  placeholder="·····"
                   autoComplete="off"
                 />
               </label>
@@ -1308,7 +1301,7 @@ export function MiComercioPage() {
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button
                   className="btn-confirm"
-                  disabled={rcBusy || !rcValor || Number(rcValor) < 1000 || Number(rcValor) > 2000000 || rcPin.length !== 7}
+                  disabled={rcBusy || !rcValor || Number(rcValor) < 1000 || Number(rcValor) > 2000000 || !esPinValido(rcPin)}
                   onClick={() => void handleConfirmarRecarga()}
                 >
                   {rcBusy ? 'Procesando...' : 'Confirmar recarga'}

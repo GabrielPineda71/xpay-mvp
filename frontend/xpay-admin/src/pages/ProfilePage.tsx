@@ -10,7 +10,7 @@ import { PinTransaccionalSection } from '../components/profile/PinTransaccionalS
 // Misma página de siempre (XPAY-392), ahora con 3 secciones completas:
 //   A. Mi información  -> MiInformacionSection (GET/PATCH /api/usuarios/mi-perfil, XPAY-399)
 //   B. Seguridad        -> CambiarContrasenaSection (POST /api/auth/cambiar-clave, XPAY-400)
-//                          y PinTransaccionalSection (PIN de 7 dígitos, /api/pin)
+//                          y PinTransaccionalSection (/api/pin)
 //   C. Mi llave Bre-B   -> BrebMyKeySection (XPAY-392, SIN CAMBIOS — GET/POST
 //                          /api/breb/mi-llave; nunca llama a /resolver, eso
 //                          sigue exclusivamente en Retirar)
