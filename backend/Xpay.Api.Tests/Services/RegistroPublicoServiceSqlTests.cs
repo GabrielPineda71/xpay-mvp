@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
@@ -74,6 +75,84 @@ public sealed class RegistroPublicoServiceSqlTests
             Assert.Equal(a.Email, Assert.Single(e.Sender.Enviados).Destinatario);
         }
         finally { await LimpiarAsync(cs, a); }
+    }
+
+    [Fact]
+    public async Task Autorregistro_GuardaEvidencia_ActivaCuentaLimitada_YBloqueaKyc()
+    {
+        if (!TryConnString(out var cs)) return;
+        var alta = NuevaAlta();
+        try
+        {
+            await using var contexto = NuevoContexto(cs);
+            var configuracion = RegistroPublicoQaTests.ConfiguracionQa(alta.Email);
+            configuracion["VERIFF_API_KEY"] = "qa-test";
+            configuracion["VERIFF_BASE_URL"] = "https://veriff.example.test";
+            configuracion["VERIFF_SHARED_SECRET"] = "qa-test";
+            configuracion["VERIFF_CALLBACK_URL"] = "https://qa.example.test/mi-wallet";
+            var ambiente = AmbienteXpayTests.Ambiente("QA");
+            var smtp = new RegistroPublicoQaTests.TransporteSmtpEspia();
+            var sender = new EmailSenderQaSmtp(OpcionesEmailQaSmtp.Desde(configuracion), smtp,
+                NullLogger<EmailSenderQaSmtp>.Instance);
+            var servicio = new RegistroPublicoService(contexto, ambiente,
+                new TokenUsuarioService(contexto, configuracion, TimeProvider.System), sender,
+                new PlantillasEmailIdentidad(configuracion, ambiente), TimeProvider.System,
+                NullLogger<RegistroPublicoService>.Instance, configuracion);
+            var solicitud = Request(alta) with { Consentimiento = RegistroPublicoQaTests.ConsentimientoVigente };
+            const string ip = "2001:db8::42";
+
+            await servicio.RegistrarAsync(solicitud, ip);
+
+            await using var consulta = NuevoContexto(cs);
+            var usuario = await consulta.Usuarios.AsNoTracking().SingleAsync(u => u.NombreUsuario == alta.Usuario);
+            Assert.Equal(EstadosUsuario.PendienteVerificacion, usuario.Estado);
+            Assert.False(usuario.EmailVerificado);
+            Assert.False(await consulta.Wallets.AnyAsync(w => w.IdPersona == usuario.IdPersona));
+
+            var evidencias = await consulta.Auditorias.AsNoTracking()
+                .Where(a => a.IdUsuario == usuario.IdUsuario
+                    && (a.Accion == RegistroPublicoService.AccionAceptarTerminos
+                        || a.Accion == RegistroPublicoService.AccionAutorizarDatos))
+                .ToListAsync();
+            Assert.Equal(2, evidencias.Count);
+            Assert.All(evidencias, evidencia =>
+            {
+                Assert.Equal(usuario.IdPersona, evidencia.IdPersona);
+                Assert.Equal(ip, evidencia.Ip);
+                Assert.Equal("EXITOSO", evidencia.Resultado);
+                Assert.Equal(usuario.FechaCreacion, evidencia.FechaEvento);
+                using var documento = JsonDocument.Parse(evidencia.ValorNuevo!);
+                var json = documento.RootElement;
+                var terminos = evidencia.Accion == RegistroPublicoService.AccionAceptarTerminos;
+                Assert.Equal(terminos ? "TERMINOS_Y_CONDICIONES" : "POLITICA_TRATAMIENTO_DATOS",
+                    json.GetProperty("tipoDocumento").GetString());
+                Assert.Equal("1.1", json.GetProperty("version").GetString());
+                Assert.Equal(terminos ? RegistroPublicoQaTests.ShaTerminos : RegistroPublicoQaTests.ShaPolitica,
+                    json.GetProperty("sha256").GetString());
+                Assert.Equal("WEB_AUTORREGISTRO", json.GetProperty("canal").GetString());
+            });
+
+            var envio = Assert.Single(smtp.Enviados);
+            var token = TokenDe(new MensajeEmail(envio.Destinatario, envio.Asunto, envio.CuerpoTexto));
+            Assert.True(await servicio.VerificarEmailAsync(token));
+            Assert.False(await servicio.VerificarEmailAsync(token));
+
+            var login = await new AuthService(consulta, ConfigJwt(), ambiente).LoginAsync(new LoginRequest
+                { Usuario = alta.Usuario, Password = Clave });
+            Assert.True(login.RequierePerfil);
+            Assert.Equal(EstadosUsuario.Activo, login.Estado);
+            Assert.Equal(alta.Email, (await new PerfilService(consulta).ObtenerAsync(usuario.IdPersona)).Email);
+
+            var kyc = new KycService(consulta, configuracion, new SinHttp(), NullLogger<KycService>.Instance, ambiente);
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => kyc.CreateVeriffSessionAsync(usuario.IdUsuario));
+            Assert.Equal(KycService.MensajeConsentimientoKycPendiente, ex.Message);
+        }
+        finally { await LimpiarAsync(cs, alta); }
+    }
+
+    private sealed class SinHttp : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => throw new NotSupportedException("Veriff no debe recibir solicitudes.");
     }
 
     [Fact]
@@ -359,7 +438,7 @@ public sealed class RegistroPublicoServiceSqlTests
             Servicio = new RegistroPublicoService(Ctx, ambiente,
                 new TokenUsuarioService(Ctx, config, TimeProvider.System), Sender,
                 new PlantillasEmailIdentidad(config, ambiente), TimeProvider.System,
-                NullLogger<RegistroPublicoService>.Instance);
+                NullLogger<RegistroPublicoService>.Instance, config);
         }
 
         public ValueTask DisposeAsync() => Ctx.DisposeAsync();

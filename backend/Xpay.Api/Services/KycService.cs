@@ -130,6 +130,8 @@ public class KycService
     internal static string VendorDataVeriff(long idUsuario, bool esProductivo) =>
         $"XPAY-{(esProductivo ? "PROD" : "QA")}-USUARIO-{idUsuario}";
 
+    internal const string MensajeConsentimientoKycPendiente = "La verificación de identidad requiere una autorización adicional.";
+
     public async Task<IniciarKycResponse> CreateVeriffSessionAsync(long idUsuario)
     {
         // Read all config values — validate presence, never log values
@@ -144,6 +146,10 @@ public class KycService
             _logger.LogWarning("Veriff config incompleta o inválida para user {IdUsuario}.", idUsuario);
             throw new InvalidOperationException(MensajeVeriffNoDisponible);
         }
+
+        if (string.Equals(_ambiente.Nombre, AmbienteXpay.Qa, StringComparison.Ordinal)
+            && await RegistroPublicoService.EsCuentaLimitadaAsync(_db, idUsuario))
+            throw new InvalidOperationException(MensajeConsentimientoKycPendiente);
 
         // No-PII vendor data — no personal data sent to Veriff
         var vendorData = VendorDataVeriff(idUsuario, _ambiente.EsProductivo);

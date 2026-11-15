@@ -18,6 +18,7 @@ public class EndpointsAnonimosTests
         "GET api/diagnostics/error-test",
         "GET api/diagnostics/ping",
         "GET api/diagnostics/ready",
+        "GET api/usuarios/registro/configuracion",
         "GET api/version",
         "GET health",
         "POST api/auth/login",

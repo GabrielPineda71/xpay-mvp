@@ -107,7 +107,12 @@ public class KycController : ControllerBase
         }
         catch (InvalidOperationException ex)
         {
-            var code = ex.Message == KycService.MensajeVeriffNoDisponible ? 503 : 400;
+            var code = ex.Message switch
+            {
+                KycService.MensajeVeriffNoDisponible => 503,
+                KycService.MensajeConsentimientoKycPendiente => 403,
+                _ => 400,
+            };
             return StatusCode(code, new { success = false, message = ex.Message });
         }
         catch (KycUsuarioConcurrenteException ex)

@@ -31,6 +31,9 @@ public sealed class EmailSenderQaSmtp : IEmailSender
         _logger     = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    internal bool PermiteDestinatario(string destinatarioNormalizado) =>
+        _opciones.PermiteDestinatario(destinatarioNormalizado);
+
     public async Task EnviarAsync(MensajeEmail mensaje, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(mensaje);
@@ -39,7 +42,7 @@ public sealed class EmailSenderQaSmtp : IEmailSender
         // Allowlist ANTES de abrir red. EmailNormalizador ya rechaza nombre
         // visible, listas, espacios y saltos de línea (inyección de cabeceras).
         if (!EmailNormalizador.TryNormalizar(mensaje.Destinatario, out var destinatario)
-            || !_opciones.PermiteDestinatario(destinatario))
+            || !PermiteDestinatario(destinatario))
         {
             _logger.LogWarning("Email QA rechazado antes de abrir red: destinatario fuera de la allowlist de direcciones.");
             throw new EmailEnvioQaException(EmailEnvioQaException.MensajeDestinoNoPermitido);

@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { LoginPage } from './LoginPage.tsx';
+import * as api from '../api/client.ts';
 
 const mockLogin = vi.fn();
 
@@ -17,6 +18,7 @@ function renderizar() {
       { path: '/login', element: <LoginPage /> },
       { path: '/recuperar-clave', element: <p>PANTALLA RECUPERAR</p> },
       { path: '/reenviar-verificacion', element: <p>PANTALLA REENVIO</p> },
+      { path: '/registro', element: <p>PANTALLA REGISTRO</p> },
     ],
     { initialEntries: ['/login'] },
   );
@@ -27,6 +29,13 @@ function renderizar() {
 beforeEach(() => {
   mockLogin.mockReset();
   sessionStorage.clear();
+  vi.stubEnv('VITE_XPAY_ENV', 'QA');
+  vi.spyOn(api, 'get').mockRejectedValue(new api.ApiError('No encontrado.', 404));
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 describe('LoginPage — enlaces de identidad (P0-B frontend)', () => {
@@ -62,6 +71,26 @@ describe('LoginPage — enlaces de identidad (P0-B frontend)', () => {
     expect(password).toHaveAttribute('type', 'password');
     expect(password).toHaveValue('ClaveDePrueba1!');
     expect(mockLogin).not.toHaveBeenCalled();
+  });
+
+  it('ofrece Crear cuenta en QA si la API devuelve ambos documentos', async () => {
+    const documento = { version: '1.1', fecha: '2026-11-13', url: 'https://app-qa.xpaycol.com/legal/documento.pdf' };
+    vi.mocked(api.get).mockResolvedValue({ data: { terminos: documento, politicaDatos: documento } });
+    const user = userEvent.setup();
+    renderizar();
+
+    const enlace = await screen.findByRole('link', { name: 'Crear cuenta' });
+    expect(api.get).toHaveBeenCalledWith('/api/usuarios/registro/configuracion');
+    await user.click(enlace);
+    expect(await screen.findByText('PANTALLA REGISTRO')).toBeInTheDocument();
+  });
+
+  it('mantiene el ingreso de PROD sin consultar disponibilidad ni mostrar Crear cuenta', () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    renderizar();
+
+    expect(screen.queryByRole('link', { name: 'Crear cuenta' })).not.toBeInTheDocument();
+    expect(api.get).not.toHaveBeenCalled();
   });
 
   it('el error de credenciales se muestra igual que antes, sin detectar PENDIENTE_VERIFICACION', async () => {

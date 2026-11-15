@@ -1,4 +1,4 @@
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth, getViewForUser } from '../auth/AuthContext.tsx';
 import { WalletShell, type WalletNavItem, type WalletPrimaryAction } from './wallet/WalletShell.tsx';
 import { WalletNotificationsProvider } from './wallet/WalletNotificationsContext.tsx';
@@ -21,6 +21,7 @@ export function Layout() {
   const navigate          = useNavigate();
   const { pathname }      = useLocation();
   const view              = user ? getViewForUser(user) : 'wallet';
+  const accesoPerfil      = view === 'wallet' && user?.requierePerfil === true;
   // Fase 70.4-E: rol_comercio fino (CAJERO/ADMIN_SEDE_COMERCIO/ADMIN_COMERCIO)
   // para decidir qué enlaces de Caja/Cuadre mostrar — RequireView solo conoce
   // la vista coarse ('comercio'). enabled=false fuera de esa vista para no
@@ -32,10 +33,12 @@ export function Layout() {
     navigate('/login');
   }
 
+  if (accesoPerfil && pathname !== '/mi-wallet/perfil') return <Navigate to="/mi-wallet/perfil" replace />;
+
   // ── Vista wallet: shell nuevo (hero verde + bottom nav), aislado de
   // admin/comercio/empresa, que siguen usando el <div className="layout">
   // de abajo sin ningún cambio. ────────────────────────────────────────
-  if (view === 'wallet') {
+  if (view === 'wallet' && !accesoPerfil) {
     const handleAction = (action: WalletPrimaryAction) => {
       switch (action) {
         // UserWalletPage.tsx ahora lee el tab desde ?tab= (UI-3B) — cada
@@ -180,7 +183,7 @@ export function Layout() {
             </CommerceNotificationsProvider>
           )}
           {user && <span>{user.usuario}</span>}
-          <span className="app-env">API: {getApiLabel()}</span>
+          {!accesoPerfil && <span className="app-env">API: {getApiLabel()}</span>}
           <button className="logout-button" onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </nav>
