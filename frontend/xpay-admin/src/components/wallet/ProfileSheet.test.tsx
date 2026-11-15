@@ -6,19 +6,21 @@ import { render, screen } from '@testing-library/react';
 import { ProfileSheet } from './ProfileSheet.tsx';
 
 describe('ProfileSheet (XPAY-392 R-A)', () => {
-  it('A: "Mi perfil" está habilitado y llama a onOpenProfileDetail al hacer clic', () => {
+  it('cierra el panel y abre el detalle al pulsar "Mi perfil"', () => {
+    const onClose = vi.fn();
     const onOpenProfileDetail = vi.fn();
     render(
       <ProfileSheet
         userName="qa.usuario1"
         onLogout={vi.fn()}
-        onClose={vi.fn()}
+        onClose={onClose}
         onOpenProfileDetail={onOpenProfileDetail}
       />,
     );
     const boton = screen.getByRole('button', { name: 'Mi perfil' });
     expect(boton).not.toBeDisabled();
     boton.click();
+    expect(onClose).toHaveBeenCalledTimes(1);
     expect(onOpenProfileDetail).toHaveBeenCalledTimes(1);
   });
 
