@@ -1,0 +1,60 @@
+.login-container.registro-publico {
+  min-height: 100dvh;
+  padding: 1rem;
+  background: #ecf5f6;
+}
+
+.login-card.registro-publico__tarjeta {
+  width: min(100%, 28rem);
+  padding: clamp(1.25rem, 5vw, 2.25rem);
+  border: 1px solid #c9e1e4;
+  border-radius: 1rem;
+}
+
+.registro-publico__marca {
+  display: block;
+  width: 7.5rem;
+  height: auto;
+  margin-bottom: 1rem;
+}
+
+.login-card .registro-publico__nota {
+  margin-bottom: 1.5rem;
+  color: #4a5568;
+  font-size: 0.875rem;
+}
+
+.registro-publico__ayuda {
+  color: #4a5568;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  margin-top: -0.625rem;
+}
+
+.registro-publico__tarjeta input {
+  min-height: 2.75rem;
+}
+
+.login-card.registro-publico__tarjeta input:focus {
+  border-color: #0d828e;
+  box-shadow: 0 0 0 3px rgb(13 130 142 / 15%);
+}
+
+.login-card.registro-publico__tarjeta button[type='submit'] {
+  min-height: 2.75rem;
+  background: #0a6b75;
+}
+
+.login-card.registro-publico__tarjeta button[type='submit']:hover:not(:disabled) {
+  background: #07555d;
+}
+
+.registro-publico__enlaces {
+  display: grid;
+  justify-items: start;
+  gap: 0.625rem;
+  margin-top: 1.25rem;
+  font-size: 0.875rem;
+}
+
+.registro-publico__enlaces a { color: #0a6b75; }
