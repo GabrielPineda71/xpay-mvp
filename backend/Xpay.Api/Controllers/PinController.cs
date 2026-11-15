@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Xpay.Api.Common;
 using Xpay.Api.DTOs;
 using Xpay.Api.Services;
 
@@ -55,7 +56,8 @@ public class PinController(PinTransaccionalService pin, AuditLogService audit) :
                 ResultadoPin.NoConfigurado => StatusCode(428, new { success = false, codigo = "PIN_NO_CONFIGURADO", message = "Aún no tienes PIN transaccional." }),
                 ResultadoPin.Bloqueado     => StatusCode(423, new { success = false, codigo = "PIN_BLOQUEADO", message = "Tu PIN transaccional está bloqueado por intentos fallidos. Solicita a XPAY su restablecimiento." }),
                 ResultadoPin.Incorrecto    => BadRequest(new { success = false, codigo = "PIN_INCORRECTO", intentosRestantes = v.IntentosRestantes, message = $"El PIN actual no coincide. Te quedan {v.IntentosRestantes} intento(s)." }),
-                _                          => BadRequest(new { success = false, codigo = "PIN_REQUERIDO", message = "Ingresa tu PIN actual de 7 dígitos." }),
+                ResultadoPin.CambiadoConcurrentemente => BadRequest(new { success = false, codigo = "PIN_CAMBIADO", message = RequierePinTransaccionalAttribute.MensajeCambiado }),
+                _                          => BadRequest(new { success = false, codigo = "PIN_REQUERIDO", message = "Ingresa tu PIN actual de 5 dígitos o el anterior de 7 dígitos." }),
             };
         }
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }

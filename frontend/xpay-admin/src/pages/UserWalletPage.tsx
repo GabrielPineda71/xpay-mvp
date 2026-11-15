@@ -10,6 +10,7 @@ import { HeroBalanceCard } from '../components/wallet/HeroBalanceCard.tsx';
 import { useQrScanner } from '../hooks/useQrScanner.ts';
 import { QrScannerOverlay } from '../components/wallet/QrScannerOverlay.tsx';
 import { useWalletNotifications } from '../components/wallet/WalletNotificationsContext.tsx';
+import { esPinValido, LONGITUD_PIN, MENSAJE_FORMATO_PIN, soloDigitosPin } from '../utils/pinTransaccional.ts';
 
 // Fase 71.2-E-C: DEMO_MAP eliminado — la wallet propia se resuelve vía
 // GET /api/wallets/mi-wallet (claim idPersona del JWT), no por username.
@@ -205,14 +206,6 @@ function retiroRealMensaje(estado: string, motivoRechazo?: string | null): strin
   }
   // transitorio/desconocido: nunca afirmar éxito ni fallo sin confirmación.
   return 'Tu retiro está siendo procesado.';
-}
-
-// PIN transaccional: aquí solo se valida el formato para no enviar algo
-// imposible; el backend verifica el PIN (hash, 5 intentos y bloqueo) en cada
-// operación — ver RequierePinTransaccional. Se crea en Perfil → Seguridad.
-function validatePin(pin: string): string | null {
-  if (!/^\d{7}$/.test(pin)) return 'El PIN transaccional debe tener exactamente 7 dígitos.';
-  return null;
 }
 
 // XPAY-390 — valor opcional COP del QR de Recibir. Vacío → QR base sin
@@ -860,8 +853,7 @@ export function UserWalletPage() {
     const destId = envManual ? Number(envManualDest) : envDest;
     if (!destId || destId < 1) { setEnvMsg({ ok: false, text: 'Wallet destino inválido.' }); return; }
     if (destId === miWallet.idWallet) { setEnvMsg({ ok: false, text: 'No puedes transferirte a tu propia wallet.' }); return; }
-    const pinErr = validatePin(envPin);
-    if (pinErr) { setEnvMsg({ ok: false, text: pinErr }); return; }
+    if (!esPinValido(envPin)) { setEnvMsg({ ok: false, text: MENSAJE_FORMATO_PIN }); return; }
     if (!envDestVerificado || envDestVerificado.idWallet !== destId) {
       setEnvMsg({ ok: false, text: 'Verifica el destinatario antes de enviar.' }); return;
     }
@@ -939,8 +931,7 @@ export function UserWalletPage() {
   async function handlePagarQr(e: FormEvent) {
     e.preventDefault();
     if (!miWallet || !pagQrCode) return;
-    const pinErr = validatePin(pagPin);
-    if (pinErr) { setPagMsg({ ok: false, text: pinErr }); return; }
+    if (!esPinValido(pagPin)) { setPagMsg({ ok: false, text: MENSAJE_FORMATO_PIN }); return; }
     // Fase 71.2-E-G: misma clave si es un reintento del mismo intento
     // (código QR/valor sin cambios); clave nueva si algo cambió.
     if (!pagIdemRef.current || pagIdemRef.current.qrCode !== pagQrCode || pagIdemRef.current.valor !== pagValor) {
@@ -1102,8 +1093,7 @@ export function UserWalletPage() {
     if (realConfirmBusy) return; // protección contra doble clic — se mantiene intacta
     const val = Number(realMonto);
     if (!val || val <= 0) { setRealConfirmMsg({ ok: false, text: 'Monto inválido.' }); return; }
-    const pinErr = validatePin(realPin);
-    if (pinErr) { setRealConfirmMsg({ ok: false, text: pinErr }); return; }
+    if (!esPinValido(realPin)) { setRealConfirmMsg({ ok: false, text: MENSAJE_FORMATO_PIN }); return; }
     setRealConfirmBusy(true);
     setRealConfirmMsg(null);
     setRealUncertain(false);
@@ -1590,24 +1580,23 @@ export function UserWalletPage() {
                 </label>
                 <label className="wallet-send-field">
                   <span className="wallet-send-field-label">
-                    PIN transaccional (7 dígitos)
+                    PIN transaccional ({LONGITUD_PIN} dígitos)
                   </span>
                   <input
                     type="password"
                     inputMode="numeric"
-                    maxLength={7}
                     className="wallet-send-input"
                     value={envPin}
-                    onChange={e => setEnvPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
+                    onChange={e => setEnvPin(soloDigitosPin(e.target.value))}
                     required
-                    placeholder="·······"
+                    placeholder="·····"
                     autoComplete="off"
                   />
                 </label>
                 <button
                   className="wallet-send-submit-btn"
                   type="submit"
-                  disabled={envBusy || !envValor || Number(envValor) < 1 || envPin.length !== 7}
+                  disabled={envBusy || !envValor || Number(envValor) < 1 || !esPinValido(envPin)}
                 >
                   {envBusy ? 'Procesando...' : 'Enviar dinero'}
                 </button>
@@ -1783,24 +1772,23 @@ export function UserWalletPage() {
                     </label>
                     <label className="wallet-pay-field">
                       <span className="wallet-pay-field-label">
-                        PIN transaccional (7 dígitos)
+                        PIN transaccional ({LONGITUD_PIN} dígitos)
                       </span>
                       <input
                         type="password"
                         inputMode="numeric"
-                        maxLength={7}
                         className="wallet-pay-input"
                         value={pagPin}
-                        onChange={e => setPagPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
+                        onChange={e => setPagPin(soloDigitosPin(e.target.value))}
                         required
-                        placeholder="·······"
+                        placeholder="·····"
                         autoComplete="off"
                       />
                     </label>
                     <button
                       className="wallet-pay-submit-btn"
                       type="submit"
-                      disabled={pagBusy || !pagValor || Number(pagValor) < 1 || pagPin.length !== 7 || !pagPreview}
+                      disabled={pagBusy || !pagValor || Number(pagValor) < 1 || !esPinValido(pagPin) || !pagPreview}
                     >
                       {pagBusy ? 'Procesando...' : 'Pagar QR con Wallet'}
                     </button>
@@ -2122,15 +2110,14 @@ export function UserWalletPage() {
                     Esta acción moverá dinero real desde la cuenta operativa de XPAY hacia tu llave Bre-B.
                   </p>
                   <label className="wallet-send-field">
-                    <span className="wallet-send-field-label">PIN transaccional (7 dígitos)</span>
+                    <span className="wallet-send-field-label">PIN transaccional ({LONGITUD_PIN} dígitos)</span>
                     <input
                       type="password"
                       inputMode="numeric"
-                      maxLength={7}
                       className="wallet-send-input"
                       value={realPin}
-                      onChange={e => setRealPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
-                      placeholder="·······"
+                      onChange={e => setRealPin(soloDigitosPin(e.target.value))}
+                      placeholder="·····"
                       autoComplete="off"
                     />
                   </label>
@@ -2138,7 +2125,7 @@ export function UserWalletPage() {
                     <button
                       type="button"
                       className="btn-breb btn-breb--financial"
-                      disabled={realConfirmBusy || realPin.length !== 7}
+                      disabled={realConfirmBusy || !esPinValido(realPin)}
                       onClick={() => void handleConfirmarRetiroReal()}
                     >
                       {realConfirmBusy ? 'Procesando...' : 'Confirmar retiro'}

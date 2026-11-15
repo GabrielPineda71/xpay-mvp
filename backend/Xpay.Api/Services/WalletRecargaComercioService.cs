@@ -93,8 +93,8 @@ public class WalletRecargaComercioService(
     // ── Recarga de Wallet en efectivo (Fase 70.4-C: exige caja propia ABIERTA) ──
     public async Task<RecargarWalletComercioResultDto> RecargarWalletAsync(RecargarWalletComercioRequest req, long idUsuarioCajero)
     {
-        if (string.IsNullOrEmpty(req.Pin) || req.Pin.Length != 7 || !req.Pin.All(char.IsDigit))
-            throw new ArgumentException("El PIN debe ser exactamente 7 dígitos numéricos");
+        if (!PinTransaccionalService.FormatoValido(req.Pin))
+            throw new ArgumentException($"El PIN debe tener exactamente {PinTransaccionalService.Longitud} dígitos numéricos.");
         if (req.Valor < ValorMinimo)
             throw new ArgumentException($"El valor mínimo de recarga es {ValorMinimo:N0}");
         if (req.Valor > ValorMaximo)

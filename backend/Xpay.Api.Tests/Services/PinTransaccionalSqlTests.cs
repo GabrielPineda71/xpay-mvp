@@ -18,7 +18,9 @@ public sealed class PinTransaccionalSqlTests
 {
     private const string EnvConnString = "ConnectionStrings__XpayConnection";
     private const string Clave = "Clave-Prueba-2026";
-    private const string PinOk = "2580147";
+    private const string PinOk = "25801";
+    private const string PinLegado = "2580147";
+    private const string PinNuevo = "36914";
     private static readonly TimeSpan EsperaMaxima = TimeSpan.FromSeconds(60);
 
     [Fact]
@@ -82,7 +84,7 @@ public sealed class PinTransaccionalSqlTests
             var id = await SembrarConPinAsync(cs, c);
             await using var ctx = NuevoContexto(cs);
             await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                new PinTransaccionalService(ctx).CrearAsync(id, new CrearPinRequest { ClaveActual = Clave, Pin = "3691470", ConfirmacionPin = "3691470" }));
+                new PinTransaccionalService(ctx).CrearAsync(id, new CrearPinRequest { ClaveActual = Clave, Pin = PinNuevo, ConfirmacionPin = PinNuevo }));
         }
         finally { await LimpiarAsync(cs, c); }
     }
@@ -100,11 +102,11 @@ public sealed class PinTransaccionalSqlTests
 
             for (var i = 1; i < PinTransaccionalService.MaxIntentos; i++)
             {
-                var r = await svc.VerificarAsync(id, "1111112");
+                var r = await svc.VerificarAsync(id, "11112");
                 Assert.Equal(ResultadoPin.Incorrecto, r.Resultado);
                 Assert.Equal(PinTransaccionalService.MaxIntentos - i, r.IntentosRestantes);
             }
-            Assert.Equal(ResultadoPin.Bloqueado, (await svc.VerificarAsync(id, "1111112")).Resultado);
+            Assert.Equal(ResultadoPin.Bloqueado, (await svc.VerificarAsync(id, "11112")).Resultado);
             Assert.Equal(ResultadoPin.Bloqueado, (await svc.VerificarAsync(id, PinOk)).Resultado);
 
             await using var v = NuevoContexto(cs);
@@ -127,8 +129,8 @@ public sealed class PinTransaccionalSqlTests
             await using var ctx = NuevoContexto(cs);
             var svc = new PinTransaccionalService(ctx);
 
-            await svc.VerificarAsync(id, "1111112");
-            await svc.VerificarAsync(id, "1111112");
+            await svc.VerificarAsync(id, "11112");
+            await svc.VerificarAsync(id, "11112");
             Assert.Equal(ResultadoPin.Correcto, (await svc.VerificarAsync(id, PinOk)).Resultado);
             Assert.Equal(PinTransaccionalService.MaxIntentos, (await svc.ObtenerEstadoAsync(id)).IntentosRestantes);
         }
@@ -151,7 +153,7 @@ public sealed class PinTransaccionalSqlTests
             {
                 await using var ctx = NuevoContexto(cs);
                 await salida.Task;
-                return (await new PinTransaccionalService(ctx).VerificarAsync(id, "1111112")).Resultado;
+                return (await new PinTransaccionalService(ctx).VerificarAsync(id, "11112")).Resultado;
             })).ToList();
             salida.SetResult();
             var resultados = await Task.WhenAll(tareas).WaitAsync(EsperaMaxima);
@@ -176,13 +178,78 @@ public sealed class PinTransaccionalSqlTests
             await using var ctx = NuevoContexto(cs);
             var svc = new PinTransaccionalService(ctx);
 
-            var r = await svc.CambiarAsync(id, new CambiarPinRequest { PinActual = PinOk, PinNuevo = "3691470", ConfirmacionPinNuevo = "3691470" });
+            var r = await svc.CambiarAsync(id, new CambiarPinRequest { PinActual = PinOk, PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo });
             Assert.Equal(ResultadoPin.Correcto, r.Resultado);
 
             await using var v = NuevoContexto(cs);
             var otro = new PinTransaccionalService(v);
-            Assert.Equal(ResultadoPin.Correcto, (await otro.VerificarAsync(id, "3691470")).Resultado);
+            Assert.Equal(ResultadoPin.Correcto, (await otro.VerificarAsync(id, PinNuevo)).Resultado);
             Assert.Equal(ResultadoPin.Incorrecto, (await otro.VerificarAsync(id, PinOk)).Resultado);
+        }
+        finally { await LimpiarAsync(cs, c); }
+    }
+
+    [Fact]
+    public async Task PinLegado_SoloSirveParaCambiarAUnPinDeCincoDigitos()
+    {
+        if (!TryConnString(out var cs)) return;
+        var c = new Sembrados();
+        try
+        {
+            var id = await SembrarConPinLegadoAsync(cs, c);
+            await using var ctx = NuevoContexto(cs);
+            var servicio = new PinTransaccionalService(ctx);
+
+            Assert.Equal(ResultadoPin.FormatoInvalido, (await servicio.VerificarAsync(id, PinLegado)).Resultado);
+            Assert.Equal(PinTransaccionalService.MaxIntentos, (await servicio.ObtenerEstadoAsync(id)).IntentosRestantes);
+
+            var incorrecto = await servicio.CambiarAsync(id,
+                new CambiarPinRequest { PinActual = "2580148", PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo });
+            Assert.Equal(ResultadoPin.Incorrecto, incorrecto.Resultado);
+            Assert.Equal(PinTransaccionalService.MaxIntentos - 1, incorrecto.IntentosRestantes);
+
+            var solicitud = new CambiarPinRequest { PinActual = PinLegado, PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo };
+            Assert.Equal(ResultadoPin.Correcto, (await servicio.CambiarAsync(id, solicitud)).Resultado);
+            Assert.Equal(PinTransaccionalService.MaxIntentos, (await servicio.ObtenerEstadoAsync(id)).IntentosRestantes);
+            Assert.Equal(ResultadoPin.FormatoInvalido, (await servicio.VerificarAsync(id, PinLegado)).Resultado);
+            Assert.Equal(ResultadoPin.Correcto, (await servicio.VerificarAsync(id, PinNuevo)).Resultado);
+
+            var anterior = await servicio.CambiarAsync(id,
+                new CambiarPinRequest { PinActual = PinLegado, PinNuevo = PinOk, ConfirmacionPinNuevo = PinOk });
+            Assert.Equal(ResultadoPin.Incorrecto, anterior.Resultado);
+            Assert.Equal(1, await ctx.Auditorias.CountAsync(a => a.IdUsuario == id && a.Accion == "PIN_CAMBIADO"));
+        }
+        finally { await LimpiarAsync(cs, c); }
+    }
+
+    [Fact]
+    public async Task DosCambiosConcurrentes_ConElMismoPinActual_SoloUnoPuedeGuardarse()
+    {
+        if (!TryConnString(out var cs)) return;
+        var c = new Sembrados();
+        try
+        {
+            var id = await SembrarConPinLegadoAsync(cs, c);
+            var opciones = new[] { PinOk, PinNuevo };
+            var listos = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var intentos = opciones.Select(async candidato =>
+            {
+                await using var contexto = NuevoContexto(cs);
+                await listos.Task;
+                var solicitud = new CambiarPinRequest { PinActual = PinLegado, PinNuevo = candidato, ConfirmacionPinNuevo = candidato };
+                return await new PinTransaccionalService(contexto).CambiarAsync(id, solicitud);
+            }).ToArray();
+
+            listos.SetResult();
+            var resultados = await Task.WhenAll(intentos).WaitAsync(EsperaMaxima);
+            var ganador = Assert.Single(resultados.Select((r, i) => (r.Resultado, Indice: i)),
+                r => r.Resultado == ResultadoPin.Correcto);
+
+            await using var lectura = NuevoContexto(cs);
+            var servicio = new PinTransaccionalService(lectura);
+            Assert.Equal(ResultadoPin.Correcto, (await servicio.VerificarAsync(id, opciones[ganador.Indice])).Resultado);
+            Assert.Equal(ResultadoPin.Incorrecto, (await servicio.VerificarAsync(id, opciones[1 - ganador.Indice])).Resultado);
+            Assert.Equal(1, await lectura.Auditorias.CountAsync(a => a.IdUsuario == id && a.Accion == "PIN_CAMBIADO"));
         }
         finally { await LimpiarAsync(cs, c); }
     }
@@ -197,7 +264,7 @@ public sealed class PinTransaccionalSqlTests
             var id = await SembrarConPinAsync(cs, c);
             await using var ctx = NuevoContexto(cs);
             var r = await new PinTransaccionalService(ctx).CambiarAsync(id,
-                new CambiarPinRequest { PinActual = "1111112", PinNuevo = "3691470", ConfirmacionPinNuevo = "3691470" });
+                new CambiarPinRequest { PinActual = "11112", PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo });
             Assert.Equal(ResultadoPin.Incorrecto, r.Resultado);
 
             await using var v = NuevoContexto(cs);
@@ -219,7 +286,7 @@ public sealed class PinTransaccionalSqlTests
             await using (var ctx = NuevoContexto(cs))
             {
                 var svc = new PinTransaccionalService(ctx);
-                for (var i = 0; i < PinTransaccionalService.MaxIntentos; i++) await svc.VerificarAsync(id, "1111112");
+                for (var i = 0; i < PinTransaccionalService.MaxIntentos; i++) await svc.VerificarAsync(id, "11112");
             }
 
             await using (var ctx = NuevoContexto(cs))
@@ -238,8 +305,8 @@ public sealed class PinTransaccionalSqlTests
                 var svc = new PinTransaccionalService(ctx);
                 Assert.Equal(ResultadoPin.NoConfigurado, (await svc.VerificarAsync(id, PinOk)).Resultado);
                 Assert.True((await svc.ObtenerEstadoAsync(id)).Restablecido);
-                await svc.CrearAsync(id, new CrearPinRequest { ClaveActual = Clave, Pin = "3691470", ConfirmacionPin = "3691470" });
-                Assert.Equal(ResultadoPin.Correcto, (await svc.VerificarAsync(id, "3691470")).Resultado);
+                await svc.CrearAsync(id, new CrearPinRequest { ClaveActual = Clave, Pin = PinNuevo, ConfirmacionPin = PinNuevo });
+                Assert.Equal(ResultadoPin.Correcto, (await svc.VerificarAsync(id, PinNuevo)).Resultado);
             }
 
             await using var v = NuevoContexto(cs);
@@ -272,6 +339,21 @@ public sealed class PinTransaccionalSqlTests
         var id = await SembrarUsuarioAsync(cs, c);
         await using var ctx = NuevoContexto(cs);
         await new PinTransaccionalService(ctx).CrearAsync(id, new CrearPinRequest { ClaveActual = Clave, Pin = PinOk, ConfirmacionPin = PinOk });
+        return id;
+    }
+
+    private static async Task<long> SembrarConPinLegadoAsync(string cs, Sembrados c)
+    {
+        var id = await SembrarUsuarioAsync(cs, c);
+        await using var ctx = NuevoContexto(cs);
+        ctx.PinesTransaccionales.Add(new PinTransaccional
+        {
+            IdUsuario = id,
+            PinHash = BCrypt.Net.BCrypt.HashPassword(PinLegado),
+            FechaCreacion = DateTime.UtcNow,
+            Estado = EstadosPin.Activo,
+        });
+        await ctx.SaveChangesAsync();
         return id;
     }
 

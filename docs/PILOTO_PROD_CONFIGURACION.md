@@ -61,9 +61,9 @@ Sin claves de configuración: usa la tabla existente `pin_transaccional`
 
 | Pieza | Regla |
 |---|---|
-| PIN | 7 dígitos; se rechazan dígitos todos iguales o consecutivos. Solo se guarda el hash BCrypt. |
+| PIN | 5 dígitos numéricos al crear un PIN o confirmar una operación. Se rechazan los PIN nuevos de dígitos todos iguales o consecutivos. Solo se guarda el hash BCrypt. |
 | Crear | `POST api/pin` con la contraseña de ingreso del usuario (Perfil → PIN transaccional). |
-| Cambiar | `POST api/pin/cambiar` con el PIN actual (cuenta intentos). |
+| Cambiar | `POST api/pin/cambiar` con el PIN actual (cuenta intentos). El PIN anterior de 7 dígitos solo se admite en este paso para elegir uno nuevo de 5. |
 | Exigido en | `POST api/libranza/cliente/anticipos`, `POST api/breb/retiros/real`, `POST api/wallets/transferencia`, `POST api/qr/pagar` (`[RequierePinTransaccional]`, después de `[OperacionFinanciera]`). |
 | Respuestas | 400 `PIN_REQUERIDO` / `PIN_INCORRECTO` (con intentos restantes), 428 `PIN_NO_CONFIGURADO`, 423 `PIN_BLOQUEADO`. |
 | Bloqueo | 5 intentos fallidos. Cada intento se reserva con un UPDATE atómico antes de comparar: ni en paralelo se prueban más de 5. Un acierto reinicia el contador. |

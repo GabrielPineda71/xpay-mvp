@@ -20,26 +20,28 @@ namespace Xpay.Api.Tests.Common;
 public sealed class PinTransaccionalTests
 {
     [Theory]
-    [InlineData("2580147", true)]
-    [InlineData("0000000", true)]
+    [InlineData("25801", true)]
+    [InlineData("02580", true)]
+    [InlineData("00000", true)]
+    [InlineData("2580", false)]
     [InlineData("258014", false)]
-    [InlineData("25801470", false)]
-    [InlineData("25801a7", false)]
-    [InlineData("２５８０１４７", false)] // dígitos no ASCII
+    [InlineData("2580147", false)]
+    [InlineData("2580a", false)]
+    [InlineData("２５８０１", false)] // dígitos no ASCII
     [InlineData("", false)]
     [InlineData(null, false)]
     public void FormatoValido(string? pin, bool esperado) =>
         Assert.Equal(esperado, PinTransaccionalService.FormatoValido(pin));
 
     [Theory]
-    [InlineData("1111111", true)]
-    [InlineData("1234567", true)]
-    [InlineData("0123456", true)]
-    [InlineData("7654321", true)]
-    [InlineData("9876543", true)]
-    [InlineData("2580147", false)]
-    [InlineData("1234568", false)]
-    [InlineData("1111112", false)]
+    [InlineData("11111", true)]
+    [InlineData("12345", true)]
+    [InlineData("01234", true)]
+    [InlineData("76543", true)]
+    [InlineData("98765", true)]
+    [InlineData("25801", false)]
+    [InlineData("12346", false)]
+    [InlineData("11112", false)]
     public void EsTrivial(string pin, bool esperado) =>
         Assert.Equal(esperado, PinTransaccionalService.EsTrivial(pin));
 
@@ -81,7 +83,7 @@ public sealed class PinTransaccionalTests
     [Fact]
     public async Task SinServicio_FallaCerrado_500()
     {
-        var (ctx, _) = Contexto(conServicio: false, conClaim: true, conCuerpo: true, pin: "2580147");
+        var (ctx, _) = Contexto(conServicio: false, conClaim: true, conCuerpo: true, pin: "25801");
         Assert.False(await EjecutarAsync(ctx));
         Assert.Equal(500, Assert.IsType<ObjectResult>(ctx.Result).StatusCode);
     }
@@ -97,7 +99,7 @@ public sealed class PinTransaccionalTests
     [Fact]
     public async Task SinIdUsuario_401()
     {
-        var (ctx, _) = Contexto(conServicio: true, conClaim: false, conCuerpo: true, pin: "2580147");
+        var (ctx, _) = Contexto(conServicio: true, conClaim: false, conCuerpo: true, pin: "25801");
         Assert.False(await EjecutarAsync(ctx));
         Assert.IsType<UnauthorizedObjectResult>(ctx.Result);
     }
@@ -105,8 +107,9 @@ public sealed class PinTransaccionalTests
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    [InlineData("12345")]
-    [InlineData("abcdefg")]
+    [InlineData("1234")]
+    [InlineData("2580147")]
+    [InlineData("abcde")]
     public async Task PinAusenteOMalFormado_400_PinRequerido_YLoBorra(string? pin)
     {
         var (ctx, body) = Contexto(conServicio: true, conClaim: true, conCuerpo: true, pin: pin);

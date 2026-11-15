@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using Xpay.Api.Common;
 using Xpay.Api.Data;
@@ -13,11 +14,12 @@ public enum ResultadoPin
     NoConfigurado,
     Bloqueado,
     Incorrecto,
+    CambiadoConcurrentemente,
 }
 
 public readonly record struct VerificacionPin(ResultadoPin Resultado, int IntentosRestantes = 0);
 
-// PIN transaccional de 7 dígitos sobre la tabla existente pin_transaccional
+// PIN transaccional de 5 dígitos sobre la tabla existente pin_transaccional
 // (una fila por usuario). Solo se guarda el hash BCrypt.
 //
 // Verificación resistente a concurrencia: cada intento RESERVA primero un
@@ -25,12 +27,13 @@ public readonly record struct VerificacionPin(ResultadoPin Resultado, int Intent
 // intentos < Max" (el mismo UPDATE bloquea al llegar a Max). Solo después se
 // compara el hash; si acierta, otro UPDATE reinicia el contador. Así, ni con
 // peticiones simultáneas se prueban más de MaxIntentos PIN antes del bloqueo.
-// Los UPDATE se ejecutan fuera de cualquier transacción del llamador: un
-// fallo posterior de la operación de dinero no deshace el intento contado.
+// La reserva se confirma antes de verificar el hash. Un fallo posterior
+// del cambio o de la operación de dinero no deshace el intento contado.
 public sealed class PinTransaccionalService(XpayDbContext db)
 {
-    public const int Longitud    = 7;
+    public const int Longitud = 5;
     public const int MaxIntentos = 5;
+    private const int LongitudAnterior = 7;
 
     public async Task<EstadoPinDto> ObtenerEstadoAsync(long idUsuario, CancellationToken ct = default)
     {
@@ -46,42 +49,50 @@ public sealed class PinTransaccionalService(XpayDbContext db)
         };
     }
 
-    public async Task<VerificacionPin> VerificarAsync(long idUsuario, string? pin, CancellationToken ct = default)
-    {
-        if (!FormatoValido(pin)) return new(ResultadoPin.FormatoInvalido);
+    public Task<VerificacionPin> VerificarAsync(long idUsuario, string? pin, CancellationToken ct = default) =>
+        FormatoValido(pin)
+            ? VerificarPinVigenteAsync(idUsuario, pin, ct)
+            : Task.FromResult(new VerificacionPin(ResultadoPin.FormatoInvalido));
 
+    private async Task<VerificacionPin> VerificarPinVigenteAsync(long idUsuario, string pin, CancellationToken ct,
+        string? pinNuevo = null)
+    {
         var registro = await db.PinesTransaccionales.AsNoTracking()
             .FirstOrDefaultAsync(p => p.IdUsuario == idUsuario, ct);
         if (registro is null || registro.Estado != EstadosPin.Activo) return new(ResultadoPin.NoConfigurado);
         if (registro.Bloqueado) return new(ResultadoPin.Bloqueado);
 
+        // Una reserva o confirmación del PIN anterior nunca modifica el PIN
+        // que acaba de cambiarse o restablecerse en otra solicitud.
+        var pinVigente = db.PinesTransaccionales
+            .Where(p => p.IdPin == registro.IdPin && p.Estado == EstadosPin.Activo && p.PinHash == registro.PinHash);
         var ahora = DateTime.UtcNow;
-        var reservado = await db.PinesTransaccionales
-            .Where(p => p.IdPin == registro.IdPin && p.Estado == EstadosPin.Activo
-                     && !p.Bloqueado && p.IntentosFallidos < MaxIntentos)
+        var reservado = await pinVigente
+            .Where(p => !p.Bloqueado && p.IntentosFallidos < MaxIntentos)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(p => p.IntentosFallidos, p => p.IntentosFallidos + 1)
                 .SetProperty(p => p.Bloqueado, p => p.IntentosFallidos + 1 >= MaxIntentos)
                 .SetProperty(p => p.FechaBloqueo, p => p.IntentosFallidos + 1 >= MaxIntentos ? ahora : p.FechaBloqueo)
                 .SetProperty(p => p.FechaActualizacion, ahora), ct);
-        if (reservado == 0) return new(ResultadoPin.Bloqueado);
+        if (reservado == 0)
+            return new(await pinVigente.AnyAsync(ct) ? ResultadoPin.Bloqueado : ResultadoPin.CambiadoConcurrentemente);
 
         if (BCrypt.Net.BCrypt.Verify(pin, registro.PinHash))
         {
-            await db.PinesTransaccionales
-                .Where(p => p.IdPin == registro.IdPin && p.PinHash == registro.PinHash)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(p => p.IntentosFallidos, 0)
-                    .SetProperty(p => p.Bloqueado, false)
-                    .SetProperty(p => p.FechaBloqueo, (DateTime?)null), ct);
-            return new(ResultadoPin.Correcto);
+            if (pinNuevo is not null)
+                return await GuardarCambioAsync(pinVigente, idUsuario, pinNuevo, ct);
+
+            var confirmado = await pinVigente.ExecuteUpdateAsync(s => s
+                .SetProperty(p => p.IntentosFallidos, 0)
+                .SetProperty(p => p.Bloqueado, false)
+                .SetProperty(p => p.FechaBloqueo, (DateTime?)null), ct);
+            return new(confirmado == 1 ? ResultadoPin.Correcto : ResultadoPin.CambiadoConcurrentemente);
         }
 
-        var intentos = await db.PinesTransaccionales.AsNoTracking()
-            .Where(p => p.IdPin == registro.IdPin)
-            .Select(p => p.IntentosFallidos)
-            .FirstAsync(ct);
-        var restantes = MaxIntentos - intentos;
+        var intentos = await pinVigente.Select(p => (int?)p.IntentosFallidos).SingleOrDefaultAsync(ct);
+        if (intentos is null) return new(ResultadoPin.CambiadoConcurrentemente);
+
+        var restantes = MaxIntentos - intentos.Value;
         return restantes > 0 ? new(ResultadoPin.Incorrecto, restantes) : new(ResultadoPin.Bloqueado);
     }
 
@@ -129,31 +140,47 @@ public sealed class PinTransaccionalService(XpayDbContext db)
         }
     }
 
-    // Cambia el PIN validando el actual con las mismas reglas de intentos.
+    // El PIN anterior de 7 dígitos solo sirve para cambiarlo por uno de 5.
     public async Task<VerificacionPin> CambiarAsync(long idUsuario, CambiarPinRequest req, CancellationToken ct = default)
     {
         ValidarNuevo(req.PinNuevo, req.ConfirmacionPinNuevo);
         if (req.PinNuevo == req.PinActual)
             throw new InvalidOperationException("El PIN nuevo debe ser distinto del actual.");
 
-        var verificacion = await VerificarAsync(idUsuario, req.PinActual, ct);
-        if (verificacion.Resultado != ResultadoPin.Correcto) return verificacion;
+        var pinActual = req.PinActual;
+        if (!FormatoValido(pinActual) && !FormatoValido(pinActual, LongitudAnterior))
+            return new(ResultadoPin.FormatoInvalido);
 
-        var registro = await db.PinesTransaccionales.FirstAsync(p => p.IdUsuario == idUsuario, ct);
-        var ahora = DateTime.UtcNow;
-        registro.PinHash            = BCrypt.Net.BCrypt.HashPassword(req.PinNuevo);
-        registro.IntentosFallidos   = 0;
-        registro.FechaActualizacion = ahora;
-        Auditar(idUsuario, idUsuario, "PIN_CAMBIADO", ahora);
-        await db.SaveChangesAsync(ct);
-        return verificacion;
+        return await VerificarPinVigenteAsync(idUsuario, pinActual, ct, req.PinNuevo);
     }
 
-    public static bool FormatoValido(string? pin) =>
-        pin is { Length: Longitud } && pin.All(char.IsAsciiDigit);
+    private async Task<VerificacionPin> GuardarCambioAsync(IQueryable<PinTransaccional> pinVigente, long idUsuario,
+        string pinNuevo, CancellationToken ct)
+    {
+        var hashNuevo = BCrypt.Net.BCrypt.HashPassword(pinNuevo);
+        var ahora = DateTime.UtcNow;
+        await using var transaccion = await db.Database.BeginTransactionAsync(ct);
+        var actualizado = await pinVigente.ExecuteUpdateAsync(s => s
+            .SetProperty(p => p.PinHash, hashNuevo)
+            .SetProperty(p => p.IntentosFallidos, 0)
+            .SetProperty(p => p.Bloqueado, false)
+            .SetProperty(p => p.FechaBloqueo, (DateTime?)null)
+            .SetProperty(p => p.FechaActualizacion, ahora), ct);
+        if (actualizado != 1) return new(ResultadoPin.CambiadoConcurrentemente);
+
+        Auditar(idUsuario, idUsuario, "PIN_CAMBIADO", ahora);
+        await db.SaveChangesAsync(ct);
+        await transaccion.CommitAsync(ct);
+        return new(ResultadoPin.Correcto);
+    }
+
+    public static bool FormatoValido([NotNullWhen(true)] string? pin) => FormatoValido(pin, Longitud);
+
+    private static bool FormatoValido([NotNullWhen(true)] string? pin, int longitud) =>
+        pin is not null && pin.Length == longitud && pin.All(char.IsAsciiDigit);
 
     // Rechaza PIN triviales: todos los dígitos iguales o una secuencia
-    // consecutiva ascendente/descendente (1234567, 7654321, 0123456...).
+    // consecutiva ascendente/descendente (12345, 76543, 01234...).
     public static bool EsTrivial(string pin)
     {
         if (pin.Distinct().Count() == 1) return true;

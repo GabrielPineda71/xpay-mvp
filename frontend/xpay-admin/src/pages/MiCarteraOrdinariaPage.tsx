@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { get, post } from '../api/client.ts';
+import { esPinValido, LONGITUD_PIN, MENSAJE_FORMATO_PIN, soloDigitosPin } from '../utils/pinTransaccional.ts';
 import '../cartera-ordinaria.css';
 
 interface MiCupo {
@@ -132,13 +133,6 @@ const fmt = (v: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v);
 const fmtPct = (v: number) => `${v}%`;
 
-// PIN: format-only validation for QA/Demo phase — same convention as UserWalletPage.
-// Full cryptographic validation (backend hash, attempt limits, lockout) is pending for production.
-function validatePin(pin: string): string | null {
-  if (!/^\d{7}$/.test(pin)) return 'La clave debe ser exactamente 7 dígitos numéricos.';
-  return null;
-}
-
 // XPAY-712 - Idempotency-Key por intencion de desembolso.
 const AVANCE_IDEM_STORAGE = 'xpay_avance_wallet_idempotency';
 
@@ -211,6 +205,8 @@ export function MiCarteraOrdinariaPage() {
   const [pagoBusy, setPagoBusy]           = useState(false);
   const [pagoError, setPagoError]         = useState('');
   const [pagoResult, setPagoResult]       = useState<PagoCuotaResult | null>(null);
+  const pagoDeshabilitado = pagoBusy || !pagoValor || Number(pagoValor) <= 0
+    || (walletSaldo !== null && Number(pagoValor) > walletSaldo) || !esPinValido(pagoPin);
 
   const cargarWalletSaldo = (idWallet: number) => {
     get<WalletEstadoCuenta>(`/api/reportes/wallet/${idWallet}/estado-cuenta`)
@@ -279,8 +275,7 @@ export function MiCarteraOrdinariaPage() {
       setPagoError(`El valor supera tu saldo de Wallet (${fmt(walletSaldo)})`);
       return;
     }
-    const pinErr = validatePin(pagoPin);
-    if (pinErr) { setPagoError(pinErr); return; }
+    if (!esPinValido(pagoPin)) { setPagoError(MENSAJE_FORMATO_PIN); return; }
 
     setPagoBusy(true); setPagoError(''); setPagoResult(null);
     try {
@@ -771,14 +766,13 @@ export function MiCarteraOrdinariaPage() {
                           Saldo Wallet actual: <strong>{walletSaldo !== null ? fmt(walletSaldo) : '—'}</strong>
                         </p>
                         <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13, maxWidth: 200, marginBottom: '0.6rem' }}>
-                          Clave de 7 dígitos
+                          PIN transaccional ({LONGITUD_PIN} dígitos)
                           <input
                             type="password"
                             inputMode="numeric"
-                            maxLength={7}
                             value={pagoPin}
-                            onChange={e => setPagoPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
-                            placeholder="·······"
+                            onChange={e => setPagoPin(soloDigitosPin(e.target.value))}
+                            placeholder="·····"
                             autoComplete="off"
                             style={{ marginTop: 4, padding: '6px 8px', border: '1px solid #ccc', borderRadius: 4 }}
                           />
@@ -788,12 +782,12 @@ export function MiCarteraOrdinariaPage() {
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button onClick={pagarCuota}
-                            disabled={pagoBusy || !pagoValor || Number(pagoValor) <= 0 || (walletSaldo !== null && Number(pagoValor) > walletSaldo) || pagoPin.length !== 7}
+                            disabled={pagoDeshabilitado}
                             style={{
                               padding: '8px 20px',
-                              background: pagoBusy || !pagoValor || Number(pagoValor) <= 0 || (walletSaldo !== null && Number(pagoValor) > walletSaldo) || pagoPin.length !== 7 ? '#ccc' : '#388e3c',
+                              background: pagoDeshabilitado ? '#ccc' : '#388e3c',
                               color: '#fff', border: 'none', borderRadius: 4,
-                              cursor: pagoBusy || !pagoValor || Number(pagoValor) <= 0 || (walletSaldo !== null && Number(pagoValor) > walletSaldo) || pagoPin.length !== 7 ? 'not-allowed' : 'pointer', fontSize: 14,
+                              cursor: pagoDeshabilitado ? 'not-allowed' : 'pointer', fontSize: 14,
                             }}>
                             {pagoBusy ? 'Pagando…' : 'Confirmar pago'}
                           </button>

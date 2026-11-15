@@ -33,7 +33,7 @@ async function llenar(pin: string) {
   const user = userEvent.setup();
   render(<MiWalletLibranzaPage />);
   await user.type(await screen.findByPlaceholderText('100000'), '100000');
-  if (pin) await user.type(screen.getByLabelText('PIN transaccional (7 dígitos)'), pin);
+  if (pin) await user.type(screen.getByLabelText('PIN transaccional (5 dígitos)'), pin);
   return user;
 }
 
@@ -44,24 +44,37 @@ describe('MiWalletLibranzaPage — PIN transaccional', () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 
+  it('impide enviar un PIN de siete dígitos pegado en el formulario', async () => {
+    const user = await llenar('');
+    const campo = screen.getByLabelText('PIN transaccional (5 dígitos)');
+    await user.click(campo);
+    await user.paste('0258014');
+
+    expect(campo).toHaveValue('0258014');
+    const solicitar = screen.getByRole('button', { name: 'Solicitar anticipo' });
+    expect(solicitar).toBeDisabled();
+    await user.click(solicitar);
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
   it('envía el PIN en el cuerpo del anticipo', async () => {
     mockPost.mockResolvedValue({ success: true, data: { idAnticipo: 6, valorNetoDesembolsado: 100000, valorComision: 0, valorIva: 0 } });
-    const user = await llenar('2580147');
+    const user = await llenar('02580');
     await user.click(screen.getByRole('button', { name: 'Solicitar anticipo' }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
       '/api/libranza/cliente/anticipos',
-      { valorSolicitado: 100000, pin: '2580147' },
+      { valorSolicitado: 100000, pin: '02580' },
       expect.objectContaining({ 'Idempotency-Key': expect.any(String) }),
     ));
   });
 
   it('PIN incorrecto: muestra el mensaje del backend y limpia el PIN', async () => {
     mockPost.mockRejectedValue(new ApiError('PIN incorrecto. Te quedan 4 intento(s).', 400));
-    const user = await llenar('1111112');
+    const user = await llenar('11112');
     await user.click(screen.getByRole('button', { name: 'Solicitar anticipo' }));
 
     expect(await screen.findByText('PIN incorrecto. Te quedan 4 intento(s).')).toBeInTheDocument();
-    expect((screen.getByLabelText('PIN transaccional (7 dígitos)') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('PIN transaccional (5 dígitos)') as HTMLInputElement).value).toBe('');
   });
 });

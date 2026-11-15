@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { get, post, ApiError } from '../api/client.ts';
 import { SoloQa } from '../config/SoloQa.tsx';
+import { esPinValido, LONGITUD_PIN, MENSAJE_FORMATO_PIN, soloDigitosPin } from '../utils/pinTransaccional.ts';
 
 interface CorteVigente {
   diaPago: number;
@@ -147,7 +148,7 @@ export function MiWalletLibranzaPage() {
     const v = Number(valor);
     if (!Number.isFinite(v) || v <= 0) { setSolicErr('Ingresa un valor numérico.'); return; }
     // PIN transaccional: el backend lo verifica (5 intentos y bloqueo).
-    if (!/^\d{7}$/.test(pin)) { setSolicErr('Ingresa tu PIN transaccional de 7 dígitos.'); return; }
+    if (!esPinValido(pin)) { setSolicErr(MENSAJE_FORMATO_PIN); return; }
     if (cupo?.corteVigente && v > cupo.corteVigente.cupoDisponible) {
       setSolicErr(`El valor supera tu cupo disponible (${fmt(cupo.corteVigente.cupoDisponible)}).`);
       return;
@@ -299,18 +300,18 @@ export function MiWalletLibranzaPage() {
                         </div>
                         <div>
                           <label htmlFor="anticipo-pin" style={{ display: 'block', fontSize: '0.8rem', fontWeight: 500, marginBottom: '0.2rem' }}>
-                            PIN transaccional (7 dígitos)
+                            PIN transaccional ({LONGITUD_PIN} dígitos)
                           </label>
                           <input
                             id="anticipo-pin"
-                            type="password" inputMode="numeric" maxLength={7} autoComplete="off"
+                            type="password" inputMode="numeric" autoComplete="off"
                             value={pin}
-                            onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 7))}
-                            placeholder="·······"
+                            onChange={e => setPin(soloDigitosPin(e.target.value))}
+                            placeholder="·····"
                             style={{ padding: '0.35rem 0.6rem', border: '1px solid #93c5fd', borderRadius: '0.375rem', fontSize: '0.9rem', width: '140px' }}
                           />
                         </div>
-                        <button type="submit" disabled={solicitando || pin.length !== 7}
+                        <button type="submit" disabled={solicitando || !esPinValido(pin)}
                           style={{ padding: '0.4rem 1rem', background: '#1e40af', color: '#fff', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: 600, opacity: solicitando ? 0.7 : 1 }}>
                           {solicitando ? 'Solicitando...' : 'Solicitar anticipo'}
                         </button>

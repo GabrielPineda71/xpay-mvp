@@ -559,8 +559,8 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
     // ── Pago manual de cuotas desde Wallet ──────────────────────────────
     public async Task<PagoCuotaResultDto> PagarCuotaWalletAsync(PagarCuotaWalletRequest req, long idUsuario)
     {
-        if (string.IsNullOrEmpty(req.Pin) || req.Pin.Length != 7 || !req.Pin.All(char.IsDigit))
-            throw new ArgumentException("El PIN debe ser exactamente 7 dígitos numéricos");
+        if (!PinTransaccionalService.FormatoValido(req.Pin))
+            throw new ArgumentException($"El PIN debe tener exactamente {PinTransaccionalService.Longitud} dígitos numéricos.");
         if (req.ValorPago <= 0)
             throw new ArgumentException("El valor a pagar debe ser mayor a cero");
 
@@ -848,8 +848,8 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
     // ── Compra QR con Cupo Ordinario ─────────────────────────────────────
     public async Task<PagarQrConCupoResultDto> PagarQrConCupoAsync(PagarQrConCupoRequest req, long idUsuario)
     {
-        if (string.IsNullOrEmpty(req.Pin) || req.Pin.Length != 7 || !req.Pin.All(char.IsDigit))
-            throw new ArgumentException("El PIN debe ser exactamente 7 dígitos numéricos");
+        if (!PinTransaccionalService.FormatoValido(req.Pin))
+            throw new ArgumentException($"El PIN debe tener exactamente {PinTransaccionalService.Longitud} dígitos numéricos.");
         if (req.ValorCompra <= 0)
             throw new ArgumentException("El valor de la compra debe ser mayor a cero");
 
