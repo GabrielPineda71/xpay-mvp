@@ -53,7 +53,10 @@ export function ProfileSheet({ userName, onLogout, onClose, onOpenProfileDetail 
         <button
           type="button"
           className="wallet-profile-action"
-          onClick={onOpenProfileDetail}
+          onClick={() => {
+            onClose();
+            onOpenProfileDetail?.();
+          }}
           disabled={!onOpenProfileDetail}
         >
           Mi perfil

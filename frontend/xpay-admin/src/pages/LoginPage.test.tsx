@@ -1,5 +1,3 @@
-// P0-B frontend — LoginPage: solo se añaden dos enlaces públicos de
-// identidad. El error de credenciales sigue siendo el genérico del backend.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -48,6 +46,22 @@ describe('LoginPage — enlaces de identidad (P0-B frontend)', () => {
     expect(enlace).toHaveAttribute('href', '/reenviar-verificacion');
     await user.click(enlace);
     expect(await screen.findByText('PANTALLA REENVIO')).toBeInTheDocument();
+  });
+
+  it('muestra y oculta la contraseña sin cambiar el valor ni iniciar sesión', async () => {
+    const user = userEvent.setup();
+    renderizar();
+    const password = screen.getByLabelText('Contraseña');
+
+    expect(password).toHaveAttribute('type', 'password');
+    await user.type(password, 'ClaveDePrueba1!');
+    await user.click(screen.getByRole('button', { name: 'Mostrar contraseña' }));
+    expect(password).toHaveAttribute('type', 'text');
+    expect(password).toHaveValue('ClaveDePrueba1!');
+    await user.click(screen.getByRole('button', { name: 'Ocultar contraseña' }));
+    expect(password).toHaveAttribute('type', 'password');
+    expect(password).toHaveValue('ClaveDePrueba1!');
+    expect(mockLogin).not.toHaveBeenCalled();
   });
 
   it('el error de credenciales se muestra igual que antes, sin detectar PENDIENTE_VERIFICACION', async () => {
