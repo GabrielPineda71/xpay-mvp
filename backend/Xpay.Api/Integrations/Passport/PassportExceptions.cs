@@ -64,4 +64,8 @@ public sealed class PassportTransportException : PassportException
 public sealed class PassportProtocolException(string message) : PassportException(message);
 
 // Passport respondió 401 o 403.
-public sealed class PassportAuthenticationException(string message) : PassportException(message);
+public sealed class PassportAuthenticationException(string message) : PassportException(message)
+{
+    internal string? SupportReference { get; init; }
+    internal string? OAuthErrorCode { get; init; }
+}

@@ -151,9 +151,18 @@ public sealed class PassportTokenProvider : IPassportTokenProvider
 
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
-                _logger.LogWarning("passport.token: auth rechazada HTTP {Status} ({Elapsed:F0} ms).", status, elapsedMs);
+                var reference = PassportOAuthRejection.ReadReference(response, options.ClientId!, options.ClientSecret!);
+                var code = await PassportOAuthRejection.ReadCodeAsync(response.Content, linkedCts.Token, cancellationToken)
+                    .ConfigureAwait(false);
+                _logger.LogWarning(
+                    "passport.token: auth rechazada HTTP {Status} ({Elapsed:F0} ms), UTC {Utc}, referencia={Reference}, codigo={Code}.",
+                    status, elapsedMs, _timeProvider.GetUtcNow(), reference, code);
                 throw new PassportAuthenticationException(
-                    $"Passport rechazó las credenciales (HTTP {status}).");
+                    $"Passport rechazó las credenciales (HTTP {status}).")
+                {
+                    SupportReference = reference,
+                    OAuthErrorCode = code,
+                };
             }
 
             if (!response.IsSuccessStatusCode)

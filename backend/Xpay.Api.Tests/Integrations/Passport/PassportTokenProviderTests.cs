@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Headers;
+using System.Text;
 using Xpay.Api.Integrations.Passport;
 using Xunit;
 
@@ -181,6 +183,112 @@ public class PassportTokenProviderTests
         Assert.DoesNotContain("test-client-secret", ex.Message);
         Assert.DoesNotContain(logger.Messages, m => m.Contains("test-client-secret"));
         Assert.DoesNotContain(logger.Messages, m => m.Contains("test-client-id"));
+    }
+
+    [Fact]
+    public async Task Forbidden_LogsOnlyRecognizedCodeAndSupportReference()
+    {
+        const string reference = "035421d7-5727-42de-b1ec-e17f54adc601";
+        var logger = new CapturingLogger<PassportTokenProvider>();
+        var handler = new FakeHttpMessageHandler(() =>
+        {
+            var response = FakeHttpMessageHandler.Json(HttpStatusCode.Forbidden,
+                "{\"error\":{\"code\":\"unauthorized_client\",\"detail\":\"test-client-secret\"}}");
+            response.Headers.TryAddWithoutValidation("x-request-id", reference);
+            response.Headers.TryAddWithoutValidation("x-unrelated", "unrelated-header-value");
+            return response;
+        });
+        var provider = CreateProvider(handler, ValidConfig(), new TestTimeProvider(T0), logger);
+
+        var error = await Assert.ThrowsAsync<PassportAuthenticationException>(() => provider.GetAccessTokenAsync());
+
+        Assert.Equal("Passport rechazó las credenciales (HTTP 403).", error.Message);
+        Assert.Contains(logger.Messages, message => message.Contains(reference) && message.Contains("unauthorized_client"));
+        Assert.DoesNotContain(logger.Messages,
+            message => message.Contains("test-client-secret") || message.Contains("unrelated-header-value"));
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task Forbidden_IgnoresOversizedBodyAndReflectedCredentials()
+    {
+        const string secret = "ac361a74-ae53-4eef-bba0-aab467e79cff";
+        var logger = new CapturingLogger<PassportTokenProvider>();
+        var handler = new FakeHttpMessageHandler(() =>
+        {
+            var response = FakeHttpMessageHandler.Json(HttpStatusCode.Forbidden,
+                "{\"error\":\"invalid_client\"}" + new string(' ', 4096));
+            response.Headers.TryAddWithoutValidation("x-request-id", secret);
+            return response;
+        });
+        var config = ValidConfig();
+        config[PassportOptions.EnvClientSecret] = secret;
+        var provider = CreateProvider(handler, config, new TestTimeProvider(T0), logger);
+
+        await Assert.ThrowsAsync<PassportAuthenticationException>(() => provider.GetAccessTokenAsync());
+
+        Assert.DoesNotContain(logger.Messages, message => message.Contains("invalid_client") || message.Contains(secret));
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData("cf-ray", "b886d9eb7d04510f", "b886d9eb7d04510f-BOG", PassportOptions.EnvClientId)]
+    [InlineData("x-request-id", "ac361a74ae534eefbba0aab467e79cff", "ac361a74-ae53-4eef-bba0-aab467e79cff", PassportOptions.EnvClientSecret)]
+    [InlineData("x-request-id", "ac361a74-ae53-4eef-bba0-aab467e79cff", "ac361a74ae534eefbba0aab467e79cff", PassportOptions.EnvClientSecret)]
+    public async Task Forbidden_IgnoresReferencesContainingOrReformattingCredentials(
+        string header, string credential, string reference, string configKey)
+    {
+        var logger = new CapturingLogger<PassportTokenProvider>();
+        var handler = new FakeHttpMessageHandler(() =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Forbidden);
+            response.Headers.TryAddWithoutValidation(header, reference);
+            return response;
+        });
+        var config = ValidConfig();
+        config[configKey] = credential;
+        var provider = CreateProvider(handler, config, new TestTimeProvider(T0), logger);
+
+        await Assert.ThrowsAsync<PassportAuthenticationException>(() => provider.GetAccessTokenAsync());
+
+        Assert.DoesNotContain(logger.Messages, message => message.Contains(reference) || message.Contains(credential));
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    [Theory]
+    [InlineData("application/json", true)]
+    [InlineData("text/html", false)]
+    public async Task Forbidden_BoundsErrorBodyReadWithoutContentLength(string mediaType, bool shouldRead)
+    {
+        var maxBytes = PassportErrorBodySanitizer.MaxBodyLengthForDiagnosticsBytes;
+        var body = "{\"error\":\"invalid_client\"}" + new string(' ', maxBytes + 10);
+        var stream = new ForwardOnlyMemoryStream(Encoding.UTF8.GetBytes(body));
+        var logger = new CapturingLogger<PassportTokenProvider>();
+        var content = new StreamContent(stream);
+        content.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+        Assert.Null(content.Headers.ContentLength);
+        var handler = new FakeHttpMessageHandler(() => new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = content });
+        var provider = CreateProvider(handler, ValidConfig(), new TestTimeProvider(T0), logger);
+
+        await Assert.ThrowsAsync<PassportAuthenticationException>(() => provider.GetAccessTokenAsync());
+
+        Assert.Equal(shouldRead ? maxBytes + 1 : 0, stream.BytesRead);
+        Assert.DoesNotContain(logger.Messages, message => message.Contains("invalid_client"));
+        Assert.Equal(1, handler.CallCount);
+    }
+
+    private sealed class ForwardOnlyMemoryStream(byte[] data) : MemoryStream(data)
+    {
+        public override bool CanSeek => false;
+        public int BytesRead { get; private set; }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var count = Read(buffer.Span);
+            BytesRead += count;
+            return ValueTask.FromResult(count);
+        }
     }
 
     // 11 ─────────────────────────────────────────────────────────────────────
