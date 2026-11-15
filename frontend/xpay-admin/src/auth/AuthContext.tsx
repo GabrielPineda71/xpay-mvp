@@ -12,6 +12,8 @@ export interface AuthUser {
   // D10 — asociación ACTIVA a un convenio de empresa (LoginResponse). Ausente
   // en sesiones guardadas antes del cambio: se trata como false.
   esUsuarioEmpresa?:   boolean;
+  // El alta limitada de QA abre el perfil sin las pantallas de wallet.
+  requierePerfil?:     boolean;
 }
 
 interface AuthCtx {

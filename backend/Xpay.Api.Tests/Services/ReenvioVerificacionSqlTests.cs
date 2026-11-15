@@ -296,7 +296,7 @@ public sealed class ReenvioVerificacionSqlTests
             Sender   = new SenderEspia(Ctx);
             Servicio = new RegistroPublicoService(Ctx, ambiente,
                 new TokenUsuarioService(Ctx, config, TimeProvider.System), Sender,
-                new PlantillasEmailIdentidad(config, ambiente), TimeProvider.System, Logger);
+                new PlantillasEmailIdentidad(config, ambiente), TimeProvider.System, Logger, config);
         }
 
         public RegistroPublicoController Controller() => new(Servicio)

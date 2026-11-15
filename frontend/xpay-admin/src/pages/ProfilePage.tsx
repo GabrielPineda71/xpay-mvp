@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext.tsx';
 import { BrebMyKeySection } from '../components/profile/BrebMyKeySection.tsx';
 import { MiInformacionSection } from '../components/profile/MiInformacionSection.tsx';
 import { ComunicacionesSection } from '../components/profile/ComunicacionesSection.tsx';
@@ -18,16 +19,16 @@ import { PinTransaccionalSection } from '../components/profile/PinTransaccionalS
 // (upload/Blob/endpoint), auditoría visible en UI.
 export function ProfilePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const accesoPerfil = user?.requierePerfil === true;
 
   return (
     <div className="page profile-page">
-      <button
-        type="button"
-        className="profile-back-link"
-        onClick={() => navigate('/mi-wallet')}
-      >
-        ← Mi Wallet
-      </button>
+      {!accesoPerfil && (
+        <button type="button" className="profile-back-link" onClick={() => navigate('/mi-wallet')}>
+          ← Mi Wallet
+        </button>
+      )}
 
       <div className="profile-header">
         {/* XPAY-401 PASO 12 — avatar genérico/iniciales, presentación local
@@ -42,6 +43,8 @@ export function ProfilePage() {
         <h2 className="profile-header-title">Perfil</h2>
       </div>
 
+      {accesoPerfil && <p className="session-message">Tu cuenta está activada. En esta etapa puedes consultar y actualizar tu perfil.</p>}
+
       {/* A. Mi información (incluye verificar correo y celular) */}
       <MiInformacionSection />
 
@@ -52,12 +55,12 @@ export function ProfilePage() {
       <CambiarContrasenaSection />
 
       {/* PIN transaccional (GET /api/pin/estado, POST /api/pin y /api/pin/cambiar). */}
-      <PinTransaccionalSection />
+      {!accesoPerfil && <PinTransaccionalSection />}
 
       {/* C. Mi llave Bre-B — componente de XPAY-392, sin ninguna
           modificación de comportamiento (solo se conserva su posición ya
           aprobada dentro de esta misma página). */}
-      <BrebMyKeySection />
+      {!accesoPerfil && <BrebMyKeySection />}
     </div>
   );
 }

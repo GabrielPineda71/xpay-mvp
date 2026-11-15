@@ -2,10 +2,12 @@ import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.tsx';
 import { BrandMark } from '../components/BrandMark.tsx';
+import { useConfiguracionRegistroPublico } from '../hooks/useConfiguracionRegistroPublico.ts';
 
 export function LoginPage() {
   const { login } = useAuth();
   const navigate   = useNavigate();
+  const registro   = useConfiguracionRegistroPublico();
 
   const [usuario,  setUsuario]  = useState('');
   const [password, setPassword] = useState('');
@@ -89,6 +91,7 @@ export function LoginPage() {
           <nav className="xpay-login-links" aria-label="Acceso a la cuenta">
             <Link to="/recuperar-clave">¿Olvidaste tu contraseña?</Link>
             <Link to="/reenviar-verificacion">¿No recibiste el correo de verificación?</Link>
+            {registro.estado === 'disponible' && <Link to="/registro">Crear cuenta</Link>}
           </nav>
         </div>
       </section>

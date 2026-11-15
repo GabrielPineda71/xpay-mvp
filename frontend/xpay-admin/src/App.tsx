@@ -41,6 +41,7 @@ import { VerificarEmailPage } from './pages/VerificarEmailPage.tsx';
 import { RestablecerClavePage } from './pages/RestablecerClavePage.tsx';
 import { RecuperarClavePage } from './pages/RecuperarClavePage.tsx';
 import { ReenviarVerificacionPage } from './pages/ReenviarVerificacionPage.tsx';
+import { RegistroPublicoPage } from './pages/RegistroPublicoPage.tsx';
 
 // Smart redirect based on user role/view
 function UserRedirect() {
@@ -66,6 +67,7 @@ export default function App() {
           <Route path="/restablecer-clave" element={<RestablecerClavePage />} />
           <Route path="/recuperar-clave" element={<RecuperarClavePage />} />
           <Route path="/reenviar-verificacion" element={<ReenviarVerificacionPage />} />
+          <Route path="/registro" element={<RegistroPublicoPage />} />
           <Route element={<PrivateRoute />}>
             {/* Fase USUARIOS-ADMIN-5: fuera de RequireClaveVigente a propósito
                 — es la única ruta accesible mientras requiereCambioClave=true. */}

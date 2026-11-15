@@ -7,10 +7,8 @@ using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
 
-// P0-B1 — registro público y verificación de email. [SoloAmbienteNoProductivo]
-// mientras el consentimiento/términos siga pendiente: en productivo responden
-// 404 y no existen. Rate limiting dedicado por IP (IdentidadPublicaPolicy).
-// Respuestas sin datos sensibles: nunca devuelven token ni IDs internos.
+// El autorregistro y la verificación de email mantienen la frontera no productiva.
+// Las respuestas públicas no incluyen tokens ni identificadores internos.
 [ApiController]
 [Route("api/usuarios")]
 public class RegistroPublicoController(RegistroPublicoService servicio) : ControllerBase
@@ -19,6 +17,18 @@ public class RegistroPublicoController(RegistroPublicoService servicio) : Contro
     internal const string MensajeVerificado           = "Correo verificado. Ya puedes iniciar sesión.";
     internal const string MensajeVerificacionNoValida = "El enlace de verificación no es válido o ya fue usado.";
     internal const string MensajeReenvioRecibido      = "Si la cuenta está pendiente de verificación, enviaremos un nuevo enlace a su correo registrado.";
+
+    [HttpGet("registro/configuracion")]
+    [AllowAnonymous]
+    [SoloAmbienteNoProductivo]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public IActionResult ObtenerConfiguracion()
+    {
+        var datos = servicio.ObtenerConfiguracion();
+        return datos is null
+            ? RegistroNoDisponible()
+            : Ok(new { success = true, data = datos });
+    }
 
     [HttpPost("registro")]
     [AllowAnonymous]
@@ -32,9 +42,13 @@ public class RegistroPublicoController(RegistroPublicoService servicio) : Contro
             await servicio.RegistrarAsync(request, HttpContext.Connection.RemoteIpAddress?.ToString(), ct);
             return StatusCode(202, new { success = true, message = MensajeRegistroRecibido });
         }
+        catch (RegistroPublicoNoDisponibleException) { return RegistroNoDisponible(); }
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno en el registro." }); }
     }
+
+    private NotFoundObjectResult RegistroNoDisponible() =>
+        NotFound(new { success = false, message = "Registro no disponible." });
 
     [HttpPost("verificar-email")]
     [AllowAnonymous]

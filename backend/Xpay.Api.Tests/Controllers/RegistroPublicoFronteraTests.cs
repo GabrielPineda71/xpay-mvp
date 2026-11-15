@@ -25,6 +25,7 @@ public class RegistroPublicoFronteraTests
     {
         { typeof(UsuariosController),        nameof(UsuariosController.RegistrarUsuarioFinal) },
         { typeof(UsuariosController),        nameof(UsuariosController.RegistrarInicial) },
+        { typeof(RegistroPublicoController), nameof(RegistroPublicoController.ObtenerConfiguracion) },
         { typeof(RegistroPublicoController), nameof(RegistroPublicoController.Registrar) },
         { typeof(RegistroPublicoController), nameof(RegistroPublicoController.VerificarEmail) },
         { typeof(RegistroPublicoController), nameof(RegistroPublicoController.ReenviarVerificacion) },

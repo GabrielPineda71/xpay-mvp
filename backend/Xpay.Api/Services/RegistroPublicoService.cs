@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Net;
+using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Xpay.Api.Common;
@@ -8,13 +11,11 @@ using Xpay.Api.Models;
 namespace Xpay.Api.Services;
 
 // P0-B1 — registro público seguro de usuario final y verificación de email.
-// El cliente solo aporta RegistroPublicoRequest (email, usuario, clave,
-// celular): la unidad (XPAY_COL), el rol (USUARIO_FINAL) y el estado inicial
-// (PENDIENTE_VERIFICACION) los decide el servidor. Persona, usuario, rol,
-// wallet, saldo, auditoría y token VERIFICAR_EMAIL se crean en UNA
-// transacción propia; el email se envía solo DESPUÉS del commit y el token
-// nunca se devuelve ni se registra. No reutiliza RegistroUsuarioFinalService
-// (acepta IdUnidadNegocio y crea ACTIVO) ni RegistroInicialService (sin email).
+// El servidor asigna unidad XPAY_COL, rol USUARIO_FINAL y estado
+// PENDIENTE_VERIFICACION. El autorregistro en QA guarda las aceptaciones
+// en la misma transacción que la cuenta y el token. El flujo de pruebas
+// previo conserva la creación de wallet. El correo se envía tras confirmar
+// la transacción y el token solo viaja al destinatario.
 public sealed class RegistroPublicoService(
     XpayDbContext db,
     IAmbienteXpay ambiente,
@@ -22,10 +23,13 @@ public sealed class RegistroPublicoService(
     IEmailSender emailSender,
     PlantillasEmailIdentidad plantillas,
     TimeProvider timeProvider,
-    ILogger<RegistroPublicoService> logger)
+    ILogger<RegistroPublicoService> logger,
+    IConfiguration configuracion)
 {
     public const string CodigoUnidadNegocio = "XPAY_COL";
-    private const string RolUsuarioFinal    = "USUARIO_FINAL";
+    internal const string RolUsuarioFinal = "USUARIO_FINAL";
+    internal const string AccionAceptarTerminos = "ACEPTAR_TERMINOS_REGISTRO";
+    internal const string AccionAutorizarDatos = "AUTORIZAR_DATOS_REGISTRO";
     internal const string MensajeUsuarioExiste = "El nombre de usuario ya existe.";
 
     // P0-B3 — tope de tokens VERIFICAR_EMAIL por usuario y ventana; el del alta
@@ -34,10 +38,42 @@ public sealed class RegistroPublicoService(
     internal static readonly TimeSpan VentanaTokensVerificacion = TimeSpan.FromHours(1);
     private const int LongitudMaximaUsuario = 100; // usuarios.usuario VARCHAR(100)
 
+    // Las dos evidencias se guardan juntas con la cuenta. La autorización de
+    // tratamiento en el registro no habilita por sí misma la captura de KYC.
+    internal static Task<bool> EsCuentaLimitadaAsync(XpayDbContext db, long idUsuario) =>
+        db.Auditorias.AnyAsync(a => a.IdUsuario == idUsuario && a.Modulo == "USUARIOS"
+            && a.Accion == AccionAceptarTerminos && a.Resultado == "EXITOSO");
+
+    public RegistroPublicoConfiguracionResponse? ObtenerConfiguracion() =>
+        ObtenerRegistroHabilitado()?.Documentos.DatosPublicos;
+
+    private bool AutorregistroHabilitado =>
+        string.Equals(configuracion[DocumentosRegistroPublico.ClaveHabilitado], "true", StringComparison.Ordinal);
+
+    private (DocumentosRegistroPublico Documentos, EmailSenderQaSmtp Sender)? ObtenerRegistroHabilitado()
+    {
+        if (!AutorregistroHabilitado || !string.Equals(ambiente.Nombre, AmbienteXpay.Qa, StringComparison.Ordinal)
+            || emailSender is not EmailSenderQaSmtp sender)
+            return null;
+
+        var documentos = DocumentosRegistroPublico.Desde(configuracion);
+        return documentos is null ? null : (documentos, sender);
+    }
+
     public async Task RegistrarAsync(RegistroPublicoRequest request, string? ipSolicitud, CancellationToken ct = default)
     {
+        var registro = ObtenerRegistroHabilitado();
+        if (registro is null && (AutorregistroHabilitado || request.Consentimiento is not null))
+            throw new RegistroPublicoNoDisponibleException();
+
         // Validación y configuración del enlace antes de tocar la BD.
         var datos = RegistroPublicoValidacion.Validar(request, ambiente);
+        if (registro is { } alta)
+        {
+            alta.Documentos.ValidarConsentimiento(request.Consentimiento);
+            if (!alta.Sender.PermiteDestinatario(datos.Email))
+                throw new InvalidOperationException("El registro en QA solo está disponible para correos de prueba autorizados.");
+        }
         plantillas.ValidarConfiguracion();
         if (db.Database.CurrentTransaction is not null)
             throw new IdentidadConfiguracionException("El registro público requiere su propia transacción.");
@@ -52,7 +88,7 @@ public sealed class RegistroPublicoService(
                 if (await db.Usuarios.AnyAsync(u => u.NombreUsuario == datos.NombreUsuario, ct))
                     throw new InvalidOperationException(MensajeUsuarioExiste);
 
-                var ahora = DateTime.UtcNow;
+                var ahora = timeProvider.GetUtcNow().UtcDateTime;
                 var persona = new Persona
                 {
                     IdUnidadNegocio = idUnidad,
@@ -92,20 +128,31 @@ public sealed class RegistroPublicoService(
                     FechaAsignacion = ahora,
                 });
 
-                // Etiqueta técnica: aún no hay nombres legales (los aporta el KYC).
-                var wallet = new Wallet
+                if (registro is { } autorregistro)
                 {
-                    IdUnidadNegocio = idUnidad,
-                    TipoWallet      = "PERSONA",
-                    IdPersona       = persona.IdPersona,
-                    NombreWallet    = $"Wallet {datos.NombreUsuario}",
-                    Estado          = "ACTIVA",
-                    FechaCreacion   = ahora,
-                };
-                db.Wallets.Add(wallet);
-                await db.SaveChangesAsync(ct);
+                    var documentos = autorregistro.Documentos;
+                    db.Auditorias.AddRange(
+                        EvidenciaConsentimiento(usuario, AccionAceptarTerminos, "TERMINOS_Y_CONDICIONES",
+                            documentos.Terminos, ahora, ipSolicitud),
+                        EvidenciaConsentimiento(usuario, AccionAutorizarDatos, "POLITICA_TRATAMIENTO_DATOS",
+                            documentos.PoliticaDatos, ahora, ipSolicitud));
+                }
+                else
+                {
+                    var wallet = new Wallet
+                    {
+                        IdUnidadNegocio = idUnidad,
+                        TipoWallet      = "PERSONA",
+                        IdPersona       = persona.IdPersona,
+                        NombreWallet    = $"Wallet {datos.NombreUsuario}",
+                        Estado          = "ACTIVA",
+                        FechaCreacion   = ahora,
+                    };
+                    db.Wallets.Add(wallet);
+                    await db.SaveChangesAsync(ct);
+                    db.WalletSaldos.Add(new WalletSaldo { IdWallet = wallet.IdWallet, FechaActualizacion = ahora });
+                }
 
-                db.WalletSaldos.Add(new WalletSaldo { IdWallet = wallet.IdWallet, FechaActualizacion = ahora });
                 db.Auditorias.Add(new Auditoria
                 {
                     IdUsuario   = usuario.IdUsuario,
@@ -138,6 +185,28 @@ public sealed class RegistroPublicoService(
         // propaga: se registra solo el tipo de error.
         await EnviarSinPropagarAsync(plantillas.VerificacionEmail(datos.Email, emitido), ct);
     }
+
+    private static Auditoria EvidenciaConsentimiento(Usuario usuario, string accion, string tipoDocumento,
+        DocumentoRegistroPublico documento, DateTime fechaUtc, string? ipSolicitud) =>
+        new()
+        {
+            IdUsuario   = usuario.IdUsuario,
+            IdPersona   = usuario.IdPersona,
+            Modulo      = "USUARIOS",
+            Accion      = accion,
+            Entidad     = "usuarios",
+            IdEntidad   = usuario.IdUsuario.ToString(CultureInfo.InvariantCulture),
+            ValorNuevo  = JsonSerializer.Serialize(new
+            {
+                tipoDocumento,
+                version = documento.DatosPublicos.Version,
+                sha256 = documento.Sha256,
+                canal = "WEB_AUTORREGISTRO",
+            }),
+            Ip          = IPAddress.TryParse(ipSolicitud, out var ip) ? ip.ToString() : null,
+            Resultado   = "EXITOSO",
+            FechaEvento = fechaUtc,
+        };
 
     // P0-B3 — reenvío del enlace de verificación. Nunca revela si el usuario
     // existe ni su estado: no lanza por elegibilidad y el controlador responde

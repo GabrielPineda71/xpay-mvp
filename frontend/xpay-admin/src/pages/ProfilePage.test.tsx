@@ -56,6 +56,7 @@ const MI_PERFIL_BASE = {
 };
 
 beforeEach(() => {
+  delete mockUser.requierePerfil;
   mockGet.mockReset();
   mockPost.mockReset();
   mockPatch.mockReset();
@@ -138,5 +139,16 @@ describe('ProfilePage (XPAY-392/401)', () => {
     renderProfilePage();
     await user.click(screen.getByRole('button', { name: '← Mi Wallet' }));
     expect(await screen.findByText('MI_WALLET_HOME')).toBeInTheDocument();
+  });
+
+  it('orienta a la cuenta de alta limitada sin consultar llave ni PIN', async () => {
+    mockUser.requierePerfil = true;
+    renderProfilePage();
+
+    expect(await screen.findByRole('heading', { name: 'Mi información' })).toBeInTheDocument();
+    expect(screen.getByText('Tu cuenta está activada. En esta etapa puedes consultar y actualizar tu perfil.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '← Mi Wallet' })).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+    expect(mockGet).not.toHaveBeenCalledWith('/api/pin/estado');
   });
 });

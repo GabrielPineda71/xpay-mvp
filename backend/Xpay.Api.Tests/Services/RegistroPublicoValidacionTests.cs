@@ -21,13 +21,13 @@ public class RegistroPublicoValidacionTests
         => RegistroPublicoValidacion.Validar(r, AmbienteXpayTests.Ambiente(ambiente));
 
     [Fact]
-    public void Dto_SoloTieneLosCuatroCamposPublicos()
+    public void Dto_SoloTieneLosCamposPublicosYElConsentimiento()
     {
         var propiedades = typeof(RegistroPublicoRequest).GetProperties().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal);
-        Assert.Equal(new[] { "Celular", "Email", "NombreUsuario", "Password" }, propiedades);
+        Assert.Equal(new[] { "Celular", "Consentimiento", "Email", "NombreUsuario", "Password" }, propiedades);
 
         var parametros = typeof(RegistroPublicoRequest).GetConstructors().Single().GetParameters().Select(p => p.Name!);
-        Assert.Equal(new[] { "Email", "NombreUsuario", "Password", "Celular" }, parametros);
+        Assert.Equal(new[] { "Email", "NombreUsuario", "Password", "Celular", "Consentimiento" }, parametros);
     }
 
     [Theory]

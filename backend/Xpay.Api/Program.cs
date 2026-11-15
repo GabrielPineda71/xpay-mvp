@@ -39,8 +39,7 @@ builder.Services.AddCanalesCodigoContacto(builder.Configuration);
 builder.Services.AddScoped<ContactoVerificacionService>();
 builder.Services.AddSingleton<RequisitoContactosVerificados>();
 builder.Services.AddEmailSenderXpay(builder.Environment.EnvironmentName, builder.Configuration);
-// P0-B1 — registro público + verificación de email (endpoints solo no
-// productivos hasta resolver consentimiento/términos).
+// Registro público y verificación de email conservan la frontera no productiva.
 builder.Services.AddSingleton<PlantillasEmailIdentidad>();
 builder.Services.AddScoped<RegistroPublicoService>();
 // P0-B2 — recuperación universal de contraseña (misma frontera no
