@@ -36,6 +36,8 @@ public sealed class BloqueoFinancieroArquitecturaTests
         "UsuariosAdminController.RevocarRol", "UsuariosAdminController.RestablecerPin",
         // PIN transaccional propio: crear/cambiar no mueve dinero (se crea antes de operar).
         "PinController.Crear", "PinController.Cambiar",
+        // Verificación de contactos y preferencias: deben funcionar con el interruptor cerrado.
+        "ContactosController.SolicitarCodigo", "ContactosController.Verificar", "ContactosController.Preferencias",
         // Solo ambientes no productivos (404 en productivo).
         "QaClientePruebaController.Crear", "QaIdentidadPruebaController.Preparar",
         "ComerciosAliadosController.BackfillDemoContexto",

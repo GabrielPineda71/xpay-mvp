@@ -103,6 +103,7 @@ public class LibranzaClienteController : ControllerBase
 
     [Authorize(Policy = "KycAprobado")]
     [OperacionFinanciera]
+    [RequiereContactosVerificados]
     [RequierePinTransaccional]
     [HttpPost("anticipos")]
     public async Task<IActionResult> SolicitarAnticipo([FromBody] SolicitarAnticipoRequest req)

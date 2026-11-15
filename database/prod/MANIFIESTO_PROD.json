@@ -1,9 +1,9 @@
 {
   "paquete": "xpay-prod-migraciones",
   "base_datos_objetivo": "XPAY PROD (nombre real fuera del repositorio)",
-  "commit_origen": "26f4894a717d8ec7a484c8847bf5f070c5e22cd8",
+  "commit_origen": "1b8eb0c11a030f3ecd2c470f013c30954850865d",
   "commit_origen_significado": "ultimo commit que modifico los scripts originales de database/",
-  "sha256_especificacion": "81a740cc59d5404492bf9f76e4ae5fe1ca5fb513c4b52232b98cd24324fd4d51",
+  "sha256_especificacion": "04fc87f10cea1984d11cbb1a4fe84fb508b843570cbda6fce4bb7b3260013902",
   "nota": "ejecutable=true solo indica preparacion tecnica. Ninguna ejecucion esta autorizada (autorizacion_ejecucion=NO_OTORGADA).",
   "scripts": [
     {
@@ -1077,6 +1077,25 @@
       "autorizacion_ejecucion": "NO_OTORGADA",
       "eliminado": null,
       "notas": null
+    },
+    {
+      "orden": 50,
+      "id": "050",
+      "tipo": "ORIGINAL",
+      "clase": "A",
+      "origen": "database/050_verificacion_contactos.sql",
+      "sha256_origen": "c72f5d219872c12d4ee141f5f9873a11e3d1a8a57372241e4763196f852808f8",
+      "archivo": "database/050_verificacion_contactos.sql",
+      "sha256_archivo": "c72f5d219872c12d4ee141f5f9873a11e3d1a8a57372241e4763196f852808f8",
+      "rangos_conservados": null,
+      "depende_de": [
+        "001"
+      ],
+      "estado": "LISTO",
+      "ejecutable": true,
+      "autorizacion_ejecucion": "NO_OTORGADA",
+      "eliminado": null,
+      "notas": "Crea las tablas de codigos y consentimientos. En una base existente con 049 aplicada, seleccionar solo 050."
     }
   ],
   "excluidos": [

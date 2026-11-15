@@ -71,3 +71,20 @@ Sin claves de configuración: usa la tabla existente `pin_transaccional`
 
 Fuera de alcance: la cartera ordinaria (aplazada) y la recarga en comercio
 siguen validando solo el formato del campo `pin` que ya traían.
+
+## Corrección 5 — verificación de correo y celular
+
+Migración nueva `database/050_verificacion_contactos.sql` (tablas
+`contacto_codigos_verificacion` y `usuario_consentimientos_comunicacion`).
+Configuración de Azure y Meta: `docs/VERIFICACION_CONTACTOS_CONFIGURACION.md`.
+
+| Pieza | Regla |
+|---|---|
+| Canales | Correo: Azure Communication Services Email (identidad administrada, sin secreto). Celular: WhatsApp Cloud API con plantilla de autenticación. Sin configuración, el canal queda «no disponible»; nunca simula éxito. |
+| Código | 6 dígitos; solo se guarda SHA-256(sal ‖ código). Vigencia 10 min, un solo uso, 5 intentos fallidos lo agotan. Nunca se registra en logs. |
+| Reenvío | 60 s entre códigos; 5 por usuario y canal en 24 h; 8 por destino y canal en 24 h. Los envíos fallidos cuentan. Además `ContactosCodigoPolicy` (10 solicitudes / 5 min por usuario). |
+| Verificado | Solo cuando el usuario escribe el código correcto. La entrega del proveedor no verifica nada. No se verifica un contacto que otra cuenta ya tiene verificado. |
+| Cambio de dato | Perfil revoca la verificación y anula los códigos pendientes; además cada código queda atado al destino al que se envió. |
+| Consentimiento | WhatsApp exige autorización de mensajes de SERVICIO (se registra al pedir el código). La PUBLICIDAD por correo o WhatsApp es otra autorización, desactivada por defecto. Historial solo de inserción. |
+| Endpoints | `GET api/contactos/estado`, `POST api/contactos/{email|celular}/codigo`, `POST api/contactos/{email|celular}/verificar`, `PUT api/contactos/preferencias`. No dependen del interruptor financiero ni de KYC. |
+| Requisito | `[RequiereContactosVerificados]` en los mismos 4 endpoints del PIN, antes del PIN. Solo es efectivo con `XPAY_CONTACTOS_VERIFICADOS_REQUERIDOS=true` **y** ambos canales configurados; si no, deja pasar. Respuesta 428 `CONTACTOS_NO_VERIFICADOS`. Webhooks, conciliación, saldos, perfil, KYC y verificación no lo llevan. |

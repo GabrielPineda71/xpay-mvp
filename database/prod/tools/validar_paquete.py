@@ -7,7 +7,7 @@ de los scripts contra un motor SQL.
 
 Comprueba:
   1. Especificacion y manifiesto coherentes (hash de la especificacion).
-  2. Los 49 originales de database/ siguen intactos (git y SHA-256).
+  2. Los originales de database/ siguen intactos (git y SHA-256).
   3. Cada original esta incluido (original o derivado) o excluido explicitamente.
   4. Hashes de todos los archivos del manifiesto.
   5. Cada variante/pendiente es copia exacta de los rangos declarados del original.
@@ -127,15 +127,17 @@ def main():
 
     # 2. Originales intactos
     originales = originales_en_disco()
-    if len(originales) != 49:
-        error("Se esperaban 49 scripts originales en database/, hay %d" % len(originales))
+    esperados = {e["origen"] for e in espec["scripts"]} | {x["ruta"] for x in espec["excluidos"]}
+    esperados_sql = {ruta for ruta in esperados if os.path.dirname(ruta) == "database"}
+    if len(originales) != len(esperados_sql):
+        error("Se esperaban %d scripts originales en database/, hay %d" % (len(esperados_sql), len(originales)))
     try:
         estado_git = subprocess.check_output(
             ["git", "-C", RAIZ, "status", "--porcelain", "--"] + originales, text=True).strip()
         if estado_git:
             error("Originales de database/ con cambios respecto a git:\n    " + estado_git.replace("\n", "\n    "))
         else:
-            info.append("git: los 49 originales no tienen cambios respecto al commit actual")
+            info.append("git: los %d originales no tienen cambios respecto al commit actual" % len(originales))
     except Exception as exc:
         aviso("No se pudo consultar git (%s); se comprueban solo los SHA-256" % exc)
 
