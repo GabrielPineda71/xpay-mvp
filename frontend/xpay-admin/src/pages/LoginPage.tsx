@@ -1,8 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.tsx';
-
-const API_HINT = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
+import { BrandMark } from '../components/BrandMark.tsx';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -10,6 +9,7 @@ export function LoginPage() {
 
   const [usuario,  setUsuario]  = useState('');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
 
@@ -38,48 +38,60 @@ export function LoginPage() {
   }
 
   return (
-    <div className="login-container">
-      <div className="login-card">
-        <h1>XPAY Admin</h1>
-        <p className="subtitle">Panel administrativo</p>
-        {sessionMsg && <p className="session-message">{sessionMsg}</p>}
-        <form onSubmit={handleSubmit}>
-          <label>
-            Usuario
-            <input
-              value={usuario}
-              onChange={e => setUsuario(e.target.value)}
-              autoComplete="username"
-              autoFocus
-              required
-            />
-          </label>
-          <label>
-            Contraseña
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          {error && <p className="error">{error}</p>}
-          <button type="submit" disabled={loading}>
-            {loading ? 'Ingresando...' : 'Ingresar'}
-          </button>
-        </form>
-        {/* P0-B frontend — accesos públicos de identidad (rutas fijas). El
-            error de login sigue siendo genérico: no se intenta detectar
-            PENDIENTE_VERIFICACION. */}
-        <p className="results-meta">
-          <Link to="/recuperar-clave">¿Olvidaste tu contraseña?</Link>
-        </p>
-        <p className="results-meta">
-          <Link to="/reenviar-verificacion">¿No recibiste el correo de verificación?</Link>
-        </p>
-        <p className="api-hint">API: {API_HINT}</p>
-      </div>
-    </div>
+    <main className="login-container xpay-login">
+      <section className="login-card xpay-login-card" aria-labelledby="login-title">
+        <header className="xpay-login-brand">
+          <BrandMark variant="logo" theme="white" />
+        </header>
+        <div className="xpay-login-body">
+          <h1 id="login-title">Inicia sesión</h1>
+          {sessionMsg && <p className="session-message" role="status">{sessionMsg}</p>}
+          <form onSubmit={handleSubmit}>
+            <label>
+              Usuario
+              <input
+                value={usuario}
+                onChange={e => setUsuario(e.target.value)}
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+                required
+              />
+            </label>
+            <div className="xpay-login-password">
+              <label htmlFor="login-password">Contraseña</label>
+              <div className="xpay-login-password-control">
+                <input
+                  id="login-password"
+                  type={passwordVisible ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  required
+                />
+                <button
+                  type="button"
+                  aria-controls="login-password"
+                  aria-label={passwordVisible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                  onClick={() => setPasswordVisible(visible => !visible)}
+                >
+                  {passwordVisible ? 'Ocultar' : 'Mostrar'}
+                </button>
+              </div>
+            </div>
+            {error && <p className="error" role="alert">{error}</p>}
+            <button type="submit" disabled={loading}>
+              {loading ? 'Ingresando...' : 'Ingresar'}
+            </button>
+          </form>
+          <nav className="xpay-login-links" aria-label="Acceso a la cuenta">
+            <Link to="/recuperar-clave">¿Olvidaste tu contraseña?</Link>
+            <Link to="/reenviar-verificacion">¿No recibiste el correo de verificación?</Link>
+          </nav>
+        </div>
+      </section>
+    </main>
   );
 }
