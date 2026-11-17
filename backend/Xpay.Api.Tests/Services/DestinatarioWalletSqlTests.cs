@@ -52,16 +52,33 @@ public sealed class DestinatarioWalletSqlTests
             var origen          = await TitularAsync(cs, s);
             var walletInactiva  = await TitularAsync(cs, s, estadoWallet: "INACTIVA");
             var usuarioInactivo = await TitularAsync(cs, s, estadoUsuario: EstadosUsuario.Inactivo);
-            var dosUsuarios     = await TitularAsync(cs, s);
-            await SegundoUsuarioActivoAsync(cs, s, dosUsuarios.IdPersona);
 
             await using var ctx = NuevoContexto(cs);
             var svc = new DestinatarioWalletService(ctx);
             Assert.Null(await svc.ResolverAsync(long.MaxValue, origen.IdPersona));
             Assert.Null(await svc.ResolverAsync(walletInactiva.IdWallet, origen.IdPersona));
             Assert.Null(await svc.ResolverAsync(usuarioInactivo.IdWallet, origen.IdPersona));
-            Assert.Null(await svc.ResolverAsync(dosUsuarios.IdWallet, origen.IdPersona));
             Assert.Null(await svc.ResolverAsync(origen.IdWallet, origen.IdPersona)); // la propia
+        }
+        finally { await LimpiarAsync(cs, s); }
+    }
+
+    [Fact]
+    public async Task Sql_RechazaUnSegundoUsuarioDeLaMismaPersona()
+    {
+        if (!TryConnString(out var cs)) return;
+        var s = new Sembrados();
+        try
+        {
+            var titular = await TitularAsync(cs, s);
+            await using var ctx = NuevoContexto(cs);
+            ctx.Usuarios.Add(NuevoUsuario(titular.IdPersona, "dws2"));
+
+            var ex = await Assert.ThrowsAsync<DbUpdateException>(() => ctx.SaveChangesAsync());
+            var sql = Assert.IsType<SqlException>(ex.InnerException);
+            Assert.Equal(2601, sql.Number);
+            Assert.Contains("IX_usuarios_persona", sql.Message);
+            Assert.Equal(1, await ctx.Usuarios.AsNoTracking().CountAsync(u => u.IdPersona == titular.IdPersona));
         }
         finally { await LimpiarAsync(cs, s); }
     }
@@ -309,15 +326,6 @@ public sealed class DestinatarioWalletSqlTests
         ctx.WalletSaldos.Add(new WalletSaldo { IdWallet = wallet.IdWallet, SaldoDisponible = saldo, FechaActualizacion = ahora });
         await ctx.SaveChangesAsync();
         return new Titular(persona.IdPersona, usuario.IdUsuario, usuario.NombreUsuario, wallet.IdWallet);
-    }
-
-    private static async Task SegundoUsuarioActivoAsync(string cs, Sembrados s, long idPersona)
-    {
-        await using var ctx = NuevoContexto(cs);
-        var usuario = NuevoUsuario(idPersona, "dws2");
-        ctx.Usuarios.Add(usuario);
-        await ctx.SaveChangesAsync();
-        s.Usuarios.Add(usuario.IdUsuario);
     }
 
     private static bool TryConnString(out string cs)
