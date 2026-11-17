@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xpay.Api.Common;
 using Xpay.Api.Data;
+using Xpay.Api.DTOs;
 using Xpay.Api.Integrations.Passport;
 using Xpay.Api.Models;
 using Xpay.Api.Services;
@@ -46,10 +47,163 @@ public sealed class WalletRecargaBrebSqlTests
             Assert.Null(solicitud.Amount);
             Assert.Equal("0.00", solicitud.Vat!.VatValue);
             Assert.Equal("0.00", solicitud.Inc!.IncValue);
-            Assert.Equal("0.00", solicitud.Tip!.TipValue);
+            Assert.Null(solicitud.Tip);
             await SinAbonoAsync(cs, wallet.IdWallet);
         }
         finally { await LimpiarAsync(cs, creados); }
+    }
+
+    [Fact]
+    public async Task Cliente_real_serializa_el_qr_de_recarga_sin_propina_ni_monto()
+    {
+        if (!TryConnection(out var cs)) return;
+        var creados = new Creados();
+        try
+        {
+            var wallet = await SembrarAsync(cs, creados, crearQr: false);
+            var transporte = new TransporteQr();
+            await using var db = Contexto(cs);
+            var servicio = QrServicio(db, new PassportQrClient(transporte));
+
+            var resultado = await servicio.GenerarAsync(wallet.IdPersona, wallet.IdUsuario);
+
+            Assert.Equal("ACTIVO", resultado.Estado);
+            using var json = JsonDocument.Parse(Assert.Single(transporte.Cuerpos));
+            Assert.False(json.RootElement.TryGetProperty("tip", out _));
+            Assert.False(json.RootElement.TryGetProperty("amount", out _));
+            Assert.Equal("STATIC", json.RootElement.GetProperty("type").GetString());
+            Assert.Equal("0.00", json.RootElement.GetProperty("vat").GetProperty("vat_value").GetString());
+            Assert.Equal("0.00", json.RootElement.GetProperty("inc").GetProperty("inc_value").GetString());
+            await SinAbonoAsync(cs, wallet.IdWallet);
+        }
+        finally { await LimpiarAsync(cs, creados); }
+    }
+
+    [Fact]
+    public async Task Rechazo_400_libera_el_intento_y_permite_reintentar_la_misma_referencia()
+    {
+        if (!TryConnection(out var cs)) return;
+        var creados = new Creados();
+        try
+        {
+            var wallet = await SembrarAsync(cs, creados, crearQr: false);
+            var cliente = new ClienteQr
+            {
+                ErrorInicial = new PassportTransportException("Solicitud rechazada.", 400, "invalid_parameter_value", null),
+            };
+            await using var db = Contexto(cs);
+            var servicio = QrServicio(db, cliente);
+
+            await Assert.ThrowsAsync<PassportTransportException>(() => servicio.GenerarAsync(wallet.IdPersona, wallet.IdUsuario));
+            var pendiente = await db.WalletRecargaBrebQrs.AsNoTracking().SingleAsync(q => q.IdWallet == wallet.IdWallet);
+            Assert.Equal("PENDIENTE", pendiente.Estado);
+            Assert.Null(pendiente.FechaIntento);
+
+            var resultado = await servicio.GenerarAsync(wallet.IdPersona, wallet.IdUsuario);
+
+            Assert.Equal("ACTIVO", resultado.Estado);
+            Assert.Equal(pendiente.Referencia, resultado.Referencia);
+            Assert.Equal(2, cliente.Solicitudes.Count);
+            Assert.All(cliente.Solicitudes, solicitud => Assert.Equal(pendiente.Referencia, solicitud.QrCodeReference));
+            Assert.Equal(1, await db.WalletRecargaBrebQrs.CountAsync(q => q.IdWallet == wallet.IdWallet));
+            await SinAbonoAsync(cs, wallet.IdWallet);
+        }
+        finally { await LimpiarAsync(cs, creados); }
+    }
+
+    [Fact]
+    public async Task Fallo_antes_de_crear_el_qr_libera_el_intento_sin_llamar_a_creacion()
+    {
+        if (!TryConnection(out var cs)) return;
+        var creados = new Creados();
+        try
+        {
+            var wallet = await SembrarAsync(cs, creados, crearQr: false);
+            var cliente = new ClienteQr();
+            var claves = new ClaveHttp { ErrorInicial = new PassportTransportException("Consulta no disponible.") };
+            await using var db = Contexto(cs);
+            var servicio = QrServicio(db, cliente, claves);
+
+            await Assert.ThrowsAsync<PassportTransportException>(() => servicio.GenerarAsync(wallet.IdPersona, wallet.IdUsuario));
+
+            Assert.Empty(cliente.Solicitudes);
+            Assert.Equal("PENDIENTE", (await servicio.ObtenerAsync(wallet.IdPersona, wallet.IdUsuario))!.Estado);
+            var resultado = await servicio.GenerarAsync(wallet.IdPersona, wallet.IdUsuario);
+            Assert.Equal("ACTIVO", resultado.Estado);
+            Assert.Single(cliente.Solicitudes);
+        }
+        finally { await LimpiarAsync(cs, creados); }
+    }
+
+    [Theory]
+    [InlineData("timeout")]
+    [InlineData("408")]
+    [InlineData("protocolo")]
+    public async Task Creacion_con_resultado_incierto_conserva_el_intento_para_evitar_otra_creacion(string caso)
+    {
+        if (!TryConnection(out var cs)) return;
+        var creados = new Creados();
+        try
+        {
+            var wallet = await SembrarAsync(cs, creados, crearQr: false);
+            var cliente = new ClienteQr
+            {
+                ErrorInicial = caso switch
+                {
+                    "408" => new PassportTransportException("Sin confirmación.", 408, null, null),
+                    "protocolo" => new PassportProtocolException("Respuesta no verificable."),
+                    _ => new PassportTransportException("Sin respuesta."),
+                },
+            };
+            await using var db = Contexto(cs);
+            var servicio = QrServicio(db, cliente);
+
+            Assert.IsAssignableFrom<PassportException>(await Record.ExceptionAsync(
+                () => servicio.GenerarAsync(wallet.IdPersona, wallet.IdUsuario)));
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => servicio.GenerarAsync(wallet.IdPersona, wallet.IdUsuario));
+
+            Assert.Contains("en curso", error.Message);
+            Assert.Single(cliente.Solicitudes);
+            var pendiente = await db.WalletRecargaBrebQrs.AsNoTracking().SingleAsync(q => q.IdWallet == wallet.IdWallet);
+            Assert.Equal("GENERANDO", pendiente.Estado);
+            Assert.NotNull(pendiente.FechaIntento);
+        }
+        finally { await LimpiarAsync(cs, creados); }
+    }
+
+    [Fact]
+    public async Task Solicitud_simultanea_respeta_el_intento_que_ya_esta_creando_el_qr()
+    {
+        if (!TryConnection(out var cs)) return;
+        var creados = new Creados();
+        var inicio = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var continuar = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<WalletRecargaBrebQrResponse>? primera = null;
+        try
+        {
+            var wallet = await SembrarAsync(cs, creados, crearQr: false);
+            var cliente = new ClienteQr { AntesDeResponder = async () => { inicio.SetResult(); await continuar.Task; } };
+            await using var db = Contexto(cs);
+            primera = QrServicio(db, cliente).GenerarAsync(wallet.IdPersona, wallet.IdUsuario);
+            await inicio.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await using var concurrente = Contexto(cs);
+            var segundoCliente = new ClienteQr();
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                QrServicio(concurrente, segundoCliente).GenerarAsync(wallet.IdPersona, wallet.IdUsuario));
+            Assert.Empty(segundoCliente.Solicitudes);
+
+            continuar.SetResult();
+            Assert.Equal("ACTIVO", (await primera).Estado);
+            Assert.Single(cliente.Solicitudes);
+        }
+        finally
+        {
+            continuar.TrySetResult();
+            try { if (primera is not null) await primera; }
+            finally { await LimpiarAsync(cs, creados); }
+        }
     }
 
     [Fact]
@@ -441,23 +595,22 @@ public sealed class WalletRecargaBrebSqlTests
         return await webhook.ProcessAsync(raw, payload, firmaValida);
     }
 
-    private static WalletRecargaBrebQrService QrServicio(XpayDbContext db, IPassportQrClient cliente) => new(
-        db, Config(), cliente, new ClaveHttp(),
+    private static WalletRecargaBrebQrService QrServicio(XpayDbContext db, IPassportQrClient cliente, IPassportHttpClient? claves = null) => new(
+        db, Config(), cliente, claves ?? new ClaveHttp(),
         new FakePassportCustomerAccountClient(new PassportAccountResponse { Id = Cuenta, CustomerId = Cliente, Status = "ACTIVE" }),
         ControlesFinancierosPrueba.Habilitado());
 
     private sealed class ClienteQr : IPassportQrClient
     {
         public List<PassportCreateQrCodeRequest> Solicitudes { get; } = [];
-        public Task<PassportQrCodeResponse> CreateQrCodeAsync(PassportCreateQrCodeRequest request, CancellationToken cancellationToken = default)
+        public Exception? ErrorInicial { get; init; }
+        public Func<Task>? AntesDeResponder { get; init; }
+        public async Task<PassportQrCodeResponse> CreateQrCodeAsync(PassportCreateQrCodeRequest request, CancellationToken cancellationToken = default)
         {
             Solicitudes.Add(request);
-            return Task.FromResult(new PassportQrCodeResponse
-            {
-                Id = Guid.NewGuid().ToString("D"), Status = "ACTIVE", Type = "STATIC", KeyId = request.KeyId,
-                CustomerId = request.CustomerId, QrCodeReference = LibranzaRecaudoReferencia.PrefijoPassportQr + request.QrCodeReference,
-                QrCodeData = "000201010211" + request.QrCodeReference,
-            });
+            if (AntesDeResponder is not null) await AntesDeResponder();
+            if (Solicitudes.Count == 1 && ErrorInicial is not null) throw ErrorInicial;
+            return RespuestaQr(request);
         }
 
         public Task<PassportDecodeQrCodeResponse> DecodeQrCodeAsync(PassportDecodeQrCodeRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -466,13 +619,44 @@ public sealed class WalletRecargaBrebSqlTests
 
     private sealed class ClaveHttp : IPassportHttpClient
     {
+        public Exception? ErrorInicial { get; set; }
         public Task<TResponse?> GetAsync<TResponse>(string relativePath, CancellationToken cancellationToken = default)
         {
             Assert.Equal("/v1/keys/" + Llave, relativePath);
+            if (ErrorInicial is { } error)
+            {
+                ErrorInicial = null;
+                throw error;
+            }
             return Task.FromResult((TResponse?)(object)new PassportKeyResponse { Id = Llave, AccountId = Cuenta, Status = "ACTIVE" });
         }
 
         public Task<TResponse?> PostAsync<TRequest, TResponse>(string relativePath, TRequest body, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<(TResponse? Response, string? RawResponseJson)> PostWithRawCaptureAsync<TRequest, TResponse>(string relativePath, TRequest body, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<TResponse?> PatchAsync<TResponse>(string relativePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task DeleteAsync(string relativePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private static PassportQrCodeResponse RespuestaQr(PassportCreateQrCodeRequest request) => new()
+    {
+        Id = Guid.NewGuid().ToString("D"), Status = "ACTIVE", Type = "STATIC", KeyId = request.KeyId,
+        CustomerId = request.CustomerId,
+        QrCodeReference = LibranzaRecaudoReferencia.PrefijoPassportQr + request.QrCodeReference,
+        QrCodeData = "000201010211" + request.QrCodeReference,
+    };
+
+    private sealed class TransporteQr : IPassportHttpClient
+    {
+        public List<string> Cuerpos { get; } = [];
+        public Task<TResponse?> PostAsync<TRequest, TResponse>(string relativePath, TRequest body, CancellationToken cancellationToken = default)
+        {
+            Assert.Equal("/v1/qrcodes", relativePath);
+            var solicitud = Assert.IsType<PassportCreateQrCodeRequest>(body);
+            Cuerpos.Add(JsonSerializer.Serialize(solicitud));
+            return Task.FromResult((TResponse?)(object)RespuestaQr(solicitud));
+        }
+
+        public Task<TResponse?> GetAsync<TResponse>(string relativePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<(TResponse? Response, string? RawResponseJson)> PostWithRawCaptureAsync<TRequest, TResponse>(string relativePath, TRequest body, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<TResponse?> PatchAsync<TResponse>(string relativePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task DeleteAsync(string relativePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();

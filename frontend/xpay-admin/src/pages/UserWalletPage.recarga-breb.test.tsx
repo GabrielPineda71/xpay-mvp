@@ -109,6 +109,23 @@ describe('Recarga Bre-B desde Mi Wallet', () => {
     expect(mockPost).toHaveBeenCalledTimes(1);
   });
 
+  it('permite reintentar una generación fallida con una nueva acción del usuario', async () => {
+    mockPost.mockRejectedValueOnce(new Error('La generación del QR está en curso.'))
+      .mockResolvedValueOnce({ success: true, data: QR });
+    await abrirDesdeSaldo();
+    await userEvent.click(await screen.findByRole('button', { name: 'Generar mi QR de recarga' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('La generación del QR está en curso.');
+    const reintentar = await screen.findByRole('button', { name: 'Reintentar generación del QR' });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    await userEvent.click(reintentar);
+
+    expect(await screen.findByRole('img', { name: /QR Bre-B para recargar mi Wallet/ })).toBeInTheDocument();
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar generación del QR' })).not.toBeInTheDocument();
+  });
+
   it('permite volver a mostrar el QR si falla la imagen sin crear otro código', async () => {
     mockGet.mockResolvedValue({ success: true, data: QR });
     mockToDataURL.mockRejectedValueOnce(new Error('Canvas no disponible'));
