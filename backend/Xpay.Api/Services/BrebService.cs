@@ -1,6 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
-using System.Text;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
 using Xpay.Api.Integrations.Passport;
@@ -57,13 +55,13 @@ public class BrebService
     public async Task<MiLlaveResponse> RegistrarLlaveAsync(long idPersona, long idUsuario, RegistrarLlaveRequest req)
     {
         ValidateKeyType(req.KeyType);
-        ValidateKeyValue(req.KeyType, req.KeyValue);
+        var keyValue = NormalizeKeyValue(req.KeyType, req.KeyValue);
 
         var wallet = await _db.Wallets.FirstOrDefaultAsync(
             w => w.IdPersona == idPersona && w.TipoWallet == "PERSONA" && w.Estado == "ACTIVA")
             ?? throw new InvalidOperationException("No se encontró wallet activa para este usuario.");
 
-        return await UpsertLlave(wallet.IdWallet, "USUARIO", idUsuario, null, req, idUsuario);
+        return await UpsertLlave(wallet.IdWallet, "USUARIO", idUsuario, null, req.KeyType, keyValue, idUsuario);
     }
 
     // ── Resolver mi llave (Passport real) — XPAY-371 ──────────────────────
@@ -142,7 +140,7 @@ public class BrebService
     public async Task<MiLlaveResponse> RegistrarLlaveComercioAsync(long idComercio, long idUsuario, RegistrarLlaveRequest req)
     {
         ValidateKeyType(req.KeyType);
-        ValidateKeyValue(req.KeyType, req.KeyValue);
+        var keyValue = NormalizeKeyValue(req.KeyType, req.KeyValue);
 
         var comercio = await _db.Comercios.FirstOrDefaultAsync(
             c => c.IdComercio == idComercio && c.Estado == "ACTIVO")
@@ -151,7 +149,7 @@ public class BrebService
         if (comercio.IdWalletComercio is null)
             throw new InvalidOperationException("El comercio no tiene wallet asignada.");
 
-        return await UpsertLlave(comercio.IdWalletComercio.Value, "COMERCIO", null, idComercio, req, idUsuario);
+        return await UpsertLlave(comercio.IdWalletComercio.Value, "COMERCIO", null, idComercio, req.KeyType, keyValue, idUsuario);
     }
 
     // ── Listar todos los retiros (Admin) ─────────────────────────────────
@@ -558,9 +556,9 @@ public class BrebService
 
     private async Task<MiLlaveResponse> UpsertLlave(
         long idWallet, string tipoSujeto, long? idUsuario, long? idComercio,
-        RegistrarLlaveRequest req, long creadoPor)
+        string keyType, string keyValue, long creadoPor)
     {
-        var hash = ComputeKeyHash(req.KeyValue);
+        var hash = BrebKeyValue.ComputeHash(keyValue);
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         // Desactivar llave anterior activa si existe
@@ -579,8 +577,8 @@ public class BrebService
             IdUsuario        = idUsuario,
             IdComercio       = idComercio,
             IdWallet         = idWallet,
-            KeyType          = req.KeyType.ToUpperInvariant(),
-            KeyValueMasked   = MaskKeyValue(req.KeyType, req.KeyValue),
+            KeyType          = keyType.ToUpperInvariant(),
+            KeyValueMasked   = MaskKeyValue(keyType, keyValue),
             KeyValueHash     = hash,
             Estado           = "PENDIENTE_VALIDACION",
             FechaRegistro    = DateTime.UtcNow,
@@ -677,12 +675,6 @@ public class BrebService
         ResolutionIdFingerprint = Xpay.Api.Common.Fingerprint.Compute(r.PassportResolutionId),
     };
 
-    private static string ComputeKeyHash(string keyValue)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(keyValue.Trim().ToLowerInvariant()));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
-    }
-
     private static string MaskKeyValue(string keyType, string keyValue)
     {
         var v = keyValue.Trim();
@@ -725,18 +717,21 @@ public class BrebService
                 $"Tipo de llave inválido: '{keyType}'. Permitidos: ID, PHONE, EMAIL, ALPHA, BCODE.");
     }
 
-    private static void ValidateKeyValue(string keyType, string keyValue)
+    private static string NormalizeKeyValue(string keyType, string keyValue)
     {
         if (string.IsNullOrWhiteSpace(keyValue))
             throw new InvalidOperationException("El valor de la llave no puede estar vacío.");
 
         var v = keyValue.Trim();
+        if (string.Equals(keyType, "ALPHA", StringComparison.OrdinalIgnoreCase))
+            return BrebKeyValue.NormalizeAlpha(v) ?? throw new InvalidOperationException(
+                "Ingresa un alias como @gpo118, con 5 a 20 caracteres después de @. Usa solo letras sin tildes ni ñ y números.");
+
         var valid = keyType.ToUpperInvariant() switch
         {
             "ID"    => v.Length >= 5 && v.Length <= 20 && v.All(char.IsDigit),
             "PHONE" => v.Length >= 7 && v.Length <= 15,
             "EMAIL" => v.Contains('@') && v.Contains('.') && v.Length <= 100,
-            "ALPHA" => v.Length >= 3 && v.Length <= 30 && v.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_'),
             "BCODE" => v.Length >= 8 && v.Length <= 50 && v.All(c => char.IsLetterOrDigit(c) || c == '-'),
             _       => false,
         };
@@ -744,5 +739,6 @@ public class BrebService
         if (!valid)
             throw new InvalidOperationException(
                 $"Formato de llave inválido para tipo {keyType}. Revisa la longitud y caracteres permitidos.");
+        return v;
     }
 }

@@ -600,22 +600,24 @@ public class PassportKeyClientTests
         Assert.Equal("synthetic-bearer-token", handler.LastRequest.Headers.Authorization!.Parameter);
     }
 
-    [Fact]
-    public async Task ResolveKeyAsync_SerializesRequestWithExactContractShape()
+    [Theory]
+    [InlineData(PassportKeyType.BCODE, "0000000000")]
+    [InlineData(PassportKeyType.ALPHA, "@gpo118")]
+    public async Task ResolveKeyAsync_SerializesRequestWithExactContractShape(PassportKeyType keyType, string keyValue)
     {
         var handler = new FakeHttpMessageHandler(
             () => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullResolveKeyResponseBody));
         var client = CreateClient(handler);
 
-        await client.ResolveKeyAsync(SyntheticResolveRequest());
+        await client.ResolveKeyAsync(SyntheticResolveRequest(keyType: keyType, keyValue: keyValue));
 
         using var doc = System.Text.Json.JsonDocument.Parse(handler.LastRequestBody!);
         var root = doc.RootElement;
 
         Assert.Equal("synthetic-customer-id-001", root.GetProperty("customer_id").GetString());
         var key = root.GetProperty("key");
-        Assert.Equal("BCODE", key.GetProperty("key_type").GetString());
-        Assert.Equal("0000000000", key.GetProperty("key_value").GetString());
+        Assert.Equal(keyType.ToString(), key.GetProperty("key_type").GetString());
+        Assert.Equal(keyValue, key.GetProperty("key_value").GetString());
 
         // Sin campos inventados: exactamente 2 propiedades top-level.
         var topLevelNames = new List<string>();
