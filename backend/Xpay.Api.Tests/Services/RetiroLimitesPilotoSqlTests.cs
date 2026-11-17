@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xpay.Api.Common;
 using Xpay.Api.Data;
+using Xpay.Api.DTOs;
 using Xpay.Api.Exceptions;
 using Xpay.Api.Models;
 using Xpay.Api.Services;
@@ -31,6 +32,33 @@ public sealed class RetiroLimitesPilotoSqlTests
         [ControlOperacionesFinancieras.ClaveUvbAnio]     = AnioColombia,
         [ControlOperacionesFinancieras.ClaveTopeDiario]  = "500000",
     };
+
+    [Fact]
+    public async Task Registrar_alias_con_arroba_reemplaza_la_llave_activa()
+    {
+        if (!TryConnString(out var cs)) return;
+        var creados = new Creados();
+        try
+        {
+            var anterior = await SembrarAsync(cs, creados);
+            await using var db = NuevoContexto(cs);
+            var svc = new BrebService(db, NullLogger<BrebService>.Instance, null!, new ConfigurationBuilder().Build());
+
+            var registrada = await svc.RegistrarLlaveAsync(anterior.IdPersona, anterior.IdUsuario,
+                new RegistrarLlaveRequest { KeyType = "ALPHA", KeyValue = "@gpo118" });
+
+            Assert.Equal("PENDIENTE_VALIDACION", registrada.Estado);
+            Assert.Equal("ALPHA", registrada.KeyType);
+            Assert.Equal("***o118", registrada.KeyValueMasked);
+            var llaves = await db.PassportBrebLlaves.AsNoTracking()
+                .Where(llave => llave.IdWallet == anterior.IdWallet).ToListAsync();
+            var activa = Assert.Single(llaves, llave => llave.EsActiva);
+            Assert.Equal(registrada.IdBrebLlave, activa.IdBrebLlave);
+            Assert.Equal(BrebKeyValue.ComputeHash("@gpo118"), activa.KeyValueHash);
+            Assert.False(Assert.Single(llaves, llave => llave.IdBrebLlave == anterior.IdLlave).EsActiva);
+        }
+        finally { await LimpiarAsync(cs, creados); }
+    }
 
     [Fact]
     public async Task Dos_retiros_simultaneos_no_superan_el_limite_diario()

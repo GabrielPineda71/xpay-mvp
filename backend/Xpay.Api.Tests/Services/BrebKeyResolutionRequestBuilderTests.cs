@@ -17,9 +17,7 @@ public class BrebKeyResolutionRequestBuilderTests
     private const string OperationalCustomerId = "xpay-operational-customer-synthetic";
     private const string RawKeyValue            = "3001234567";
 
-    // Mismo algoritmo EXACTO que BrebService.ComputeKeyHash / el método
-    // privado duplicado en BrebKeyResolutionRequestBuilder — usado aquí
-    // sólo para construir fixtures de prueba, no para probar el hash en sí.
+    // Reproduce el hash persistido por el código anterior y el actual.
     private static string Hash(string value)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value.Trim().ToLowerInvariant()));
@@ -70,6 +68,48 @@ public class BrebKeyResolutionRequestBuilderTests
         var result = BrebKeyResolutionRequestBuilder.Build(llave, RawKeyValue, OperationalCustomerId);
 
         Assert.Equal(expected, result.Key.KeyType);
+    }
+
+    [Theory]
+    [InlineData("@gpo118", "@gpo118")]
+    [InlineData("@gpo118", "gpo118")]
+    [InlineData("gpo118", "@gpo118")]
+    [InlineData("gpo118", "gpo118")]
+    public void Build_AliasNuevoOAnterior_ConfirmaYEnviaElPrefijo(string registrado, string confirmado)
+    {
+        var llave = LlaveActiva(keyType: "ALPHA", rawValue: registrado);
+
+        var result = BrebKeyResolutionRequestBuilder.Build(llave, confirmado, OperationalCustomerId);
+
+        Assert.Equal(PassportKeyType.ALPHA, result.Key.KeyType);
+        Assert.Equal("@gpo118", result.Key.KeyValue);
+    }
+
+    [Fact]
+    public void Build_AliasNoCoincide_RechazaAntesDeResolver()
+    {
+        var llave = LlaveActiva(keyType: "ALPHA", rawValue: "gpo118");
+
+        Assert.Throws<BrebKeyResolutionRequestBuilder.LlaveNoConfirmadaException>(
+            () => BrebKeyResolutionRequestBuilder.Build(llave, "@gpo119", OperationalCustomerId));
+    }
+
+    [Theory]
+    [InlineData("@gpo118", "@gpo118")]
+    [InlineData("gpo118", "@gpo118")]
+    [InlineData("@AbCDe", "@AbCDe")]
+    [InlineData("@01234567890123456789", "@01234567890123456789")]
+    [InlineData("@abcd", null)]
+    [InlineData("@012345678901234567890", null)]
+    [InlineData("@@gpo118", null)]
+    [InlineData("gpo@118", null)]
+    [InlineData("@gpó118", null)]
+    [InlineData("@gpoñ18", null)]
+    [InlineData("@gpo 118", null)]
+    [InlineData("@gpo-118", null)]
+    public void NormalizeAlpha_UsaLaFormaBreB(string valor, string? esperado)
+    {
+        Assert.Equal(esperado, BrebKeyValue.NormalizeAlpha(valor));
     }
 
     // ── 2. Sin llave activa → rechazo antes de Passport ──────────────────
