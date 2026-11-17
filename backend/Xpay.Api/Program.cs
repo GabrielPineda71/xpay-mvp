@@ -77,6 +77,8 @@ builder.Services.AddScoped<LibranzaAnticipoService>();
 // Scoped: dependen de XpayDbContext.
 builder.Services.AddScoped<LibranzaRecaudoService>();
 builder.Services.AddScoped<LibranzaRecaudoAplicacionService>();
+builder.Services.AddScoped<WalletRecargaBrebService>();
+builder.Services.AddScoped<WalletRecargaBrebQrService>();
 builder.Services.AddScoped<ComercioAliadoService>();
 builder.Services.AddScoped<ComercioDisponibilidadService>();
 builder.Services.AddScoped<ComercioScopeService>();
@@ -189,9 +191,8 @@ builder.Services.AddSingleton<
     Xpay.Api.Integrations.Passport.PassportPaymentClient>();
 builder.Services.AddScoped<Xpay.Api.Services.BrebPaymentService>();
 
-// P0 anticipo - cuarto cliente de negocio Passport en DI: IPassportQrClient
-// (Create QR Code), consumido SOLO por LibranzaRecaudoService para el QR
-// dinámico del lote de recaudo. Mismo lifetime/patrón que IPassportKeyClient/
+// Create QR Code genera los QR dinámicos de recaudo y los QR estáticos de
+// recarga de Wallet. Mismo lifetime/patrón que IPassportKeyClient/
 // IPassportPaymentClient: wrapper puro y sin estado sobre IPassportHttpClient.
 // Fail-closed sin cambios: sin PASSPORT_BASE_URL/API_KEY/API_SECRET,
 // PASSPORT_CUSTOMER_ID o PASSPORT_COLLECTION_KEY_ID no hay llamada posible.
@@ -202,18 +203,10 @@ builder.Services.AddSingleton<
 // XPAY-594 — M5-T6/T7: recepción del webhook de pago ENTRANTE de Passport
 // (pago hacia una llave XPAY o un QR). Componentes propios, sin acoplar KYC.
 //
-// AISLAMIENTO FINANCIERO: PassportWebhookService sólo escribe
-// passport_webhook_events. No llama ApplyPassportPaymentStatusAsync, no toca
-// Wallet/Ledger/breb_retiros, no usa BrebPaymentStateMachine y no realiza
-// ninguna llamada a la API de Passport — no depende de IPassportHttpClient.
-//
-// Fail-closed: sin PASSPORT_WEBHOOK_SECRET configurado, toda entrega se
-// considera no válida; y PASSPORT_WEBHOOK_SIGNATURE_MODE cae en ENFORCE ante
-// cualquier valor no reconocido, de modo que un modo permisivo nunca se
-// obtiene por omisión. Ninguna de las dos variables está configurada en ningún
-// ambiente todavía, y el callback NO está registrado en el Dashboard de
-// Passport: ninguna entrega real es posible hasta que se autorice
-// explícitamente en un ticket futuro.
+// PassportWebhookService registra y deduplica los eventos. Los aplicadores
+// de recaudo y recarga validan la liquidación y registran el efecto contable.
+// Sin PASSPORT_WEBHOOK_SECRET se rechaza la firma y el modo de verificación
+// cae en ENFORCE ante cualquier valor no reconocido.
 builder.Services.AddSingleton<
     Xpay.Api.Integrations.Passport.IPassportWebhookSignatureValidator,
     Xpay.Api.Integrations.Passport.PassportWebhookSignatureValidator>();

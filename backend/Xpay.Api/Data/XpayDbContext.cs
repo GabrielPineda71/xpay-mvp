@@ -41,6 +41,8 @@ public class XpayDbContext : DbContext
     public DbSet<Wallet> Wallets => Set<Wallet>();
     public DbSet<WalletSaldo> WalletSaldos => Set<WalletSaldo>();
     public DbSet<WalletMovimiento> WalletMovimientos => Set<WalletMovimiento>();
+    public DbSet<WalletRecargaBrebQr> WalletRecargaBrebQrs => Set<WalletRecargaBrebQr>();
+    public DbSet<WalletRecargaBreb> WalletRecargasBreb => Set<WalletRecargaBreb>();
     public DbSet<LedgerCuenta> LedgerCuentas => Set<LedgerCuenta>();
     public DbSet<LedgerTransaccion> LedgerTransacciones => Set<LedgerTransaccion>();
     // XPAY-385 — CAPA 2 (tesorería real), independiente de LedgerCuentas/Wallet.
@@ -118,6 +120,8 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<Wallet>(e => { e.ToTable("wallets"); e.HasKey(x => x.IdWallet); MapWallet(e); });
         modelBuilder.Entity<WalletSaldo>(e => { e.ToTable("wallet_saldos"); e.HasKey(x => x.IdWallet); MapWalletSaldo(e); });
         modelBuilder.Entity<WalletMovimiento>(e => { e.ToTable("wallet_movimientos"); e.HasKey(x => x.IdMovimientoWallet); MapWalletMovimiento(e); });
+        modelBuilder.Entity<WalletRecargaBrebQr>(MapWalletRecargaBrebQr);
+        modelBuilder.Entity<WalletRecargaBreb>(MapWalletRecargaBreb);
         modelBuilder.Entity<LedgerCuenta>(e => { e.ToTable("ledger_cuentas"); e.HasKey(x => x.IdCuenta); MapLedgerCuenta(e); });
         modelBuilder.Entity<LedgerTransaccion>(e => { e.ToTable("ledger_transacciones"); e.HasKey(x => x.IdTransaccionLedger); MapLedgerTransaccion(e); });
         // XPAY-385 — CAPA 2.
@@ -183,6 +187,45 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<PinTransaccional>(e => { e.ToTable("pin_transaccional"); e.HasKey(x => x.IdPin); MapPinTransaccional(e); });
         modelBuilder.Entity<ContactoCodigoVerificacion>(e => { e.ToTable("contacto_codigos_verificacion"); e.HasKey(x => x.IdCodigo); MapContactoCodigo(e); });
         modelBuilder.Entity<UsuarioConsentimientoComunicacion>(e => { e.ToTable("usuario_consentimientos_comunicacion"); e.HasKey(x => x.IdConsentimiento); MapConsentimientoComunicacion(e); });
+    }
+
+    private static void MapWalletRecargaBrebQr(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WalletRecargaBrebQr> e)
+    {
+        e.ToTable("wallet_recarga_breb_qrs");
+        e.HasKey(x => x.IdRecargaQr);
+        e.Property(x => x.IdRecargaQr).HasColumnName("id_recarga_qr");
+        e.Property(x => x.IdWallet).HasColumnName("id_wallet");
+        e.Property(x => x.IdUsuario).HasColumnName("id_usuario");
+        e.Property(x => x.Referencia).HasColumnName("referencia").HasMaxLength(17).IsUnicode(false);
+        e.Property(x => x.Estado).HasColumnName("estado").HasMaxLength(20).IsUnicode(false);
+        e.Property(x => x.PassportAccountId).HasColumnName("passport_account_id").HasMaxLength(36).IsUnicode(false);
+        e.Property(x => x.PassportCustomerId).HasColumnName("passport_customer_id").HasMaxLength(36).IsUnicode(false);
+        e.Property(x => x.PassportKeyId).HasColumnName("passport_key_id").HasMaxLength(36).IsUnicode(false);
+        e.Property(x => x.PassportQrId).HasColumnName("passport_qr_id").HasMaxLength(100);
+        e.Property(x => x.QrCodeData).HasColumnName("qr_code_data").HasMaxLength(4000);
+        e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion");
+        e.Property(x => x.FechaIntento).HasColumnName("fecha_intento");
+        e.Property(x => x.FechaGeneracion).HasColumnName("fecha_generacion");
+        e.HasIndex(x => x.IdWallet).IsUnique().HasDatabaseName("uq_wrbq_wallet");
+        e.HasIndex(x => x.Referencia).IsUnique().HasDatabaseName("uq_wrbq_referencia");
+    }
+
+    private static void MapWalletRecargaBreb(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WalletRecargaBreb> e)
+    {
+        e.ToTable("wallet_recargas_breb");
+        e.HasKey(x => x.IdRecarga);
+        e.Property(x => x.IdRecarga).HasColumnName("id_recarga");
+        e.Property(x => x.IdRecargaQr).HasColumnName("id_recarga_qr");
+        e.Property(x => x.IdWallet).HasColumnName("id_wallet");
+        e.Property(x => x.PassportPaymentId).HasColumnName("passport_payment_id").HasMaxLength(36).IsUnicode(false);
+        e.Property(x => x.Valor).HasColumnName("valor").HasPrecision(18, 2);
+        e.Property(x => x.Moneda).HasColumnName("moneda").HasMaxLength(3).IsUnicode(false);
+        e.Property(x => x.Estado).HasColumnName("estado").HasMaxLength(20).IsUnicode(false);
+        e.Property(x => x.IdTransaccionLedger).HasColumnName("id_transaccion_ledger");
+        e.Property(x => x.IdEventoSettled).HasColumnName("id_evento_settled");
+        e.Property(x => x.Fecha).HasColumnName("fecha");
+        e.HasIndex(x => x.PassportPaymentId).IsUnique().HasDatabaseName("uq_wrb_pago");
+        e.HasIndex(x => x.IdTransaccionLedger).IsUnique().HasDatabaseName("uq_wrb_ledger");
     }
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)

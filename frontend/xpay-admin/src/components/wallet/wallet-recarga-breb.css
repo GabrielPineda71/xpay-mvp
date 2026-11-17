@@ -1,0 +1,27 @@
+.wallet-recharge {
+  max-width: 480px;
+  margin: 16px auto 0;
+  min-width: 0;
+}
+.wallet-recharge p { line-height: 1.5; }
+.wallet-recharge-qr { text-align: center; }
+.wallet-recharge-qr img {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  margin: 16px auto;
+  background: #fff;
+}
+.wallet-recharge-qr a { display: inline-block; }
+.wallet-recharge > button { margin-top: 12px; }
+.wallet-recharge-history ul { list-style: none; padding: 0; }
+.wallet-recharge-history li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--xpay-border, #e2e8e4);
+}
+.wallet-recharge-history li span { color: var(--xpay-text-secondary); }
