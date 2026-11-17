@@ -64,46 +64,78 @@ public sealed class WalletRecargaBrebQrService(
             await tx.CommitAsync(ct);
         }
 
-        // El destino se verifica con el transporte autenticado existente.
-        // La referencia ya está persistida antes de cualquier creación remota.
-        var key = await http.GetAsync<PassportKeyResponse>($"/v1/keys/{keyId}", ct);
-        var account = await accounts.RetrieveAccountAsync(accountId, ct);
-        if (key is null || !MismoId(key.Id, keyId) || key.Status != "ACTIVE" || !MismoId(key.AccountId, accountId)
-            || !MismoId(account.Id, accountId) || account.Status != "ACTIVE" || !MismoId(account.CustomerId, customerId))
-            throw new PassportProtocolException("No se pudo verificar el destino de recaudo de XPAY.");
-
-        var response = await qrClient.CreateQrCodeAsync(new PassportCreateQrCodeRequest(
-            keyId, customerId, PassportQrType.STATIC, PassportQrChannel.MPOS)
+        var creacionEnviada = false;
+        try
         {
-            QrCodeReference = qr.Referencia,
-            Vat = new PassportQrVatRequest(PassportQrVatType.FIXED, "0.00", "0.00"),
-            Inc = new PassportQrIncRequest(PassportQrVatType.FIXED, "0.00"),
-            Tip = new PassportQrTipRequest(PassportQrVatType.FIXED, "0.00"),
-        }, ct);
-        if (string.IsNullOrWhiteSpace(response.Id) || string.IsNullOrWhiteSpace(response.QrCodeData)
-            || response.QrCodeData.Length > 4000 || response.Id.Length > 100
-            || LibranzaRecaudoReferencia.ExtraerDePassport(response.QrCodeReference) != qr.Referencia
-            || response.Type != "STATIC" || response.Status != "ACTIVE" || response.Amount is not null
-            || response.KeyId is not null && !MismoId(response.KeyId, keyId)
-            || response.CustomerId is not null && !MismoId(response.CustomerId, customerId))
-            throw new PassportProtocolException("Passport devolvió un QR distinto al solicitado.");
+            // La referencia queda persistida antes de cualquier creación remota.
+            var key = await http.GetAsync<PassportKeyResponse>($"/v1/keys/{keyId}", ct);
+            var account = await accounts.RetrieveAccountAsync(accountId, ct);
+            if (key is null || !MismoId(key.Id, keyId) || key.Status != "ACTIVE" || !MismoId(key.AccountId, accountId)
+                || !MismoId(account.Id, accountId) || account.Status != "ACTIVE" || !MismoId(account.CustomerId, customerId))
+                throw new PassportProtocolException("No se pudo verificar el destino de recaudo de XPAY.");
 
-        db.ChangeTracker.Clear();
-        await using (var tx = await db.Database.BeginTransactionAsync(ct))
-        {
-            await BloquearAsync(wallet.IdWallet, ct);
-            qr = await db.WalletRecargaBrebQrs.SingleAsync(q => q.IdWallet == wallet.IdWallet, ct);
-            if (qr.Estado == "GENERANDO" && qr.FechaIntento == intento)
+            creacionEnviada = true;
+            var response = await qrClient.CreateQrCodeAsync(new PassportCreateQrCodeRequest(
+                keyId, customerId, PassportQrType.STATIC, PassportQrChannel.MPOS)
             {
-                qr.PassportQrId = response.Id;
-                qr.QrCodeData = response.QrCodeData;
-                qr.Estado = "ACTIVO";
-                qr.FechaGeneracion = DateTime.UtcNow;
-                await db.SaveChangesAsync(ct);
+                QrCodeReference = qr.Referencia,
+                Vat = new PassportQrVatRequest(PassportQrVatType.FIXED, "0.00", "0.00"),
+                Inc = new PassportQrIncRequest(PassportQrVatType.FIXED, "0.00"),
+            }, ct);
+            if (string.IsNullOrWhiteSpace(response.Id) || string.IsNullOrWhiteSpace(response.QrCodeData)
+                || response.QrCodeData.Length > 4000 || response.Id.Length > 100
+                || LibranzaRecaudoReferencia.ExtraerDePassport(response.QrCodeReference) != qr.Referencia
+                || response.Type != "STATIC" || response.Status != "ACTIVE" || response.Amount is not null
+                || response.KeyId is not null && !MismoId(response.KeyId, keyId)
+                || response.CustomerId is not null && !MismoId(response.CustomerId, customerId))
+                throw new PassportProtocolException("Passport devolvió un QR distinto al solicitado.");
+
+            db.ChangeTracker.Clear();
+            await using (var tx = await db.Database.BeginTransactionAsync(ct))
+            {
+                await BloquearAsync(wallet.IdWallet, ct);
+                qr = await db.WalletRecargaBrebQrs.SingleAsync(q => q.IdWallet == wallet.IdWallet, ct);
+                if (qr.Estado == "GENERANDO" && qr.FechaIntento == intento)
+                {
+                    qr.PassportQrId = response.Id;
+                    qr.QrCodeData = response.QrCodeData;
+                    qr.Estado = "ACTIVO";
+                    qr.FechaGeneracion = DateTime.UtcNow;
+                    await db.SaveChangesAsync(ct);
+                }
+                await tx.CommitAsync(ct);
             }
-            await tx.CommitAsync(ct);
+            return await RespuestaAsync(qr, ct);
         }
-        return await RespuestaAsync(qr, ct);
+        catch (Exception ex) when (FalloDefinitivo(ex, creacionEnviada))
+        {
+            await LiberarIntentoAsync(wallet.IdWallet, intento);
+            throw;
+        }
+    }
+
+    private static bool FalloDefinitivo(Exception error, bool creacionEnviada) =>
+        !creacionEnviada || error is ArgumentException or PassportConfigurationException
+            or PassportAuthenticationException
+            or PassportTransportException { StatusCode: >= 400 and < 500 and not 408 };
+
+    private async Task LiberarIntentoAsync(long idWallet, DateTime intento)
+    {
+        // El cliente puede haberse desconectado. La limpieza conserva un
+        // plazo propio y solo libera la generación que hizo esta solicitud.
+        using var limpieza = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var ct = limpieza.Token;
+        db.ChangeTracker.Clear();
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await BloquearAsync(idWallet, ct);
+        var qr = await db.WalletRecargaBrebQrs.SingleAsync(q => q.IdWallet == idWallet, ct);
+        if (qr.Estado == "GENERANDO" && qr.FechaIntento == intento)
+        {
+            qr.Estado = "PENDIENTE";
+            qr.FechaIntento = null;
+            await db.SaveChangesAsync(ct);
+        }
+        await tx.CommitAsync(ct);
     }
 
     private async Task<Wallet> ObtenerWalletAsync(long idPersona, long idUsuario, CancellationToken ct) =>

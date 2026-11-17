@@ -123,9 +123,9 @@ export function WalletRecargaBreb({ onActualizarSaldo }: WalletRecargaBrebProps)
       )}
       {cargando && <p role="status">{generando ? 'Generando tu QR…' : 'Consultando recargas…'}</p>}
       {error && <p role="alert" className="wallet-receive-error">{error}</p>}
-      {!recarga?.qrCodeData && !cargando && !error && (
+      {!recarga?.qrCodeData && !cargando && (
         <button type="button" className="wallet-receive-generate-btn" onClick={() => void consultar(true)}>
-          Generar mi QR de recarga
+          {error ? 'Reintentar generación del QR' : 'Generar mi QR de recarga'}
         </button>
       )}
       <button type="button" className="wallet-send-secondary-btn" disabled={cargando}
