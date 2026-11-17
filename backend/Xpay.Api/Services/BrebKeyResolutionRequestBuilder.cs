@@ -15,7 +15,7 @@ namespace Xpay.Api.Services;
 // POR QUÉ EXISTE ESTE GUARD DE CONFIRMACIÓN (y no un endpoint sin body):
 // PassportBrebLlave NUNCA persiste el key_value en claro — sólo
 // KeyValueMasked (visual) y KeyValueHash (SHA-256, irreversible). Por
-// diseño (ver BrebService.ComputeKeyHash/UpsertLlave), el valor en claro
+// diseño (ver BrebKeyValue.ComputeHash y BrebService.UpsertLlave), el valor en claro
 // sólo existe en memoria durante el request de registro y nunca se
 // recupera después. Por lo tanto, "resolver mi llave" REQUIERE que el
 // usuario reenvíe el valor — pero eso NO es "recibir una llave arbitraria
@@ -57,26 +57,22 @@ public static class BrebKeyResolutionRequestBuilder
             throw new InvalidOperationException(
                 $"La llave registrada tiene un keyType local no soportado por Passport: '{llaveActiva.KeyType}'.");
 
-        var hashConfirmacion = ComputeKeyHash(keyValueConfirmacion);
-        if (!FixedTimeEquals(hashConfirmacion, llaveActiva.KeyValueHash))
+        var value = keyValueConfirmacion.Trim();
+        var alpha = keyType == PassportKeyType.ALPHA ? BrebKeyValue.NormalizeAlpha(value) : null;
+        var hashConfirmacion = BrebKeyValue.ComputeHash(alpha ?? value);
+        var coincide = FixedTimeEquals(hashConfirmacion, llaveActiva.KeyValueHash);
+        // Los alias registrados antes de admitir @ tienen el hash del valor sin @.
+        // Se exige la misma llave registrada y se envía el valor completo al proveedor.
+        if (alpha is not null)
+            coincide |= FixedTimeEquals(BrebKeyValue.ComputeHash(alpha[1..]), llaveActiva.KeyValueHash);
+
+        if (!coincide)
             throw new LlaveNoConfirmadaException(
                 "El valor ingresado no coincide con tu llave Bre-B registrada.");
 
         return new PassportResolveKeyRequest(
             CustomerId: operationalCustomerId,
-            Key: new PassportKeyRequest(KeyType: keyType, KeyValue: keyValueConfirmacion.Trim()));
-    }
-
-    // Mismo algoritmo exacto que BrebService.ComputeKeyHash — SHA-256 sobre
-    // el valor trim+lowercase, hex lowercase. Duplicado deliberadamente
-    // como método local (no se referencia BrebService desde aquí) para que
-    // esta clase permanezca sin dependencia del DbContext/servicio — si en
-    // el futuro se decide extraer un solo lugar canónico para el hash, debe
-    // hacerse en un ticket propio que actualice ambos sitios a la vez.
-    private static string ComputeKeyHash(string keyValue)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(keyValue.Trim().ToLowerInvariant()));
-        return Convert.ToHexString(bytes).ToLowerInvariant();
+            Key: new PassportKeyRequest(KeyType: keyType, KeyValue: alpha ?? value));
     }
 
     // Comparación en tiempo constante — un hash de llave Bre-B no debe

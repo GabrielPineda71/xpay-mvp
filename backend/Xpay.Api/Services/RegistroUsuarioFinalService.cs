@@ -33,11 +33,18 @@ public class RegistroUsuarioFinalService
             : null;
         try
         {
-            var tipoDocumento = request.TipoDocumento.Trim().ToUpper();
-            var numeroDocumento = request.NumeroDocumento.Trim();
+            var tipoDocumento = DocumentoCuenta.NormalizarTipo(request.TipoDocumento);
+            var numeroDocumento = DocumentoCuenta.NormalizarNumero(request.NumeroDocumento);
             var nombreUsuario = request.Usuario.Trim().ToLower();
 
-            if (await _db.Personas.AnyAsync(p => p.IdUnidadNegocio == request.IdUnidadNegocio && p.TipoDocumento == tipoDocumento && p.NumeroDocumento == numeroDocumento))
+            if (tipoDocumento is null || tipoDocumento.Length > 20
+                || numeroDocumento.Length is 0 or > TipoDocumentoVeriffMapper.LongitudMaximaNumero
+                || !numeroDocumento.All(char.IsAsciiLetterOrDigit))
+                throw new InvalidOperationException("Ingresa un tipo y número de documento válidos.");
+
+            await DocumentoCuenta.BloquearAsync(_db, numeroDocumento);
+            if (await DocumentoCuenta.ExisteOtraCuentaAsync(_db, null, tipoDocumento, numeroDocumento)
+                || await _db.Personas.AnyAsync(p => p.IdUnidadNegocio == request.IdUnidadNegocio && p.TipoDocumento == tipoDocumento && p.NumeroDocumento == numeroDocumento))
                 throw new InvalidOperationException("Ya existe una persona registrada con este documento.");
             if (await _db.Usuarios.AnyAsync(u => u.NombreUsuario == nombreUsuario))
                 throw new InvalidOperationException("El nombre de usuario ya existe.");
@@ -90,7 +97,7 @@ public class RegistroUsuarioFinalService
                 TipoWallet = "PERSONA",
                 IdPersona = persona.IdPersona,
                 NombreWallet = $"Wallet {persona.PrimerNombre} {persona.PrimerApellido}",
-                Estado = "ACTIVA",
+                Estado = WalletActivacionService.PendienteVerificacion,
                 FechaCreacion = DateTime.UtcNow
             };
             _db.Wallets.Add(wallet);

@@ -127,6 +127,13 @@ public sealed class QaClientePruebaService(
                 return new(ResultadoClientePruebaQa.NoPreparado, null, null);
             }
 
+            // Este fixture no productivo prepara una Wallet para probar
+            // Cartera con identidad simulada y dato de prueba.
+            var wallet = await db.Wallets.SingleAsync(w => w.IdPersona == idPersona && w.TipoWallet == "PERSONA", ct);
+            wallet.Estado = "ACTIVA";
+            wallet.FechaActualizacion = fecha;
+            await db.SaveChangesAsync(ct);
+
             await tx.CommitAsync(ct);
             return new(ResultadoClientePruebaQa.Creado, idUsuario, null);
         }

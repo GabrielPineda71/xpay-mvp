@@ -38,6 +38,8 @@ public sealed class BloqueoFinancieroArquitecturaTests
         "PinController.Crear", "PinController.Cambiar",
         // Verificación de contactos y preferencias: deben funcionar con el interruptor cerrado.
         "ContactosController.SolicitarCodigo", "ContactosController.Verificar", "ContactosController.Preferencias",
+        // Activación de Wallet: habilita una cuenta sin acreditar dinero ni crear obligaciones.
+        "WalletsController.ActivarMiWallet",
         // Solo ambientes no productivos (404 en productivo).
         "QaClientePruebaController.Crear", "QaIdentidadPruebaController.Preparar",
         "ComerciosAliadosController.BackfillDemoContexto",

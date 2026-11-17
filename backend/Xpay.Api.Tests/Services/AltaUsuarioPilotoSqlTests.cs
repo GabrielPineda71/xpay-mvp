@@ -51,9 +51,10 @@ public sealed class AltaUsuarioPilotoSqlTests
             Assert.Null(p.NumeroDocumento);
             Assert.Null(p.PrimerApellido);
 
-            // Wallet PERSONA activa con saldo cero, rol USUARIO_FINAL.
+            // Wallet PERSONA pendiente con saldo cero, rol USUARIO_FINAL.
             var w = await v.Wallets.AsNoTracking().SingleAsync(x => x.IdWallet == r.IdWallet);
-            Assert.Equal(("PERSONA", "ACTIVA", p.IdPersona), (w.TipoWallet, w.Estado, w.IdPersona!.Value));
+            Assert.Equal(("PERSONA", WalletActivacionService.PendienteVerificacion, p.IdPersona),
+                (w.TipoWallet, w.Estado, w.IdPersona!.Value));
             var s = await v.WalletSaldos.AsNoTracking().SingleAsync(x => x.IdWallet == r.IdWallet);
             Assert.Equal((0m, 0m), (s.SaldoDisponible, s.SaldoRetenido));
             var roles = await (from ur in v.UsuarioRoles join ro in v.Roles on ur.IdRol equals ro.IdRol

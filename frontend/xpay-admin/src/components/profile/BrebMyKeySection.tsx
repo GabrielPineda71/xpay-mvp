@@ -90,7 +90,7 @@ export function BrebMyKeySection() {
                   keyType === 'ID'    ? 'Ej: 1234567890' :
                   keyType === 'PHONE' ? 'Ej: 3001234567' :
                   keyType === 'EMAIL' ? 'Ej: correo@banco.com' :
-                  keyType === 'ALPHA' ? 'Ej: mi-alias-breb' : 'Ej: BREB-XXXXXX'
+                  keyType === 'ALPHA' ? 'Ej: @gpo118' : 'Ej: BREB-XXXXXX'
                 }
                 autoComplete="off"
               />

@@ -1,8 +1,8 @@
 namespace Xpay.Api.Exceptions;
 
 // Se lanza al interpretar el resultado de AppLockHelper.AdquirirAsync para la
-// clave XPAY:IDENTIDAD_DOCUMENTO:{idUnidadNegocio}:{documentoNormalizado}
-// (Commit 4 — consolidación de identidad verificada Veriff en Persona) —
+// clave global XPAY:IDENTIDAD_DOCUMENTO:{documentoNormalizado}, compartida por
+// altas con documento y consolidación de identidad verificada por Veriff —
 // timeout (-1), cancelación (-2) o víctima de deadlock (-3). No reutiliza
 // OperacionCajaCierreConcurrenteException porque esa excepción y su mensaje
 // pertenecen semánticamente al dominio Caja/Cierre (Fase 70.4-B), no al de

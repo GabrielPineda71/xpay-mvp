@@ -95,6 +95,52 @@ public class WalletsController : ControllerBase
         }
     }
 
+    [Authorize(Roles = "USUARIO_FINAL")]
+    [HttpGet("mi-wallet/activacion")]
+    public async Task<IActionResult> ObtenerActivacionMiWallet(
+        [FromServices] WalletActivacionService activacion, CancellationToken ct)
+    {
+        if (!TryGetIdPersona(out var idPersona) || !TryGetUsuarioId(out var idUsuario))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        var estado = await activacion.ObtenerEstadoAsync(idUsuario, idPersona, ct);
+        return estado is null
+            ? NotFound(new { success = false, message = "No se encontró una cuenta activa." })
+            : Ok(new { success = true, data = estado });
+    }
+
+    [Authorize(Roles = "USUARIO_FINAL")]
+    [HttpPost("mi-wallet/activacion")]
+    public async Task<IActionResult> ActivarMiWallet(
+        [FromServices] WalletActivacionService activacion, CancellationToken ct)
+    {
+        if (!TryGetIdPersona(out var idPersona) || !TryGetUsuarioId(out var idUsuario))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        EstadoActivacionWallet? estado;
+        try
+        {
+            estado = await activacion.ActivarAsync(idUsuario, idPersona, ct);
+        }
+        catch (InvalidOperationException)
+        {
+            return Conflict(new { success = false, message = "No se pudo activar la Wallet. Actualiza el estado e intenta de nuevo." });
+        }
+
+        if (estado is null)
+            return NotFound(new { success = false, message = "No se encontró una cuenta activa." });
+        if (!estado.WalletActiva)
+            return Conflict(new
+            {
+                success = false,
+                message = estado.WalletRestringida
+                    ? "La Wallet requiere revisión de soporte XPAY."
+                    : "Verifica tu identidad con Veriff, tu correo y tu WhatsApp para activar la Wallet.",
+                data = estado,
+            });
+        return Ok(new { success = true, data = estado });
+    }
+
     // ── Vista previa del destinatario de una transferencia: usuario y nombre
     // enmascarado del titular, resueltos por DestinatarioWalletService (el
     // mismo criterio que vuelve a aplicar la transferencia). Misma exigencia

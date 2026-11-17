@@ -145,7 +145,7 @@ public sealed class RegistroPublicoService(
                         TipoWallet      = "PERSONA",
                         IdPersona       = persona.IdPersona,
                         NombreWallet    = $"Wallet {datos.NombreUsuario}",
-                        Estado          = "ACTIVA",
+                        Estado          = WalletActivacionService.PendienteVerificacion,
                         FechaCreacion   = ahora,
                     };
                     db.Wallets.Add(wallet);

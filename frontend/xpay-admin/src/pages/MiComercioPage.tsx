@@ -1110,7 +1110,7 @@ export function MiComercioPage() {
               type="text"
               value={brebKeyValue}
               onChange={e => setBrebKeyValue(e.target.value)}
-              placeholder="Llave Bre-B del comercio"
+              placeholder={brebKeyType === 'ALPHA' ? 'Ej: @comercio123' : 'Llave Bre-B del comercio'}
             />
           </label>
           <p className="breb-confirm-text">

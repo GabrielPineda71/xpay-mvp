@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Xpay.Api.Common;
 using Xpay.Api.DTOs;
+using Xpay.Api.Exceptions;
 using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
@@ -47,6 +48,7 @@ public class UsuariosController : ControllerBase
             var idUsuario = await _registroService.RegistrarAsync(request);
             return Ok(new { success = true, message = "Usuario final registrado correctamente.", idUsuario });
         }
+        catch (IdentidadDocumentoConcurrenteException ex) { return StatusCode(503, new { success = false, message = ex.Message }); }
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
         catch { return StatusCode(500, new { success = false, message = "Error interno registrando usuario final." }); }
     }
