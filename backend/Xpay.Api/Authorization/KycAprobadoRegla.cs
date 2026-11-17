@@ -44,11 +44,17 @@ public static class KycAprobadoRegla
         if (ambiente.PermiteMecanismosNoProductivos)
             return true;
 
-        return string.Equals(evidencia.ProveedorIdentidad,  ProveedorVeriff, StringComparison.Ordinal)
+        return EsVeriffVigente(evidencia);
+    }
+
+    public static bool CumpleVeriff(EvidenciaKyc evidencia) =>
+        CumpleCondicionCanonica(evidencia) && EsVeriffVigente(evidencia);
+
+    private static bool EsVeriffVigente(EvidenciaKyc evidencia) =>
+        string.Equals(evidencia.ProveedorIdentidad,  ProveedorVeriff, StringComparison.Ordinal)
             && evidencia.FilasKycActuales == 1
             && string.Equals(evidencia.ProveedorKycActual,  ProveedorVeriff, StringComparison.Ordinal)
             && string.Equals(evidencia.EstadoKycFilaActual, Aprobado,        StringComparison.Ordinal);
-    }
 
     // Condición canónica histórica: ambas son necesarias (ver KycAprobadoRequirement).
     internal static bool CumpleCondicionCanonica(EvidenciaKyc evidencia) =>

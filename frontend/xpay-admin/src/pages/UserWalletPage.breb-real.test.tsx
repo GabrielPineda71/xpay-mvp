@@ -269,17 +269,23 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     expect(within(screen.getByTestId('breb-real-result')).getByText(esperado)).toBeInTheDocument();
   });
 
-  it('el body de /api/breb/retiros/real sólo contiene Monto — nunca account_id/resolution_id/payment_id/destination key', async () => {
+  it.each([
+    { keyType: 'BCODE', keyValue: '0000000268', keyValueMasked: '***0268' },
+    { keyType: 'ALPHA', keyValue: '@gpo118', keyValueMasked: '***o118' },
+  ])('verifica la llave $keyType completa y el retiro solo envía monto y PIN', async ({ keyType, keyValue, keyValueMasked }) => {
+    const llave = { ...LLAVE_BCODE, keyType, keyValueMasked };
     mockPost.mockImplementation((path: string) => {
       if (path === '/api/breb/mi-llave/resolver') {
-        return Promise.resolve({ success: true, data: { idBrebLlave: 8, keyType: 'BCODE', keyValueMasked: '***0268', estado: 'VALIDADA', resolucionVerificadaPassport: true, titularNombreMasked: 'XPay ***' } });
+        return Promise.resolve({ success: true, data: { ...llave, titularNombreMasked: 'XPay ***' } });
       }
       return Promise.resolve({ success: true, data: { idBrebRetiro: 1, valor: 5000, moneda: 'COP', estado: 'ENVIADO_PASSPORT', fechaSolicitud: '2026-09-16T07:00:00Z' } });
     });
     const user = userEvent.setup();
-    await renderPage();
-    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), 'v');
+    await renderPage('retirar-breb', path => path === '/api/breb/mi-llave'
+      ? Promise.resolve({ success: true, data: llave }) : apiRoutedGet(path));
+    await user.type(screen.getByPlaceholderText(/Escríbela igual que al registrarla/i), keyValue);
     await user.click(screen.getByRole('button', { name: /Verificar mi llave/i }));
+    expect(mockPost).toHaveBeenCalledWith('/api/breb/mi-llave/resolver', { KeyValue: keyValue });
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
     await user.click(screen.getByRole('button', { name: /Continuar/i }));

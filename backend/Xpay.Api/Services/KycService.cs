@@ -858,13 +858,17 @@ public class KycService
             var estadosFinales = new HashSet<string>(StringComparer.Ordinal)
                 { "APROBADO", "RECHAZADO", "EXPIRADO", "ERROR" };
 
-            if (estadosFinales.Contains(kyc.EstadoKyc) && kyc.EstadoKyc == estadoXpay && !debeActualizarSeguimientoIntento)
+            const string motivoDocumentoDuplicado = "DOCUMENTO_ASOCIADO_A_OTRA_CUENTA";
+            var mismoConflictoDocumento = estadoXpay == "APROBADO" && kyc.EstadoKyc == "EN_REVISION"
+                && kyc.Reason == motivoDocumentoDuplicado;
+            if (!debeActualizarSeguimientoIntento &&
+                ((estadosFinales.Contains(kyc.EstadoKyc) && kyc.EstadoKyc == estadoXpay) || mismoConflictoDocumento))
             {
                 await tx.RollbackAsync(ct);
                 _logger.LogInformation(
                     "Veriff decisión ({Origen}): ya en estado final '{Estado}' — idempotent skip.",
                     origen, estadoXpay);
-                return new VeriffDecisionProcessResult(true, estadoXpay, true, false);
+                return new VeriffDecisionProcessResult(true, kyc.EstadoKyc, true, false);
             }
 
             var reason     = parsed.Reason;
@@ -980,16 +984,8 @@ public class KycService
                     // de evaluar y, si aplica, escribir Persona (Casos 1, 3, 4, 5,
                     // 6). Se adquiere SIEMPRE después de KYC_USUARIO, dentro de la
                     // misma transacción ya abierta.
-                    var idUnidadNegocioPersona = await _db.Personas.AsNoTracking()
-                        .Where(p => p.IdPersona == usuario.IdPersona)
-                        .Select(p => p.IdUnidadNegocio)
-                        .FirstOrDefaultAsync(ct);
-
-                    var documentoNormalizado = parsed.DocumentNumber!.Trim().ToUpperInvariant();
-                    var claveLockDocumento = $"XPAY:IDENTIDAD_DOCUMENTO:{idUnidadNegocioPersona}:{documentoNormalizado}";
-
-                    var resultadoLockDocumento = await AppLockHelper.AdquirirAsync(_db, claveLockDocumento, ct);
-                    ValidarResultadoLockIdentidad(resultadoLockDocumento);
+                    var documentoNormalizado = DocumentoCuenta.NormalizarNumero(parsed.DocumentNumber!);
+                    await DocumentoCuenta.BloquearAsync(_db, documentoNormalizado, ct);
 
                     // Recarga rastreada de Persona DESPUÉS de adquirir el lock —
                     // ninguna lectura previa de su estado de identidad es de fiar.
@@ -1007,7 +1003,9 @@ public class KycService
                     {
                         // Casos 4, 5, 6 — esta Persona ya estaba verificada. Nunca se
                         // sobrescribe: solo se clasifica para observabilidad.
-                        var documentoExistenteNormalizado = persona.NumeroDocumentoVerificado?.Trim().ToUpperInvariant();
+                        var documentoExistenteNormalizado = persona.NumeroDocumentoVerificado is { } numeroExistente
+                            ? DocumentoCuenta.NormalizarNumero(numeroExistente)
+                            : null;
                         var mismoDocumento = documentoExistenteNormalizado == documentoNormalizado;
 
                         var mismoNombre   = string.Equals(persona.NombreVerificadoCompleto,   parsed.FirstName,    StringComparison.Ordinal);
@@ -1071,16 +1069,19 @@ public class KycService
                     }
                     else
                     {
-                        // Persona aún no verificada — verificar conflicto de documento
-                        // con otra Persona antes de escribir (bajo el lock exclusivo).
-                        var conflicto = await _db.Personas.AnyAsync(p =>
+                        var tipo = TipoDocumentoVeriffMapper.Mapear(parsed.DocumentType, parsed.DocumentCountry, parsed.DocumentNumber).TipoDocumento;
+                        var conflictoCuenta = await DocumentoCuenta.ExisteOtraCuentaAsync(
+                            _db, persona.IdPersona, tipo, documentoNormalizado, ct);
+                        // También se respeta el índice histórico de documentos verificados por unidad.
+                        var numeroVeriff = parsed.DocumentNumber!.Trim().ToUpperInvariant();
+                        var conflictoVerificado = !conflictoCuenta && await _db.Personas.AnyAsync(p =>
                             p.IdPersona != persona.IdPersona &&
                             p.IdUnidadNegocio == persona.IdUnidadNegocio &&
                             p.NumeroDocumentoVerificado != null &&
-                            p.NumeroDocumentoVerificado.Trim().ToUpper() == documentoNormalizado &&
+                            p.NumeroDocumentoVerificado.Trim().ToUpper() == numeroVeriff &&
                             p.IdentidadVerificada, ct);
 
-                        if (conflicto)
+                        if (conflictoCuenta || conflictoVerificado)
                         {
                             // CASO 3 — documento ya verificado en otra Persona: no se
                             // marca identidad, Persona no se toca.
@@ -1093,13 +1094,15 @@ public class KycService
                                 Entidad     = "kyc_verificaciones",
                                 IdEntidad   = kyc.IdKycVerificacion.ToString(),
                                 Resultado   = "EXITOSO",
-                                Observacion = "Identidad no consolidada: el número de documento verificado ya está asociado a otra Persona activa en la misma unidad de negocio.",
+                                Observacion = "Identidad no consolidada: el documento ya está asociado a otro registro.",
                                 FechaEvento = DateTime.UtcNow,
                             });
 
                             _logger.LogWarning(
                                 "Veriff decisión ({Origen}): idUsuario={IdUsuario} caso identidad={Caso} — número de documento verificado ya pertenece a otra Persona.",
                                 origen, usuario.IdUsuario, IdentidadCaso.DocumentoDuplicado);
+                            estadoXpay = "EN_REVISION";
+                            reason = motivoDocumentoDuplicado;
                         }
                         else
                         {
@@ -1181,6 +1184,16 @@ public class KycService
             catch (DbUpdateException ex) when (EsViolacionDocumentoLegalDuplicado(ex)
                                                && personaDocumentoLegal != null && auditoriaDocumentoLegal != null)
             {
+                var numeroLegal = DocumentoCuenta.NormalizarNumero(personaDocumentoLegal.NumeroDocumento!);
+                if (await DocumentoCuenta.ExisteOtraCuentaAsync(
+                    _db, personaDocumentoLegal.IdPersona, personaDocumentoLegal.TipoDocumento, numeroLegal, ct))
+                {
+                    // Un escritor externo reclamó el documento en otra cuenta
+                    // tras la comprobación. Repetir la entrega con el estado nuevo.
+                    await tx.RollbackAsync(ct);
+                    return new VeriffDecisionProcessResult(false, null, false, false);
+                }
+
                 // Diseño A — duplicado tardío del documento legal (otro escritor
                 // que no toma el lock de identidad). La aprobación KYC es válida
                 // y NO se pierde: se deshace únicamente el documento legal (antes
@@ -1422,45 +1435,10 @@ public class KycService
             _                        => null   // not a decision event — no state change
         };
 
-    // ── Commit 4 — interpretación del resultado de AppLockHelper.AdquirirAsync
-    // para la clave XPAY:IDENTIDAD_DOCUMENTO:{idUnidadNegocio}:{documento} ──
-    // Deliberadamente NO usa AppLockHelper.ValidarResultado — esa lanza
-    // OperacionCajaCierreConcurrenteException, cuyo tipo y mensaje
-    // pertenecen semánticamente al dominio Caja/Cierre (Fase 70.4-B), no al
-    // de identidad. No toca BD, no toca Persona, no crea Auditoria, no
-    // recibe ni loguea el documento ni la clave del lock — solo interpreta
-    // el código entero devuelto por sp_getapplock. Todavía NO conectado a
-    // ProcessVeriffWebhookAsync (el bloque de identidad que lo invocará se
-    // implementa en un paso posterior).
-    private static void ValidarResultadoLockIdentidad(int resultado)
-    {
-        switch (resultado)
-        {
-            case 0:
-            case 1:
-                return;
-            case -1:
-                throw new IdentidadDocumentoConcurrenteException(
-                    "Tiempo de espera agotado esperando otra verificación de identidad concurrente sobre este documento. Intenta de nuevo.");
-            case -2:
-                throw new IdentidadDocumentoConcurrenteException(
-                    "La solicitud de sincronización de identidad fue cancelada. Intenta de nuevo.");
-            case -3:
-                throw new IdentidadDocumentoConcurrenteException(
-                    "Se detectó un interbloqueo con otra verificación de identidad concurrente sobre este documento. Intenta de nuevo.");
-            default:
-                // Mismo criterio que el "default" de AppLockHelper.ValidarResultado:
-                // error técnico de la llamada en sí (parámetros/infraestructura), no
-                // contención legítima — se relanza sin tipar, sin incluir la clave
-                // del lock ni ningún dato de documento.
-                throw new Exception($"sp_getapplock devolvió un código inesperado: {resultado}.");
-        }
-    }
-
     // ── Commit 5 — interpretación del resultado de AppLockHelper.AdquirirAsync
     // para la clave XPAY:KYC_USUARIO:{idUsuario} ──
     // Deliberadamente NO usa AppLockHelper.ValidarResultado (dominio
-    // Caja/Cierre) ni ValidarResultadoLockIdentidad (dominio distinto: ese
+    // Caja/Cierre) ni DocumentoCuenta.BloquearAsync (dominio distinto: ese
     // protege unicidad de documento entre Personas, este serializa el ciclo
     // de vida de sesiones KYC de un mismo usuario). No toca BD, no toca
     // Persona, no crea Auditoria, no recibe ni loguea idUsuario,
@@ -1485,7 +1463,7 @@ public class KycService
                 throw new KycUsuarioConcurrenteException(
                     "Se detectó un interbloqueo con otra sincronización KYC concurrente de este usuario. Intenta de nuevo.");
             default:
-                // Mismo criterio que el "default" de ValidarResultadoLockIdentidad:
+                // Error técnico del bloqueo:
                 // error técnico de la llamada en sí (parámetros/infraestructura), no
                 // contención legítima — se relanza sin tipar, sin incluir la clave
                 // del lock ni ningún dato del usuario.

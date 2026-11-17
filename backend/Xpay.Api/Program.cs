@@ -46,6 +46,7 @@ builder.Services.AddScoped<RegistroPublicoService>();
 // productiva e IdentidadPublicaPolicy que P0-B1).
 builder.Services.AddScoped<RecuperacionClaveService>();
 builder.Services.AddScoped<WalletService>();
+builder.Services.AddScoped<WalletActivacionService>();
 builder.Services.AddScoped<DestinatarioWalletService>();
 builder.Services.AddScoped<WalletOperacionService>();
 builder.Services.AddScoped<QrResolutionService>(); // XPAY-451 — resolución read-only compartida CodigoQr→Comercio/Tienda

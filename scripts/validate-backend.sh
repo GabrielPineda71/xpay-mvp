@@ -97,6 +97,30 @@ check_sql_value() {
   ok "$label → '$resultado' ✓"
 }
 
+preparar_wallet_ci() {
+  local token="$1" id_usuario="$2" estado intento status salida_sql
+  [[ "$id_usuario" =~ ^[0-9]+$ ]] || fail "ID inválido del usuario de prueba"
+
+  estado=$(get_auth_json "$token" "$API_URL/api/wallets/mi-wallet/activacion") \
+    || fail "No se pudo consultar la activación de la Wallet de prueba"
+  echo "$estado" | jq -e '.data | .walletActiva == false and .puedeActivar == false' >/dev/null \
+    || fail "El usuario de prueba debe comenzar con Wallet pendiente"
+  intento=$(post_auth_json_status "$token" "$API_URL/api/wallets/mi-wallet/activacion" '{}')
+  status=$(echo "$intento" | tail -1)
+  [[ "$status" == "409" ]] || fail "Activación sin verificaciones: se esperaba 409, se obtuvo $status"
+  ok "La Wallet de prueba requiere completar las verificaciones"
+
+  # Las fases siguientes prueban operaciones de wallets ya activas. Preparar
+  # únicamente la wallet sintética del job para poder probar KYC por separado.
+  salida_sql=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C -Q "
+SET NOCOUNT ON;
+UPDATE w SET estado = 'ACTIVA' FROM wallets w JOIN usuarios u ON u.id_persona = w.id_persona
+WHERE u.id_usuario = $id_usuario AND u.usuario IN ('carlos_ci_test', 'maria_ci_test')
+  AND w.tipo_wallet = 'PERSONA' AND w.estado = 'PENDIENTE_VERIFICACION';
+IF @@ROWCOUNT <> 1 THROW 51000, 'La Wallet pendiente del fixture CI no es única.', 1;
+" 2>&1) || fail "No se pudo preparar la Wallet activa del fixture CI. ${salida_sql//$SA_PASS/***}"
+}
+
 # ════════════════════════════════════════════════════
 # FASE 1 — Registro, login, wallet, recarga
 # ════════════════════════════════════════════════════
@@ -130,6 +154,8 @@ ID_PERSONA_A=$(echo "$LOGIN_A" | jq -r '.data.idPersona')
 TOKEN_A=$(echo "$LOGIN_A" | jq -r '.data.token')
 [[ -n "$TOKEN_A" && "$TOKEN_A" != "null" ]] || fail "Token JWT vacío tras login de carlos"
 ok "Login carlos → idPersona=$ID_PERSONA_A  token=${TOKEN_A:0:30}..."
+
+preparar_wallet_ci "$TOKEN_A" "$ID_USUARIO_A"
 
 info "GET /api/wallets/mi-wallet (carlos)"
 WALLET_A=$(get_auth_json "$TOKEN_A" "$API_URL/api/wallets/mi-wallet") \
@@ -501,6 +527,8 @@ ID_PERSONA_B=$(echo "$LOGIN_B" | jq -r '.data.idPersona')
 TOKEN_B=$(echo "$LOGIN_B" | jq -r '.data.token')
 [[ -n "$TOKEN_B" && "$TOKEN_B" != "null" ]] || fail "Token JWT vacío tras login de maria"
 ok "Login maria → idPersona=$ID_PERSONA_B  token=${TOKEN_B:0:30}..."
+
+preparar_wallet_ci "$TOKEN_B" "$ID_USUARIO_B"
 
 # Fase 71.2-E-B: GET /api/wallets/persona/{idPersona} quedó restringido a
 # ADMIN_XPAY/SUPERUSUARIO (era el IDOR original — cualquier autenticado podía

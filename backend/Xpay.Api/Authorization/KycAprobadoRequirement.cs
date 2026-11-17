@@ -17,10 +17,8 @@ namespace Xpay.Api.Authorization;
 //
 // Condición canónica (fail-safe: cualquier otra combinación bloquea):
 //   usuario.EstadoKycActual == "APROBADO" AND persona.IdentidadVerificada == true
-// Ambas son necesarias: en KycService.ProcesarDecisionVeriffAsync (Caso 3 —
-// documento duplicado en otra Persona, Caso 6 — documento distinto al ya
-// verificado) EstadoKycActual puede llegar a "APROBADO" sin que
-// IdentidadVerificada se marque true. Verificar solo un campo sería inseguro.
+// Una decisión de aprobación puede carecer de los datos necesarios para
+// consolidar la identidad. Se exige tanto la decisión como la identidad consolidada.
 //
 // XPAY-717: en ambiente productivo (IAmbienteXpay) además se exige identidad
 // consolidada por VERIFF y exactamente una sesión kyc_verificaciones vigente
@@ -83,15 +81,15 @@ public class KycAprobadoAuthorizationHandler : AuthorizationHandler<KycAprobadoR
         // requisito falla → bloqueado.
     }
 
-    private static async Task<EvidenciaKyc?> CargarEvidenciaAsync(
-        XpayDbContext db, long idUsuario, bool incluirSesionVigente)
+    internal static async Task<EvidenciaKyc?> CargarEvidenciaAsync(
+        XpayDbContext db, long idUsuario, bool incluirSesionVigente, CancellationToken ct = default)
     {
         var estado = await (
             from u in db.Usuarios
             join p in db.Personas on u.IdPersona equals p.IdPersona
             where u.IdUsuario == idUsuario
             select new { u.EstadoKycActual, p.IdentidadVerificada, p.IdentidadVerificadaProveedor }
-        ).FirstOrDefaultAsync();
+        ).FirstOrDefaultAsync(ct);
 
         if (estado is null) return null;
 
@@ -114,7 +112,7 @@ public class KycAprobadoAuthorizationHandler : AuthorizationHandler<KycAprobadoR
             .Where(k => k.IdUsuario == idUsuario && k.EsActual)
             .Select(k => new { k.Proveedor, k.EstadoKyc })
             .Take(2)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         return new EvidenciaKyc
         {

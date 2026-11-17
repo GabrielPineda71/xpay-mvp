@@ -113,7 +113,7 @@ public sealed class KycDocumentoLegalSqlTests
     }
 
     [Fact]
-    public async Task Documento_legal_de_otra_persona_no_se_copia()
+    public async Task Documento_legal_de_otra_cuenta_deja_la_segunda_en_revision()
     {
         if (!TryConnString(out var cs)) return;
         var (pe, us) = (new List<long>(), new List<long>());
@@ -127,10 +127,15 @@ public sealed class KycDocumentoLegalSqlTests
 
             await using var v = NuevoContexto(cs);
             var p = await v.Personas.AsNoTracking().SingleAsync(x => x.IdPersona == s.IdPersona);
-            Assert.True(p.IdentidadVerificada);
+            Assert.False(p.IdentidadVerificada);
+            Assert.Null(p.NumeroDocumentoVerificado);
             Assert.Null(p.TipoDocumento);
             Assert.Null(p.NumeroDocumento);
-            Assert.Single(await AuditoriasAsync(v, s.IdPersona, "KYC_DOCUMENTO_LEGAL_DUPLICADO"));
+            Assert.Single(await AuditoriasAsync(v, s.IdPersona, "KYC_IDENTIDAD_DOCUMENTO_DUPLICADO"));
+            var kyc = await v.KycVerificaciones.AsNoTracking().SingleAsync(x => x.SessionId == s.SessionId);
+            Assert.Equal("EN_REVISION", kyc.EstadoKyc);
+            Assert.Equal("DOCUMENTO_ASOCIADO_A_OTRA_CUENTA", kyc.Reason);
+            Assert.Equal("EN_REVISION", (await v.Usuarios.AsNoTracking().SingleAsync(x => x.IdUsuario == s.IdUsuario)).EstadoKycActual);
             Assert.Equal(numero, (await v.Personas.AsNoTracking().SingleAsync(x => x.IdPersona == otra.IdPersona)).NumeroDocumento);
             await AssertSinPiiEnAuditoriaAsync(v, s.IdPersona, numero);
         }
@@ -244,8 +249,82 @@ public sealed class KycDocumentoLegalSqlTests
             var personas = await v.Personas.AsNoTracking().Where(x => ids.Contains(x.IdPersona)).ToListAsync();
             Assert.Single(personas, x => x.NumeroDocumento == numero && x.TipoDocumento == "CC");
             Assert.Single(personas, x => x.IdentidadVerificada);
+            var estados = await v.Usuarios.AsNoTracking().Where(x => ids.Contains(x.IdPersona))
+                .Select(x => x.EstadoKycActual).ToListAsync();
+            Assert.Single(estados, x => x == "APROBADO");
+            Assert.Single(estados, x => x == "EN_REVISION");
             Assert.Single(await v.Auditorias.AsNoTracking()
                 .Where(x => ids.Contains(x.IdPersona!.Value) && x.Accion == "KYC_DOCUMENTO_LEGAL_ESTABLECIDO").ToListAsync());
+        }
+        finally { await LimpiarAsync(cs, pe, us); }
+    }
+
+    [Fact]
+    public async Task Alta_y_Veriff_en_unidades_distintas_reservan_el_documento_para_una_sola_cuenta()
+    {
+        if (!TryConnString(out var cs)) return;
+        var (pe, us) = (new List<long>(), new List<long>());
+        var codigoUnidadAlta = $"DOC_TEST_{Guid.NewGuid():N}";
+        try
+        {
+            var numero = NumeroAleatorio();
+            var s = await SembrarAsync(cs, pe, us);
+            await using var altaDb = NuevoContexto(cs);
+            await altaDb.Database.ExecuteSqlAsync(
+                $"INSERT INTO dbo.unidades_negocio (codigo, nombre) VALUES ({codigoUnidadAlta}, 'Documento test')");
+            var unidad = await altaDb.Database.SqlQuery<long>(
+                $"SELECT id_unidad_negocio AS Value FROM dbo.unidades_negocio WHERE codigo = {codigoUnidadAlta}").SingleAsync();
+            var alta = new RegistroUsuarioFinalService(altaDb, Xpay.Api.Tests.Common.AmbienteXpayTests.Ambiente("QA"));
+            var solicitud = new Xpay.Api.DTOs.RegistroUsuarioFinalRequest
+            {
+                IdUnidadNegocio = unidad, TipoDocumento = " cc ", NumeroDocumento = numero.Insert(2, "."),
+                PrimerNombre = "ANA", PrimerApellido = "PRUEBA", Celular = "3000000000",
+                Usuario = $"altadoc_{Guid.NewGuid():N}", Password = "UnaClaveSintetica1!",
+            };
+
+            var altaTask = alta.RegistrarAsync(solicitud);
+            var veriffTask = WebhookAsync(cs, s.SessionId, numero);
+            try
+            {
+                var id = await altaTask;
+                us.Add(id);
+                pe.Add((await altaDb.Usuarios.AsNoTracking().SingleAsync(u => u.IdUsuario == id)).IdPersona);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Assert.Equal("Ya existe una persona registrada con este documento.", ex.Message);
+            }
+            Assert.True(await veriffTask);
+
+            await using var v = NuevoContexto(cs);
+            Assert.Equal(1, await v.Personas.AsNoTracking().CountAsync(p => p.NumeroDocumento == numero));
+            var usuario = await v.Usuarios.AsNoTracking().SingleAsync(u => u.IdUsuario == s.IdUsuario);
+            Assert.Equal(altaTask.IsCompletedSuccessfully ? "EN_REVISION" : "APROBADO", usuario.EstadoKycActual);
+        }
+        finally
+        {
+            await LimpiarAsync(cs, pe, us);
+            await using var limpiar = NuevoContexto(cs);
+            await limpiar.Database.ExecuteSqlAsync($"DELETE FROM dbo.unidades_negocio WHERE codigo = {codigoUnidadAlta}");
+        }
+    }
+
+    [Fact]
+    public async Task Documento_Veriff_sin_tipo_legal_reserva_el_numero_para_la_cuenta_verificada()
+    {
+        if (!TryConnString(out var cs)) return;
+        var (pe, us) = (new List<long>(), new List<long>());
+        try
+        {
+            var numero = NumeroAleatorio();
+            var s = await SembrarAsync(cs, pe, us);
+            Assert.True(await WebhookAsync(cs, s.SessionId, numero, tipo: "ID_CARD", pais: "VE"));
+
+            await using var v = NuevoContexto(cs);
+            var persona = await v.Personas.AsNoTracking().SingleAsync(p => p.IdPersona == s.IdPersona);
+            Assert.True(persona.IdentidadVerificada);
+            Assert.Null(persona.TipoDocumento);
+            Assert.True(await DocumentoCuenta.ExisteOtraCuentaAsync(v, null, "CE", numero));
         }
         finally { await LimpiarAsync(cs, pe, us); }
     }
@@ -398,6 +477,13 @@ public sealed class KycDocumentoLegalSqlTests
                 await ctx.Database.ExecuteSqlAsync($"DELETE FROM dbo.auditoria WHERE id_usuario = {id}");
             foreach (var id in usuarios)
                 await ctx.Database.ExecuteSqlAsync($"DELETE FROM dbo.kyc_verificaciones WHERE id_usuario = {id}");
+            foreach (var id in usuarios)
+                await ctx.Database.ExecuteSqlAsync($"DELETE FROM dbo.usuario_roles WHERE id_usuario = {id}");
+            foreach (var id in personas)
+            {
+                await ctx.Database.ExecuteSqlAsync($"DELETE s FROM dbo.wallet_saldos s JOIN dbo.wallets w ON w.id_wallet = s.id_wallet WHERE w.id_persona = {id}");
+                await ctx.Database.ExecuteSqlAsync($"DELETE FROM dbo.wallets WHERE id_persona = {id}");
+            }
             foreach (var id in usuarios)
                 await ctx.Database.ExecuteSqlAsync($"DELETE FROM dbo.usuarios WHERE id_usuario = {id}");
             foreach (var id in personas)

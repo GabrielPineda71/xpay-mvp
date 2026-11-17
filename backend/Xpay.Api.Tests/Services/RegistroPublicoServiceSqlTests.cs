@@ -60,7 +60,7 @@ public sealed class RegistroPublicoServiceSqlTests
 
             var w = await v.Wallets.AsNoTracking().SingleAsync(x => x.IdPersona == p.IdPersona);
             Assert.Equal("PERSONA", w.TipoWallet);
-            Assert.Equal("ACTIVA", w.Estado);
+            Assert.Equal(WalletActivacionService.PendienteVerificacion, w.Estado);
             Assert.Equal(p.IdUnidadNegocio, w.IdUnidadNegocio);
             Assert.Equal(0m, (await v.WalletSaldos.AsNoTracking().SingleAsync(x => x.IdWallet == w.IdWallet)).SaldoDisponible);
 

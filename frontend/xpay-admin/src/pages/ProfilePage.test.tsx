@@ -90,22 +90,23 @@ describe('ProfilePage (XPAY-392/401)', () => {
     expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave/resolver', expect.anything());
   });
 
-  it('F: registrar la llave usa POST /api/breb/mi-llave (nunca /resolver, nunca Passport)', async () => {
+  it.each([
+    { keyType: 'ID', keyValue: '1234567890' },
+    { keyType: 'ALPHA', keyValue: '@gpo118' },
+  ])('F: registrar llave $keyType envía su valor completo sin resolverla', async ({ keyType, keyValue }) => {
     const user = userEvent.setup();
     mockPost.mockResolvedValue({
       success: true,
-      data: { idBrebLlave: 1, tipoSujeto: 'USUARIO', keyType: 'ID', keyValueMasked: '***7890', estado: 'PENDIENTE_VALIDACION' },
+      data: { idBrebLlave: 1, tipoSujeto: 'USUARIO', keyType, keyValueMasked: '***', estado: 'PENDIENTE_VALIDACION' },
     });
     renderProfilePage();
-    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/breb/mi-llave'));
+    const selector = await screen.findByLabelText('Tipo de llave');
 
-    await user.type(screen.getByLabelText('Valor de la llave'), '1234567890');
+    await user.selectOptions(selector, keyType);
+    await user.type(screen.getByLabelText('Valor de la llave'), keyValue);
     await user.click(screen.getByRole('button', { name: 'Registrar llave' }));
 
-    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
-      '/api/breb/mi-llave',
-      { keyType: 'ID', keyValue: '1234567890' },
-    ));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith('/api/breb/mi-llave', { keyType, keyValue }));
     expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave/resolver', expect.anything());
   });
 

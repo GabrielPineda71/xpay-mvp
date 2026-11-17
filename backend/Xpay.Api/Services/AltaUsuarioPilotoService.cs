@@ -107,7 +107,7 @@ public class AltaUsuarioPilotoService(XpayDbContext db, IConfiguration config, I
             var wallet = new Wallet
             {
                 IdUnidadNegocio = idUnidad, TipoWallet = "PERSONA", IdPersona = persona.IdPersona,
-                NombreWallet = $"Wallet {datos.NombreUsuario}", Estado = "ACTIVA", FechaCreacion = ahora,
+                NombreWallet = $"Wallet {datos.NombreUsuario}", Estado = WalletActivacionService.PendienteVerificacion, FechaCreacion = ahora,
             };
             db.Wallets.Add(wallet);
             await db.SaveChangesAsync(ct);
@@ -137,7 +137,7 @@ public class AltaUsuarioPilotoService(XpayDbContext db, IConfiguration config, I
             await tx.CommitAsync(ct);
 
             return new AltaUsuarioPilotoResponse(usuario.IdUsuario, wallet.IdWallet,
-                "Emitir la clave temporal con POST api/admin/usuarios/{id}/restablecer-clave; el usuario debe completar KYC.");
+                "Emitir la clave temporal con POST api/admin/usuarios/{id}/restablecer-clave. Para activar la Wallet debe verificar su identidad, correo y WhatsApp.");
         }
         catch
         {

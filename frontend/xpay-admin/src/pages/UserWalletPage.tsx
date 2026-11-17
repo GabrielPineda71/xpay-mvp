@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { useAuth } from '../auth/AuthContext.tsx';
-import { get, post, HttpUncertainError } from '../api/client.ts';
+import { ApiError, get, post, HttpUncertainError } from '../api/client.ts';
 import { fmtMoney, fmtDate } from '../utils.ts';
 import { ambienteXpay, monedaVisible } from '../config/ambiente.ts';
 import { SoloQa } from '../config/SoloQa.tsx';
@@ -112,6 +112,15 @@ interface MiWallet {
   idPersona:    number;
   nombreWallet: string;
   estado:       string;
+}
+
+interface EstadoActivacionWallet {
+  identidadVerificada: boolean;
+  emailVerificado: boolean;
+  whatsAppVerificado: boolean;
+  whatsAppDisponible: boolean;
+  walletRestringida: boolean;
+  puedeActivar: boolean;
 }
 
 type Msg = { ok: boolean; text: string };
@@ -289,6 +298,9 @@ export function UserWalletPage() {
   // ── Mi wallet (Fase 71.2-E-C: resuelta vía GET /api/wallets/mi-wallet) ────
   const [miWallet,        setMiWallet]        = useState<MiWallet | null>(null);
   const [miWalletLoading, setMiWalletLoading]  = useState(true);
+  const [activacion, setActivacion] = useState<EstadoActivacionWallet | null>(null);
+  const [activacionErr, setActivacionErr] = useState<string | null>(null);
+  const [activando, setActivando] = useState(false);
 
   // ── Account data ──────────────────────────────────────────────────────────
   const [cuenta,     setCuenta]     = useState<EstadoCuenta | null>(null);
@@ -371,7 +383,7 @@ export function UserWalletPage() {
   // XPAY-392. brebLlave/brebLlaveLoad se conservan — siguen siendo la
   // fuente de estado de la llave para este tab y para "retirar-breb".
   const [brebLlave,      setBrebLlave]      = useState<BrebLlave | null>(null);
-  const [brebLlaveLoad,  setBrebLlaveLoad]  = useState(false);
+  const [brebLlaveLoad,  setBrebLlaveLoad]  = useState(true);
   const [brebRetiros,    setBrebRetiros]    = useState<BrebRetiro[]>([]);
   const [brebRetValor,   setBrebRetValor]   = useState('');
   const [brebRetBusy,    setBrebRetBusy]    = useState(false);
@@ -518,11 +530,20 @@ export function UserWalletPage() {
   const loadMiWallet = useCallback(async () => {
     if (!user) return;
     setMiWalletLoading(true);
+    setActivacion(null);
+    setActivacionErr(null);
     try {
       const r = await get<{ success: boolean; data: MiWallet }>('/api/wallets/mi-wallet');
       setMiWallet(r.data);
-    } catch {
+    } catch (error) {
       setMiWallet(null);
+      try {
+        if (!(error instanceof ApiError) || error.status !== 404) throw error;
+        const r = await get<{ success: boolean; data: EstadoActivacionWallet }>('/api/wallets/mi-wallet/activacion');
+        setActivacion(r.data);
+      } catch (estadoError) {
+        setActivacionErr((estadoError as Error).message || 'No se pudo consultar el estado de tu Wallet.');
+      }
     } finally {
       setMiWalletLoading(false);
     }
@@ -599,8 +620,15 @@ export function UserWalletPage() {
   }, [user, reportMovimientos]);
 
   useEffect(() => {
-    void loadMiWallet(); void loadCuenta(); void loadKyc(); void loadBreb();
-  }, [loadMiWallet, loadCuenta, loadKyc, loadBreb]);
+    void loadMiWallet(); void loadKyc();
+  }, [loadMiWallet, loadKyc]);
+
+  const idMiWallet = miWallet?.idWallet;
+  useEffect(() => {
+    if (idMiWallet) {
+      void loadCuenta(); void loadBreb();
+    }
+  }, [idMiWallet, loadCuenta, loadBreb]);
 
   // Part G: detect ?kyc=return — user returned from Veriff, refresh KYC state immediately
   useEffect(() => {
@@ -615,9 +643,10 @@ export function UserWalletPage() {
 
   // ── Wallet polling every 7 seconds ────────────────────────────────────────
   useEffect(() => {
+    if (!idMiWallet) return;
     const id = window.setInterval(() => { void pollRefresh(); }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [pollRefresh]);
+  }, [idMiWallet, pollRefresh]);
 
   // ── KYC polling while PENDIENTE — stops when a final state is reached ─────
   // Polls every 12 seconds. Stops automatically for APROBADO/RECHAZADO/EXPIRADO/ERROR.
@@ -1203,6 +1232,22 @@ export function UserWalletPage() {
     pagIdemRef.current = null; // Fase 71.2-E-G: cambio material del formulario → clave nueva en el próximo intento
   }
 
+  async function handleActivarWallet() {
+    setActivando(true);
+    setActivacionErr(null);
+    try {
+      await post('/api/wallets/mi-wallet/activacion', {});
+      await loadMiWallet();
+    } catch (error) {
+      // La comprobación del backend puede diferir del último estado visible
+      // si cambió un contacto o llegó una decisión de Veriff.
+      await loadMiWallet();
+      setActivacionErr((error as Error).message || 'No se pudo activar tu Wallet.');
+    } finally {
+      setActivando(false);
+    }
+  }
+
   // ── Early return ──────────────────────────────────────────────────────────
   if (!user || miWalletLoading) {
     return (
@@ -1216,7 +1261,42 @@ export function UserWalletPage() {
     return (
       <div className="page">
         <h2>Mi Wallet</h2>
-        <div className="error-msg">No se encontró una wallet activa para tu usuario. Contacta al administrador.</div>
+        {activacionErr && <p role="alert" className="error-msg">{activacionErr}</p>}
+        {activacion?.walletRestringida ? (
+          <p>Contacta a soporte XPAY para revisar el estado de tu Wallet.</p>
+        ) : activacion && (
+          <section className="card" aria-labelledby="titulo-activar-wallet">
+            <h3 id="titulo-activar-wallet">Activa tu Wallet</h3>
+            <ul>
+              <li>Identidad con Veriff · {activacion.identidadVerificada ? 'Verificada' : 'Pendiente'}</li>
+              <li>Correo · {activacion.emailVerificado ? 'Verificado' : 'Pendiente'}</li>
+              <li>WhatsApp · {activacion.whatsAppVerificado ? 'Verificado' : 'Pendiente'}</li>
+            </ul>
+            {!activacion.whatsAppVerificado && !activacion.whatsAppDisponible && (
+              <p>La verificación por WhatsApp aún no está disponible.</p>
+            )}
+            {!activacion.identidadVerificada && !['PENDIENTE', 'EN_REVISION'].includes(kycEstado) && (
+              <button type="button" className="btn-kyc-start" disabled={kycBusy}
+                onClick={() => void handleIniciarVerificacion()}>
+                {kycBusy ? 'Iniciando…' : 'Verificar identidad con Veriff'}
+              </button>
+            )}
+            {kycMsg && <p role={kycMsg.ok ? 'status' : 'alert'}>{kycMsg.text}</p>}
+            {(!activacion.emailVerificado || !activacion.whatsAppVerificado) && (
+              <button type="button" className="retry-button" onClick={() => navigate('/mi-wallet/perfil')}>
+                Verificar contactos en Perfil
+              </button>
+            )}
+            <button type="button" className="btn-kyc-start" disabled={!activacion.puedeActivar || activando}
+              onClick={() => void handleActivarWallet()}>
+              {activando ? 'Activando…' : 'Activar Wallet'}
+            </button>
+          </section>
+        )}
+        <button type="button" className="retry-button" disabled={activando}
+          onClick={() => { void loadMiWallet(); void loadKyc(); }}>
+          Actualizar verificaciones
+        </button>
       </div>
     );
   }
