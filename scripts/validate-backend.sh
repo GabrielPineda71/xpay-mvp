@@ -114,6 +114,7 @@ preparar_wallet_ci() {
   # únicamente la wallet sintética del job para poder probar KYC por separado.
   salida_sql=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C -Q "
 SET NOCOUNT ON;
+SET QUOTED_IDENTIFIER ON;
 UPDATE w SET estado = 'ACTIVA' FROM wallets w JOIN usuarios u ON u.id_persona = w.id_persona
 WHERE u.id_usuario = $id_usuario AND u.usuario IN ('carlos_ci_test', 'maria_ci_test')
   AND w.tipo_wallet = 'PERSONA' AND w.estado = 'PENDIENTE_VERIFICACION';
