@@ -164,6 +164,35 @@ public class PassportPaymentClientTests
     // ── RetrievePaymentAsync ──────────────────────────────────────────────
 
     [Fact]
+    public async Task RetrievePaymentAsync_DeserializaUnaLiquidacionEntrante()
+    {
+        const string body = """
+            {
+              "id": "synthetic-payment-id-001",
+              "status": "SETTLED",
+              "direction": "INBOUND",
+              "account_id": "synthetic-operational-account-id-001",
+              "qr_code_reference": "CO.COM.VISI.TRXIDP11223344",
+              "end_to_end_identification": "synthetic-network-id",
+              "settled_at": "2026-02-03T12:00:00.402Z",
+              "amount": { "value": "101190.00", "currency": "COP" }
+            }
+            """;
+        var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, body));
+
+        var pago = await CreateClient(handler).RetrievePaymentAsync("synthetic-payment-id-001");
+
+        Assert.Equal("SETTLED", pago.Status);
+        Assert.Equal("INBOUND", pago.Direction);
+        Assert.Equal("synthetic-operational-account-id-001", pago.AccountId);
+        Assert.Equal("CO.COM.VISI.TRXIDP11223344", pago.QrCodeReference);
+        Assert.Equal("synthetic-network-id", pago.EndToEndIdentification);
+        Assert.Equal("2026-02-03T12:00:00.402Z", pago.SettledAt);
+        Assert.Equal(101190m, pago.Amount?.Value);
+        Assert.Equal("COP", pago.Amount?.Currency);
+    }
+
+    [Fact]
     public async Task RetrievePaymentAsync_GetsToExactContractPath()
     {
         var handler = new FakeHttpMessageHandler(() => FakeHttpMessageHandler.Json(HttpStatusCode.OK, FullPaymentResponseBody));

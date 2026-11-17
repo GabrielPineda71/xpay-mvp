@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Xpay.Api.Common;
 using Xpay.Api.DTOs;
+using Xpay.Api.Exceptions;
+using Xpay.Api.Integrations.Passport;
 using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
@@ -279,6 +281,47 @@ public class LibranzaController : ControllerBase
         {
             _logger.LogError(ex, "Error AsociarUsuarioEmpresa convenio={Id}", id);
             return StatusCode(500, new { success = false, message = "Error interno." });
+        }
+    }
+
+    [HttpPost("api/libranza/admin/recaudo/lotes/{idLote:long}/conciliar")]
+    [OperacionFinanciera]
+    public async Task<IActionResult> ConciliarLoteRecaudo(
+        long idLote, [FromBody] ConciliarLoteRecaudoRequest request,
+        [FromServices] LibranzaRecaudoAplicacionService aplicacion,
+        [FromServices] IPassportPaymentClient passport,
+        CancellationToken ct)
+    {
+        if (!TryGetIdUsuario(out var adminId))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+
+        if (idLote <= 0 || request.PaymentId == Guid.Empty)
+            return BadRequest(new { success = false, message = "Indica un lote y un ID de pago válidos." });
+
+        try
+        {
+            var resultado = await aplicacion.ConciliarPagoAsync(idLote, request.PaymentId.ToString(), adminId, passport, ct);
+            return resultado.Resultado switch
+            {
+                LibranzaRecaudoAplicacionService.ResAplicado or LibranzaRecaudoAplicacionService.ResYaAplicado
+                    => Ok(new { success = true, data = resultado }),
+                LibranzaRecaudoAplicacionService.ResSinLote
+                    => NotFound(new { success = false, message = "El lote no existe." }),
+                _ => Conflict(new { success = false, message = "El pago consultado y el lote no cumplen las condiciones de conciliación." }),
+            };
+        }
+        catch (PassportTransportException ex) when (ex.StatusCode == 404)
+        {
+            return NotFound(new { success = false, message = "Passport no encontró ese pago." });
+        }
+        catch (PassportException ex)
+        {
+            _logger.LogWarning("Error al consultar Passport para conciliar lote {IdLote}: {Tipo}", idLote, ex.GetType().Name);
+            return StatusCode(502, new { success = false, message = "No se pudo verificar el pago en Passport." });
+        }
+        catch (OperacionFinancieraBloqueadaException ex)
+        {
+            return StatusCode(503, new { success = false, message = ex.Message });
         }
     }
 

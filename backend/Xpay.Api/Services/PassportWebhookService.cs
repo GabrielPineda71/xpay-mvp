@@ -23,8 +23,8 @@ namespace Xpay.Api.Services;
 // directamente. Tras registrar (y deduplicar de forma durable con
 // uq_pwh_evento_pago) un evento ENTRANTE, delega en
 // LibranzaRecaudoAplicacionService, que es la ÚNICA pieza que puede aplicar
-// un pago entrante (solo settled, con firma válida y validaciones completas)
-// a un lote de recaudo de anticipos. El evento queda processed=1 solo cuando
+// un pago entrante a un lote de recaudo. Por esta vía exige un settled con
+// firma válida y valida que coincida con el lote. El evento queda processed=1 cuando
 // ese paso termina; un fallo transitorio lo deja processed=0 y la excepción
 // se propaga (500) para que Passport reintente sobre la MISMA fila.
 public enum PassportWebhookProcessResult

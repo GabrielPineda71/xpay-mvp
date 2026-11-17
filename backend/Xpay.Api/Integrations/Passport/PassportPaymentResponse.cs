@@ -7,12 +7,8 @@ namespace Xpay.Api.Integrations.Passport;
 // ambos endpoints (confirmado vía docs.passportfintech.com/EN/
 // initiate-a-payment y /EN/retrieve-payment, XPAY-372/373).
 //
-// DTO MÍNIMO NECESARIO (XPAY-373 FASE 2): se modelan únicamente los campos
-// que el código productivo realmente consume (id/status/account_id/
-// resolution_id/amount/error) — sender/receiver/direction/
-// end_to_end_identification/created_at/updated_at están documentados pero
-// XPAY no los usa todavía; System.Text.Json ignora propiedades JSON no
-// mapeadas por diseño (no se agregan sólo para "completitud").
+// Solo se modelan los campos usados en retiros y conciliación de recaudos.
+// System.Text.Json ignora propiedades no mapeadas, como sender y receiver.
 //
 // `Status` se modela como string, NUNCA como enum estricto — XPAY-372/373
 // reconfirmó PENDING/PROCESSING/SETTLED/REJECTED documentalmente, pero un
@@ -31,8 +27,20 @@ public sealed class PassportPaymentResponse
     [JsonPropertyName("status")]
     public string? Status { get; set; }
 
+    [JsonPropertyName("direction")]
+    public string? Direction { get; set; }
+
     [JsonPropertyName("account_id")]
     public string? AccountId { get; set; }
+
+    [JsonPropertyName("qr_code_reference")]
+    public string? QrCodeReference { get; set; }
+
+    [JsonPropertyName("end_to_end_identification")]
+    public string? EndToEndIdentification { get; set; }
+
+    [JsonPropertyName("settled_at")]
+    public string? SettledAt { get; set; }
 
     [JsonPropertyName("resolution_id")]
     public string? ResolutionId { get; set; }

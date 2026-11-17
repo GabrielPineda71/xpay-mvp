@@ -214,7 +214,7 @@ public class LibranzaEmpresaController : ControllerBase
     // P0 anticipo - PAGO SIMULADO QA: marca PAGADO sin dinero recibido. Queda
     // bloqueado (404) en todo ambiente productivo por el mecanismo central
     // XPAY-717 y, en no productivo, exige rol ADMIN_EMPRESA. El recaudo real
-    // solo ocurre vía lote + QR dinámico + settled Passport.
+    // utiliza lotes con QR dinámico y aplica las liquidaciones verificadas en Passport.
 
     [OperacionFinanciera]
     [HttpPost("cobros/aplicar")]
@@ -249,7 +249,7 @@ public class LibranzaEmpresaController : ControllerBase
 
     // ── Lotes de recaudo (P0 anticipo) ────────────────────────────────────
     // Ninguno de estos endpoints mueve dinero: la aplicación financiera ocurre
-    // solo con un payment.inbound.settled Passport validado.
+    // con una liquidación de Passport verificada por XPAY.
 
     [HttpGet("lotes")]
     public async Task<IActionResult> GetLotes([FromQuery] long? idConvenio)

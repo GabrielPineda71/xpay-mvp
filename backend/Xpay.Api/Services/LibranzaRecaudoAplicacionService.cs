@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Xpay.Api.Common;
@@ -9,9 +10,10 @@ namespace Xpay.Api.Services;
 
 // P0 anticipo - aplicación del pago entrante Passport a un lote de recaudo.
 //
-// REGLA ABSOLUTA: solo un payment.inbound.settled con firma válida puede
-// disparar movimiento financiero. received/confirmed solo marcan el lote
-// PAGO_EN_PROCESO; rejected lo devuelve a PENDIENTE_PAGO. Ninguno acredita.
+// Solo evidencia autenticada de una liquidación entrante de Passport puede
+// aplicar un recaudo: un webhook settled firmado o una consulta del pago por ID.
+// received/confirmed marcan el lote PAGO_EN_PROCESO y rejected lo devuelve a
+// PENDIENTE_PAGO. Ninguno acredita.
 //
 // Correlación por payment_id: Passport puede entregar settled ANTES que
 // received/confirmed (observado en Sandbox, XPAY-604), y su contrato no
@@ -21,16 +23,15 @@ namespace Xpay.Api.Services;
 // no se aplica nada (PENDIENTE_DATOS) y la aplicación se reintenta cuando llegue
 // el evento que los trae.
 //
-// Antes de aplicar se valida, bajo lock del lote: firma, payment_id, account_id
-// esperado (PASSPORT_ACCOUNT_ID), referencia del lote, monto EXACTO, moneda COP,
-// estado del lote y que no exista aplicación previa. Cualquier discrepancia deja
-// el lote REQUIERE_REVISION sin mover dinero.
+// Bajo lock del lote se comprueban pago, cuenta operativa, referencia, monto,
+// moneda, estado y aplicación previa. Ante discrepancias del webhook firmado
+// el lote puede quedar en REQUIERE_REVISION. La conciliación por consulta exige
+// coincidencia con el lote elegido por el operador antes de modificarlo.
 //
 // La aplicación es UNA transacción: lock del lote, verificación del total,
-// lock de cada anticipo, asiento por anticipo, anticipos PAGADO, detalles
-// APLICADO, lote APLICADO con referencias Passport. Cualquier fallo revierte
-// todo. Un settled duplicado tras APLICADO es no-op financiero (además de la
-// unicidad durable del evento en uq_pwh_evento_pago).
+// lock de cada anticipo, asiento con movimientos por anticipo y actualización
+// de anticipos, detalles y lote. Cualquier fallo revierte todo. Una liquidación
+// repetida tras APLICADO conserva el asiento previamente registrado.
 public sealed record ResultadoRecaudo(string Resultado, long? IdLote);
 
 public class LibranzaRecaudoAplicacionService
@@ -50,6 +51,7 @@ public class LibranzaRecaudoAplicacionService
     public const string ResRechazoRegistrado    = "RECHAZO_REGISTRADO";
     public const string ResAplicado             = "LOTE_APLICADO";
     public const string ResYaAplicado           = "YA_APLICADO";
+    public const string ResNoConciliable        = "PAGO_NO_CONCILIABLE";
     public const string ResRevision             = "REQUIERE_REVISION";
     public const string ResPagoAdicional        = "PAGO_ADICIONAL_SOBRE_LOTE_APLICADO";
     public const string ResRechazoTrasAplicacion = "RECHAZO_TRAS_APLICACION";
@@ -109,6 +111,81 @@ public class LibranzaRecaudoAplicacionService
                 return new ResultadoRecaudo(ResSinCambio, null);
         }
     }
+
+    public async Task<ResultadoRecaudo> ConciliarPagoAsync(
+        long idLote, string paymentId, long idUsuario, IPassportPaymentClient passport,
+        CancellationToken ct = default)
+    {
+        if (idLote <= 0 || idUsuario <= 0 || !Guid.TryParseExact(paymentId, "D", out var pagoId) || pagoId == Guid.Empty)
+            return new ResultadoRecaudo(ResNoConciliable, idLote);
+
+        _control.ExigirInterruptor();
+
+        var previo = await _db.LibranzaLotesRecaudo.AsNoTracking()
+            .Where(l => l.IdLote == idLote)
+            .Select(l => new { l.Estado, l.PassportPaymentId, l.IdTransaccionLedgerAplicacion })
+            .SingleOrDefaultAsync(ct);
+        if (previo is null)
+            return new ResultadoRecaudo(ResSinLote, null);
+
+        var idCanonico = pagoId.ToString("D");
+        if (previo.Estado == LibranzaLoteEstados.Aplicado)
+            return new ResultadoRecaudo(
+                previo.IdTransaccionLedgerAplicacion is not null && MismoPago(previo.PassportPaymentId, idCanonico)
+                    ? ResYaAplicado : ResNoConciliable, idLote);
+
+        // No se abre una transacción SQL mientras se consulta Passport.
+        var pago = await passport.RetrievePaymentAsync(idCanonico, ct);
+        if (!MismoPago(pago.Id, idCanonico) || pago.Direction != "INBOUND" || pago.Status != "SETTLED"
+            || LibranzaRecaudoReferencia.ExtraerDePassport(pago.QrCodeReference) is null
+            || pago.Amount?.Value is not decimal valor || valor <= 0m || string.IsNullOrWhiteSpace(pago.AccountId))
+            return new ResultadoRecaudo(ResNoConciliable, idLote);
+
+        var datos = new DatosPago(pago.QrCodeReference, pago.AccountId,
+            valor.ToString(CultureInfo.InvariantCulture), pago.Amount?.Currency,
+            pago.EndToEndIdentification, pago.SettledAt, null);
+
+        try
+        {
+            await using var tx = await _db.Database.BeginTransactionAsync(ct);
+            var lote = await BloquearLoteAsync(idLote, ct);
+
+            // El webhook o una segunda conciliación pueden haber aplicado el pago
+            // entre la consulta inicial y la obtención del lock.
+            if (lote.Estado == LibranzaLoteEstados.Aplicado)
+                return new ResultadoRecaudo(
+                    lote.IdTransaccionLedgerAplicacion is not null && MismoPago(lote.PassportPaymentId, idCanonico)
+                        ? ResYaAplicado : ResNoConciliable, idLote);
+
+            if (lote.Estado is not (LibranzaLoteEstados.PendientePago or LibranzaLoteEstados.PagoEnProceso)
+                || lote.QrEstado != LibranzaLoteEstados.QrGenerado
+                || string.IsNullOrWhiteSpace(lote.PassportQrId)
+                || lote.IdTransaccionLedgerAplicacion is not null
+                || (lote.PassportPaymentId is not null && !MismoPago(lote.PassportPaymentId, idCanonico))
+                || ValidarDatosLiquidacion(lote, datos) is not null)
+                return new ResultadoRecaudo(ResNoConciliable, idLote);
+
+            if (await _db.LibranzaLotesRecaudo.AnyAsync(l => l.IdLote != idLote && l.PassportPaymentId == idCanonico, ct))
+                return new ResultadoRecaudo(ResNoConciliable, idLote);
+
+            await AplicarAsync(lote, idCanonico, datos, null, ct, idUsuario);
+            await tx.CommitAsync(ct);
+
+            _logger.LogInformation("LIBRANZA_RECAUDO_CONCILIADO: lote={Lote} ledger={Ledger}",
+                lote.IdLote, lote.IdTransaccionLedgerAplicacion);
+            return new ResultadoRecaudo(ResAplicado, idLote);
+        }
+        catch (LoteInconsistenteException ex)
+        {
+            // Una incompatibilidad al consultar un pago manualmente no cambia
+            // el lote. La transacción se revierte antes de devolver el resultado.
+            _logger.LogWarning("LIBRANZA_RECAUDO_CONCILIACION_INCONSISTENTE: lote={Lote} motivo={Motivo}", idLote, ex.Message);
+            return new ResultadoRecaudo(ResNoConciliable, idLote);
+        }
+    }
+
+    private static bool MismoPago(string? id, string canonico) =>
+        string.Equals(id, canonico, StringComparison.OrdinalIgnoreCase);
 
     // ── Correlación ───────────────────────────────────────────────────────────
 
@@ -245,7 +322,7 @@ public class LibranzaRecaudoAplicacionService
         return new ResultadoRecaudo(resultado, lote.IdLote);
     }
 
-    // ── settled: única ruta con efecto financiero ─────────────────────────────
+    // ── Aplicación de una liquidación ─────────────────────────────────────────
 
     private sealed class LoteInconsistenteException(string motivo) : Exception(motivo);
 
@@ -289,18 +366,8 @@ public class LibranzaRecaudoAplicacionService
                 return new ResultadoRecaudo(ResPendienteDatos, lote.IdLote);
             }
 
-            var cuentaEsperada = _config[PassportOptions.EnvOperationalAccountId];
-            if (string.IsNullOrWhiteSpace(cuentaEsperada))
-                return await MarcarRevisionAsync(tx, lote, "CUENTA_OPERATIVA_NO_CONFIGURADA", ct);
-            if (!string.Equals(datos.AccountId.Trim(), cuentaEsperada.Trim(), StringComparison.OrdinalIgnoreCase))
-                return await MarcarRevisionAsync(tx, lote, "CUENTA_DESTINO_NO_COINCIDE", ct);
-            if (datos.Referencia is not null && LibranzaRecaudoReferencia.ExtraerDePassport(datos.Referencia) != lote.ReferenciaPublica)
-                return await MarcarRevisionAsync(tx, lote, "REFERENCIA_NO_COINCIDE", ct);
-            if (!string.Equals(datos.Moneda, "COP", StringComparison.OrdinalIgnoreCase))
-                return await MarcarRevisionAsync(tx, lote, "MONEDA_NO_COINCIDE", ct);
-            var monto = LibranzaRecaudoQrRequestBuilder.ParsearMonto(datos.MontoRaw);
-            if (monto is null || monto.Value != lote.MontoTotal)
-                return await MarcarRevisionAsync(tx, lote, "MONTO_NO_COINCIDE", ct);
+            if (ValidarDatosLiquidacion(lote, datos) is { } motivo)
+                return await MarcarRevisionAsync(tx, lote, motivo, ct);
 
             await AplicarAsync(lote, paymentId, datos, idEventoSettled, ct);
             await tx.CommitAsync(ct);
@@ -322,6 +389,22 @@ public class LibranzaRecaudoAplicacionService
         }
     }
 
+    private string? ValidarDatosLiquidacion(LibranzaLoteRecaudo lote, DatosPago datos)
+    {
+        var cuentaEsperada = _config[PassportOptions.EnvOperationalAccountId];
+        if (string.IsNullOrWhiteSpace(cuentaEsperada))
+            return "CUENTA_OPERATIVA_NO_CONFIGURADA";
+        if (!string.Equals(datos.AccountId?.Trim(), cuentaEsperada.Trim(), StringComparison.OrdinalIgnoreCase))
+            return "CUENTA_DESTINO_NO_COINCIDE";
+        if (datos.Referencia is not null && LibranzaRecaudoReferencia.ExtraerDePassport(datos.Referencia) != lote.ReferenciaPublica)
+            return "REFERENCIA_NO_COINCIDE";
+        if (!string.Equals(datos.Moneda, "COP", StringComparison.OrdinalIgnoreCase))
+            return "MONEDA_NO_COINCIDE";
+        if (LibranzaRecaudoQrRequestBuilder.ParsearMonto(datos.MontoRaw) != lote.MontoTotal)
+            return "MONTO_NO_COINCIDE";
+        return null;
+    }
+
     private async Task<ResultadoRecaudo> MarcarRevisionAsync(
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx, LibranzaLoteRecaudo lote, string motivo,
         CancellationToken ct)
@@ -335,7 +418,8 @@ public class LibranzaRecaudoAplicacionService
     }
 
     private async Task AplicarAsync(
-        LibranzaLoteRecaudo lote, string paymentId, DatosPago datos, long idEventoSettled, CancellationToken ct)
+        LibranzaLoteRecaudo lote, string paymentId, DatosPago datos, long? idEventoSettled, CancellationToken ct,
+        long? idUsuario = null)
     {
         var detalles = await _db.LibranzaLoteRecaudoDetalles
             .Where(d => d.IdLote == lote.IdLote && d.Estado == LibranzaLoteEstados.DetalleVigente)
@@ -373,10 +457,12 @@ public class LibranzaRecaudoAplicacionService
             TipoTransaccion  = "LIBRANZA_RECAUDO_APLICACION",
             ReferenciaTipo   = "libranza_lotes_recaudo",
             ReferenciaId     = lote.IdLote,
-            Descripcion      = $"Recaudo lote #{lote.IdLote} (pago Passport settled).",
+            Descripcion      = idUsuario is null
+                ? $"Recaudo lote #{lote.IdLote} (pago Passport settled)."
+                : $"Recaudo lote #{lote.IdLote} conciliado por consulta a Passport.",
             ValorTotal       = lote.MontoTotal,
             Estado           = "REGISTRADA",
-            CreadoPor        = null, // actor: sistema (webhook Passport)
+            CreadoPor        = idUsuario,
             FechaTransaccion = ahora,
         };
         _db.LedgerTransacciones.Add(ledgerTx);
@@ -413,7 +499,7 @@ public class LibranzaRecaudoAplicacionService
             a.ReferenciaPago          = lote.ReferenciaPublica;
             a.IdTransaccionLedgerPago = ledgerTx.IdTransaccionLedger;
             a.UpdatedAt               = ahora;
-            a.UpdatedByUsuario        = null;
+            a.UpdatedByUsuario        = idUsuario;
 
             d.Estado          = LibranzaLoteEstados.DetalleAplicado;
             d.FechaAplicacion = ahora;
@@ -424,6 +510,30 @@ public class LibranzaRecaudoAplicacionService
         var totalC = movimientos.Where(m => m.Naturaleza == "C").Sum(m => m.Valor);
         if (totalD != totalC || totalD != lote.MontoTotal)
             throw new InvalidOperationException($"Ledger de recaudo desbalanceado: DR={totalD} CR={totalC} total={lote.MontoTotal}.");
+
+        if (idUsuario is not null)
+        {
+            _db.Auditorias.Add(new Auditoria
+            {
+                IdUsuario = idUsuario,
+                Modulo = "LIBRANZA",
+                Accion = "LIBRANZA_RECAUDO_CONCILIAR_PASSPORT",
+                Entidad = "libranza_lotes_recaudo",
+                IdEntidad = lote.IdLote.ToString(CultureInfo.InvariantCulture),
+                ValorAnterior = lote.Estado,
+                ValorNuevo = JsonSerializer.Serialize(new
+                {
+                    estado = LibranzaLoteEstados.Aplicado,
+                    origen = "CONSULTA_PASSPORT",
+                    paymentId,
+                    monto = lote.MontoTotal,
+                    moneda = lote.Moneda,
+                    idLedger = ledgerTx.IdTransaccionLedger,
+                }),
+                FechaEvento = ahora,
+            });
+            lote.CerradoPorUsuario = idUsuario;
+        }
 
         lote.Estado                        = LibranzaLoteEstados.Aplicado;
         lote.PassportPaymentId             = paymentId;

@@ -24,6 +24,7 @@ public sealed class LibranzaRecaudoWebhookReferenciaTests
     private const string EnvConnString = "ConnectionStrings__XpayConnection";
     private const string Prefijo = LibranzaRecaudoReferencia.PrefijoPassportQr;
     private const string CuentaOperativa = "acct-test-recaudo";
+    private const string AccionConciliacion = "LIBRANZA_RECAUDO_CONCILIAR_PASSPORT";
 
     private static readonly DateTimeOffset T0 = new(2026, 10, 20, 15, 0, 0, TimeSpan.Zero);
 
@@ -171,6 +172,149 @@ public sealed class LibranzaRecaudoWebhookReferenciaTests
             Assert.Equal(1, await v.PassportWebhookEvents.AsNoTracking().CountAsync(e => e.PassportPaymentId == pid));
         }
         finally { await LimpiarAsync(cs, creados); }
+    }
+
+    [Fact]
+    public async Task ConciliacionDePagoExistente_InclusoConWebhookPosterior_AplicaUnSoloAsiento()
+    {
+        if (!TryConnString(out var cs)) return;
+        var creados = new Sembrados();
+        try
+        {
+            var sembrado = await SembrarLoteAsync(cs, creados);
+            var pid = Guid.NewGuid().ToString("D");
+            creados.Payments.Add(pid);
+            var pago = PagoLiquidado(pid, sembrado.Referencia);
+            var passport = new FakePassportPaymentClient(new() { [pid] = pago });
+
+            var primero = await ConciliarAsync(cs, sembrado, pid, passport);
+            Assert.Equal(LibranzaRecaudoAplicacionService.ResAplicado, primero.Resultado);
+            Assert.Equal(sembrado.IdLote, primero.IdLote);
+
+            await using (var v = NuevoContexto(cs))
+            {
+                var lote = await v.LibranzaLotesRecaudo.AsNoTracking().SingleAsync(l => l.IdLote == sembrado.IdLote);
+                Assert.Equal(LibranzaLoteEstados.Aplicado, lote.Estado);
+                Assert.Equal(pid, lote.PassportPaymentId);
+                Assert.Null(lote.IdEventoSettled);
+                Assert.False(await v.PassportWebhookEvents.AnyAsync(e => e.PassportPaymentId == pid));
+                var anticipo = await v.LibranzaAnticipos.SingleAsync(a => a.IdConvenio == sembrado.IdConvenio);
+                Assert.Equal("PAGADO", anticipo.Estado);
+                Assert.Equal(lote.IdTransaccionLedgerAplicacion, anticipo.IdTransaccionLedgerPago);
+                var asiento = await v.LedgerTransacciones.SingleAsync(t => t.IdTransaccionLedger == lote.IdTransaccionLedgerAplicacion);
+                Assert.Equal(sembrado.IdUsuario, asiento.CreadoPor);
+                Assert.Equal("LIBRANZA_RECAUDO_APLICACION", asiento.TipoTransaccion);
+                Assert.Equal(105_950m, asiento.ValorTotal);
+                var movimientos = await (from mov in v.LedgerMovimientos.AsNoTracking()
+                                         join cuenta in v.LedgerCuentas.AsNoTracking() on mov.IdCuenta equals cuenta.IdCuenta
+                                         where mov.IdTransaccionLedger == asiento.IdTransaccionLedger
+                                         orderby cuenta.Codigo
+                                         select new { cuenta.Codigo, mov.Naturaleza, mov.Valor }).ToListAsync();
+                Assert.Equal(new[]
+                {
+                    ("110103", "D", 105_950m), ("130104", "C", 100_000m),
+                    ("230103", "C", 950m), ("310103", "C", 5_000m),
+                }, movimientos.Select(m => (m.Codigo, m.Naturaleza, m.Valor)));
+            }
+
+            var segundo = await ConciliarAsync(cs, sembrado, pid, passport);
+            Assert.Equal(LibranzaRecaudoAplicacionService.ResYaAplicado, segundo.Resultado);
+            Assert.All(passport.PaymentIdsConsultados, id => Assert.Equal(pid, id));
+            Assert.NotEmpty(passport.PaymentIdsConsultados);
+
+            await ProcesarAsync(cs, RawSettled(pid, Prefijo + sembrado.Referencia));
+            Assert.Equal($"RECAUDO:{LibranzaRecaudoAplicacionService.ResYaAplicado}", await ResultadoEventoAsync(cs, pid));
+            Assert.Equal(1, await ContarAplicacionesAsync(cs, sembrado.IdLote));
+            await using var verificacion = NuevoContexto(cs);
+            Assert.Equal(1, await verificacion.Auditorias.CountAsync(a => a.IdUsuario == sembrado.IdUsuario && a.Accion == AccionConciliacion));
+        }
+        finally { await LimpiarAsync(cs, creados); }
+    }
+
+    [Theory]
+    [InlineData("monto")]
+    [InlineData("referencia")]
+    [InlineData("direccion")]
+    [InlineData("cuenta")]
+    [InlineData("moneda")]
+    [InlineData("estado")]
+    [InlineData("payment_id")]
+    public async Task ConciliacionConDatosNoCoincidentes_NoModificaElLoteNiElLedger(string campo)
+    {
+        if (!TryConnString(out var cs)) return;
+        var creados = new Sembrados();
+        try
+        {
+            var sembrado = await SembrarLoteAsync(cs, creados);
+            var pid = Guid.NewGuid().ToString("D");
+            creados.Payments.Add(pid);
+            var pago = PagoLiquidado(pid, sembrado.Referencia);
+            switch (campo)
+            {
+                case "monto": pago.Amount!.Value += 1m; break;
+                case "referencia": pago.QrCodeReference = "LLAVE"; break;
+                case "direccion": pago.Direction = "OUTBOUND"; break;
+                case "cuenta": pago.AccountId = "cuenta-ajena"; break;
+                case "moneda": pago.Amount!.Currency = "USD"; break;
+                case "estado": pago.Status = "PROCESSING"; break;
+                case "payment_id": pago.Id = Guid.NewGuid().ToString("D"); break;
+                default: throw new ArgumentOutOfRangeException(nameof(campo));
+            }
+            var passport = new FakePassportPaymentClient(new() { [pid] = pago });
+
+            var resultado = await ConciliarAsync(cs, sembrado, pid, passport);
+
+            Assert.Equal(LibranzaRecaudoAplicacionService.ResNoConciliable, resultado.Resultado);
+            Assert.Equal(new[] { pid }, passport.PaymentIdsConsultados);
+            await AssertLotePendienteSinPagoAsync(cs, sembrado.IdLote);
+            await using var v = NuevoContexto(cs);
+            Assert.False(await v.PassportWebhookEvents.AnyAsync(e => e.PassportPaymentId == pid));
+        }
+        finally { await LimpiarAsync(cs, creados); }
+    }
+
+    [Fact]
+    public async Task DosConciliacionesConcurrentesDelMismoPago_AplicanUnaSolaVez()
+    {
+        if (!TryConnString(out var cs)) return;
+        var creados = new Sembrados();
+        try
+        {
+            var sembrado = await SembrarLoteAsync(cs, creados);
+            var pid = Guid.NewGuid().ToString("D");
+            creados.Payments.Add(pid);
+            var pago = PagoLiquidado(pid, sembrado.Referencia);
+
+            var respuestas = await Task.WhenAll(
+                ConciliarAsync(cs, sembrado, pid, new FakePassportPaymentClient(new() { [pid] = pago })),
+                ConciliarAsync(cs, sembrado, pid, new FakePassportPaymentClient(new() { [pid] = pago })));
+
+            Assert.Single(respuestas, r => r.Resultado == LibranzaRecaudoAplicacionService.ResAplicado);
+            Assert.Single(respuestas, r => r.Resultado == LibranzaRecaudoAplicacionService.ResYaAplicado);
+            Assert.Equal(1, await ContarAplicacionesAsync(cs, sembrado.IdLote));
+        }
+        finally { await LimpiarAsync(cs, creados); }
+    }
+
+    private static PassportPaymentResponse PagoLiquidado(string pid, string referencia) => new()
+    {
+        Id = pid,
+        AccountId = CuentaOperativa,
+        Direction = "INBOUND",
+        Status = "SETTLED",
+        QrCodeReference = Prefijo + referencia,
+        EndToEndIdentification = "E2E-RECAUDO-TEST",
+        SettledAt = T0.ToString("O"),
+        Amount = new PassportPaymentAmountResponse { Value = 105_950m, Currency = "COP" },
+    };
+
+    private static async Task<ResultadoRecaudo> ConciliarAsync(
+        string cs, Sembrado sembrado, string pid, IPassportPaymentClient passport)
+    {
+        await using var ctx = NuevoContexto(cs);
+        var svc = new LibranzaRecaudoAplicacionService(ctx, Config(), NullLogger<LibranzaRecaudoAplicacionService>.Instance,
+            ControlesFinancierosPrueba.Habilitado());
+        return await svc.ConciliarPagoAsync(sembrado.IdLote, pid, sembrado.IdUsuario, passport);
     }
 
     // --- Utilidades del webhook ---------------------------------------------
@@ -435,6 +579,8 @@ public sealed class LibranzaRecaudoWebhookReferenciaTests
 
             await ctx.PassportWebhookEvents
                 .Where(e => e.PassportPaymentId != null && pagos.Contains(e.PassportPaymentId)).ExecuteDeleteAsync();
+            await ctx.Auditorias.Where(a => a.IdUsuario != null && creados.Usuarios.Contains(a.IdUsuario.Value)
+                && a.Accion == AccionConciliacion).ExecuteDeleteAsync();
             await ctx.LedgerMovimientos.Where(m => idsTx.Contains(m.IdTransaccionLedger)).ExecuteDeleteAsync();
             await ctx.LedgerTransacciones.Where(t => idsTx.Contains(t.IdTransaccionLedger)).ExecuteDeleteAsync();
 
