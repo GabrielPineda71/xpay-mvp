@@ -8,6 +8,8 @@ public class CrearLoteRecaudoRequest
     public string FechaCorte { get; set; } = string.Empty;
 }
 
+public sealed record ConciliarLoteRecaudoRequest(Guid PaymentId);
+
 public class LoteRecaudoResponse
 {
     public long      IdLote                 { get; set; }
