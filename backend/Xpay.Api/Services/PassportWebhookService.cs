@@ -19,14 +19,11 @@ namespace Xpay.Api.Services;
 // El comportamiento financiero del producto (acreditación real de un pago
 // entrante) es alcance de Fase 65 y permanece fuera de aquí.
 //
-// P0 anticipo - este servicio sigue sin tocar Wallet/Ledger/breb_retiros
-// directamente. Tras registrar (y deduplicar de forma durable con
-// uq_pwh_evento_pago) un evento ENTRANTE, delega en
-// LibranzaRecaudoAplicacionService, que es la ÚNICA pieza que puede aplicar
-// un pago entrante a un lote de recaudo. Por esta vía exige un settled con
-// firma válida y valida que coincida con el lote. El evento queda processed=1 cuando
-// ese paso termina; un fallo transitorio lo deja processed=0 y la excepción
-// se propaga (500) para que Passport reintente sobre la MISMA fila.
+// Tras registrar y deduplicar el evento, delega en el aplicador de recaudos
+// o en el de recargas de Wallet según la referencia del pago. Ambos exigen
+// evidencia de liquidación firmada y preservan la idempotencia contable.
+// Un fallo transitorio conserva processed=0 y responde 500 para permitir
+// que Passport reintente sobre la misma fila.
 public enum PassportWebhookProcessResult
 {
     /// <summary>Entrega entrante válida, registrada y marcada como procesada.</summary>
@@ -55,18 +52,21 @@ public class PassportWebhookService
     private readonly XpayDbContext _db;
     private readonly TimeProvider  _timeProvider;
     private readonly LibranzaRecaudoAplicacionService _recaudo;
+    private readonly WalletRecargaBrebService? _recargas;
     private readonly ILogger<PassportWebhookService> _logger;
 
     public PassportWebhookService(
         XpayDbContext db,
         TimeProvider timeProvider,
         LibranzaRecaudoAplicacionService recaudo,
-        ILogger<PassportWebhookService> logger)
+        ILogger<PassportWebhookService> logger,
+        WalletRecargaBrebService? recargas = null)
     {
         _db           = db;
         _timeProvider = timeProvider;
         _recaudo      = recaudo;
         _logger       = logger;
+        _recargas     = recargas;
     }
 
     /// <summary>
@@ -193,10 +193,18 @@ public class PassportWebhookService
         }
 
         ResultadoRecaudo recaudo;
+        ResultadoRecargaBreb? recarga = null;
         try
         {
             recaudo = await _recaudo.ProcesarEventoEntranteAsync(
                 payload.Kind, payload.PaymentId!, signatureValid, fila.IdEvent, cancellationToken);
+            if (_recargas is not null && signatureValid && recaudo.IdLote is null
+                && recaudo.Resultado is LibranzaRecaudoAplicacionService.ResSinLote
+                    or LibranzaRecaudoAplicacionService.ResPendienteDatos)
+            {
+                recarga = await _recargas.ProcesarEventoEntranteAsync(
+                    payload.Kind, payload.PaymentId!, signatureValid, fila.IdEvent, cancellationToken);
+            }
         }
         catch (Exception ex)
         {
@@ -212,13 +220,15 @@ public class PassportWebhookService
         var procesada = await _db.PassportWebhookEvents.FirstAsync(e => e.IdEvent == fila.IdEvent, cancellationToken);
         procesada.Processed      = true;
         procesada.FechaProcesado = nowUtc;
-        procesada.ErrorMessage   = $"RECAUDO:{recaudo.Resultado}";
+        procesada.ErrorMessage   = recarga is null
+            ? $"RECAUDO:{recaudo.Resultado}"
+            : $"RECARGA_BREB:{recarga.Resultado}";
         procesada.IdLoteRecaudo  = recaudo.IdLote;
         await _db.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Passport webhook entrante procesado: kind={Kind} idEvent={IdEvent} recaudo={Recaudo} lote={Lote}",
-            payload.Kind, fila.IdEvent, recaudo.Resultado, recaudo.IdLote);
+            "Passport webhook entrante procesado: kind={Kind} idEvent={IdEvent} resultado={Resultado} lote={Lote} recarga={Recarga}",
+            payload.Kind, fila.IdEvent, recarga?.Resultado ?? recaudo.Resultado, recaudo.IdLote, recarga?.IdRecarga);
 
         return new PassportWebhookProcessOutcome(
             PassportWebhookProcessResult.Processed, payload.Kind, fila.IdEvent);

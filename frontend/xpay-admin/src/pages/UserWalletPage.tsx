@@ -9,6 +9,7 @@ import { SoloQa } from '../config/SoloQa.tsx';
 import { HeroBalanceCard } from '../components/wallet/HeroBalanceCard.tsx';
 import { useQrScanner } from '../hooks/useQrScanner.ts';
 import { QrScannerOverlay } from '../components/wallet/QrScannerOverlay.tsx';
+import { WalletRecargaBreb } from '../components/wallet/WalletRecargaBreb.tsx';
 import { useWalletNotifications } from '../components/wallet/WalletNotificationsContext.tsx';
 import { esPinValido, LONGITUD_PIN, MENSAJE_FORMATO_PIN, soloDigitosPin } from '../utils/pinTransaccional.ts';
 
@@ -115,8 +116,8 @@ interface MiWallet {
 }
 
 type Msg = { ok: boolean; text: string };
-type Tab = 'saldo' | 'recibir' | 'enviar' | 'pagar' | 'movimientos' | 'banco' | 'retirar-breb';
-const VALID_TABS: Tab[] = ['saldo', 'recibir', 'enviar', 'pagar', 'movimientos', 'banco', 'retirar-breb'];
+type Tab = 'saldo' | 'recibir' | 'enviar' | 'pagar' | 'movimientos' | 'banco' | 'retirar-breb' | 'recargar-breb';
+const VALID_TABS: Tab[] = ['saldo', 'recibir', 'enviar', 'pagar', 'movimientos', 'banco', 'retirar-breb', 'recargar-breb'];
 
 // XPAY-392 — exportado para que useMyBrebKey.ts (Perfil) reutilice
 // exactamente el mismo tipo, sin duplicarlo. No cambia forma ni semántica.
@@ -1342,6 +1343,11 @@ export function UserWalletPage() {
               saldoFormateado={fmtMoney(cuenta.saldoDisponible)}
               estado={cuenta.estado}
             />
+            {miWallet && (
+              <button type="button" className="wallet-receive-generate-btn" onClick={() => setTab('recargar-breb')}>
+                Recargar desde mi banco
+              </button>
+            )}
             {/* XPAY-375 FASE 7 — saldo retenido, visible siempre que exista
                 cualquier reserva en curso (retiro Bre-B real en proceso).
                 Valor siempre del backend, nunca calculado localmente. */}
@@ -1396,6 +1402,15 @@ export function UserWalletPage() {
             </div>
           </>
         ) : null
+      )}
+
+      {tab === 'recargar-breb' && (
+        <>
+          <button type="button" className="wallet-send-link-btn" onClick={() => setTab('saldo')}>Volver al saldo</button>
+          {miWalletLoading ? <p role="status">Cargando Wallet…</p> : miWallet ? (
+            <WalletRecargaBreb key={miWallet.idWallet} onActualizarSaldo={loadCuenta} />
+          ) : <p role="alert">No se encontró una Wallet activa para recargar.</p>}
+        </>
       )}
 
       {/* ── RECIBIR ───────────────────────────────────────────────────────── */}
