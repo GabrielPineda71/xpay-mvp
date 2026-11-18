@@ -29,6 +29,12 @@ ingreso). El alta exige versiones de T&C, política de datos y autorización KYC
 fecha de aceptación y referencia de evidencia, que quedan en auditoría. Cuentas
 separadas: el administrador no puede restablecer su propia clave.
 
+El18Nov2026 el propietario autorizó ampliar a **50** el valor de
+`XPAY_PILOTO_MAX_USUARIOS`. Ese máximo cuenta las altas administrativas
+auditadas desde el inicio; no agrega50 usuarios ni convierte autorregistros
+en participantes financieros. La apertura del registro público crea cuentas
+limitadas según `REGISTRO_PUBLICO_PROD_CONFIGURACION.md`.
+
 ## Corrección 3 — interruptor y límites
 
 | Clave | Productivo | No productivo |

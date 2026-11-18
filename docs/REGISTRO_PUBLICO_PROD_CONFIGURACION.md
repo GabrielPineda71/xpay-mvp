@@ -8,9 +8,12 @@ perfil, contraseña, contactos y lectura de estado KYC.
 
 ## Habilitación de Production
 
-El interruptor queda cerrado hasta terminar las pruebas y aprobar los
-documentos del nuevo alcance. La versión 1.1 describe una pausa financiera
-global y no debe reutilizarse para abrir este registro junto al piloto.
+El interruptor queda cerrado hasta verificar la publicación y configuración.
+El propietario de XPAY aprobó el18Nov2026 la actualización v1.2 para cuentas
+limitadas y autorizó ampliar el piloto hasta50 usuarios. Los PDF aprobados y
+sus huellas están en `frontend/xpay-admin/public/legal/v1.2/`.
+La versión1.1 describe una pausa financiera global y no debe reutilizarse
+para abrir este registro junto al piloto.
 
 Requisitos acumulativos:
 
@@ -26,6 +29,9 @@ Requisitos acumulativos:
   mismo origen de la app. Para cada prefijo `XPAY_REGISTRO_PUBLICO_TERMINOS`
   y `XPAY_REGISTRO_PUBLICO_POLITICA_DATOS`: `_VERSION`, `_FECHA` en formato
   `yyyy-MM-dd`, `_URL` HTTPS sin parámetros, `_SHA256` del PDF exacto.
+- `XPAY_PILOTO_MAX_USUARIOS=50`: techo histórico de altas administrativas
+  auditadas, con autorización individual del superusuario. No son50 altas
+  nuevas ni cambia el acceso limitado de las cuentas de autorregistro.
 
 Sin estos requisitos, las cuatro rutas de registro/configuración,
 verificación y reenvío responden 404 en producción. El servicio también
