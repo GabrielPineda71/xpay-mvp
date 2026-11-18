@@ -16,19 +16,14 @@ using Xunit;
 
 namespace Xpay.Api.Tests.Controllers;
 
-// P0-B1 — frontera de los endpoints de registro: los legacy (registro-final,
-// registro-inicial) y los nuevos (registro, verificar-email) son anónimos pero
-// solo existen en Development/QA/Test; en productivo el filtro responde 404.
+// Las rutas legacy permanecen fuera de producción. Las rutas públicas nuevas
+// requieren disponibilidad explícita del servicio para cuentas limitadas.
 public class RegistroPublicoFronteraTests
 {
     public static TheoryData<Type, string> AccionesDeRegistro => new()
     {
         { typeof(UsuariosController),        nameof(UsuariosController.RegistrarUsuarioFinal) },
         { typeof(UsuariosController),        nameof(UsuariosController.RegistrarInicial) },
-        { typeof(RegistroPublicoController), nameof(RegistroPublicoController.ObtenerConfiguracion) },
-        { typeof(RegistroPublicoController), nameof(RegistroPublicoController.Registrar) },
-        { typeof(RegistroPublicoController), nameof(RegistroPublicoController.VerificarEmail) },
-        { typeof(RegistroPublicoController), nameof(RegistroPublicoController.ReenviarVerificacion) },
     };
 
     private static MethodInfo Accion(Type controller, string metodo)
@@ -77,6 +72,7 @@ public class RegistroPublicoFronteraTests
     {
         Assert.False(typeof(RegistroPublicoController).IsDefined(typeof(SoloAmbienteNoProductivoAttribute), inherit: true));
         Assert.False(typeof(UsuariosController).IsDefined(typeof(SoloAmbienteNoProductivoAttribute), inherit: true));
+        Assert.True(typeof(RegistroPublicoController).IsDefined(typeof(RegistroPublicoDisponibleAttribute), inherit: true));
     }
 
     [Theory]

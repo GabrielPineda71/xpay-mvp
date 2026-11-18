@@ -9,7 +9,8 @@ public interface IEmailSender
     Task EnviarAsync(MensajeEmail mensaje, CancellationToken ct = default);
 }
 
-// Direcciones previstas para producción. Todavía no hay proveedor configurado.
+// Direcciones de contacto previstas. El remitente efectivo de ACS se valida
+// desde su configuración, separado del SMTP exclusivo de QA.
 public static class EmailRemitentes
 {
     public const string NoReply = "no-reply@xpaycol.com";

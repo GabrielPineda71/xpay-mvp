@@ -31,6 +31,7 @@ public class KycController : ControllerBase
     /// </summary>
     [HttpGet("mi-estado")]
     [Authorize]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> MiEstado()
     {
         if (!long.TryParse(User.FindFirst("idUsuario")?.Value, out var idUsuario) || idUsuario <= 0)

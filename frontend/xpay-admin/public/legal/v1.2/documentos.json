@@ -1,0 +1,22 @@
+{
+  "version": "1.2",
+  "fecha": "2026-11-18",
+  "documentos": [
+    {
+      "tipo": "terminos",
+      "url": "https://app.xpaycol.com/legal/v1.2/terminos.pdf",
+      "sha256": "f5d7450394b3c64284dfdf0d8461341ad2d59f5ac9e907d10f39de245d9fb680"
+    },
+    {
+      "tipo": "politica",
+      "url": "https://app.xpaycol.com/legal/v1.2/politica.pdf",
+      "sha256": "6dba8d16e11168e073b13047ac01fd0df06bc4cb2b57aeec904144add442e534"
+    },
+    {
+      "tipo": "autorizaciones",
+      "url": "https://app.xpaycol.com/legal/v1.2/autorizaciones.pdf",
+      "sha256": "22a41de9c1c736925694c2ac64d92c591f935842e7193fbf9ce4b1ae01d20c6f"
+    }
+  ],
+  "pilotoMaxUsuarios": 50
+}

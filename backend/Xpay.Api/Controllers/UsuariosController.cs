@@ -74,6 +74,7 @@ public class UsuariosController : ControllerBase
     // registro-final/registro-inicial son deliberadamente anónimos).
     [HttpGet("mi-perfil")]
     [Authorize]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> ObtenerMiPerfil()
     {
         if (!TryGetIdPersona(out var idPersona))
@@ -99,6 +100,7 @@ public class UsuariosController : ControllerBase
     // tiene esas propiedades: overposting estructuralmente imposible).
     [HttpPatch("mi-perfil")]
     [Authorize]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> ActualizarMiPerfil([FromBody] ActualizarMiPerfilRequest request)
     {
         if (!TryGetIdPersona(out var idPersona) || !TryGetIdUsuario(out var idUsuario))

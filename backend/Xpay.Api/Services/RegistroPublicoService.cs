@@ -12,9 +12,9 @@ namespace Xpay.Api.Services;
 
 // P0-B1 — registro público seguro de usuario final y verificación de email.
 // El servidor asigna unidad XPAY_COL, rol USUARIO_FINAL y estado
-// PENDIENTE_VERIFICACION. El autorregistro en QA guarda las aceptaciones
-// en la misma transacción que la cuenta y el token. El flujo de pruebas
-// previo conserva la creación de wallet. El correo se envía tras confirmar
+// PENDIENTE_VERIFICACION. El autorregistro habilitado guarda las aceptaciones
+// en la misma transacción que la cuenta y el token. Solo el flujo legacy no
+// productivo conserva la creación de wallet. El correo se envía tras confirmar
 // la transacción y el token solo viaja al destinatario.
 public sealed class RegistroPublicoService(
     XpayDbContext db,
@@ -50,20 +50,45 @@ public sealed class RegistroPublicoService(
     private bool AutorregistroHabilitado =>
         string.Equals(configuracion[DocumentosRegistroPublico.ClaveHabilitado], "true", StringComparison.Ordinal);
 
-    private (DocumentosRegistroPublico Documentos, EmailSenderQaSmtp Sender)? ObtenerRegistroHabilitado()
+    private (DocumentosRegistroPublico Documentos, IEmailSender Sender)? ObtenerRegistroHabilitado()
     {
-        if (!AutorregistroHabilitado || !string.Equals(ambiente.Nombre, AmbienteXpay.Qa, StringComparison.Ordinal)
-            || emailSender is not EmailSenderQaSmtp sender)
-            return null;
+        if (!AutorregistroHabilitado) return null;
+
+        var qa = string.Equals(ambiente.Nombre, AmbienteXpay.Qa, StringComparison.Ordinal)
+            && emailSender is EmailSenderQaSmtp;
+        var prod = string.Equals(ambiente.Nombre, "Production", StringComparison.Ordinal)
+            && emailSender is EmailSenderAcs
+            && string.Equals(configuracion[DocumentosRegistroPublico.ClaveModalidad],
+                DocumentosRegistroPublico.ModalidadLimitada, StringComparison.Ordinal);
+        if (!qa && !prod) return null;
 
         var documentos = DocumentosRegistroPublico.Desde(configuracion);
-        return documentos is null ? null : (documentos, sender);
+        if (documentos is null || (prod && !DocumentosEnOrigenProductivo(documentos))) return null;
+        return (documentos, emailSender);
+    }
+
+    private bool DocumentosEnOrigenProductivo(DocumentosRegistroPublico documentos)
+    {
+        if (!Uri.TryCreate(configuracion[PlantillasEmailIdentidad.ClaveUrlFrontend], UriKind.Absolute, out var frontend)
+            || frontend.Scheme != Uri.UriSchemeHttps || frontend.Host != "app.xpaycol.com"
+            || !string.IsNullOrEmpty(frontend.UserInfo) || !string.IsNullOrEmpty(frontend.Query)
+            || !string.IsNullOrEmpty(frontend.Fragment) || frontend.AbsolutePath != "/" || !frontend.IsDefaultPort)
+            return false;
+        return new[] { documentos.Terminos, documentos.PoliticaDatos }.All(d =>
+            Uri.TryCreate(d.DatosPublicos.Url, UriKind.Absolute, out var url)
+            && url.Scheme == Uri.UriSchemeHttps && url.Host == frontend.Host && url.IsDefaultPort);
+    }
+
+    private void ExigirDisponibilidadProductiva()
+    {
+        if (ambiente.EsProductivo && ObtenerRegistroHabilitado() is null)
+            throw new RegistroPublicoNoDisponibleException();
     }
 
     public async Task RegistrarAsync(RegistroPublicoRequest request, string? ipSolicitud, CancellationToken ct = default)
     {
         var registro = ObtenerRegistroHabilitado();
-        if (registro is null && (AutorregistroHabilitado || request.Consentimiento is not null))
+        if (registro is null && (ambiente.EsProductivo || AutorregistroHabilitado || request.Consentimiento is not null))
             throw new RegistroPublicoNoDisponibleException();
 
         // Validación y configuración del enlace antes de tocar la BD.
@@ -71,7 +96,7 @@ public sealed class RegistroPublicoService(
         if (registro is { } alta)
         {
             alta.Documentos.ValidarConsentimiento(request.Consentimiento);
-            if (!alta.Sender.PermiteDestinatario(datos.Email))
+            if (alta.Sender is EmailSenderQaSmtp smtp && !smtp.PermiteDestinatario(datos.Email))
                 throw new InvalidOperationException("El registro en QA solo está disponible para correos de prueba autorizados.");
         }
         plantillas.ValidarConfiguracion();
@@ -215,6 +240,7 @@ public sealed class RegistroPublicoService(
     // (semántica de TokenUsuarioService.EmitirAsync).
     public async Task ReenviarVerificacionAsync(string? nombreUsuario, string? ipSolicitud, CancellationToken ct = default)
     {
+        ExigirDisponibilidadProductiva();
         // Configuración y transacción se validan igual para todos.
         plantillas.ValidarConfiguracion();
         if (db.Database.CurrentTransaction is not null)
@@ -295,6 +321,7 @@ public sealed class RegistroPublicoService(
     // igualmente: un solo uso.
     public async Task<bool> VerificarEmailAsync(string? token, CancellationToken ct = default)
     {
+        ExigirDisponibilidadProductiva();
         if (db.Database.CurrentTransaction is not null)
             throw new IdentidadConfiguracionException("La verificación de email requiere su propia transacción.");
 

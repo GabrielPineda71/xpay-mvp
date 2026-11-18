@@ -24,6 +24,7 @@ public class ContactosController(
     AuditLogService audit) : ControllerBase
 {
     [HttpGet("estado")]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> Estado(CancellationToken ct)
     {
         if (!TryGetIdUsuario(out var idUsuario)) return Unauthorized(new { success = false, message = "Token inválido." });
@@ -45,6 +46,7 @@ public class ContactosController(
     }
 
     [HttpPost("{canal}/codigo")]
+    [CuentaLimitadaPermitida]
     [EnableRateLimiting("ContactosCodigoPolicy")]
     public async Task<IActionResult> SolicitarCodigo(string canal, [FromBody] SolicitarCodigoContactoRequest request, CancellationToken ct)
     {
@@ -78,6 +80,7 @@ public class ContactosController(
     }
 
     [HttpPost("{canal}/verificar")]
+    [CuentaLimitadaPermitida]
     [EnableRateLimiting("ContactosCodigoPolicy")]
     public async Task<IActionResult> Verificar(string canal, [FromBody] ConfirmarCodigoContactoRequest request, CancellationToken ct)
     {
@@ -103,6 +106,7 @@ public class ContactosController(
     }
 
     [HttpPut("preferencias")]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> Preferencias([FromBody] PreferenciasComunicacionRequest request, CancellationToken ct)
     {
         if (!TryGetIdUsuario(out var idUsuario)) return Unauthorized(new { success = false, message = "Token inválido." });

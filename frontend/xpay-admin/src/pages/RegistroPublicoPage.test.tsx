@@ -48,10 +48,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('Registro público de QA', () => {
-  it('envía los datos y las dos aceptaciones con sus versiones y guía la activación por correo', async () => {
+describe('Registro público', () => {
+  it.each(['QA', 'PROD'] as const)('en %s envía los datos y las dos aceptaciones con sus versiones y guía la activación por correo', async ambiente => {
     const post = vi.spyOn(api, 'post').mockResolvedValue({ success: true });
-    renderRegistro('QA');
+    renderRegistro(ambiente);
 
     await completarFormulario();
 
@@ -99,20 +99,21 @@ describe('Registro público de QA', () => {
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('redirige a iniciar sesión al abrir la URL directamente en PROD', async () => {
+  it('permite el registro habilitado por la API en PROD e informa el alcance del acceso', async () => {
     const post = vi.spyOn(api, 'post');
     renderRegistro('PROD');
 
-    expect(await screen.findByRole('heading', { name: 'Inicio de sesión' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Crear cuenta' })).not.toBeInTheDocument();
-    expect(api.get).not.toHaveBeenCalled();
+    expect(await screen.findByLabelText('Usuario')).toBeInTheDocument();
+    expect(screen.getByText(/Confirma tu correo para activar tu cuenta y entrar a tu perfil/)).toHaveTextContent(/verificaciones adicionales y una habilitación posterior/);
+    expect(screen.queryByText(/Ambiente de pruebas/)).not.toBeInTheDocument();
+    expect(api.get).toHaveBeenCalledWith('/api/usuarios/registro/configuracion');
     expect(post).not.toHaveBeenCalled();
   });
 
-  it('cierra el formulario si la API no habilita el registro (URL directa en QA)', async () => {
+  it.each(['QA', 'PROD'] as const)('en %s cierra el formulario si la API no habilita el registro', async ambiente => {
     vi.mocked(api.get).mockRejectedValue(new api.ApiError('No encontrado.', 404));
     const post = vi.spyOn(api, 'post');
-    renderRegistro('QA');
+    renderRegistro(ambiente);
 
     expect(await screen.findByText('El registro no está disponible en este momento.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Crear cuenta' })).not.toBeInTheDocument();

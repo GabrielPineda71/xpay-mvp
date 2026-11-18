@@ -16,13 +16,11 @@ public class AuthService
 {
     private readonly XpayDbContext _db;
     private readonly IConfiguration _config;
-    private readonly bool _esQa;
 
     public AuthService(XpayDbContext db, IConfiguration config, IAmbienteXpay? ambiente = null)
     {
         _db    = db;
         _config = config;
-        _esQa   = string.Equals(ambiente?.Nombre, AmbienteXpay.Qa, StringComparison.Ordinal);
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request)
@@ -96,8 +94,7 @@ public class AuthService
             Token     = token,
             RequiereCambioClave = usuario.RequiereCambioClave,
             EsUsuarioEmpresa    = await EsUsuarioEmpresaAsync(usuario.IdUsuario),
-            RequierePerfil      = _esQa && roles.Contains(RegistroPublicoService.RolUsuarioFinal)
-                && await RegistroPublicoService.EsCuentaLimitadaAsync(_db, usuario.IdUsuario)
+            RequierePerfil      = await RegistroPublicoService.EsCuentaLimitadaAsync(_db, usuario.IdUsuario)
         };
     }
 
@@ -152,8 +149,7 @@ public class AuthService
             Token     = token,
             RequiereCambioClave = usuario.RequiereCambioClave,
             EsUsuarioEmpresa    = await EsUsuarioEmpresaAsync(usuario.IdUsuario),
-            RequierePerfil      = _esQa && roles.Contains(RegistroPublicoService.RolUsuarioFinal)
-                && await RegistroPublicoService.EsCuentaLimitadaAsync(_db, usuario.IdUsuario)
+            RequierePerfil      = await RegistroPublicoService.EsCuentaLimitadaAsync(_db, usuario.IdUsuario)
         };
     }
 

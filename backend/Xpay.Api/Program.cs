@@ -15,7 +15,11 @@ using Xpay.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers(o => o.Filters.Add<OperacionFinancieraBloqueadaFilter>());
+builder.Services.AddControllers(o =>
+{
+    o.Filters.Add<OperacionFinancieraBloqueadaFilter>();
+    o.Filters.Add<CuentaLimitadaFilter>(CuentaLimitadaFilter.Orden);
+});
 // Bloqueo financiero, fase visual: BloqueoFinancieroInterceptor rechaza en
 // SaveChanges cualquier escritura de dinero u obligaciones con el interruptor
 // XPAY_OPERACIONES_FINANCIERAS_HABILITADAS cerrado (ver ControlOperacionesFinancieras).
@@ -28,8 +32,8 @@ builder.Services.AddScoped<RegistroUsuarioFinalService>();
 builder.Services.AddScoped<RegistroInicialService>();
 builder.Services.AddScoped<PerfilService>(); // XPAY-399 — Perfil Fase 2A (mi-perfil self-service)
 builder.Services.AddScoped<AuthService>();
-// P0-B — tokens de un solo uso y envío de email. QA-IDENTIDAD-EMAIL-3: SMTP
-// solo en QA con Email:Modo=QaSmtp; en otro caso sender local o fail-closed.
+// Tokens de un solo uso y email: SMTP restringido en QA y ACS por selección
+// explícita en Production; sin proveedor configurado no hay envíos reales.
 builder.Services.AddScoped<TokenUsuarioService>();
 builder.Services.AddScoped<PinTransaccionalService>();
 // Verificación de correo (ACS Email) y celular (WhatsApp Cloud API). Sin
@@ -39,7 +43,7 @@ builder.Services.AddCanalesCodigoContacto(builder.Configuration);
 builder.Services.AddScoped<ContactoVerificacionService>();
 builder.Services.AddSingleton<RequisitoContactosVerificados>();
 builder.Services.AddEmailSenderXpay(builder.Environment.EnvironmentName, builder.Configuration);
-// Registro público y verificación de email conservan la frontera no productiva.
+// El registro productivo se abre solo en modalidad de cuenta limitada.
 builder.Services.AddSingleton<PlantillasEmailIdentidad>();
 builder.Services.AddScoped<RegistroPublicoService>();
 // P0-B2 — recuperación universal de contraseña (misma frontera no

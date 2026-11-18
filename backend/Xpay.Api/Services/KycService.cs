@@ -147,8 +147,7 @@ public class KycService
             throw new InvalidOperationException(MensajeVeriffNoDisponible);
         }
 
-        if (string.Equals(_ambiente.Nombre, AmbienteXpay.Qa, StringComparison.Ordinal)
-            && await RegistroPublicoService.EsCuentaLimitadaAsync(_db, idUsuario))
+        if (await RegistroPublicoService.EsCuentaLimitadaAsync(_db, idUsuario))
             throw new InvalidOperationException(MensajeConsentimientoKycPendiente);
 
         // No-PII vendor data — no personal data sent to Veriff

@@ -1,5 +1,5 @@
 import { type FormEvent, useRef, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { ApiError, post } from '../api/client.ts';
 import { BrandMark } from '../components/BrandMark.tsx';
 import { ambienteXpay } from '../config/ambiente.ts';
@@ -10,7 +10,6 @@ import './registro-publico.css';
 
 export function RegistroPublicoPage() {
   const configuracion = useConfiguracionRegistroPublico();
-  if (ambienteXpay() !== 'QA') return <Navigate to="/login" replace />;
   if (configuracion.estado === 'disponible') return <FormularioRegistro documentos={configuracion.documentos} />;
 
   return (
@@ -112,7 +111,11 @@ function FormularioRegistro({ documentos }: { documentos: ConfiguracionRegistroP
       <section className="login-card registro-publico__tarjeta" aria-labelledby="registro-titulo">
         <BrandMark variant="logo" theme="teal" className="registro-publico__marca" />
         <h1 id="registro-titulo">Crear cuenta</h1>
-        <p className="registro-publico__nota">Ambiente de pruebas. Usa datos de prueba y un correo autorizado de pruebas.</p>
+        <p className="registro-publico__nota">
+          {ambienteXpay() === 'QA'
+            ? 'Ambiente de pruebas. Usa datos de prueba y un correo autorizado de pruebas.'
+            : 'Confirma tu correo para activar tu cuenta y entrar a tu perfil. La Wallet y las operaciones financieras requieren verificaciones adicionales y una habilitación posterior.'}
+        </p>
         {enviado ? (
           <p role="status" className="session-message">Registro recibido. Revisa tu correo para activar la cuenta.</p>
         ) : (
