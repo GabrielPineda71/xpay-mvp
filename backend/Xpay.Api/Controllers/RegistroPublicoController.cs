@@ -7,10 +7,11 @@ using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
 
-// El autorregistro y la verificación de email mantienen la frontera no productiva.
+// El alta productiva requiere configuración explícita para cuentas limitadas.
 // Las respuestas públicas no incluyen tokens ni identificadores internos.
 [ApiController]
 [Route("api/usuarios")]
+[RegistroPublicoDisponible]
 public class RegistroPublicoController(RegistroPublicoService servicio) : ControllerBase
 {
     internal const string MensajeRegistroRecibido     = "Registro recibido. Revisa tu correo para activar la cuenta.";
@@ -20,7 +21,6 @@ public class RegistroPublicoController(RegistroPublicoService servicio) : Contro
 
     [HttpGet("registro/configuracion")]
     [AllowAnonymous]
-    [SoloAmbienteNoProductivo]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public IActionResult ObtenerConfiguracion()
     {
@@ -32,7 +32,6 @@ public class RegistroPublicoController(RegistroPublicoService servicio) : Contro
 
     [HttpPost("registro")]
     [AllowAnonymous]
-    [SoloAmbienteNoProductivo]
     [EnableRateLimiting("IdentidadPublicaPolicy")]
     public async Task<IActionResult> Registrar([FromBody] RegistroPublicoRequest? request, CancellationToken ct)
     {
@@ -52,7 +51,6 @@ public class RegistroPublicoController(RegistroPublicoService servicio) : Contro
 
     [HttpPost("verificar-email")]
     [AllowAnonymous]
-    [SoloAmbienteNoProductivo]
     [EnableRateLimiting("IdentidadPublicaPolicy")]
     public async Task<IActionResult> VerificarEmail([FromBody] VerificarEmailRequest? request, CancellationToken ct)
     {
@@ -62,6 +60,7 @@ public class RegistroPublicoController(RegistroPublicoService servicio) : Contro
                 ? Ok(new { success = true, message = MensajeVerificado })
                 : BadRequest(new { success = false, message = MensajeVerificacionNoValida });
         }
+        catch (RegistroPublicoNoDisponibleException) { return RegistroNoDisponible(); }
         catch { return StatusCode(500, new { success = false, message = "Error interno verificando el correo." }); }
     }
 
@@ -69,7 +68,6 @@ public class RegistroPublicoController(RegistroPublicoService servicio) : Contro
     // cuerpo, exista o no el usuario y sea o no elegible.
     [HttpPost("reenviar-verificacion")]
     [AllowAnonymous]
-    [SoloAmbienteNoProductivo]
     [EnableRateLimiting("IdentidadPublicaPolicy")]
     public async Task<IActionResult> ReenviarVerificacion([FromBody] ReenviarVerificacionRequest? request, CancellationToken ct)
     {
@@ -78,6 +76,7 @@ public class RegistroPublicoController(RegistroPublicoService servicio) : Contro
             await servicio.ReenviarVerificacionAsync(request?.Usuario, HttpContext.Connection.RemoteIpAddress?.ToString(), ct);
             return StatusCode(202, new { success = true, message = MensajeReenvioRecibido });
         }
+        catch (RegistroPublicoNoDisponibleException) { return RegistroNoDisponible(); }
         catch { return StatusCode(500, new { success = false, message = "Error interno en el reenvío de verificación." }); }
     }
 }

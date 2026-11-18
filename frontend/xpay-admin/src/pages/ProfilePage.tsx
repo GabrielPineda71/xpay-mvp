@@ -44,6 +44,7 @@ export function ProfilePage() {
       </div>
 
       {accesoPerfil && <p className="session-message">Tu cuenta está activada. En esta etapa puedes consultar y actualizar tu perfil.</p>}
+      {accesoPerfil && <p>La activación de tu Wallet está pendiente de las verificaciones adicionales y la habilitación de XPAY.</p>}
 
       {/* A. Mi información (incluye verificar correo y celular) */}
       <MiInformacionSection />

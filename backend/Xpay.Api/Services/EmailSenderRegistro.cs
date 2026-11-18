@@ -1,14 +1,10 @@
 using Xpay.Api.Common;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Xpay.Api.Services;
 
-// P0-B — selección del sender por ambiente con la frontera central
-// AmbienteXpay (lista cerrada Development/QA/Test). Ninguna configuración
-// puede activar un sender que envíe en PROD.
-//
-// QA-IDENTIDAD-EMAIL-3 — matriz cerrada, evaluada al ARRANQUE:
-// - Ambiente productivo (cualquiera fuera de la lista): EmailSenderNoConfigurado.
-//   Si aparece Email:Modo o la sección Email:QaSmtp, el arranque falla.
+// Selección explícita por ambiente. Production admite solo ACS y nunca SMTP
+// de QA. Sin modo configurado no envía ni cae a otro proveedor.
 // - Development/QA/Test sin Email:Modo: EmailSenderLocalSinEnvio (no abre red).
 // - Email:Modo distinto de "QaSmtp" (comparación ordinal): el arranque falla.
 // - Email:Modo = "QaSmtp" fuera de QA exacto (Development/Test): el arranque falla.
@@ -24,9 +20,27 @@ public static class EmailSenderRegistro
 
         if (!AmbienteXpay.EsNoProductivo(environmentName))
         {
-            if (!string.IsNullOrEmpty(modo) || configuration.GetSection(OpcionesEmailQaSmtp.Seccion).Exists())
+            if (configuration.GetSection(OpcionesEmailQaSmtp.Seccion).Exists())
                 throw new EmailConfiguracionException(
                     "Configuración de email QA presente en un ambiente productivo; arranque abortado.");
+
+            if (string.Equals(modo, EmailSenderAcs.Modo, StringComparison.Ordinal)
+                && string.Equals(environmentName, "Production", StringComparison.Ordinal))
+            {
+                var opcionesAcs = OpcionesEmailAcs.Desde(configuration)
+                    ?? throw new EmailConfiguracionException("Configuración ACS de identidad ausente o inválida.");
+                new PlantillasEmailIdentidad(configuration, new AmbienteValidacionEstricta()).ValidarConfiguracion();
+                services.AddHttpClient(EmailSenderAcs.Cliente, c => c.Timeout = TimeSpan.FromSeconds(15));
+                services.AddHttpClient(ConfiguracionCanalesContacto.ClienteIdentidad, c => c.Timeout = TimeSpan.FromSeconds(10));
+                services.TryAddSingleton(TimeProvider.System);
+                services.TryAddSingleton<ProveedorTokenIdentidadAdministrada>();
+                services.AddSingleton<IEmailSender>(sp => new EmailSenderAcs(opcionesAcs,
+                    sp.GetRequiredService<IHttpClientFactory>(), sp.GetRequiredService<ProveedorTokenIdentidadAdministrada>()));
+                return services;
+            }
+
+            if (!string.IsNullOrEmpty(modo))
+                throw new EmailConfiguracionException("Modo de email no admitido en este ambiente productivo.");
             services.AddSingleton<IEmailSender, EmailSenderNoConfigurado>();
             return services;
         }

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { get } from '../api/client.ts';
-import { ambienteXpay } from '../config/ambiente.ts';
 
 export const CONFIGURACION_REGISTRO_URL = '/api/usuarios/registro/configuracion';
 
@@ -32,11 +31,9 @@ function documentoValido(documento?: DocumentoRegistro): boolean {
 }
 
 export function useConfiguracionRegistroPublico(): EstadoConfiguracion {
-  const esQa = ambienteXpay() === 'QA';
   const [configuracion, setConfiguracion] = useState<EstadoConfiguracion>({ estado: 'cargando' });
 
   useEffect(() => {
-    if (!esQa) return;
     let vigente = true;
     async function consultar() {
       try {
@@ -52,7 +49,7 @@ export function useConfiguracionRegistroPublico(): EstadoConfiguracion {
     }
     void consultar();
     return () => { vigente = false; };
-  }, [esQa]);
+  }, []);
 
-  return esQa ? configuracion : { estado: 'cerrado' };
+  return configuracion;
 }

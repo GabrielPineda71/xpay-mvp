@@ -73,7 +73,8 @@ describe('LoginPage — enlaces de identidad (P0-B frontend)', () => {
     expect(mockLogin).not.toHaveBeenCalled();
   });
 
-  it('ofrece Crear cuenta en QA si la API devuelve ambos documentos', async () => {
+  it.each(['QA', 'PROD'] as const)('ofrece Crear cuenta en %s si la API devuelve ambos documentos', async ambiente => {
+    vi.stubEnv('VITE_XPAY_ENV', ambiente);
     const documento = { version: '1.1', fecha: '2026-11-13', url: 'https://app-qa.xpaycol.com/legal/documento.pdf' };
     vi.mocked(api.get).mockResolvedValue({ data: { terminos: documento, politicaDatos: documento } });
     const user = userEvent.setup();
@@ -85,12 +86,13 @@ describe('LoginPage — enlaces de identidad (P0-B frontend)', () => {
     expect(await screen.findByText('PANTALLA REGISTRO')).toBeInTheDocument();
   });
 
-  it('mantiene el ingreso de PROD sin consultar disponibilidad ni mostrar Crear cuenta', () => {
+  it('mantiene el ingreso de PROD disponible cuando la API cierra el registro', async () => {
     vi.stubEnv('VITE_XPAY_ENV', 'PROD');
     renderizar();
 
+    expect(await screen.findByRole('button', { name: 'Ingresar' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Crear cuenta' })).not.toBeInTheDocument();
-    expect(api.get).not.toHaveBeenCalled();
+    expect(api.get).toHaveBeenCalledWith('/api/usuarios/registro/configuracion');
   });
 
   it('el error de credenciales se muestra igual que antes, sin detectar PENDIENTE_VERIFICACION', async () => {

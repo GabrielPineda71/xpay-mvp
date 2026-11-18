@@ -147,6 +147,8 @@ describe('ProfilePage (XPAY-392/401)', () => {
 
     expect(await screen.findByRole('heading', { name: 'Mi información' })).toBeInTheDocument();
     expect(screen.getByText('Tu cuenta está activada. En esta etapa puedes consultar y actualizar tu perfil.')).toBeInTheDocument();
+    expect(screen.getByText(/La activación de tu Wallet está pendiente/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Iniciar verificación|Activar Wallet/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '← Mi Wallet' })).not.toBeInTheDocument();
     expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
     expect(mockGet).not.toHaveBeenCalledWith('/api/pin/estado');

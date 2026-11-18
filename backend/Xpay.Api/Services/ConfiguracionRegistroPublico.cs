@@ -8,6 +8,8 @@ internal sealed record DocumentosRegistroPublico(
     DocumentoRegistroPublico PoliticaDatos)
 {
     internal const string ClaveHabilitado = "XPAY_REGISTRO_PUBLICO_HABILITADO";
+    internal const string ClaveModalidad = "XPAY_REGISTRO_PUBLICO_MODALIDAD";
+    internal const string ModalidadLimitada = "CUENTA_LIMITADA";
     internal const string PrefijoTerminos = "XPAY_REGISTRO_PUBLICO_TERMINOS";
     internal const string PrefijoPoliticaDatos = "XPAY_REGISTRO_PUBLICO_POLITICA_DATOS";
 

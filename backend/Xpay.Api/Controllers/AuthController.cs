@@ -62,6 +62,7 @@ public class AuthController : ControllerBase
     // único endpoint accesible mientras requiere_cambio_clave = true.
     [HttpPost("cambiar-clave-obligatoria")]
     [Authorize(Policy = "SoloAutenticado")]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> CambiarClaveObligatoria([FromBody] CambiarClaveObligatoriaRequest request)
     {
         if (!long.TryParse(User.FindFirst("idUsuario")?.Value, out var idUsuario) || idUsuario <= 0)
@@ -92,6 +93,7 @@ public class AuthController : ControllerBase
     // se duplica) ninguna comprobación adicional aquí.
     [HttpPost("cambiar-clave")]
     [Authorize]
+    [CuentaLimitadaPermitida]
     [EnableRateLimiting("CambiarClavePolicy")]
     public async Task<IActionResult> CambiarClave([FromBody] CambiarClaveRequest request)
     {

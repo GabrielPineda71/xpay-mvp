@@ -1,7 +1,7 @@
 // P0-B frontend — las cuatro rutas de identidad son PÚBLICAS: con el App
 // real (BrowserRouter + AuthProvider) y sin sesión, se renderizan en lugar de
 // redirigir a /login. Las consultas se simulan y el token es sintético.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import App from './App.tsx';
 
@@ -27,12 +27,20 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 
-it('abre Perfil al iniciar con una sesión de alta limitada y no inicia la wallet', async () => {
+afterEach(() => { vi.unstubAllEnvs(); });
+
+it.each([
+  '/',
+  '/mi-wallet?tab=retirar-breb',
+  '/mi-wallet?tab=recargar-breb',
+  '/mi-wallet/libranza',
+])('en PROD lleva %s a Perfil con una sesión de alta limitada', async ruta => {
+  vi.stubEnv('VITE_XPAY_ENV', 'PROD');
   localStorage.setItem('xpay_user', JSON.stringify({
-    idUsuario: 33, idPersona: 44, usuario: 'qa.nuevo', estado: 'ACTIVO',
+    idUsuario: 33, idPersona: 44, usuario: 'persona.nueva', estado: 'ACTIVO',
     roles: ['USUARIO_FINAL'], token: 'synthetic-test-token', requiereCambioClave: false, requierePerfil: true,
   }));
-  window.history.pushState({}, '', '/');
+  window.history.pushState({}, '', ruta);
   render(<App />);
 
   expect(await screen.findByRole('heading', { name: 'Perfil' })).toBeInTheDocument();
@@ -40,6 +48,7 @@ it('abre Perfil al iniciar con una sesión de alta limitada y no inicia la walle
   expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
   expect(screen.queryByText('Mi Wallet')).not.toBeInTheDocument();
   expect(mockGet).not.toHaveBeenCalledWith('/api/wallets/mi-wallet');
+  expect(mockPost).not.toHaveBeenCalled();
 });
 
 describe('App — rutas públicas de identidad (P0-B frontend)', () => {
