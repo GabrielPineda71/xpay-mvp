@@ -864,6 +864,7 @@ tr:hover td { background: #f7fafc; }
 .btn-kyc-start { background: #276749; color: #fff; border: none; padding: 0.25rem 0.85rem; border-radius: 4px; cursor: pointer; font-size: 0.78rem; font-weight: 600; font-family: inherit; transition: background 0.12s; }
 .btn-kyc-start:hover:not(:disabled) { background: #22543d; }
 .btn-kyc-start:disabled { opacity: 0.55; cursor: not-allowed; }
+.kyc-continue-link { display: inline-flex; align-items: center; min-height: 36px; font-size: 0.875rem; text-decoration: none; }
 .kyc-nota-aprobado { color: #276749 !important; font-weight: 600; font-style: normal; }
 .kyc-nota-error    { color: #c53030 !important; font-weight: 600; font-style: normal; }
 
