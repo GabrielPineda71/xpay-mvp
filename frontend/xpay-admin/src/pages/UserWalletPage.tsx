@@ -241,7 +241,7 @@ function veriffSessionUrl(value: unknown): string | null {
   try {
     const url = new URL(value);
     if (url.protocol !== 'https:' || url.username || url.password || url.port
-      || !['magic.veriff.me', 'alchemy.veriff.com'].includes(url.hostname)
+      || !['magic.veriff.me', 'alchemy.veriff.com', 'saas.veriff.com'].includes(url.hostname)
       || !/^\/v\/[^/]+\/?$/.test(url.pathname)) return null;
     return url.href;
   } catch {

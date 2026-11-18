@@ -173,6 +173,7 @@ describe('UserWalletPage — continuar una sesión Veriff pendiente', () => {
     'https://synthetic-user@magic.veriff.me/v/synthetic-test-session',
     'https://magic.veriff.me:444/v/synthetic-test-session',
     'https://magic.veriff.me.evil.com/v/synthetic-test-session',
+    'https://saas.veriff.com.evil.com/v/synthetic-test-session',
     'https://localhost/v/synthetic-test-session',
     'https://magic.veriff.me/otra-ruta',
   ])('no presenta un enlace de sesión inseguro: %s', async sessionUrl => {
@@ -188,6 +189,13 @@ describe('UserWalletPage — continuar una sesión Veriff pendiente', () => {
     kyc = { estadoKyc: 'PENDIENTE', sessionUrl: 'https://alchemy.veriff.com:443/v/synthetic-test-session' };
     renderWallet();
     expect(await screen.findByRole('link', { name: 'Continuar verificación' })).toHaveAttribute('href', 'https://alchemy.veriff.com/v/synthetic-test-session');
+  });
+
+  it('recupera la sesión pendiente del dominio exacto utilizado en producción', async () => {
+    kyc = { estadoKyc: 'PENDIENTE', sessionUrl: 'https://saas.veriff.com/v/synthetic-test-session' };
+    renderWallet();
+    expect(await screen.findByRole('link', { name: 'Continuar verificación' })).toHaveAttribute('href', 'https://saas.veriff.com/v/synthetic-test-session');
+    expect(mockPost).not.toHaveBeenCalled();
   });
 
   it('una respuesta de inicio con URL insegura no abre una ventana ni vuelve a iniciar', async () => {
