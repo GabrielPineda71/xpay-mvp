@@ -236,6 +236,19 @@ function kycLabel(estado: string): string {
   return labels[estado] ?? estado;
 }
 
+function veriffSessionUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port
+      || !['magic.veriff.me', 'alchemy.veriff.com'].includes(url.hostname)
+      || !/^\/v\/[^/]+\/?$/.test(url.pathname)) return null;
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
 const KYC_BADGE_CLASS: Record<string, string> = {
   NO_INICIADO: 'kyc-badge kyc-badge-no-iniciado',
   PENDIENTE:   'kyc-badge kyc-badge-pendiente',
@@ -357,10 +370,13 @@ export function UserWalletPage() {
 
   // ── KYC state ─────────────────────────────────────────────────────────────
   const [kycEstado,     setKycEstado]     = useState<string>('NO_INICIADO');
+  const [kycEstadoConocido, setKycEstadoConocido] = useState(false);
   const [kycBusy,       setKycBusy]       = useState(false);
   const [kycMsg,        setKycMsg]        = useState<Msg | null>(null);
   const [kycRefreshing, setKycRefreshing] = useState(false);
   const [fromVeriff,    setFromVeriff]    = useState(false);
+  const [kycSessionUrl, setKycSessionUrl] = useState<string | null>(null);
+  const [kycLoadError,  setKycLoadError]  = useState<string | null>(null);
   const kycEstadoRef = useRef<string>('NO_INICIADO');
 
   // ── Bre-B / Retirar a mi banco ───────────────────────────────────────────
@@ -489,10 +505,18 @@ export function UserWalletPage() {
       const r = await get<{ success: boolean; data: { estadoKyc: string; sessionUrl?: string } }>(
         '/api/kyc/mi-estado',
       );
+      if (!r.success || !Object.prototype.hasOwnProperty.call(KYC_BADGE_CLASS, r.data?.estadoKyc)) {
+        throw new Error('Estado de verificación no disponible.');
+      }
       setKycEstado(r.data.estadoKyc);
       kycEstadoRef.current = r.data.estadoKyc;
+      setKycEstadoConocido(true);
+      setKycSessionUrl(r.data.estadoKyc === 'PENDIENTE' ? veriffSessionUrl(r.data.sessionUrl) : null);
+      setKycLoadError(null);
+      if (r.data.estadoKyc === 'APROBADO') setKycMsg(null);
     } catch {
-      /* non-critical: keep last known state */
+      // Conservar la sesión conocida; un fallo de consulta no inicia otra.
+      setKycLoadError('No pudimos actualizar tu verificación. Toca Actualizar estado para volver a consultar.');
     } finally {
       if (!silent) setKycRefreshing(false);
     }
@@ -608,7 +632,6 @@ export function UserWalletPage() {
     const params = new URLSearchParams(window.location.search);
     if (params.get('kyc') === 'return') {
       setFromVeriff(true);
-      setKycMsg({ ok: true, text: 'Regresaste de Veriff. Estamos actualizando tu estado...' });
       window.history.replaceState({}, '', window.location.pathname);
       void loadKyc();
     }
@@ -978,11 +1001,14 @@ export function UserWalletPage() {
         success: boolean;
         data: { estadoKyc: string; sessionId: string; sessionUrl: string };
       }>('/api/kyc/veriff/session', {});
-      if (r.success && r.data.sessionUrl) {
-        setKycEstado('PENDIENTE');
-        kycEstadoRef.current = 'PENDIENTE';
+      const url = veriffSessionUrl(r.data.sessionUrl);
+      if (r.success) {
+        setKycEstado(r.data.estadoKyc);
+        kycEstadoRef.current = r.data.estadoKyc;
+        setKycSessionUrl(r.data.estadoKyc === 'PENDIENTE' ? url : null);
+      }
+      if (r.success && r.data.estadoKyc === 'PENDIENTE' && url) {
         setKycMsg({ ok: true, text: 'Verificación iniciada. Abriendo Veriff...' });
-        const url = r.data.sessionUrl;
         window.setTimeout(() => {
           // Open Veriff in new tab so KYC polling continues on this page.
           // If browser blocks the popup, fall back to same-tab navigation.
@@ -1270,40 +1296,50 @@ export function UserWalletPage() {
           renderizarse cuando kycEstado==='APROBADO' y no hay un kycMsg
           transitorio pendiente de mostrar: en ese estado no tiene ninguna
           función más allá de repetir "Aprobado" (sin botón, sin nota — ver
-          auditoría XPAY-421/422), y esa identidad ya vive en Perfil. Para
-          CUALQUIER otro estado (pendiente/en revisión/canStart) el bloque se
-          preserva EXACTAMENTE igual que antes — mismas condiciones, mismos
-          botones, mismos handlers (loadKyc/handleIniciarVerificacion), sin
-          tocar cuándo se puede iniciar/reintentar Veriff. */}
+          auditoría XPAY-421/422), y esa identidad ya vive en Perfil.
+          Los demás estados conservan cuándo pueden iniciar o reintentar;
+          PENDIENTE permite continuar la misma sesión recibida de la API,
+          sin crear otra ni asumir que la información ya fue enviada. */}
       {(() => {
-        const canStart   = ['NO_INICIADO', 'RECHAZADO', 'EXPIRADO', 'ERROR'].includes(kycEstado);
-        const isPending  = kycEstado === 'PENDIENTE';
-        const inReview   = kycEstado === 'EN_REVISION';
-        const approved   = kycEstado === 'APROBADO';
-        if (approved && !kycMsg) return null;
+        const canStart   = kycEstadoConocido && ['NO_INICIADO', 'RECHAZADO', 'EXPIRADO', 'ERROR'].includes(kycEstado);
+        const isPending  = kycEstadoConocido && kycEstado === 'PENDIENTE';
+        const inReview   = kycEstadoConocido && kycEstado === 'EN_REVISION';
+        const approved   = kycEstadoConocido && kycEstado === 'APROBADO';
+        if (approved && !kycMsg && !kycLoadError) return null;
         return (
           <div className="kyc-status-bar">
-            {!approved && (
+            {kycEstadoConocido && !approved && (
               <span className={KYC_BADGE_CLASS[kycEstado] ?? 'kyc-badge kyc-badge-no-iniciado'}>
                 {kycLabel(kycEstado)}
               </span>
+            )}
+            {!kycEstadoConocido && !kycLoadError && (
+              <span className="kyc-nota">Consultando tu verificación...</span>
             )}
             {inReview && <span className="kyc-nota">Tu verificación está en revisión.</span>}
             {isPending && (
               <>
                 <span className="kyc-nota">
-                  {fromVeriff
-                    ? 'La verificación fue enviada. Veriff puede tardar unos minutos en confirmar el resultado.'
-                    : <>Tu verificación está pendiente. Si ya terminaste en Veriff, toca <strong>Actualizar estado</strong>.</>}
+                  {fromVeriff && 'Regresaste de Veriff. '}
+                  {kycSessionUrl
+                    ? <>Puedes continuar si no terminaste. Si ya enviaste la información, toca <strong>Actualizar estado</strong>.</>
+                    : <>Tu verificación está pendiente. El enlace para continuar no está disponible. Toca <strong>Actualizar estado</strong> para volver a consultarlo.</>}
                 </span>
-                <button
-                  className="btn-kyc-start"
-                  disabled={kycRefreshing}
-                  onClick={() => void loadKyc()}
-                >
-                  {kycRefreshing ? 'Actualizando...' : 'Actualizar estado'}
-                </button>
+                {kycSessionUrl && (
+                  <a className="btn-kyc-start kyc-continue-link" href={kycSessionUrl} target="_blank" rel="noopener noreferrer">
+                    Continuar verificación
+                  </a>
+                )}
               </>
+            )}
+            {(!kycEstadoConocido || isPending) && (
+              <button
+                className="btn-kyc-start"
+                disabled={kycRefreshing}
+                onClick={() => void loadKyc()}
+              >
+                {kycRefreshing ? 'Actualizando...' : 'Actualizar estado'}
+              </button>
             )}
             {canStart && (
               <>
@@ -1324,6 +1360,7 @@ export function UserWalletPage() {
                 {kycMsg.text}
               </span>
             )}
+            {kycLoadError && <span className="kyc-nota kyc-nota-error">{kycLoadError}</span>}
           </div>
         );
       })()}
