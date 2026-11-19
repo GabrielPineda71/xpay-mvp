@@ -14,6 +14,8 @@ public class EstadoPinDto
     public bool Bloqueado         { get; set; }
     public bool Restablecido      { get; set; }
     public int  IntentosRestantes { get; set; }
+    public int  LongitudRequerida { get; set; }
+    public bool RequiereActualizacion { get; set; }
 }
 
 public class CrearPinRequest

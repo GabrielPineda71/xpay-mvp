@@ -62,18 +62,33 @@ limitadas según `REGISTRO_PUBLICO_PROD_CONFIGURACION.md`.
 
 ## Corrección 4 — PIN transaccional
 
-Sin claves de configuración: usa la tabla existente `pin_transaccional`
-(migración 001; no requiere migración nueva).
+Sin claves de configuración: usa la tabla existente `pin_transaccional`.
+La migración `053_pin_transaccional_seis_digitos.sql` agrega `longitud_pin`
+nullable y debe aplicarse antes de publicar la API nueva. No modifica hashes,
+intentos ni bloqueos de los PIN existentes; su longitud queda desconocida
+(`NULL`) hasta que su titular cambie el PIN.
 
 | Pieza | Regla |
 |---|---|
-| PIN | 5 dígitos numéricos al crear un PIN o confirmar una operación. Se rechazan los PIN nuevos de dígitos todos iguales o consecutivos. Solo se guarda el hash BCrypt. |
-| Crear | `POST api/pin` con la contraseña de ingreso del usuario (Perfil → PIN transaccional). |
-| Cambiar | `POST api/pin/cambiar` con el PIN actual (cuenta intentos). El PIN anterior de 7 dígitos solo se admite en este paso para elegir uno nuevo de 5. |
+| PIN | 6 dígitos numéricos al crear un PIN o confirmar una operación. Se rechazan los PIN nuevos de dígitos todos iguales o consecutivos. Se guarda el hash BCrypt y la longitud conocida, nunca el PIN en claro. |
+| Crear | `POST api/pin` con la contraseña de ingreso del usuario. Se presenta al ingresar a las cuentas con Wallet que aún no tienen PIN; también está disponible en Perfil. |
+| Cambiar | `POST api/pin/cambiar` con el PIN actual (cuenta intentos). Los PIN anteriores de 5 o 7 dígitos solo sirven para este cambio autenticado a uno nuevo de 6. No se convierten ni se reinician automáticamente. |
 | Exigido en | `POST api/libranza/cliente/anticipos`, `POST api/breb/retiros/real`, `POST api/wallets/transferencia`, `POST api/qr/pagar` (`[RequierePinTransaccional]`, después de `[OperacionFinanciera]`). |
-| Respuestas | 400 `PIN_REQUERIDO` / `PIN_INCORRECTO` (con intentos restantes), 428 `PIN_NO_CONFIGURADO`, 423 `PIN_BLOQUEADO`. |
+| Respuestas | 400 `PIN_REQUERIDO` / `PIN_INCORRECTO` (con intentos restantes), 428 `PIN_NO_CONFIGURADO` / `PIN_ACTUALIZACION_REQUERIDA`, 423 `PIN_BLOQUEADO`. Un PIN anterior no consume intentos al rechazarse para operar; comprobarlo para cambiarlo sí cuenta intentos. |
 | Bloqueo | 5 intentos fallidos. Cada intento se reserva con un UPDATE atómico antes de comparar: ni en paralelo se prueban más de 5. Un acierto reinicia el contador. |
 | Restablecer | `POST api/admin/usuarios/{id}/restablecer-pin` (ADMIN_XPAY/SUPERUSUARIO, nunca sobre la propia cuenta). El PIN queda `RESTABLECIDO` y el usuario crea uno nuevo. Auditoría `PIN_RESTABLECER`. |
+
+Después del PIN se presenta el registro de una llave Bre-B propia. Puede
+posponerse: la llave solo es obligatoria para retirar al banco, no para
+transferir entre Wallets ni pagar con QR. El retiro conserva la exigencia de
+llave propia validada y resolución Passport vigente. Las cuentas de registro
+público limitado siguen en Perfil, sin consultar PIN/llave ni habilitar Wallet.
+
+Publicación: aplicar y verificar la migración 053, publicar la API y después
+la interfaz. No hacer rollback automático a una API que solo admite PIN de 5
+dígitos una vez que usuarios hayan creado o cambiado su PIN a 6. Conservar la
+columna y los hashes ante una recuperación; resolver mediante una versión
+compatible. Este cambio no autoriza operaciones de dinero ni altera saldos.
 
 Fuera de alcance: la cartera ordinaria (aplazada) y la recarga en comercio
 siguen validando solo el formato del campo `pin` que ya traían.

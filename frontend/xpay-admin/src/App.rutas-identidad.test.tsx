@@ -48,6 +48,8 @@ it.each([
   expect(screen.getByRole('button', { name: 'Cerrar sesión' })).toBeInTheDocument();
   expect(screen.queryByText('Mi Wallet')).not.toBeInTheDocument();
   expect(mockGet).not.toHaveBeenCalledWith('/api/wallets/mi-wallet');
+  expect(mockGet).not.toHaveBeenCalledWith('/api/pin/estado');
+  expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
   expect(mockPost).not.toHaveBeenCalled();
 });
 

@@ -317,6 +317,7 @@ public class UsuarioAdminService
 
         var anterior = pin.Bloqueado ? "ACTIVO_BLOQUEADO" : "ACTIVO";
         pin.Estado             = EstadosPin.Restablecido;
+        pin.LongitudPin        = null;
         pin.Bloqueado          = false;
         pin.IntentosFallidos   = 0;
         pin.FechaBloqueo       = null;

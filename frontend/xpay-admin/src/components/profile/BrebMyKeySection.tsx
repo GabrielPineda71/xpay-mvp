@@ -27,8 +27,8 @@ const KEY_TYPES: { value: BrebKeyType; label: string }[] = [
 // Todos los campos mostrados (keyValueMasked, estado) ya vienen
 // enmascarados/sanitizados por el backend — este componente nunca
 // introduce ni muestra un valor crudo nuevo.
-export function BrebMyKeySection() {
-  const { llave, loading, registrando, mensaje, cargar, registrar } = useMyBrebKey();
+export function BrebMyKeySection({ bienvenida = false }: { bienvenida?: boolean } = {}) {
+  const { llave, loading, registrando, mensaje, errorCarga, cargar, registrar } = useMyBrebKey();
   const [keyType, setKeyType] = useState<BrebKeyType>('ID');
   const [keyValue, setKeyValue] = useState('');
 
@@ -46,6 +46,8 @@ export function BrebMyKeySection() {
 
       {loading ? (
         <div className="loading">Cargando llave Bre-B...</div>
+      ) : errorCarga ? (
+        <><p className="breb-msg-err">{errorCarga}</p><button type="button" className="wallet-send-link-btn" onClick={() => void cargar()}>Actualizar llave Bre-B</button></>
       ) : (
         <>
           <div className="breb-profile-status-card">
@@ -70,6 +72,7 @@ export function BrebMyKeySection() {
             </p>
           )}
 
+          {bienvenida && llave ? <p className="breb-profile-note">Tu llave ya está registrada. Para retirar al banco, verifica su estado en «Retirar a mi llave Bre-B» antes de confirmar el retiro.</p> : <>
           <h4 className="profile-section-subtitle">
             {llave ? 'Actualizar llave Bre-B' : 'Registrar llave Bre-B'}
           </h4>
@@ -106,6 +109,7 @@ export function BrebMyKeySection() {
               <span className={mensaje.ok ? 'breb-msg-ok' : 'breb-msg-err'}>{mensaje.text}</span>
             )}
           </form>
+          </>}
         </>
       )}
     </section>

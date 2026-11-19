@@ -23,6 +23,24 @@ afterEach(() => {
 });
 
 describe('ApiError (XPAY-402 requisito A)', () => {
+  it('428 de migración solicita actualizar el PIN sin reenviar la operación ni conservar datos sensibles', async () => {
+    const listener = vi.fn();
+    window.addEventListener('xpay:pin-actualizacion-requerida', listener);
+    try {
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(428, {
+        codigo: 'PIN_ACTUALIZACION_REQUERIDA', message: 'Actualiza tu PIN a seis dígitos.',
+      }));
+      await expect(post('/api/wallets/transferencia', { pin: '25801' })).rejects.toMatchObject({
+        status: 428, codigo: 'PIN_ACTUALIZACION_REQUERIDA',
+      });
+      expect(listener).toHaveBeenCalledOnce();
+      expect((listener.mock.calls[0][0] as Event)).not.toHaveProperty('detail');
+      expect(global.fetch).toHaveBeenCalledOnce();
+      expect(localStorage.length).toBe(0);
+    } finally {
+      window.removeEventListener('xpay:pin-actualizacion-requerida', listener);
+    }
+  });
   it('es instanceof Error', () => {
     const err = new ApiError('mensaje', 400);
     expect(err).toBeInstanceOf(Error);

@@ -57,7 +57,7 @@ public class PinController(PinTransaccionalService pin, AuditLogService audit) :
                 ResultadoPin.Bloqueado     => StatusCode(423, new { success = false, codigo = "PIN_BLOQUEADO", message = "Tu PIN transaccional está bloqueado por intentos fallidos. Solicita a XPAY su restablecimiento." }),
                 ResultadoPin.Incorrecto    => BadRequest(new { success = false, codigo = "PIN_INCORRECTO", intentosRestantes = v.IntentosRestantes, message = $"El PIN actual no coincide. Te quedan {v.IntentosRestantes} intento(s)." }),
                 ResultadoPin.CambiadoConcurrentemente => BadRequest(new { success = false, codigo = "PIN_CAMBIADO", message = RequierePinTransaccionalAttribute.MensajeCambiado }),
-                _                          => BadRequest(new { success = false, codigo = "PIN_REQUERIDO", message = "Ingresa tu PIN actual de 5 dígitos o el anterior de 7 dígitos." }),
+                _                          => BadRequest(new { success = false, codigo = "PIN_REQUERIDO", message = "Ingresa tu PIN actual de 6 dígitos o el anterior de 5 o 7 dígitos." }),
             };
         }
         catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }

@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { get, post, ApiError } from '../../api/client.ts';
 import {
-  esPinActualValido, esPinValido, LONGITUD_PIN, LONGITUD_PIN_ANTERIOR,
-  MENSAJE_ACTUALIZAR_PIN, MENSAJE_FORMATO_PIN, soloDigitosPin,
+  esPinActualValido, esPinValido, estadoPinValido, LONGITUD_PIN,
+  MENSAJE_ACTUALIZAR_PIN, MENSAJE_FORMATO_PIN, soloDigitosPin, type EstadoPin,
 } from '../../utils/pinTransaccional.ts';
 
-interface EstadoPin {
-  configurado: boolean;
-  bloqueado: boolean;
-  restablecido: boolean;
-  intentosRestantes: number;
-}
 interface Msg { ok: boolean; text: string; }
+interface Props {
+  estadoInicial?: EstadoPin;
+  obligatorio?: boolean;
+  onActualizado?: (estado: EstadoPin) => void;
+}
 
 const VACIO = { claveActual: '', pinActual: '', pin: '', confirmacion: '' };
 
@@ -19,10 +18,10 @@ const VACIO = { claveActual: '', pinActual: '', pin: '', confirmacion: '' };
 // ingreso) o cambiarlo (con el PIN actual). Consume GET /api/pin/estado,
 // POST /api/pin y POST /api/pin/cambiar; el PIN se verifica siempre en el
 // backend. Los campos se limpian al terminar y nunca se guardan en storage.
-export function PinTransaccionalSection() {
-  const [estado, setEstado] = useState<EstadoPin | null>(null);
+export function PinTransaccionalSection({ estadoInicial, obligatorio = false, onActualizado }: Props = {}) {
+  const [estado, setEstado] = useState<EstadoPin | null>(estadoInicial ?? null);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
-  const [abierto, setAbierto] = useState(false);
+  const [abierto, setAbierto] = useState(obligatorio);
   const [form, setForm] = useState(VACIO);
   const [errorLocal, setErrorLocal] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -31,14 +30,17 @@ export function PinTransaccionalSection() {
   const cargar = useCallback(async () => {
     try {
       const r = await get<{ success: boolean; data: EstadoPin }>('/api/pin/estado');
+      if (!r.success || !estadoPinValido(r.data)) throw new Error('No se pudo confirmar el estado de tu PIN. Actualiza para volver a consultar.');
       setEstado(r.data);
       setErrorCarga(null);
+      if (r.data.configurado && !r.data.requiereActualizacion && !r.data.bloqueado) onActualizado?.(r.data);
+      return r.data;
     } catch (err) {
       setErrorCarga(err instanceof Error ? err.message : 'No se pudo consultar tu PIN.');
     }
-  }, []);
+  }, [onActualizado]);
 
-  useEffect(() => { void cargar(); }, [cargar]);
+  useEffect(() => { if (!estadoInicial) void cargar(); }, [cargar, estadoInicial]);
 
   const crear = !estado?.configurado;
 
@@ -56,8 +58,9 @@ export function PinTransaccionalSection() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (enviando) return;
     if (crear ? !form.claveActual : !esPinActualValido(form.pinActual)) {
-      setErrorLocal(crear ? 'Ingresa tu contraseña de ingreso.' : `Ingresa tu PIN actual de ${LONGITUD_PIN} o ${LONGITUD_PIN_ANTERIOR} dígitos.`);
+      setErrorLocal(crear ? 'Ingresa tu contraseña de ingreso.' : 'Ingresa tu PIN actual de 5, 6 o 7 dígitos.');
       return;
     }
     if (!esPinValido(form.pin)) { setErrorLocal(MENSAJE_FORMATO_PIN); return; }
@@ -74,6 +77,7 @@ export function PinTransaccionalSection() {
             pinActual: form.pinActual, pinNuevo: form.pin, confirmacionPinNuevo: form.confirmacion,
           });
       setForm(VACIO);
+      if (!r.success) throw new Error(r.message ?? 'No se pudo guardar el PIN.');
       setAbierto(false);
       setMensaje({ ok: true, text: r.message ?? 'PIN actualizado.' });
     } catch (err) {
@@ -84,8 +88,11 @@ export function PinTransaccionalSection() {
           : (err instanceof Error && err.message) || 'No se pudo guardar el PIN. Intenta nuevamente.',
       });
     } finally {
+      // Los secretos se borran también al fallar, sin persistirlos en storage.
+      setForm(VACIO);
+      const actualizado = await cargar();
+      if (actualizado?.bloqueado) setMensaje({ ok: false, text: 'Tu PIN está bloqueado. Solicita a XPAY su restablecimiento antes de operar.' });
       setEnviando(false);
-      await cargar();
     }
   }
 
@@ -93,11 +100,12 @@ export function PinTransaccionalSection() {
     <section className="profile-section" aria-label="PIN transaccional">
       <h3 className="profile-section-title">PIN transaccional</h3>
       <p className="profile-placeholder-note">
-        Lo pedimos para enviar dinero, pagar con QR, solicitar anticipos y retirar a tu llave Bre-B.
+        Es un PIN de 6 dígitos exclusivo para confirmar transacciones monetarias: enviar dinero, pagar con QR,
+        solicitar anticipos y retirar a tu llave Bre-B. No reemplaza tu contraseña de ingreso.
         Tras 5 intentos fallidos se bloquea y debes pedir a XPAY su restablecimiento.
       </p>
 
-      {errorCarga && <span className="breb-msg-err">{errorCarga}</span>}
+      {errorCarga && <><span className="breb-msg-err">{errorCarga}</span><button type="button" className="wallet-send-link-btn" onClick={() => void cargar()}>Actualizar estado del PIN</button></>}
       {estado && (
         <p className="profile-placeholder-note" data-testid="pin-estado">
           {estado.bloqueado
@@ -109,7 +117,7 @@ export function PinTransaccionalSection() {
                 : 'Aún no tienes PIN transaccional. Créalo para poder operar.'}
         </p>
       )}
-      {estado?.configurado && !estado.bloqueado && !abierto && (
+      {estado?.requiereActualizacion && !estado.bloqueado && (
         <p className="profile-placeholder-note">{MENSAJE_ACTUALIZAR_PIN}</p>
       )}
 
@@ -131,7 +139,7 @@ export function PinTransaccionalSection() {
             </label>
           ) : (
             <label>
-              PIN actual ({LONGITUD_PIN} o {LONGITUD_PIN_ANTERIOR} dígitos)
+              PIN actual (5, 6 o 7 dígitos)
               <input
                 type="password" inputMode="numeric" autoComplete="off"
                 value={form.pinActual}
@@ -155,7 +163,7 @@ export function PinTransaccionalSection() {
               onChange={e => setForm(f => ({ ...f, confirmacion: soloDigitosPin(e.target.value) }))}
             />
           </label>
-          <p className="profile-placeholder-note">Evita los PIN con un solo dígito repetido o con dígitos consecutivos, como 11111 o 12345.</p>
+          <p className="profile-placeholder-note">Evita los PIN con un solo dígito repetido o con dígitos consecutivos, como 111111 o 123456.</p>
 
           {errorLocal && <span className="breb-msg-err">{errorLocal}</span>}
           {mensaje && !mensaje.ok && <span className="breb-msg-err">{mensaje.text}</span>}
@@ -164,9 +172,9 @@ export function PinTransaccionalSection() {
             <button type="submit" className="btn-breb" disabled={enviando}>
               {enviando ? 'Guardando...' : crear ? 'Crear PIN' : 'Cambiar PIN'}
             </button>
-            <button type="button" className="wallet-send-link-btn" onClick={cerrar} disabled={enviando}>
+            {!obligatorio && <button type="button" className="wallet-send-link-btn" onClick={cerrar} disabled={enviando}>
               Cancelar
-            </button>
+            </button>}
           </div>
         </form>
       ))}

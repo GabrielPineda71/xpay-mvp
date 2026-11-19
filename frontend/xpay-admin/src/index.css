@@ -865,6 +865,16 @@ tr:hover td { background: #f7fafc; }
 .btn-kyc-start:hover:not(:disabled) { background: #22543d; }
 .btn-kyc-start:disabled { opacity: 0.55; cursor: not-allowed; }
 .kyc-continue-link { display: inline-flex; align-items: center; min-height: 36px; font-size: 0.875rem; text-decoration: none; }
+
+/* Preparación inicial de Wallet: campos legibles y cómodos en el celular. */
+.wallet-primer-ingreso > h2 { margin-bottom: 0.5rem; }
+.wallet-primer-ingreso > p { margin-bottom: 1rem; line-height: 1.5; }
+.wallet-primer-ingreso .profile-placeholder-note { font-size: 1rem; line-height: 1.5; }
+.wallet-primer-ingreso .profile-edit-form { display: grid; gap: 1rem; margin-top: 1rem; }
+.wallet-primer-ingreso .profile-edit-form label { display: grid; gap: 0.4rem; font-size: 1rem; }
+.wallet-primer-ingreso .profile-edit-form input { width: 100%; min-height: 44px; padding: 0.7rem 0.8rem; border: 1px solid #b8c6c9; border-radius: 8px; font: inherit; box-sizing: border-box; }
+.wallet-primer-ingreso .profile-edit-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.wallet-primer-ingreso .btn-breb, .wallet-primer-ingreso .wallet-send-link-btn { min-height: 44px; padding: 0.6rem 1rem; font-size: 1rem; }
 .kyc-nota-aprobado { color: #276749 !important; font-weight: 600; font-style: normal; }
 .kyc-nota-error    { color: #c53030 !important; font-weight: 600; font-style: normal; }
 

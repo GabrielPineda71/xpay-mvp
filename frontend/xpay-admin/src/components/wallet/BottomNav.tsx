@@ -49,15 +49,16 @@ const NAV_ITEMS: NavDef[] = [
 interface BottomNavProps {
   activeItem?: WalletNavItem;
   onNavigate: (item: WalletNavItem) => void;
+  soloPreparacion?: boolean;
 }
 
 // Navegación inferior — presentación pura, sin router (ni NavLink ni
 // useNavigate): cada botón solo notifica la intención vía
 // onNavigate(key). La integración con rutas reales llega en UI-2B.
-export function BottomNav({ activeItem, onNavigate }: BottomNavProps) {
+export function BottomNav({ activeItem, onNavigate, soloPreparacion = false }: BottomNavProps) {
   return (
     <nav className="wallet-bottom-nav" aria-label="Navegación principal">
-      {NAV_ITEMS.map(item => {
+      {NAV_ITEMS.filter(item => !soloPreparacion || item.key === 'home' || item.key === 'profile').map(item => {
         const Icon = item.icon;
         const active = activeItem === item.key;
         return (

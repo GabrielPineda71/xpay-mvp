@@ -201,7 +201,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
     await user.click(screen.getByRole('button', { name: /Continuar/i }));
-    await user.type(await screen.findByLabelText(/PIN transaccional/), '25801');
+    await user.type(await screen.findByLabelText(/PIN transaccional/), '258014');
 
     // Al escribir el monto y pulsar "Continuar" NUNCA se llamó
     // /api/breb/retiros/real — sólo se avanzó a la pantalla de confirmación.
@@ -228,7 +228,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
     await user.click(screen.getByRole('button', { name: /Continuar/i }));
-    await user.type(await screen.findByLabelText(/PIN transaccional/), '25801');
+    await user.type(await screen.findByLabelText(/PIN transaccional/), '258014');
 
     const confirmBtn = await screen.findByRole('button', { name: /Confirmar retiro/i });
     await user.click(confirmBtn);
@@ -262,7 +262,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
     await user.click(screen.getByRole('button', { name: /Continuar/i }));
-    await user.type(await screen.findByLabelText(/PIN transaccional/), '25801');
+    await user.type(await screen.findByLabelText(/PIN transaccional/), '258014');
     await user.click(await screen.findByRole('button', { name: /Confirmar retiro/i }));
 
     await waitFor(() => expect(screen.getByTestId('breb-real-result')).toBeInTheDocument());
@@ -283,11 +283,11 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
     await user.click(screen.getByRole('button', { name: /Continuar/i }));
-    await user.type(await screen.findByLabelText(/PIN transaccional/), '25801');
+    await user.type(await screen.findByLabelText(/PIN transaccional/), '258014');
     await user.click(await screen.findByRole('button', { name: /Confirmar retiro/i }));
 
     await waitFor(() => expect(mockPost).toHaveBeenCalledWith(
-      '/api/breb/retiros/real', { Monto: 5000, Pin: '25801' }, undefined, expect.any(Number),
+      '/api/breb/retiros/real', { Monto: 5000, Pin: '258014' }, undefined, expect.any(Number),
     ));
   });
 
@@ -311,7 +311,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
     await user.click(screen.getByRole('button', { name: /Continuar/i }));
-    await user.type(await screen.findByLabelText(/PIN transaccional/), '25801');
+    await user.type(await screen.findByLabelText(/PIN transaccional/), '258014');
     const confirmBtn = await screen.findByRole('button', { name: /Confirmar retiro/i });
     await user.click(confirmBtn);
 
@@ -337,7 +337,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
     await user.click(screen.getByRole('button', { name: /Continuar/i }));
-    await user.type(await screen.findByLabelText(/PIN transaccional/), '25801');
+    await user.type(await screen.findByLabelText(/PIN transaccional/), '258014');
     await user.click(await screen.findByRole('button', { name: /Confirmar retiro/i }));
 
     await screen.findByTestId('breb-real-uncertain');
@@ -360,7 +360,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
     await user.click(screen.getByRole('button', { name: /Continuar/i }));
-    await user.type(await screen.findByLabelText(/PIN transaccional/), '25801');
+    await user.type(await screen.findByLabelText(/PIN transaccional/), '258014');
     await user.click(await screen.findByRole('button', { name: /Confirmar retiro/i }));
 
     const uncertain = await screen.findByTestId('breb-real-uncertain');
@@ -387,7 +387,7 @@ describe('UserWalletPage — Retirar a mi llave Bre-B (REAL)', () => {
     const montoInput = await screen.findByPlaceholderText('Ej: 5000');
     await user.type(montoInput, '5000');
     await user.click(screen.getByRole('button', { name: /Continuar/i }));
-    await user.type(await screen.findByLabelText(/PIN transaccional/), '25801');
+    await user.type(await screen.findByLabelText(/PIN transaccional/), '258014');
     await user.click(await screen.findByRole('button', { name: /Confirmar retiro/i }));
 
     await screen.findByTestId('breb-real-result');

@@ -38,13 +38,16 @@ export class HttpUncertainError extends Error {
 // es el único patrón usado en todo el frontend, ver XPAY-402 PASO 7) sigue
 // funcionando idéntico, sin ningún cambio de comportamiento. Nunca
 // almacena Authorization/token/body de la petición — solo status y el
-// mismo message ya seguro.
+// mismo message ya seguro. El código público de error es opcional; nunca
+// conserva el cuerpo completo ni valores introducidos por el usuario.
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  declare codigo?: string;
+  constructor(message: string, status: number, codigo?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    if (codigo !== undefined) this.codigo = codigo;
   }
 }
 
@@ -69,13 +72,19 @@ async function handleResponse<T>(res: Response): Promise<T> {
     // cambio; solo el tipo lanzado pasa de Error a ApiError (status
     // agregado, message idéntico).
     let msg: string;
+    let codigo: string | undefined;
     try {
-      const body = await res.json() as { message?: string };
+      const body = await res.json() as { message?: string; codigo?: string };
       msg = body.message ?? `Error HTTP ${res.status}`;
+      codigo = typeof body.codigo === 'string' ? body.codigo : undefined;
     } catch {
       msg = `Error HTTP ${res.status}`;
     }
-    throw new ApiError(msg, res.status);
+    if (res.status === 428 && codigo === 'PIN_ACTUALIZACION_REQUERIDA') {
+      // Solo señal de navegación: nunca guarda el PIN ni repite el POST.
+      window.dispatchEvent(new Event('xpay:pin-actualizacion-requerida'));
+    }
+    throw new ApiError(msg, res.status, codigo);
   }
   try {
     return await res.json() as T;

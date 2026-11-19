@@ -15,6 +15,7 @@ interface WalletShellProps {
   onAction: (action: WalletPrimaryAction) => void;
   onNavigate: (item: WalletNavItem) => void;
   onOpenProfileDetail?: () => void;
+  preparando?: boolean;
 }
 
 // Shell visual del usuario final XPAY — completamente aislado de
@@ -34,6 +35,7 @@ export function WalletShell({
   onAction,
   onNavigate,
   onOpenProfileDetail,
+  preparando = false,
 }: WalletShellProps) {
   const [profileOpen, setProfileOpen] = useState(false);
 
@@ -47,13 +49,14 @@ export function WalletShell({
       <WalletHero
         onOpenProfile={() => setProfileOpen(true)}
         onAction={onAction}
+        mostrarAcciones={!preparando}
       />
 
       <div className="wallet-shell-content">
         {children}
       </div>
 
-      <BottomNav activeItem={activeNav} onNavigate={handleNavigate} />
+      <BottomNav activeItem={activeNav} onNavigate={handleNavigate} soloPreparacion={preparando} />
 
       {profileOpen && (
         <ProfileSheet
