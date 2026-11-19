@@ -112,7 +112,7 @@ async function completarPagoExitoso(user: ReturnType<typeof userEvent.setup>, va
   await waitFor(() => expect(screen.getByText('QA UAT Comercio 1 Operativo')).toBeInTheDocument());
   await user.click(screen.getByRole('button', { name: '💳 Pagar con Wallet' }));
   await user.type(screen.getByLabelText('Valor a pagar (COP ficticio)'), valor);
-  await user.type(screen.getByLabelText(/PIN transaccional/), '25801');
+  await user.type(screen.getByLabelText(/PIN transaccional/), '258014');
   await user.click(screen.getByRole('button', { name: 'Pagar QR con Wallet' }));
 }
 

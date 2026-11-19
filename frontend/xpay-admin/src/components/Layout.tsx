@@ -5,6 +5,7 @@ import { WalletNotificationsProvider } from './wallet/WalletNotificationsContext
 import { useComercioScope } from '../auth/useComercioScope.ts';
 import { CommerceNotificationsProvider } from './comercio/CommerceNotificationsContext.tsx';
 import { CommerceNotificationBell } from './comercio/CommerceNotificationBell.tsx';
+import { WalletPrimerIngreso } from './wallet/WalletPrimerIngreso.tsx';
 
 function getApiLabel(): string {
   const url = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
@@ -101,7 +102,7 @@ export function Layout() {
       // hermanas del árbol, sin esto no tendrían forma de comunicarse
       // (hallazgo central de la auditoría XPAY-430).
       <WalletNotificationsProvider>
-        <WalletShell
+        <WalletPrimerIngreso key={user?.idUsuario} perfil={pathname === '/mi-wallet/perfil'} envolver={(contenido, preparando) => <WalletShell
           userName={user?.usuario}
           activeNav={activeNav}
           onLogout={handleLogout}
@@ -113,9 +114,12 @@ export function Layout() {
           // "Perfil" de BottomNav (ver handleNavigate 'profile' abajo, sin
           // cambios) — un solo camino, sin comportamiento duplicado.
           onOpenProfileDetail={() => navigate('/mi-wallet/perfil')}
+          preparando={preparando}
         >
+          {contenido}
+        </WalletShell>}>
           <Outlet />
-        </WalletShell>
+        </WalletPrimerIngreso>
       </WalletNotificationsProvider>
     );
   }

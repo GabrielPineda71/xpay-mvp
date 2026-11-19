@@ -1,4 +1,12 @@
+using System.Security.Claims;
+using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
@@ -10,7 +18,7 @@ using Xunit;
 namespace Xpay.Api.Tests.Services;
 
 // PIN transaccional contra SQL Server real (tabla pin_transaccional de la
-// migración 001). Mismo patrón que VersionSeguridadUsuarioSqlTests: se salta
+// migraciones 001 y 053). Mismo patrón que VersionSeguridadUsuarioSqlTests: se salta
 // en local sin cadena de conexión y es obligatorio en CI. Datos sintéticos
 // propios y limpieza best-effort en finally.
 [Collection("SqlIntegration")]
@@ -18,9 +26,9 @@ public sealed class PinTransaccionalSqlTests
 {
     private const string EnvConnString = "ConnectionStrings__XpayConnection";
     private const string Clave = "Clave-Prueba-2026";
-    private const string PinOk = "25801";
+    private const string PinOk = "258013";
     private const string PinLegado = "2580147";
-    private const string PinNuevo = "36914";
+    private const string PinNuevo = "369148";
     private static readonly TimeSpan EsperaMaxima = TimeSpan.FromSeconds(60);
 
     [Fact]
@@ -36,11 +44,15 @@ public sealed class PinTransaccionalSqlTests
 
             Assert.Equal(ResultadoPin.NoConfigurado, (await svc.VerificarAsync(id, PinOk)).Resultado);
             Assert.False((await svc.ObtenerEstadoAsync(id)).Configurado);
+            Assert.Equal(6, (await svc.ObtenerEstadoAsync(id)).LongitudRequerida);
+            Assert.False((await svc.ObtenerEstadoAsync(id)).RequiereActualizacion);
 
             await svc.CrearAsync(id, new CrearPinRequest { ClaveActual = Clave, Pin = PinOk, ConfirmacionPin = PinOk });
 
             var estado = await svc.ObtenerEstadoAsync(id);
             Assert.True(estado.Configurado);
+            Assert.Equal(6, estado.LongitudRequerida);
+            Assert.False(estado.RequiereActualizacion);
             Assert.Equal(PinTransaccionalService.MaxIntentos, estado.IntentosRestantes);
             Assert.Equal(ResultadoPin.Correcto, (await svc.VerificarAsync(id, PinOk)).Resultado);
 
@@ -48,6 +60,7 @@ public sealed class PinTransaccionalSqlTests
             var fila = await v.PinesTransaccionales.AsNoTracking().SingleAsync(p => p.IdUsuario == id);
             Assert.NotEqual(PinOk, fila.PinHash);
             Assert.True(BCrypt.Net.BCrypt.Verify(PinOk, fila.PinHash));
+            Assert.Equal((byte?)6, fila.LongitudPin);
             Assert.Equal(0, fila.IntentosFallidos);
             Assert.Equal(1, await v.Auditorias.CountAsync(a => a.IdUsuario == id && a.Accion == "PIN_CREADO"));
         }
@@ -89,6 +102,132 @@ public sealed class PinTransaccionalSqlTests
         finally { await LimpiarAsync(cs, c); }
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(5)]
+    [InlineData(7)]
+    public async Task PinLegado_OperarDevuelve428_SinProbarHashNiConsumirIntentos(int? longitud)
+    {
+        if (!TryConnString(out var cs)) return;
+        var c = new Sembrados();
+        try
+        {
+            var id = await SembrarUsuarioAsync(cs, c);
+            var fecha = new DateTime(2026, 11, 18, 12, 0, 0, DateTimeKind.Utc);
+            await using var ctx = NuevoContexto(cs);
+            // Un hash ilegible haría fallar BCrypt.Verify: el gate de metadata
+            // tiene que rechazar antes de ejecutarlo y antes del UPDATE de reserva.
+            ctx.PinesTransaccionales.Add(new PinTransaccional
+            {
+                IdUsuario = id, PinHash = "hash-no-bcrypt-no-debe-compararse",
+                LongitudPin = longitud.HasValue ? (byte)longitud.Value : null,
+                Estado = EstadosPin.Activo, IntentosFallidos = 2,
+                FechaCreacion = fecha, FechaActualizacion = fecha,
+            });
+            await ctx.SaveChangesAsync();
+            var servicio = new PinTransaccionalService(ctx);
+            foreach (var entrada in new[] { "25801", PinOk, PinLegado })
+                Assert.Equal(ResultadoPin.ActualizacionRequerida, (await servicio.VerificarAsync(id, entrada)).Resultado);
+
+            using var provider = new ServiceCollection().AddSingleton(ctx).AddScoped<PinTransaccionalService>().BuildServiceProvider();
+            var http = new DefaultHttpContext { RequestServices = provider,
+                User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("idUsuario", id.ToString()) }, "test")) };
+            var cuerpo = new CuerpoPin { Pin = PinOk };
+            var action = new ActionContext(http, new RouteData(), new ActionDescriptor());
+            var contexto = new ActionExecutingContext(action, new List<IFilterMetadata>(),
+                new Dictionary<string, object?> { ["request"] = cuerpo }, new object());
+            var ejecutada = false;
+            await new RequierePinTransaccionalAttribute().OnActionExecutionAsync(contexto, () =>
+            {
+                ejecutada = true;
+                return Task.FromResult(new ActionExecutedContext(contexto, new List<IFilterMetadata>(), new object()));
+            });
+            Assert.False(ejecutada);
+            var respuesta = Assert.IsType<ObjectResult>(contexto.Result);
+            Assert.Equal(428, respuesta.StatusCode);
+            Assert.Contains("PIN_ACTUALIZACION_REQUERIDA", JsonSerializer.Serialize(respuesta.Value));
+            Assert.Null(cuerpo.Pin);
+
+            var fila = await ctx.PinesTransaccionales.AsNoTracking().SingleAsync(p => p.IdUsuario == id);
+            Assert.Equal(2, fila.IntentosFallidos);
+            Assert.False(fila.Bloqueado);
+            Assert.Null(fila.FechaBloqueo);
+            Assert.Equal(fecha, fila.FechaActualizacion);
+            Assert.Equal("hash-no-bcrypt-no-debe-compararse", fila.PinHash);
+            Assert.Equal(longitud.HasValue ? (byte?)longitud.Value : null, fila.LongitudPin);
+            Assert.True((await servicio.ObtenerEstadoAsync(id)).RequiereActualizacion);
+        }
+        finally { await LimpiarAsync(cs, c); }
+    }
+
+    [Theory]
+    [InlineData("25801")]
+    [InlineData("2580147")]
+    public async Task PinVigenteDeSeis_EntradaLegadaRechazaFormato_SinContarIntentos(string entrada)
+    {
+        if (!TryConnString(out var cs)) return;
+        var c = new Sembrados();
+        try
+        {
+            var id = await SembrarConPinAsync(cs, c);
+            await using var ctx = NuevoContexto(cs);
+            var servicio = new PinTransaccionalService(ctx);
+            Assert.Equal(ResultadoPin.FormatoInvalido, (await servicio.VerificarAsync(id, entrada)).Resultado);
+            Assert.Equal(PinTransaccionalService.MaxIntentos, (await servicio.ObtenerEstadoAsync(id)).IntentosRestantes);
+        }
+        finally { await LimpiarAsync(cs, c); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CrearConcurrentemente_SoloUnPinYMetadataPuedeGuardarse(bool trasRestablecimiento)
+    {
+        if (!TryConnString(out var cs)) return;
+        var c = new Sembrados();
+        try
+        {
+            var id = await SembrarUsuarioAsync(cs, c);
+            if (trasRestablecimiento)
+            {
+                await using var seed = NuevoContexto(cs);
+                seed.PinesTransaccionales.Add(new PinTransaccional
+                {
+                    IdUsuario = id, PinHash = BCrypt.Net.BCrypt.HashPassword(PinLegado),
+                    Estado = EstadosPin.Restablecido, FechaCreacion = DateTime.UtcNow,
+                });
+                await seed.SaveChangesAsync();
+            }
+            var opciones = new[] { PinOk, PinNuevo };
+            var listos = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var tareas = opciones.Select(async candidato =>
+            {
+                await using var ctx = NuevoContexto(cs);
+                await listos.Task;
+                try
+                {
+                    await new PinTransaccionalService(ctx).CrearAsync(id,
+                        new CrearPinRequest { ClaveActual = Clave, Pin = candidato, ConfirmacionPin = candidato });
+                    return true;
+                }
+                catch (InvalidOperationException) { return false; }
+            }).ToArray();
+            listos.SetResult();
+            var resultados = await Task.WhenAll(tareas).WaitAsync(EsperaMaxima);
+            var ganador = Assert.Single(resultados.Select((guardado, i) => (guardado, i)), r => r.guardado);
+            await using var lectura = NuevoContexto(cs);
+            var fila = await lectura.PinesTransaccionales.AsNoTracking().SingleAsync(p => p.IdUsuario == id);
+            Assert.Equal((byte?)6, fila.LongitudPin);
+            Assert.True(BCrypt.Net.BCrypt.Verify(opciones[ganador.i], fila.PinHash));
+            Assert.False(BCrypt.Net.BCrypt.Verify(opciones[1 - ganador.i], fila.PinHash));
+            Assert.Equal(1, await lectura.Auditorias.CountAsync(a => a.IdUsuario == id
+                && a.Accion == (trasRestablecimiento ? "PIN_CREADO_TRAS_RESTABLECIMIENTO" : "PIN_CREADO")));
+        }
+        finally { await LimpiarAsync(cs, c); }
+    }
+
+    private sealed class CuerpoPin : IConPinTransaccional { public string? Pin { get; set; } }
+
     [Fact]
     public async Task CincoIncorrectos_Bloquea_YNiElCorrectoPasaDespues()
     {
@@ -102,11 +241,11 @@ public sealed class PinTransaccionalSqlTests
 
             for (var i = 1; i < PinTransaccionalService.MaxIntentos; i++)
             {
-                var r = await svc.VerificarAsync(id, "11112");
+                var r = await svc.VerificarAsync(id, "111112");
                 Assert.Equal(ResultadoPin.Incorrecto, r.Resultado);
                 Assert.Equal(PinTransaccionalService.MaxIntentos - i, r.IntentosRestantes);
             }
-            Assert.Equal(ResultadoPin.Bloqueado, (await svc.VerificarAsync(id, "11112")).Resultado);
+            Assert.Equal(ResultadoPin.Bloqueado, (await svc.VerificarAsync(id, "111112")).Resultado);
             Assert.Equal(ResultadoPin.Bloqueado, (await svc.VerificarAsync(id, PinOk)).Resultado);
 
             await using var v = NuevoContexto(cs);
@@ -129,8 +268,8 @@ public sealed class PinTransaccionalSqlTests
             await using var ctx = NuevoContexto(cs);
             var svc = new PinTransaccionalService(ctx);
 
-            await svc.VerificarAsync(id, "11112");
-            await svc.VerificarAsync(id, "11112");
+            await svc.VerificarAsync(id, "111112");
+            await svc.VerificarAsync(id, "111112");
             Assert.Equal(ResultadoPin.Correcto, (await svc.VerificarAsync(id, PinOk)).Resultado);
             Assert.Equal(PinTransaccionalService.MaxIntentos, (await svc.ObtenerEstadoAsync(id)).IntentosRestantes);
         }
@@ -153,7 +292,7 @@ public sealed class PinTransaccionalSqlTests
             {
                 await using var ctx = NuevoContexto(cs);
                 await salida.Task;
-                return (await new PinTransaccionalService(ctx).VerificarAsync(id, "11112")).Resultado;
+                return (await new PinTransaccionalService(ctx).VerificarAsync(id, "111112")).Resultado;
             })).ToList();
             salida.SetResult();
             var resultados = await Task.WhenAll(tareas).WaitAsync(EsperaMaxima);
@@ -189,54 +328,66 @@ public sealed class PinTransaccionalSqlTests
         finally { await LimpiarAsync(cs, c); }
     }
 
-    [Fact]
-    public async Task PinLegado_SoloSirveParaCambiarAUnPinDeCincoDigitos()
+    [Theory]
+    [InlineData("25801", null)]
+    [InlineData("2580147", null)]
+    [InlineData("25801", 5)]
+    [InlineData("2580147", 7)]
+    public async Task PinLegado_SoloSirveParaCambiarAUnPinDeSeisDigitos(string pinLegado, int? longitud)
     {
         if (!TryConnString(out var cs)) return;
         var c = new Sembrados();
         try
         {
-            var id = await SembrarConPinLegadoAsync(cs, c);
+            var id = await SembrarConPinLegadoAsync(cs, c, pinLegado, longitud);
             await using var ctx = NuevoContexto(cs);
             var servicio = new PinTransaccionalService(ctx);
 
-            Assert.Equal(ResultadoPin.FormatoInvalido, (await servicio.VerificarAsync(id, PinLegado)).Resultado);
+            Assert.Equal(ResultadoPin.ActualizacionRequerida, (await servicio.VerificarAsync(id, pinLegado)).Resultado);
+            Assert.True((await servicio.ObtenerEstadoAsync(id)).RequiereActualizacion);
             Assert.Equal(PinTransaccionalService.MaxIntentos, (await servicio.ObtenerEstadoAsync(id)).IntentosRestantes);
 
             var incorrecto = await servicio.CambiarAsync(id,
-                new CambiarPinRequest { PinActual = "2580148", PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo });
+                new CambiarPinRequest { PinActual = new string('8', pinLegado.Length), PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo });
             Assert.Equal(ResultadoPin.Incorrecto, incorrecto.Resultado);
             Assert.Equal(PinTransaccionalService.MaxIntentos - 1, incorrecto.IntentosRestantes);
 
-            var solicitud = new CambiarPinRequest { PinActual = PinLegado, PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo };
+            var solicitud = new CambiarPinRequest { PinActual = pinLegado, PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo };
             Assert.Equal(ResultadoPin.Correcto, (await servicio.CambiarAsync(id, solicitud)).Resultado);
             Assert.Equal(PinTransaccionalService.MaxIntentos, (await servicio.ObtenerEstadoAsync(id)).IntentosRestantes);
-            Assert.Equal(ResultadoPin.FormatoInvalido, (await servicio.VerificarAsync(id, PinLegado)).Resultado);
+            Assert.False((await servicio.ObtenerEstadoAsync(id)).RequiereActualizacion);
+            Assert.Equal(ResultadoPin.FormatoInvalido, (await servicio.VerificarAsync(id, pinLegado)).Resultado);
             Assert.Equal(ResultadoPin.Correcto, (await servicio.VerificarAsync(id, PinNuevo)).Resultado);
 
             var anterior = await servicio.CambiarAsync(id,
-                new CambiarPinRequest { PinActual = PinLegado, PinNuevo = PinOk, ConfirmacionPinNuevo = PinOk });
+                new CambiarPinRequest { PinActual = pinLegado, PinNuevo = PinOk, ConfirmacionPinNuevo = PinOk });
             Assert.Equal(ResultadoPin.Incorrecto, anterior.Resultado);
             Assert.Equal(1, await ctx.Auditorias.CountAsync(a => a.IdUsuario == id && a.Accion == "PIN_CAMBIADO"));
+            var actualizado = await ctx.PinesTransaccionales.AsNoTracking().SingleAsync(p => p.IdUsuario == id);
+            Assert.Equal((byte?)6, actualizado.LongitudPin);
+            Assert.True(BCrypt.Net.BCrypt.Verify(PinNuevo, actualizado.PinHash));
         }
         finally { await LimpiarAsync(cs, c); }
     }
 
-    [Fact]
-    public async Task DosCambiosConcurrentes_ConElMismoPinActual_SoloUnoPuedeGuardarse()
+    [Theory]
+    [InlineData("25801", null)]
+    [InlineData("2580147", null)]
+    [InlineData(PinOk, 6)]
+    public async Task DosCambiosConcurrentes_ConElMismoPinActual_SoloUnoPuedeGuardarse(string pinActual, int? longitud)
     {
         if (!TryConnString(out var cs)) return;
         var c = new Sembrados();
         try
         {
-            var id = await SembrarConPinLegadoAsync(cs, c);
-            var opciones = new[] { PinOk, PinNuevo };
+            var id = await SembrarConPinLegadoAsync(cs, c, pinActual, longitud);
+            var opciones = new[] { "582061", PinNuevo };
             var listos = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var intentos = opciones.Select(async candidato =>
             {
                 await using var contexto = NuevoContexto(cs);
                 await listos.Task;
-                var solicitud = new CambiarPinRequest { PinActual = PinLegado, PinNuevo = candidato, ConfirmacionPinNuevo = candidato };
+                var solicitud = new CambiarPinRequest { PinActual = pinActual, PinNuevo = candidato, ConfirmacionPinNuevo = candidato };
                 return await new PinTransaccionalService(contexto).CambiarAsync(id, solicitud);
             }).ToArray();
 
@@ -250,6 +401,43 @@ public sealed class PinTransaccionalSqlTests
             Assert.Equal(ResultadoPin.Correcto, (await servicio.VerificarAsync(id, opciones[ganador.Indice])).Resultado);
             Assert.Equal(ResultadoPin.Incorrecto, (await servicio.VerificarAsync(id, opciones[1 - ganador.Indice])).Resultado);
             Assert.Equal(1, await lectura.Auditorias.CountAsync(a => a.IdUsuario == id && a.Accion == "PIN_CAMBIADO"));
+            Assert.Equal((byte?)6, (await lectura.PinesTransaccionales.AsNoTracking().SingleAsync(p => p.IdUsuario == id)).LongitudPin);
+        }
+        finally { await LimpiarAsync(cs, c); }
+    }
+
+    [Theory]
+    [InlineData("25801")]
+    [InlineData("2580147")]
+    public async Task CambioLegado_CincoIncorrectosBloquean_YNoPermitenMigrarConElCorrecto(string pinActual)
+    {
+        if (!TryConnString(out var cs)) return;
+        var c = new Sembrados();
+        try
+        {
+            var id = await SembrarConPinLegadoAsync(cs, c, pinActual);
+            await using var ctx = NuevoContexto(cs);
+            var servicio = new PinTransaccionalService(ctx);
+            var incorrecto = new CambiarPinRequest
+            {
+                PinActual = new string('8', pinActual.Length),
+                PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo,
+            };
+            for (var i = 1; i <= PinTransaccionalService.MaxIntentos; i++)
+            {
+                var resultado = await servicio.CambiarAsync(id, incorrecto);
+                Assert.Equal(i == PinTransaccionalService.MaxIntentos ? ResultadoPin.Bloqueado : ResultadoPin.Incorrecto,
+                    resultado.Resultado);
+            }
+            Assert.Equal(ResultadoPin.Bloqueado, (await servicio.CambiarAsync(id,
+                new CambiarPinRequest { PinActual = pinActual, PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo })).Resultado);
+            Assert.Equal(ResultadoPin.Bloqueado, (await servicio.VerificarAsync(id, PinOk)).Resultado);
+            var fila = await ctx.PinesTransaccionales.AsNoTracking().SingleAsync(p => p.IdUsuario == id);
+            Assert.Null(fila.LongitudPin);
+            Assert.Equal(PinTransaccionalService.MaxIntentos, fila.IntentosFallidos);
+            Assert.True(fila.Bloqueado);
+            Assert.True(BCrypt.Net.BCrypt.Verify(pinActual, fila.PinHash));
+            Assert.False(await ctx.Auditorias.AnyAsync(a => a.IdUsuario == id && a.Accion == "PIN_CAMBIADO"));
         }
         finally { await LimpiarAsync(cs, c); }
     }
@@ -264,7 +452,7 @@ public sealed class PinTransaccionalSqlTests
             var id = await SembrarConPinAsync(cs, c);
             await using var ctx = NuevoContexto(cs);
             var r = await new PinTransaccionalService(ctx).CambiarAsync(id,
-                new CambiarPinRequest { PinActual = "11112", PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo });
+                new CambiarPinRequest { PinActual = "111112", PinNuevo = PinNuevo, ConfirmacionPinNuevo = PinNuevo });
             Assert.Equal(ResultadoPin.Incorrecto, r.Resultado);
 
             await using var v = NuevoContexto(cs);
@@ -286,7 +474,7 @@ public sealed class PinTransaccionalSqlTests
             await using (var ctx = NuevoContexto(cs))
             {
                 var svc = new PinTransaccionalService(ctx);
-                for (var i = 0; i < PinTransaccionalService.MaxIntentos; i++) await svc.VerificarAsync(id, "11112");
+                for (var i = 0; i < PinTransaccionalService.MaxIntentos; i++) await svc.VerificarAsync(id, "111112");
             }
 
             await using (var ctx = NuevoContexto(cs))
@@ -305,6 +493,8 @@ public sealed class PinTransaccionalSqlTests
                 var svc = new PinTransaccionalService(ctx);
                 Assert.Equal(ResultadoPin.NoConfigurado, (await svc.VerificarAsync(id, PinOk)).Resultado);
                 Assert.True((await svc.ObtenerEstadoAsync(id)).Restablecido);
+                Assert.False((await svc.ObtenerEstadoAsync(id)).RequiereActualizacion);
+                Assert.Null((await ctx.PinesTransaccionales.AsNoTracking().SingleAsync(p => p.IdUsuario == id)).LongitudPin);
                 await svc.CrearAsync(id, new CrearPinRequest { ClaveActual = Clave, Pin = PinNuevo, ConfirmacionPin = PinNuevo });
                 Assert.Equal(ResultadoPin.Correcto, (await svc.VerificarAsync(id, PinNuevo)).Resultado);
             }
@@ -342,14 +532,16 @@ public sealed class PinTransaccionalSqlTests
         return id;
     }
 
-    private static async Task<long> SembrarConPinLegadoAsync(string cs, Sembrados c)
+    private static async Task<long> SembrarConPinLegadoAsync(string cs, Sembrados c,
+        string pinLegado = PinLegado, int? longitud = null)
     {
         var id = await SembrarUsuarioAsync(cs, c);
         await using var ctx = NuevoContexto(cs);
         ctx.PinesTransaccionales.Add(new PinTransaccional
         {
             IdUsuario = id,
-            PinHash = BCrypt.Net.BCrypt.HashPassword(PinLegado),
+            PinHash = BCrypt.Net.BCrypt.HashPassword(pinLegado),
+            LongitudPin = longitud.HasValue ? (byte)longitud.Value : null,
             FechaCreacion = DateTime.UtcNow,
             Estado = EstadosPin.Activo,
         });

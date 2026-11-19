@@ -138,6 +138,12 @@ jobs:
             -i database/045_cartera_solicitud_sin_monto_y_politica_aplicada.sql
           echo "Migración 045 revalidada (segunda ejecución OK)."
 
+          # PIN de seis dígitos: la columna nullable se agrega sin cambiar
+          # hashes ni asignar longitud a los PIN anteriores. Repetir el script
+          # confirma que el cambio de esquema es idempotente.
+          sqlcmd -S localhost,1433 -U sa -P "$SA_PASSWORD" -d "$DB_NAME" -b -C \
+            -i database/053_pin_transaccional_seis_digitos.sql
+
       - name: dotnet restore
         run: dotnet restore backend/Xpay.Api/Xpay.Api.csproj
 

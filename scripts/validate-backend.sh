@@ -542,7 +542,7 @@ ok "destinatario inexistente → 404"
 # PIN transaccional: las operaciones de dinero del usuario lo exigen
 # (RequierePinTransaccional) antes de cualquier otra validación. Ninguno de
 # estos rechazos mueve dinero — lo confirman los saldos de abajo.
-PIN_A="25801"
+PIN_A="258013"
 transferir_status() { # body -> código HTTP; cuerpo en /tmp/ci_pin_body.json
   curl -s -o /tmp/ci_pin_body.json -w "%{http_code}" -X POST "$API_URL/api/wallets/transferencia" \
     -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_A" \
@@ -566,18 +566,20 @@ CREAR_PIN=$(post_auth_json "$TOKEN_A" "$API_URL/api/pin" \
   "{\"claveActual\": \"Xpay@Test1!\", \"pin\": \"$PIN_A\", \"confirmacionPin\": \"$PIN_A\"}") \
   || fail "POST /api/pin no respondió"
 assert_ok "$CREAR_PIN" "crear PIN carlos"
-echo "$CREAR_PIN" | jq -e '.data.configurado == true and .data.intentosRestantes == 5' > /dev/null \
+echo "$CREAR_PIN" | jq -e '.data.configurado == true and .data.intentosRestantes == 5 and .data.longitudRequerida == 6 and .data.requiereActualizacion == false' > /dev/null \
   || fail "estado del PIN tras crearlo inesperado: $CREAR_PIN"
 ok "PIN de carlos creado (5 intentos disponibles)"
 
-info "POST /api/wallets/transferencia con PIN de 7 dígitos → 400 PIN_REQUERIDO"
-STATUS_PIN=$(transferir_status "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"usuarioDestinoEsperado\": \"$USUARIO_DESTINO_B\", \"pin\": \"2580147\"}")
-[[ "$STATUS_PIN" == "400" ]] && jq -e '.codigo == "PIN_REQUERIDO"' /tmp/ci_pin_body.json > /dev/null \
-  || fail "transferencia con PIN de 7 dígitos → esperado 400 PIN_REQUERIDO, obtenido $STATUS_PIN"
-ok "transferencia con PIN de 7 dígitos → 400 PIN_REQUERIDO"
+for PIN_LEGACY in "25801" "2580147"; do
+  info "POST /api/wallets/transferencia con PIN de ${#PIN_LEGACY} dígitos → 400 PIN_REQUERIDO"
+  STATUS_PIN=$(transferir_status "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"usuarioDestinoEsperado\": \"$USUARIO_DESTINO_B\", \"pin\": \"$PIN_LEGACY\"}")
+  [[ "$STATUS_PIN" == "400" ]] && jq -e '.codigo == "PIN_REQUERIDO"' /tmp/ci_pin_body.json > /dev/null \
+    || fail "transferencia con PIN de ${#PIN_LEGACY} dígitos → esperado 400 PIN_REQUERIDO, obtenido $STATUS_PIN"
+  ok "transferencia con PIN de ${#PIN_LEGACY} dígitos → 400 PIN_REQUERIDO"
+done
 
 info "POST /api/wallets/transferencia con PIN incorrecto → 400 PIN_INCORRECTO"
-STATUS_PIN=$(transferir_status "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"usuarioDestinoEsperado\": \"$USUARIO_DESTINO_B\", \"pin\": \"11112\"}")
+STATUS_PIN=$(transferir_status "{\"idWalletDestino\": $ID_WALLET_B, \"valor\": 1000, \"usuarioDestinoEsperado\": \"$USUARIO_DESTINO_B\", \"pin\": \"111112\"}")
 [[ "$STATUS_PIN" == "400" ]] && jq -e '.codigo == "PIN_INCORRECTO" and .intentosRestantes == 4' /tmp/ci_pin_body.json > /dev/null \
   || fail "transferencia con PIN incorrecto → esperado 400 PIN_INCORRECTO (4 restantes), obtenido $STATUS_PIN $(cat /tmp/ci_pin_body.json)"
 ok "transferencia con PIN incorrecto → 400 PIN_INCORRECTO, quedan 4 intentos"
@@ -2423,7 +2425,7 @@ info "POST /api/comercio/wallet-recargas con USUARIO_FINAL (carlos) → debe ret
 STATUS_C19=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   -X POST "$API_URL/api/comercio/wallet-recargas" \
   -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_A" \
-  -d "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"58206\"}")
+  -d "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"582061\"}")
 [[ "$STATUS_C19" == "403" ]] || fail "FASE 70.4-C caso 19: USUARIO_FINAL esperado 403, obtenido $STATUS_C19"
 ok "FASE 70.4-C caso 19: USUARIO_FINAL (carlos) → 403 ✓"
 
@@ -2432,14 +2434,14 @@ info "POST /api/comercio/wallet-recargas sin token → debe retornar 401"
 STATUS_C20=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   -X POST "$API_URL/api/comercio/wallet-recargas" \
   -H "Content-Type: application/json" \
-  -d "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"58206\"}")
+  -d "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"582061\"}")
 [[ "$STATUS_C20" == "401" ]] || fail "FASE 70.4-C caso 20: sin token esperado 401, obtenido $STATUS_C20"
 ok "FASE 70.4-C caso 20: sin token → 401 ✓"
 
 # ── Caso 11: scope ambiguo (2 comercio_usuarios ACTIVOS) → 409 ──
 info "POST /api/comercio/wallet-recargas con scope ambiguo (ci_cajero_ambiguo) → debe retornar 409"
 RESP_C11=$(post_auth_json_status "$TOKEN_CAJERO_AMBIGUO" "$API_URL/api/comercio/wallet-recargas" \
-  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"58206\"}")
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"582061\"}")
 STATUS_C11=$(echo "$RESP_C11" | tail -1)
 BODY_C11=$(echo "$RESP_C11" | sed '$d')
 [[ "$STATUS_C11" == "409" ]] || fail "FASE 70.4-C caso 11: scope ambiguo esperado 409, obtenido $STATUS_C11 ($BODY_C11)"
@@ -2450,7 +2452,7 @@ info "POST /api/comercio/wallet-recargas con ADMIN_COMERCIO (ci_admin_comercio) 
 STATUS_C10=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   -X POST "$API_URL/api/comercio/wallet-recargas" \
   -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_ADMIN_COMERCIO" \
-  -d "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"58206\"}")
+  -d "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"582061\"}")
 [[ "$STATUS_C10" == "403" ]] || fail "FASE 70.4-C caso 10: ADMIN_COMERCIO esperado 403, obtenido $STATUS_C10"
 ok "FASE 70.4-C caso 10: ADMIN_COMERCIO (ci_admin_comercio) → 403 ✓"
 
@@ -2460,7 +2462,7 @@ ok "FASE 70.4-C caso 10: ADMIN_COMERCIO (ci_admin_comercio) → 403 ✓"
 # información de esa caja ajena en el mensaje. ──────────────────────────────
 info "POST /api/comercio/wallet-recargas sin caja abierta (ci_admin_sede_comercio) → debe retornar 409"
 RESP_C7=$(post_auth_json_status "$TOKEN_ADMIN_SEDE" "$API_URL/api/comercio/wallet-recargas" \
-  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"58206\"}")
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"582061\"}")
 STATUS_C7=$(echo "$RESP_C7" | tail -1)
 BODY_C7=$(echo "$RESP_C7" | sed '$d')
 [[ "$STATUS_C7" == "409" ]] || fail "FASE 70.4-C caso 7/12: sin caja esperado 409, obtenido $STATUS_C7 ($BODY_C7)"
@@ -2481,7 +2483,7 @@ ok "FASE 70.4-C caso 1: CAJERO abre caja → idCaja=$ID_CAJA_CAJERO estado=ABIER
 # ── Casos 2/3/4: recarga con caja ABIERTA propia → 200, vínculo completo ──
 info "POST /api/comercio/wallet-recargas (20.000, CAJERO → wallet de carlos)"
 RECARGA_1=$(post_auth_json "$TOKEN_CAJERO" "$API_URL/api/comercio/wallet-recargas" \
-  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 20000, \"pin\": \"58206\", \"observaciones\": \"Recarga CI Fase 70.4-C\"}") \
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 20000, \"pin\": \"582061\", \"observaciones\": \"Recarga CI Fase 70.4-C\"}") \
   || fail "FASE 70.4-C caso 2: recarga con caja abierta no respondió"
 assert_ok "$RECARGA_1" "recarga con caja abierta"
 ID_RECARGA_1=$(echo "$RECARGA_1" | jq -r '.data.idRecarga')
@@ -2528,7 +2530,7 @@ ok "FASE 70.4-C caso 5: iniciar cuadre → efectivoEsperado=70000 (50000 fondo +
 # ── Caso 8: recarga con caja EN_CUADRE → 409 ──
 info "POST /api/comercio/wallet-recargas con caja EN_CUADRE (ci_cajero_comercio) → debe retornar 409"
 RESP_C8=$(post_auth_json_status "$TOKEN_CAJERO" "$API_URL/api/comercio/wallet-recargas" \
-  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"58206\"}")
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"582061\"}")
 STATUS_C8=$(echo "$RESP_C8" | tail -1)
 [[ "$STATUS_C8" == "409" ]] || fail "FASE 70.4-C caso 8: caja EN_CUADRE esperado 409, obtenido $STATUS_C8"
 ok "FASE 70.4-C caso 8: recarga con caja EN_CUADRE → 409 ✓"
@@ -2546,7 +2548,7 @@ ok "FASE 70.4-C: caja CAJERO cerrada sin diferencia → CERRADA ✓"
 # ── Caso 9: recarga con caja en estado terminal (CERRADA) → 409 ──
 info "POST /api/comercio/wallet-recargas con caja CERRADA (ci_cajero_comercio) → debe retornar 409"
 RESP_C9=$(post_auth_json_status "$TOKEN_CAJERO" "$API_URL/api/comercio/wallet-recargas" \
-  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"58206\"}")
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 10000, \"pin\": \"582061\"}")
 STATUS_C9=$(echo "$RESP_C9" | tail -1)
 [[ "$STATUS_C9" == "409" ]] || fail "FASE 70.4-C caso 9: caja terminal esperado 409, obtenido $STATUS_C9"
 ok "FASE 70.4-C caso 9: recarga con caja en estado terminal (CERRADA) → 409 ✓"
@@ -2572,7 +2574,7 @@ info "POST /api/comercio/wallet-recargas con usuario destino inexistente → deb
 STATUS_C13=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 \
   -X POST "$API_URL/api/comercio/wallet-recargas" \
   -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN_ADMIN_SEDE" \
-  -d '{"idUsuarioWallet": 999999999, "valor": 10000, "pin": "58206"}')
+  -d '{"idUsuarioWallet": 999999999, "valor": 10000, "pin": "582061"}')
 [[ "$STATUS_C13" == "404" ]] || fail "FASE 70.4-C caso 13: usuario destino inexistente esperado 404, obtenido $STATUS_C13"
 
 MOVS_DESPUES_C13=$("$SQLCMD" -S "$DB_HOST" -U "$DB_USER" -P "$SA_PASS" -d "$DB_NAME" -b -C \
@@ -2605,10 +2607,10 @@ limpiar_concurrencia_70_4_c() {
   rm -f /tmp/concurrente_a.json /tmp/concurrente_b.json
 }
 (post_auth_json "$TOKEN_ADMIN_SEDE" "$API_URL/api/comercio/wallet-recargas" \
-  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 5000, \"pin\": \"58206\"}" > /tmp/concurrente_a.json 2>&1) &
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 5000, \"pin\": \"582061\"}" > /tmp/concurrente_a.json 2>&1) &
 PID_CONC_A=$!
 (post_auth_json "$TOKEN_ADMIN_SEDE" "$API_URL/api/comercio/wallet-recargas" \
-  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 7000, \"pin\": \"58206\"}" > /tmp/concurrente_b.json 2>&1) &
+  "{\"idUsuarioWallet\": $ID_USUARIO_A, \"valor\": 7000, \"pin\": \"582061\"}" > /tmp/concurrente_b.json 2>&1) &
 PID_CONC_B=$!
 trap limpiar_concurrencia_70_4_c EXIT
 wait "$PID_CONC_A" || fail "FASE 70.4-C: recarga concurrente A falló"

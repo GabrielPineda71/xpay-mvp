@@ -422,6 +422,7 @@ public class XpayDbContext : DbContext
         e.Property(x => x.IdPin).HasColumnName("id_pin");
         e.Property(x => x.IdUsuario).HasColumnName("id_usuario");
         e.Property(x => x.PinHash).HasColumnName("pin_hash").HasMaxLength(500).IsUnicode(false).IsRequired();
+        e.Property(x => x.LongitudPin).HasColumnName("longitud_pin").HasColumnType("tinyint");
         e.Property(x => x.IntentosFallidos).HasColumnName("intentos_fallidos");
         e.Property(x => x.Bloqueado).HasColumnName("bloqueado");
         e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion");

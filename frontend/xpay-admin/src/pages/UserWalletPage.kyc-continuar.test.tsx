@@ -1,9 +1,10 @@
 // API y sesión Veriff simuladas: ninguna prueba inicia verificaciones reales.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { UserWalletPage } from './UserWalletPage.tsx';
+import { WalletLlaveBrebAviso } from '../components/wallet/WalletLlaveBrebAviso.tsx';
 import type { AuthUser } from '../auth/AuthContext.tsx';
 
 const mockGet = vi.fn();
@@ -31,10 +32,11 @@ const SESSION_URL = 'https://magic.veriff.me/v/synthetic-test-session';
 let kyc: { estadoKyc: string; sessionUrl?: string | null };
 let kycError: boolean;
 let kycQuery: Promise<unknown> | null;
+let llave: unknown;
 
-function renderWallet() {
+function renderWallet(conAviso = false) {
   return render(<RouterProvider router={createMemoryRouter(
-    [{ path: '/mi-wallet', element: <UserWalletPage /> }],
+    [{ path: '/mi-wallet', element: <>{conAviso && <WalletLlaveBrebAviso />}<UserWalletPage /></> }],
     { initialEntries: ['/mi-wallet'] },
   )} />);
 }
@@ -44,6 +46,7 @@ beforeEach(() => {
   kyc = { estadoKyc: 'PENDIENTE', sessionUrl: SESSION_URL };
   kycError = false;
   kycQuery = null;
+  llave = null;
   mockGet.mockReset().mockImplementation((path: string) => {
     if (path === '/api/kyc/mi-estado') {
       if (kycQuery) return kycQuery;
@@ -51,7 +54,7 @@ beforeEach(() => {
     }
     if (path === '/api/wallets/mi-wallet') return Promise.resolve({ success: true, data: { idWallet: 2, idPersona: 3, nombreWallet: 'Wallet de prueba', estado: 'ACTIVA' } });
     if (path === '/api/reportes/mi-estado-cuenta') return Promise.resolve({ success: true, data: { idWallet: 2, nombreWallet: 'Wallet de prueba', estado: 'ACTIVA', saldoDisponible: 0, saldoRetenido: 0, movimientos: [] } });
-    if (path === '/api/breb/mi-llave') return Promise.resolve({ success: true, data: null });
+    if (path === '/api/breb/mi-llave') return Promise.resolve({ success: true, data: llave });
     if (path === '/api/breb/mis-retiros') return Promise.resolve({ success: true, data: [] });
     return Promise.reject(new Error(`GET no simulado: ${path}`));
   });
@@ -59,6 +62,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -120,11 +124,62 @@ describe('UserWalletPage — continuar una sesión Veriff pendiente', () => {
     const user = userEvent.setup();
     renderWallet();
     await screen.findByRole('link', { name: 'Continuar verificación' });
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mis-retiros');
     kyc = { estadoKyc: 'APROBADO', sessionUrl: SESSION_URL };
 
     await user.click(screen.getByRole('button', { name: 'Actualizar estado' }));
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Continuar verificación' })).not.toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Iniciar verificación' })).not.toBeInTheDocument();
+    await waitFor(() => expect(mockGet).toHaveBeenCalledWith('/api/breb/mi-llave'));
+    expect(mockGet).toHaveBeenCalledWith('/api/breb/mis-retiros');
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('una aprobación detectada por polling carga la llave y sus retiros sin iniciar otra sesión', async () => {
+    vi.useFakeTimers();
+    await act(async () => { renderWallet(); });
+    expect(screen.getByRole('link', { name: 'Continuar verificación' })).toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+    kyc = { estadoKyc: 'APROBADO' };
+    await act(async () => { await vi.advanceTimersByTimeAsync(12000); });
+    expect(mockGet).toHaveBeenCalledWith('/api/breb/mi-llave');
+    expect(mockGet).toHaveBeenCalledWith('/api/breb/mis-retiros');
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('actualizar a APROBADO renueva el aviso montado y ofrece registrar la llave solo tras consultarla', async () => {
+    const user = userEvent.setup();
+    const cambios = vi.fn();
+    window.addEventListener('xpay:kyc-estado-actualizado', cambios);
+    try {
+      renderWallet(true);
+      expect(await screen.findByRole('link', { name: 'Verificar identidad en Mi Wallet' })).toBeInTheDocument();
+      await screen.findByRole('link', { name: 'Continuar verificación' });
+      expect(cambios).toHaveBeenCalledTimes(1);
+      await user.click(screen.getByRole('button', { name: 'Actualizar estado' }));
+      expect(cambios).toHaveBeenCalledTimes(1);
+      kyc = { estadoKyc: 'APROBADO' };
+      await user.click(screen.getByRole('button', { name: 'Actualizar estado' }));
+      expect(await screen.findByRole('link', { name: 'Registrar mi llave en Perfil' })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Verificar identidad en Mi Wallet' })).not.toBeInTheDocument();
+      expect(cambios).toHaveBeenCalledTimes(2);
+      expect(mockPost).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('xpay:kyc-estado-actualizado', cambios);
+    }
+  });
+
+  it('la aprobación por polling retira el aviso montado cuando la llave ya está validada', async () => {
+    vi.useFakeTimers();
+    await act(async () => { renderWallet(true); });
+    expect(screen.getByRole('link', { name: 'Verificar identidad en Mi Wallet' })).toBeInTheDocument();
+    kyc = { estadoKyc: 'APROBADO' };
+    llave = { idBrebLlave: 8, keyType: 'ALPHA', keyValueMasked: '***0118', estado: 'VALIDADA' };
+    await act(async () => { await vi.advanceTimersByTimeAsync(12000); });
+    expect(mockGet).toHaveBeenCalledWith('/api/breb/mi-llave');
+    expect(screen.queryByRole('complementary', { name: 'Llave Bre-B para retiros' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Continuar verificación' })).not.toBeInTheDocument();
     expect(mockPost).not.toHaveBeenCalled();
   });
 

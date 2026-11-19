@@ -28,6 +28,7 @@ export function useMyBrebKey() {
   const [loading, setLoading] = useState(false);
   const [registrando, setRegistrando] = useState(false);
   const [mensaje, setMensaje] = useState<BrebKeyMsg | null>(null);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
 
   // GET /api/breb/mi-llave — solo lectura, mismo endpoint ya usado por
   // UserWalletPage.tsx (loadBreb). No dispara ninguna llamada a Passport.
@@ -36,9 +37,9 @@ export function useMyBrebKey() {
     try {
       const r = await get<{ success: boolean; data: BrebLlave | null }>('/api/breb/mi-llave');
       setLlave(r.data);
+      setErrorCarga(null);
     } catch {
-      // No crítico — se conserva el último estado local conocido, mismo
-      // criterio ya usado por loadBreb() en UserWalletPage.tsx.
+      setErrorCarga('No pudimos consultar tu llave. Actualiza antes de registrar una nueva.');
     } finally {
       setLoading(false);
     }
@@ -76,5 +77,5 @@ export function useMyBrebKey() {
     }
   }, []);
 
-  return { llave, loading, registrando, mensaje, cargar, registrar };
+  return { llave, loading, registrando, mensaje, errorCarga, cargar, registrar };
 }

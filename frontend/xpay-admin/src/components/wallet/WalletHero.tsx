@@ -27,6 +27,7 @@ function IconUser(p: IconProps) {
 interface WalletHeroProps {
   onOpenProfile: () => void;
   onAction: (action: WalletPrimaryAction) => void;
+  mostrarAcciones?: boolean;
 }
 
 // Franja verde: marca + notificaciones + perfil + acciones principales.
@@ -41,7 +42,7 @@ interface WalletHeroProps {
 // compartido que UserWalletPage.tsx alimenta con cada carga/poll de
 // movimientos. El panel de notificaciones vive aquí, con su propio estado
 // local de abierto/cerrado (mismo patrón que ProfileSheet en WalletShell).
-export function WalletHero({ onOpenProfile, onAction }: WalletHeroProps) {
+export function WalletHero({ onOpenProfile, onAction, mostrarAcciones = true }: WalletHeroProps) {
   const [notifOpen, setNotifOpen] = useState(false);
   const { unreadCount, notifications, markAllAsSeen } = useWalletNotifications();
 
@@ -65,7 +66,7 @@ export function WalletHero({ onOpenProfile, onAction }: WalletHeroProps) {
         </div>
       </div>
 
-      <UserPrimaryActions onAction={onAction} />
+      {mostrarAcciones && <UserPrimaryActions onAction={onAction} />}
 
       {notifOpen && (
         <NotificationsPanel
