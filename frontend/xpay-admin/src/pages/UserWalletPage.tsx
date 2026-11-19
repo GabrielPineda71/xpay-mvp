@@ -389,6 +389,8 @@ export function UserWalletPage() {
   // fuente de estado de la llave para este tab y para "retirar-breb".
   const [brebLlave,      setBrebLlave]      = useState<BrebLlave | null>(null);
   const [brebLlaveLoad,  setBrebLlaveLoad]  = useState(false);
+  const [brebLlaveConocida, setBrebLlaveConocida] = useState(false);
+  const [brebLlaveError, setBrebLlaveError] = useState<string | null>(null);
   const [brebRetiros,    setBrebRetiros]    = useState<BrebRetiro[]>([]);
   const [brebRetValor,   setBrebRetValor]   = useState('');
   const [brebRetBusy,    setBrebRetBusy]    = useState(false);
@@ -508,12 +510,14 @@ export function UserWalletPage() {
       if (!r.success || !Object.prototype.hasOwnProperty.call(KYC_BADGE_CLASS, r.data?.estadoKyc)) {
         throw new Error('Estado de verificación no disponible.');
       }
+      const estadoCambio = kycEstadoRef.current !== r.data.estadoKyc;
       setKycEstado(r.data.estadoKyc);
       kycEstadoRef.current = r.data.estadoKyc;
       setKycEstadoConocido(true);
       setKycSessionUrl(r.data.estadoKyc === 'PENDIENTE' ? veriffSessionUrl(r.data.sessionUrl) : null);
       setKycLoadError(null);
       if (r.data.estadoKyc === 'APROBADO') setKycMsg(null);
+      if (estadoCambio) window.dispatchEvent(new Event('xpay:kyc-estado-actualizado'));
     } catch {
       // Conservar la sesión conocida; un fallo de consulta no inicia otra.
       setKycLoadError('No pudimos actualizar tu verificación. Toca Actualizar estado para volver a consultar.');
@@ -525,15 +529,21 @@ export function UserWalletPage() {
   // ── Bre-B load ────────────────────────────────────────────────────────────
   const loadBreb = useCallback(async () => {
     setBrebLlaveLoad(true);
+    setBrebLlaveError(null);
     try {
       const [llaveResp, retirosResp] = await Promise.all([
         get<{ success: boolean; data: BrebLlave | null }>('/api/breb/mi-llave'),
         get<{ success: boolean; data: BrebRetiro[] }>('/api/breb/mis-retiros'),
       ]);
+      if (!llaveResp.success || llaveResp.data === undefined || !retirosResp.success || !Array.isArray(retirosResp.data)) {
+        throw new Error('Consulta de llave Bre-B no disponible.');
+      }
       setBrebLlave(llaveResp.data);
-      setBrebRetiros(retirosResp.data ?? []);
+      setBrebRetiros(retirosResp.data);
+      setBrebLlaveConocida(true);
     } catch {
-      /* non-critical */
+      // Un fallo de lectura no significa que el usuario no tenga llave.
+      setBrebLlaveError('No pudimos consultar tu llave Bre-B. Intenta de nuevo.');
     } finally {
       setBrebLlaveLoad(false);
     }
@@ -624,8 +634,12 @@ export function UserWalletPage() {
   }, [user, reportMovimientos]);
 
   useEffect(() => {
-    void loadMiWallet(); void loadCuenta(); void loadKyc(); void loadBreb();
-  }, [loadMiWallet, loadCuenta, loadKyc, loadBreb]);
+    void loadMiWallet(); void loadCuenta(); void loadKyc();
+  }, [loadMiWallet, loadCuenta, loadKyc]);
+
+  useEffect(() => {
+    if (kycEstadoConocido && kycEstado === 'APROBADO') void loadBreb();
+  }, [kycEstadoConocido, kycEstado, loadBreb]);
 
   // Part G: detect ?kyc=return — user returned from Veriff, refresh KYC state immediately
   useEffect(() => {
@@ -1247,6 +1261,23 @@ export function UserWalletPage() {
       </div>
     );
   }
+
+  const brebPreparada = kycEstadoConocido && kycEstado === 'APROBADO' && brebLlaveConocida;
+  const brebPreparacion = !kycEstadoConocido ? (
+    <p className="breb-retiro-note">{kycLoadError
+      ? 'No pudimos consultar tu verificación. Usa «Actualizar estado» para volver a intentarlo.'
+      : 'Consultando tu verificación de identidad...'}</p>
+  ) : kycEstado !== 'APROBADO' ? (
+    <p className="breb-retiro-note">Completa la verificación de identidad en Mi Wallet antes de consultar tu llave Bre-B.</p>
+  ) : !brebLlaveError ? <div className="loading">Cargando llave Bre-B...</div> : null;
+  const brebErrorAviso = kycEstado === 'APROBADO' && brebLlaveError ? (
+    <div className="error-msg" role="alert">
+      {brebLlaveError}{' '}
+      <button type="button" className="retry-button" disabled={brebLlaveLoad} onClick={() => void loadBreb()}>
+        Reintentar consulta de llave
+      </button>
+    </div>
+  ) : null;
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -1908,9 +1939,8 @@ export function UserWalletPage() {
         <div className="breb-section">
           <span className="breb-sandbox-badge">Sandbox Passport — retiro simulado, sin dinero real</span>
 
-          {brebLlaveLoad ? (
-            <div className="loading">Cargando llave Bre-B...</div>
-          ) : (
+          {brebErrorAviso}
+          {!brebPreparada ? brebPreparacion : (
             <>
               {/* Estado de la llave */}
               <div className="breb-status-card">
@@ -2031,9 +2061,8 @@ export function UserWalletPage() {
           ejecuta salvo que el propio usuario dispare cada acción. */}
       {tab === 'retirar-breb' && (
         <div className="breb-real-section">
-          {brebLlaveLoad ? (
-            <div className="loading">Cargando llave Bre-B...</div>
-          ) : !brebLlave ? (
+          {brebErrorAviso}
+          {!brebPreparada ? brebPreparacion : !brebLlave ? (
             // XPAY-392 — CTA hacia Perfil (antes dirigía al tab 'banco', que
             // ya no tiene entrada en la franja verde desde XPAY-390). Aplica
             // a cualquier tipo de llave: el backend resuelve ID, PHONE,

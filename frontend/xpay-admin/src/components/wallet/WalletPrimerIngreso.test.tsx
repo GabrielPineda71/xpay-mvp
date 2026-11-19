@@ -34,6 +34,7 @@ const PIN_LISTO: EstadoPin = { configurado: true, bloqueado: false, restablecido
 let pin: EstadoPin;
 let llave: object | null;
 let errorPin: boolean;
+let estadoKyc: string;
 
 function mostrar(conOperacion = false, conShell = false, perfil = false, tab = 'enviar') {
   const child = conOperacion ? <UserWalletPage /> : <h2>{perfil ? 'PERFIL_LISTO' : 'WALLET_LISTA'}</h2>;
@@ -51,13 +52,14 @@ beforeEach(() => {
   pin = { ...PIN_LISTO, configurado: false };
   llave = null;
   errorPin = false;
+  estadoKyc = 'APROBADO';
   onAction.mockReset(); onNavigate.mockReset(); onLogout.mockReset(); onProfile.mockReset();
   mockGet.mockReset().mockImplementation((path: string) => {
     if (path === '/api/wallets/mi-wallet') return Promise.resolve({ success: true, data: { idWallet: 2, idPersona: 5, nombreWallet: 'Wallet de prueba', estado: 'ACTIVA' } });
     if (path === '/api/pin/estado') return errorPin ? Promise.reject(new ApiError('Estado no disponible', 404)) : Promise.resolve({ success: true, data: pin });
     if (path === '/api/breb/mi-llave') return Promise.resolve({ success: true, data: llave });
     if (path === '/api/breb/mis-retiros') return Promise.resolve({ success: true, data: [] });
-    if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc: 'APROBADO' } });
+    if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc } });
     if (path === '/api/reportes/mi-estado-cuenta') return Promise.resolve({ success: true, data: { idWallet: 2, nombreWallet: 'Wallet de prueba', estado: 'ACTIVA', saldoDisponible: 10000, saldoRetenido: 0, movimientos: [] } });
     if (path === '/api/wallets/destinatario/3') return Promise.resolve({ success: true, data: { idWallet: 3, usuario: 'destino.prueba', nombreVisible: 'Destino P.' } });
     if (path.startsWith('/api/qr/resolver')) return Promise.resolve({ success: true, data: { codigoQr: 'QR-PRUEBA-001', idComercio: 3, nombreComercio: 'Comercio de prueba', idTienda: 3, nombreTienda: 'Tienda de prueba' } });
@@ -79,10 +81,37 @@ async function crearPin(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Nuevo PIN (6 dígitos)'), '025801');
   await user.type(screen.getByLabelText('Confirmar PIN'), '025801');
   await user.click(screen.getByRole('button', { name: 'Crear PIN' }));
-  await screen.findByRole('heading', { name: 'Mi llave Bre-B' });
+  await screen.findByText('Tu PIN de 6 dígitos quedó guardado.');
 }
 
 describe('WalletPrimerIngreso', () => {
+  it('primer ingreso sin KYC: guarda el PIN y guía a identidad sin consultar ni registrar llaves', async () => {
+    estadoKyc = 'NO_INICIADO';
+    const user = userEvent.setup();
+    mostrar(true);
+    await crearPin(user);
+    expect(await screen.findByText(/Antes de registrar tu llave, completa la verificación de identidad en Mi Wallet/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Valor de la llave')).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+    await user.click(screen.getByRole('button', { name: 'Continuar a mi Wallet' }));
+    expect(await screen.findByRole('button', { name: 'Iniciar verificación' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Verificar identidad en Mi Wallet' })).toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mis-retiros');
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave', expect.anything());
+    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave/resolver', expect.anything());
+  });
+
+  it('con PIN6 guardado e identidad pendiente muestra guía inline sin consultar la llave', async () => {
+    pin = { ...PIN_LISTO };
+    estadoKyc = 'PENDIENTE';
+    mostrar();
+    expect(await screen.findByText('WALLET_LISTA')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Verificar identidad en Mi Wallet' })).toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+    expect(mockPost).not.toHaveBeenCalled();
+  });
   it('antes de conocer el PIN no monta la Wallet ni permite saltar la preparación', async () => {
     mockGet.mockImplementation((path: string) => path === '/api/wallets/mi-wallet'
       ? Promise.resolve({ success: true, data: { idWallet: 2 } }) : new Promise(() => {}));

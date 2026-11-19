@@ -51,7 +51,7 @@ const MI_PERFIL_BASE = {
   tipoDocumento: 'CC', numeroDocumento: '123456789', fechaNacimiento: '1990-05-14T00:00:00',
   celular: '3001234567', email: 'juana@correo.com',
   direccion: 'Calle 1', ciudad: 'Bogota', departamento: 'Cundinamarca', pais: 'Colombia',
-  identidadVerificada: false, estadoKycActual: 'NO_INICIADO',
+  identidadVerificada: true, estadoKycActual: 'APROBADO',
   emailVerificado: false, celularVerificado: false,
 };
 
@@ -61,6 +61,7 @@ beforeEach(() => {
   mockPost.mockReset();
   mockPatch.mockReset();
   mockGet.mockImplementation((path: string) => {
+    if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc: 'APROBADO' } });
     if (path === '/api/breb/mi-llave') return Promise.resolve({ success: true, data: null });
     if (path === '/api/usuarios/mi-perfil') return Promise.resolve({ success: true, data: MI_PERFIL_BASE });
     return Promise.reject(new Error(`unmocked GET ${path}`));
@@ -68,6 +69,18 @@ beforeEach(() => {
 });
 
 describe('ProfilePage (XPAY-392/401)', () => {
+  it('antes de aprobar identidad guía a Mi Wallet sin consultar ni registrar una llave', async () => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc: 'NO_INICIADO' } });
+      if (path === '/api/usuarios/mi-perfil') return Promise.resolve({ success: true, data: { ...MI_PERFIL_BASE, identidadVerificada: false, estadoKycActual: 'NO_INICIADO' } });
+      return Promise.reject(new Error('Consulta no esperada.'));
+    });
+    renderProfilePage();
+    expect(await screen.findByRole('link', { name: 'Verificar identidad en Mi Wallet' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Valor de la llave')).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+    expect(mockPost).not.toHaveBeenCalled();
+  });
   it('B: la ruta /mi-wallet/perfil renderiza ProfilePage', async () => {
     renderProfilePage();
     expect(screen.getByText('Perfil')).toBeInTheDocument();
@@ -125,6 +138,7 @@ describe('ProfilePage (XPAY-392/401)', () => {
 
   it('XPAY-401: un fallo en la carga de datos personales no rompe la sección Bre-B', async () => {
     mockGet.mockImplementation((path: string) => {
+      if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc: 'APROBADO' } });
       if (path === '/api/breb/mi-llave') return Promise.resolve({ success: true, data: null });
       if (path === '/api/usuarios/mi-perfil') return Promise.reject(new Error('Error HTTP 500'));
       return Promise.reject(new Error(`unmocked GET ${path}`));

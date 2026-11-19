@@ -55,12 +55,19 @@ const LLAVE_BCODE = {
   resolucionVerificadaPassport: true,
 };
 
+let consultaLlave: Promise<unknown> | null;
+let errorLlave: boolean;
+let estadoKyc: string;
+
 function makeApiRoutedGet(llave: unknown) {
   return (path: string) => {
     if (path === '/api/wallets/mi-wallet') return Promise.resolve({ success: true, data: { idWallet: 2, idPersona: 3, nombreWallet: 'Wallet qa.usuario1', estado: 'ACTIVA' } });
     if (path === '/api/reportes/mi-estado-cuenta') return Promise.resolve({ success: true, data: CUENTA_BASE });
-    if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc: 'APROBADO' } });
-    if (path === '/api/breb/mi-llave') return Promise.resolve({ success: true, data: llave });
+    if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc } });
+    if (path === '/api/breb/mi-llave') {
+      if (consultaLlave) return consultaLlave;
+      return errorLlave ? Promise.reject(new Error('Fallo de lectura simulado')) : Promise.resolve({ success: true, data: llave });
+    }
     if (path === '/api/breb/mis-retiros') return Promise.resolve({ success: true, data: [] });
     return Promise.reject(new Error(`unmocked GET ${path}`));
   };
@@ -80,11 +87,65 @@ function renderWalletAt(initialTab: string, llave: unknown = null) {
 }
 
 beforeEach(() => {
+  consultaLlave = null;
+  errorLlave = false;
+  estadoKyc = 'APROBADO';
   mockGet.mockReset();
   mockPost.mockReset();
 });
 
 describe('UserWalletPage — Retirar sin llave apta → CTA a Perfil (XPAY-392 G/H)', () => {
+  it.each(['banco', 'retirar-breb'])('en %s espera la consulta de llave antes de ofrecer registrarla', async tab => {
+    let responder!: (value: unknown) => void;
+    consultaLlave = new Promise(resolve => { responder = resolve; });
+    renderWalletAt(tab);
+    expect(await screen.findByText('Cargando llave Bre-B...')).toBeInTheDocument();
+    expect(screen.queryByText('NO REGISTRADA')).not.toBeInTheDocument();
+    expect(screen.queryByText('Primero configura tu llave Bre-B.')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Configurar mi llave Bre-B|Perfil → Mi llave Bre-B/ })).not.toBeInTheDocument();
+
+    await act(async () => { responder({ success: true, data: null }); });
+    const cta = await screen.findByRole('button', { name: tab === 'banco' ? 'Perfil → Mi llave Bre-B' : 'Configurar mi llave Bre-B' });
+    expect(cta).toBeInTheDocument();
+    expect(screen.queryByText('Cargando llave Bre-B...')).not.toBeInTheDocument();
+    await waitFor(() => expect(cta).toBeInTheDocument());
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it.each(['banco', 'retirar-breb'])('en %s permite reintentar un error sin afirmar que no hay llave', async tab => {
+    const user = userEvent.setup();
+    errorLlave = true;
+    renderWalletAt(tab);
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos consultar tu llave Bre-B.');
+    expect(screen.queryByText('NO REGISTRADA')).not.toBeInTheDocument();
+    expect(screen.queryByText('Primero configura tu llave Bre-B.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cargando llave Bre-B...')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Configurar mi llave Bre-B|Perfil → Mi llave Bre-B/ })).not.toBeInTheDocument();
+    errorLlave = false;
+    await user.click(screen.getByRole('button', { name: 'Reintentar consulta de llave' }));
+    expect(await screen.findByRole('button', { name: tab === 'banco' ? 'Perfil → Mi llave Bre-B' : 'Configurar mi llave Bre-B' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it.each([{ success: false, data: null }, { success: true }])('no interpreta una respuesta incompleta como ausencia de llave: %j', async respuesta => {
+    consultaLlave = Promise.resolve(respuesta);
+    renderWalletAt('retirar-breb');
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos consultar tu llave Bre-B.');
+    expect(screen.queryByRole('button', { name: 'Configurar mi llave Bre-B' })).not.toBeInTheDocument();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it.each(['banco', 'retirar-breb'])('en %s espera la aprobación de identidad sin consultar ni ofrecer registrar la llave', async tab => {
+    estadoKyc = 'PENDIENTE';
+    renderWalletAt(tab);
+    expect(await screen.findByText('Completa la verificación de identidad en Mi Wallet antes de consultar tu llave Bre-B.')).toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mis-retiros');
+    expect(screen.queryByRole('button', { name: /Configurar mi llave Bre-B|Perfil → Mi llave Bre-B/ })).not.toBeInTheDocument();
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
   it('G: sin llave registrada muestra "Primero configura tu llave Bre-B."', async () => {
     renderWalletAt('retirar-breb', null);
     expect(await screen.findByText('Primero configura tu llave Bre-B.')).toBeInTheDocument();
@@ -107,6 +168,19 @@ describe('UserWalletPage — Retirar sin llave apta → CTA a Perfil (XPAY-392 G
 });
 
 describe('UserWalletPage — Resolve y endpoints financieros permanecen en Retirar (XPAY-392 I/J)', () => {
+  it('conserva la llave conocida si la consulta posterior a verificarla falla', async () => {
+    const user = userEvent.setup();
+    mockPost.mockResolvedValue({ success: true, data: { ...LLAVE_BCODE, titularNombreMasked: 'J*** P***' } });
+    renderWalletAt('retirar-breb', LLAVE_BCODE);
+    await user.type(await screen.findByPlaceholderText('Escríbela igual que al registrarla'), '3001234567890');
+    errorLlave = true;
+    await user.click(screen.getByRole('button', { name: 'Verificar mi llave' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('No pudimos consultar tu llave Bre-B.');
+    expect(screen.getByText('BCODE · ***0268')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Verificar mi llave' })).toBeInTheDocument();
+    expect(screen.queryByText('Primero configura tu llave Bre-B.')).not.toBeInTheDocument();
+  });
+
   it('I: con llave BCODE apta, el formulario "Verificar mi llave" (Resolve) sigue presente en Retirar', async () => {
     renderWalletAt('retirar-breb', LLAVE_BCODE);
     expect(await screen.findByRole('button', { name: 'Verificar mi llave' })).toBeInTheDocument();

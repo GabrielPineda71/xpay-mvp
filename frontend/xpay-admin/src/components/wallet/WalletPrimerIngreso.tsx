@@ -18,6 +18,7 @@ export function WalletPrimerIngreso({ children, perfil = false, envolver }: {
   const [estado, setEstado] = useState<EstadoPin | null>(null);
   const [walletDisponible, setWalletDisponible] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [identidadLlave, setIdentidadLlave] = useState<'cargando' | 'aprobada' | 'pendiente' | 'error'>('cargando');
   const generacion = useRef(0);
 
   const cargar = useCallback(async () => {
@@ -59,6 +60,16 @@ export function WalletPrimerIngreso({ children, perfil = false, envolver }: {
     };
   }, [cargar, perfil]);
 
+  useEffect(() => {
+    if (paso !== 'llave') return;
+    let cancelado = false;
+    setIdentidadLlave('cargando');
+    void get<{ success: boolean; data: { estadoKyc: string } }>('/api/kyc/mi-estado').then(r => {
+      if (!cancelado) setIdentidadLlave(!r.success ? 'error' : r.data?.estadoKyc === 'APROBADO' ? 'aprobada' : 'pendiente');
+    }).catch(() => { if (!cancelado) setIdentidadLlave('error'); });
+    return () => { cancelado = true; };
+  }, [paso]);
+
   const actualizado = useCallback((nuevo: EstadoPin) => {
     if (estadoPinValido(nuevo) && nuevo.configurado && !nuevo.requiereActualizacion && !nuevo.bloqueado) {
       setEstado(nuevo);
@@ -86,7 +97,10 @@ export function WalletPrimerIngreso({ children, perfil = false, envolver }: {
       <p>Tu PIN de 6 dígitos quedó guardado.</p>
       <p>Para retirar a tu banco necesitas registrar y verificar una llave Bre-B de tu propia cuenta bancaria.
         Puedes hacerlo más tarde en Perfil. La llave no es necesaria para enviar entre Wallets ni pagar con QR.</p>
-      <BrebMyKeySection bienvenida />
+      {identidadLlave === 'cargando' && <p role="status">Consultando tu verificación de identidad...</p>}
+      {identidadLlave === 'aprobada' && <BrebMyKeySection bienvenida identidadAprobada />}
+      {identidadLlave === 'pendiente' && <p>Antes de registrar tu llave, completa la verificación de identidad en Mi Wallet. Tu PIN ya quedó guardado.</p>}
+      {identidadLlave === 'error' && <p>No pudimos consultar tu verificación de identidad. Puedes continuar a Mi Wallet y actualizar su estado.</p>}
       <button type="button" className="btn-breb" onClick={() => setPaso('listo')}>Continuar a mi Wallet</button>
       <button type="button" className="wallet-send-link-btn" onClick={() => setPaso('listo')}>Registrar más tarde</button>
     </>}
