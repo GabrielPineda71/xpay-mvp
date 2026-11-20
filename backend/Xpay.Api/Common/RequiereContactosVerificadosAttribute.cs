@@ -52,12 +52,6 @@ public sealed class RequiereContactosVerificadosAttribute : Attribute, IAsyncAct
                 { StatusCode = StatusCodes.Status500InternalServerError };
             return;
         }
-        if (!requisito.Efectivo)
-        {
-            await next();
-            return;
-        }
-
         if (!long.TryParse(context.HttpContext.User.FindFirst("idUsuario")?.Value, out var idUsuario) || idUsuario <= 0)
         {
             context.Result = new UnauthorizedObjectResult(new { success = false, message = "Token inválido." });
@@ -65,6 +59,16 @@ public sealed class RequiereContactosVerificadosAttribute : Attribute, IAsyncAct
         }
 
         var db = (XpayDbContext)servicios.GetService(typeof(XpayDbContext))!;
+        // Las nuevas cuentas públicas conservan este requisito incluso si el
+        // proveedor está temporalmente caído o se apaga el flag histórico. La
+        // falta de canal no convierte un contacto pendiente en verificado.
+        var publica = await HabilitacionCuentaPublicaService.EsAutorregistroAsync(db, idUsuario,
+            context.HttpContext.RequestAborted);
+        if (!requisito.Efectivo && !publica)
+        {
+            await next();
+            return;
+        }
         var estado = await db.Usuarios.AsNoTracking()
             .Where(u => u.IdUsuario == idUsuario)
             .Select(u => new { u.EmailVerificado, u.CelularVerificado })

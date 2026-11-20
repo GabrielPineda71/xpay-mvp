@@ -1,0 +1,21 @@
+.alta-publica p { line-height: 1.55; }
+.alta-publica-pasos { list-style: none; counter-reset: alta; padding: 0; display: grid; gap: .75rem; margin: 1.25rem 0; }
+.alta-publica-pasos li { counter-increment: alta; display: grid; grid-template-columns: 1.75rem 1fr; gap: .15rem .65rem; align-items: start; }
+.alta-publica-pasos li::before { content: counter(alta); width: 1.65rem; height: 1.65rem; display: grid; place-items: center; border-radius: 50%; background: #e5f3f2; color: #125b56; font-weight: 700; grid-row: span 2; }
+.alta-publica-pasos span { grid-column: 2; color: #52605f; }
+.alta-publica-pendientes { border-left: 3px solid #b7791f; background: #fffaf0; padding: .85rem 1rem; margin: 1rem 0; color: #704c16; }
+.alta-publica-pendientes ul { padding-left: 1.2rem; margin: .4rem 0 0; }
+.alta-publica-identidad { border-top: 1px solid #e1e8e7; margin: 1.25rem 0; padding-top: 1rem; }
+.alta-publica-identidad h4 { margin: 0 0 .5rem; font-size: 1.1rem; }
+.alta-publica-consentimiento { margin: 1rem 0; align-items: flex-start; line-height: 1.5; }
+.alta-publica-consentimiento input { flex: 0 0 auto; margin-top: .25rem; }
+.alta-publica-continuar { display: inline-block; text-decoration: none; margin: .6rem 0; }
+.alta-publica button, .alta-publica-continuar { max-width: 100%; white-space: normal; }
+.alta-publica-lista { padding: .8rem 1rem; background: #effaf3; border-radius: .6rem; margin: 1rem 0; }
+@media (max-width: 520px) { .alta-publica button, .alta-publica-continuar { width: 100%; box-sizing: border-box; text-align: center; } }
+.alta-publica { background: #fff; color: #243c35; border: 1px solid #dce7e3; border-radius: 1rem; padding: 1rem; }
+.alta-publica .profile-btn-primary, .alta-publica .profile-btn-secondary { padding: .75rem 1rem; border-radius: .55rem; font-size: .95rem; font-weight: 600; cursor: pointer; line-height: 1.4; }
+.alta-publica .profile-btn-primary { background: #0d828e; color: white; border: 1px solid #0d828e; }
+.alta-publica .profile-btn-secondary { background: white; color: #0b6b75; border: 1px solid #82b9bc; }
+.alta-publica button:disabled { opacity: .55; cursor: not-allowed; }
+.alta-publica :is(button, a, input):focus-visible, .nomina-vinculaciones :is(button, a, input, select):focus-visible { outline: 3px solid #207dce; outline-offset: 3px; }

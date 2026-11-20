@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { get, post, put } from '../api/client.ts';
 import { fmtDate, fmtMoney } from '../utils.ts';
 import { SoloQa } from '../config/SoloQa.tsx';
@@ -444,6 +445,7 @@ export function LibranzaConveniosAdminPage() {
   if (vista === 'lista') return (
     <div className="page">
       <h2>Convenios Libranza</h2>
+      <p><Link to="/admin/nomina-vinculaciones">Revisar coincidencias de empleados con cuentas XPAY</Link></p>
       <SoloQa>
         <p style={{ color:'#718096', fontSize:'0.9rem', marginBottom:'1.5rem' }}>
           QA · sin dinero real · sin empleados todavía · solo parametrización
@@ -540,6 +542,7 @@ export function LibranzaConveniosAdminPage() {
           ← Volver
         </button>
         <h2 style={{ margin:0 }}>{selected.nombreEmpresa}</h2>
+        <Link to={`/admin/nomina-vinculaciones?idConvenio=${selected.idConvenio}`}>Revisar coincidencias de esta empresa</Link>
         {estadoBadge(selected.estado)}
       </div>
       <Notif />
@@ -761,6 +764,7 @@ export function LibranzaConveniosAdminPage() {
       {/* ── Empleados (admin) ── */}
       {detalleTab === 'empleados' && (
         <div>
+          <p>Para nuevas aprobaciones, usa <Link to={`/admin/nomina-vinculaciones?idConvenio=${selected.idConvenio}`}>Coincidencias de nómina</Link> y confirma la pertenencia laboral antes de habilitar el cupo.</p>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
             <h3 style={{ margin:0 }}>Empleados del convenio</h3>
             {btn('↺ Refrescar', () => selected && cargarEmpleados(selected.idConvenio), 'secondary')}

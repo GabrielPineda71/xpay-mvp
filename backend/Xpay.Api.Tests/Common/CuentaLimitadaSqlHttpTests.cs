@@ -82,7 +82,7 @@ public sealed class CuentaLimitadaSqlHttpTests
                 "/api/wallets/transferencia", "/api/qr/pagar",
                 "/api/breb/mi-llave", "/api/breb/mi-llave/resolver",
                 "/api/breb/retiros/real", "/api/cartera-ordinaria/solicitar-cupo",
-                "/api/wallets/mi-wallet/recarga-breb", "/api/kyc/veriff/session",
+                "/api/wallets/mi-wallet/recarga-breb",
                 "/api/prueba-cuenta-limitada/operacion",
             })
             {
@@ -90,6 +90,15 @@ public sealed class CuentaLimitadaSqlHttpTests
                 Assert.Equal(HttpStatusCode.Forbidden, respuesta.StatusCode);
                 var cuerpo = await respuesta.Content.ReadFromJsonAsync<JsonElement>();
                 Assert.Equal(CuentaLimitadaFilter.CodigoCuentaLimitada, cuerpo.GetProperty("codigo").GetString());
+            }
+            // KYC es una excepción deliberada al filtro financiero: permite
+            // verificar identidad conservando la cuenta limitada. Su servicio
+            // exige la nueva autorización C y no puede abrirse por esa excepción.
+            using (var kycSinConsentimiento = await cliente.PostAsync("/api/kyc/veriff/session", null))
+            {
+                Assert.Equal(HttpStatusCode.Forbidden, kycSinConsentimiento.StatusCode);
+                var cuerpo = await kycSinConsentimiento.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal(KycService.MensajeConsentimientoKycPendiente, cuerpo.GetProperty("message").GetString());
             }
             using (var noPermitida = await cliente.GetAsync("/api/prueba-cuenta-limitada/sin-excepcion"))
                 Assert.Equal(HttpStatusCode.Forbidden, noPermitida.StatusCode);

@@ -29,7 +29,9 @@ public sealed class CuentaLimitadaFilterTests
             "AuthController.CambiarClaveObligatoria", "AuthController.CambiarClave",
             "ContactosController.Estado", "ContactosController.SolicitarCodigo",
             "ContactosController.Verificar", "ContactosController.Preferencias",
-            "KycController.MiEstado",
+            "KycController.MiEstado", "KycController.VeriffSession",
+            "ConsentimientoBiometricoController.Estado", "ConsentimientoBiometricoController.Autorizar",
+            "AltaPublicaEstadoController.Estado",
         };
         var acciones = typeof(UsuariosController).Assembly.GetTypes()
             .Where(t => typeof(ControllerBase).IsAssignableFrom(t))

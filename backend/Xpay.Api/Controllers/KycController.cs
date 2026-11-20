@@ -93,6 +93,7 @@ public class KycController : ControllerBase
     /// </summary>
     [HttpPost("veriff/session")]
     [Authorize]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> VeriffSession()
     {
         if (!long.TryParse(User.FindFirst("idUsuario")?.Value, out var idUsuario) || idUsuario <= 0)

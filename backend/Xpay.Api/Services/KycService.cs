@@ -46,6 +46,7 @@ public class KycService
     private readonly IHttpClientFactory  _http;
     private readonly ILogger<KycService> _logger;
     private readonly IAmbienteXpay       _ambiente;
+    private readonly ConsentimientoBiometricoService _consentimientoBiometrico;
 
     // Piloto PROD — corrección 1: mensaje único cuando la configuración de
     // Veriff está incompleta o es inválida. KycController lo traduce a 503.
@@ -71,30 +72,46 @@ public class KycService
         IConfiguration config,
         IHttpClientFactory httpClientFactory,
         ILogger<KycService> logger,
-        IAmbienteXpay ambiente)
+        IAmbienteXpay ambiente,
+        ConsentimientoBiometricoService? consentimientoBiometrico = null)
     {
         _db       = db;
         _config   = config;
         _http     = httpClientFactory;
         _logger   = logger;
         _ambiente = ambiente;
+        _consentimientoBiometrico = consentimientoBiometrico
+            ?? new ConsentimientoBiometricoService(db, config, ambiente, TimeProvider.System);
     }
 
     public async Task<MiEstadoKycResponse> GetMiEstadoAsync(long idUsuario)
     {
         var datos = await _db.Usuarios.AsNoTracking()
             .Where(u => u.IdUsuario == idUsuario)
-            .Select(u => new { u.EstadoKycActual, u.FechaKycActualizacion })
+            .Select(u => new { u.IdPersona, u.EstadoKycActual, u.FechaKycActualizacion })
             .FirstOrDefaultAsync()
             ?? throw new InvalidOperationException("Usuario no encontrado.");
 
         string? sessionUrl = null;
-        if (datos.EstadoKycActual == "PENDIENTE")
+        var publicaPendiente = datos.EstadoKycActual == "PENDIENTE"
+            && await HabilitacionCuentaPublicaService.EsAutorregistroAsync(_db, idUsuario);
+        var permiteContinuar = datos.EstadoKycActual == "PENDIENTE"
+            && (!publicaPendiente || await _consentimientoBiometrico.PuedeIniciarKycAsync(idUsuario));
+        if (permiteContinuar)
         {
-            sessionUrl = await _db.KycVerificaciones.AsNoTracking()
-                .Where(k => k.IdUsuario == idUsuario && k.EsActual && k.EstadoKyc == "PENDIENTE")
-                .Select(k => k.SessionUrl)
-                .FirstOrDefaultAsync();
+            if (publicaPendiente)
+            {
+                var actuales = await _db.KycVerificaciones.AsNoTracking()
+                    .Where(k => k.IdUsuario == idUsuario && k.EsActual).Take(2).ToListAsync();
+                sessionUrl = SesionPublicaPendiente(actuales, datos.IdPersona)?.SessionUrl;
+            }
+            else
+            {
+                sessionUrl = await _db.KycVerificaciones.AsNoTracking()
+                    .Where(k => k.IdUsuario == idUsuario && k.EsActual && k.EstadoKyc == "PENDIENTE")
+                    .Select(k => k.SessionUrl)
+                    .FirstOrDefaultAsync();
+            }
         }
 
         return new MiEstadoKycResponse
@@ -147,8 +164,32 @@ public class KycService
             throw new InvalidOperationException(MensajeVeriffNoDisponible);
         }
 
-        if (await RegistroPublicoService.EsCuentaLimitadaAsync(_db, idUsuario))
-            throw new InvalidOperationException(MensajeConsentimientoKycPendiente);
+        if (await HabilitacionCuentaPublicaService.EsAutorregistroAsync(_db, idUsuario))
+        {
+            if (!await _consentimientoBiometrico.PuedeIniciarKycAsync(idUsuario))
+                throw new InvalidOperationException(MensajeConsentimientoKycPendiente);
+
+            // El alta pública no ofrece nuevos intentos automáticos tras una
+            // decisión. Volver de una sesión pendiente conserva la misma sesión.
+            var usuarioPublico = await _db.Usuarios.AsNoTracking().SingleAsync(u => u.IdUsuario == idUsuario);
+            if (usuarioPublico.EstadoKycActual == "PENDIENTE")
+            {
+                var sesiones = await _db.KycVerificaciones.AsNoTracking()
+                    .Where(k => k.IdUsuario == idUsuario && k.EsActual)
+                    .Take(2).ToListAsync();
+                var pendiente = SesionPublicaPendiente(sesiones, usuarioPublico.IdPersona);
+                if (pendiente is null)
+                    throw new InvalidOperationException("La sesión de verificación requiere revisión de XPAY.");
+                return new IniciarKycResponse
+                {
+                    EstadoKyc = "PENDIENTE", SessionId = pendiente.SessionId!, SessionUrl = pendiente.SessionUrl!,
+                };
+            }
+            if (usuarioPublico.EstadoKycActual != "NO_INICIADO")
+                throw new InvalidOperationException("La verificación ya tiene un proceso registrado. Consulta su estado o solicita revisión a XPAY.");
+            if (await _db.KycVerificaciones.AsNoTracking().AnyAsync(k => k.IdUsuario == idUsuario && k.EsActual))
+                throw new InvalidOperationException("La sesión de verificación requiere revisión de XPAY.");
+        }
 
         // No-PII vendor data — no personal data sent to Veriff
         var vendorData = VendorDataVeriff(idUsuario, _ambiente.EsProductivo);
@@ -320,6 +361,14 @@ public class KycService
             SessionUrl = sessionUrl,
         };
     }
+
+    // Solo se devuelve una sesión del propio titular, vigente y pendiente de
+    // Veriff. Las inconsistencias no se convierten en enlaces de continuación.
+    internal static KycVerificacion? SesionPublicaPendiente(IReadOnlyList<KycVerificacion> sesiones, long idPersona) =>
+        sesiones.Count == 1 && sesiones[0].IdPersona == idPersona && sesiones[0].EsActual
+            && sesiones[0].Proveedor == "VERIFF" && sesiones[0].EstadoKyc == "PENDIENTE"
+            && !string.IsNullOrWhiteSpace(sesiones[0].SessionId) && !string.IsNullOrWhiteSpace(sesiones[0].SessionUrl)
+                ? sesiones[0] : null;
 
     // ── Veriff webhook signature validation ────────────────────────────────────
     // Header: x-hmac-signature (Veriff sends hex-encoded HMAC-SHA256 of raw body)
