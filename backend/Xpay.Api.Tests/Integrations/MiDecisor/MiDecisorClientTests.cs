@@ -1,4 +1,6 @@
 using System.Net;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xpay.Api.Integrations.MiDecisor;
 using Xunit;
@@ -52,6 +54,36 @@ public class MiDecisorClientTests
         Assert.Equal(1, handler.CallCount);
         Assert.Equal(1, token.CallCount);
         Assert.Equal(HttpMethod.Post, handler.LastRequest!.Method);
+    }
+
+    [Fact]
+    public async Task Query_ExactJsonContentType_AcceptsUtf8SurnameWithoutCharset()
+    {
+        byte[]? receivedBody = null;
+        var handler = new FakeHttpMessageHandler(async (request, ct) =>
+        {
+            // Misma restricción de Content-Type que el endpoint OAuth del proveedor.
+            if (request.Content?.Headers.ContentType?.ToString() != "application/json")
+                return FakeHttpMessageHandler.Json(HttpStatusCode.UnsupportedMediaType, "{}");
+
+            receivedBody = await request.Content.ReadAsByteArrayAsync(ct);
+            return FakeHttpMessageHandler.Json(HttpStatusCode.OK, AcceptedWithRisk());
+        });
+        var token = new FakeMiDecisorTokenProvider();
+        var client = CreateClient(handler, ValidConfig(), token);
+
+        var result = await client.ConsultarPersonaNaturalAsync(new("1", "1234567", "Muñoz"));
+
+        Assert.Equal("ACCEPTED", result.EstadoEnvelope);
+        Assert.Equal(1, handler.CallCount);
+        Assert.Equal(1, token.CallCount);
+        Assert.NotNull(receivedBody);
+        var jsonUtf8 = new UTF8Encoding(false, true).GetString(receivedBody!);
+        using var json = JsonDocument.Parse(jsonUtf8);
+        Assert.Equal("1", json.RootElement.GetProperty("tipoIdentificacion").GetString());
+        Assert.Equal("1234567", json.RootElement.GetProperty("numeroIdentificacion").GetString());
+        Assert.Equal("Muñoz", json.RootElement.GetProperty("apellidoRazonSocial").GetString());
+        Assert.Equal(3, json.RootElement.EnumerateObject().Count());
     }
 
     [Fact]
