@@ -38,7 +38,8 @@ public class ContactosController(
             CelularVerificado       = u.CelularVerificado,
             CanalEmailDisponible    = verificacion.CanalDisponible(CanalContacto.Email),
             CanalWhatsAppDisponible = verificacion.CanalDisponible(CanalContacto.WhatsApp),
-            RequeridoParaOperar     = requisito.Efectivo,
+            RequeridoParaOperar     = requisito.Efectivo
+                || await HabilitacionCuentaPublicaService.EsAutorregistroAsync(db, idUsuario, ct),
             ServicioWhatsApp   = await verificacion.ConsentimientoVigenteAsync(idUsuario, CanalContacto.WhatsApp, FinalidadComunicacion.Servicio, ct),
             PublicidadEmail    = await verificacion.ConsentimientoVigenteAsync(idUsuario, CanalContacto.Email, FinalidadComunicacion.Publicidad, ct),
             PublicidadWhatsApp = await verificacion.ConsentimientoVigenteAsync(idUsuario, CanalContacto.WhatsApp, FinalidadComunicacion.Publicidad, ct),

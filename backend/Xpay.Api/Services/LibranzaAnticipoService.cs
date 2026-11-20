@@ -12,6 +12,7 @@ public class LibranzaAnticipoService
     private readonly XpayDbContext                      _db;
     private readonly ILogger<LibranzaAnticipoService>  _logger;
     private readonly ControlOperacionesFinancieras     _control;
+    private readonly IConfiguration? _configuracion;
 
     // Ledger account codes
     private const string CodAnticipoCartera = "130104"; // Cartera Anticipo Nómina (ACTIVO, D)
@@ -23,11 +24,13 @@ public class LibranzaAnticipoService
     private const long IdUnidadNegocio = 1;
 
     public LibranzaAnticipoService(
-        XpayDbContext db, ILogger<LibranzaAnticipoService> logger, ControlOperacionesFinancieras control)
+        XpayDbContext db, ILogger<LibranzaAnticipoService> logger, ControlOperacionesFinancieras control,
+        IConfiguration? configuracion = null)
     {
         _db      = db;
         _logger  = logger;
         _control = control;
+        _configuracion = configuracion;
     }
 
     // ── Obtener corte vigente ─────────────────────────────────────────────────
@@ -172,6 +175,8 @@ public class LibranzaAnticipoService
             .FirstOrDefaultAsync(a => a.IdUsuario == idUsuario && a.Estado == "ACTIVO")
             ?? throw new UnauthorizedAccessException("No tiene un perfil de empleado de libranza asociado.");
 
+        await LibranzaVinculacionService.ValidarRevisionVigenteAsync(_db, asoc);
+
         var empleado = await _db.LibranzaEmpleados.FindAsync(asoc.IdEmpleado)
             ?? throw new InvalidOperationException("Empleado no encontrado.");
 
@@ -297,6 +302,10 @@ public class LibranzaAnticipoService
             if (asoc.IdWallet is null)
                 throw new InvalidOperationException("El empleado no tiene wallet asociada para el desembolso.");
 
+            // Las revisiones nuevas comparten el orden de bloqueo con su
+            // aprobador antes de bloquear el empleado y calcular el cupo.
+            await LibranzaVinculacionService.BloquearParaOperacionAsync(_db, asoc);
+
             // Lock pesimista del empleado: dos solicitudes concurrentes del mismo
             // empleado se serializan aquí; la segunda recalcula el cupo usado YA
             // incluyendo el anticipo confirmado por la primera.
@@ -311,6 +320,8 @@ public class LibranzaAnticipoService
                 ?? throw new InvalidOperationException("Convenio no encontrado.");
             if (convenio.Estado != "ACTIVO")
                 throw new InvalidOperationException("El convenio no está activo.");
+
+            await LibranzaVinculacionService.ValidarRevisionVigenteAsync(_db, asoc);
 
             var param = await ObtenerParametrosAsync(empleado.IdConvenio)
                 ?? throw new InvalidOperationException("El convenio no tiene parámetros activos.");
@@ -830,6 +841,12 @@ public class LibranzaAnticipoService
             throw new InvalidOperationException("idConvenio es obligatorio para vincular un empleado.");
         if (req.IdUsuario <= 0)
             throw new InvalidOperationException("idUsuario es obligatorio.");
+
+        // La bandeja nueva revalida la selección y conserva la evidencia de
+        // revisión. No permitir que la ruta histórica por ID la eluda.
+        if (string.Equals(_configuracion?[HabilitacionCuentaPublicaService.ClaveHabilitada], "true", StringComparison.Ordinal)
+            || await HabilitacionCuentaPublicaService.EsAutorregistroAsync(_db, req.IdUsuario))
+            throw new InvalidOperationException("Usa Coincidencias de nómina para revisar y aprobar esta vinculación.");
 
         await using var tx = await _db.Database.BeginTransactionAsync();
         try

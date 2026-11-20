@@ -60,7 +60,7 @@ public class AltaUsuarioPilotoService(XpayDbContext db, IConfiguration config, I
             if (await AppLockHelper.AdquirirAsync(db, ClaveLock, ct) < 0)
                 throw new InvalidOperationException("Hay otra alta en curso. Intenta de nuevo.");
 
-            var altas = await db.Auditorias.CountAsync(a => a.Accion == AccionAuditoria && a.Resultado == "EXITOSO", ct);
+            var altas = await HabilitacionCuentaPublicaService.ContarPlazasAsync(db, ct);
             if (altas >= maximo)
                 throw new InvalidOperationException(MensajeMaximoAlcanzado);
 

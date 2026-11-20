@@ -5,6 +5,7 @@ import { MiInformacionSection } from '../components/profile/MiInformacionSection
 import { ComunicacionesSection } from '../components/profile/ComunicacionesSection.tsx';
 import { CambiarContrasenaSection } from '../components/profile/CambiarContrasenaSection.tsx';
 import { PinTransaccionalSection } from '../components/profile/PinTransaccionalSection.tsx';
+import { AltaPublicaSection } from '../components/profile/AltaPublicaSection.tsx';
 
 // XPAY-401 (Perfil Fase 2C) — página real de Perfil (ruta mi-wallet/perfil).
 // Misma página de siempre (XPAY-392), ahora con 3 secciones completas:
@@ -45,6 +46,8 @@ export function ProfilePage() {
 
       {accesoPerfil && <p className="session-message">Tu cuenta está activada. En esta etapa puedes consultar y actualizar tu perfil.</p>}
       {accesoPerfil && <p>La activación de tu Wallet está pendiente de las verificaciones adicionales y la habilitación de XPAY.</p>}
+
+      {accesoPerfil && <AltaPublicaSection />}
 
       {/* A. Mi información (incluye verificar correo y celular) */}
       <MiInformacionSection />

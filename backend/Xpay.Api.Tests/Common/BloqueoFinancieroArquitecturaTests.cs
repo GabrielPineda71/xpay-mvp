@@ -29,11 +29,17 @@ public sealed class BloqueoFinancieroArquitecturaTests
         "UsuariosController.ActualizarMiPerfil",
         "KycController.VeriffSession", "KycController.VeriffWebhook", "KycController.ReconciliarVeriff",
         "KycController.SimularEstadoQa",
+        // Consentimiento propio separado: no inicia KYC ni habilita productos.
+        "ConsentimientoBiometricoController.Autorizar",
         // Administración de usuarios (el alta del piloto crea una wallet con saldo 0).
         "UsuariosAdminController.AltaUsuarioPiloto", "UsuariosAdminController.Activar",
         "UsuariosAdminController.Inactivar", "UsuariosAdminController.Desbloquear",
         "UsuariosAdminController.RestablecerClave", "UsuariosAdminController.AsignarRol",
         "UsuariosAdminController.RevocarRol", "UsuariosAdminController.RestablecerPin",
+        // Revisión de pertenencia y alta de Wallet con saldo cero. No crea un
+        // préstamo, desembolso, obligación o asiento. Las operaciones posteriores
+        // conservan el interruptor financiero, KYC, contactos y PIN.
+        "LibranzaVinculacionController.Aprobar",
         // PIN transaccional propio: crear/cambiar no mueve dinero (se crea antes de operar).
         "PinController.Crear", "PinController.Cambiar",
         // Verificación de contactos y preferencias: deben funcionar con el interruptor cerrado.

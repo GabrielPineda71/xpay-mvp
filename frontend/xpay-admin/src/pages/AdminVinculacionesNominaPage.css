@@ -1,0 +1,31 @@
+.nomina-vinculaciones { max-width: 1120px; }
+.nomina-vinculaciones > p { max-width: 850px; line-height: 1.55; }
+.nomina-filtros, .nomina-toolbar, .nomina-candidato-cabecera, .nomina-confirmacion-acciones, .nomina-paginacion { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.nomina-filtros { align-items: end; margin: 1.3rem 0; }
+.nomina-filtros label, .nomina-confirmacion > label:not(.nomina-confirmar) { display: grid; gap: .35rem; }
+.nomina-filtros select, .nomina-confirmacion input:not([type=checkbox]) { padding: .65rem; border: 1px solid #aebfbc; border-radius: .35rem; background: white; max-width: 100%; }
+.nomina-toolbar { justify-content: space-between; margin: 1rem 0; }
+.nomina-candidatos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 1rem; }
+.nomina-candidato { border: 1px solid #d8e5e1; border-radius: .7rem; background: white; padding: 1rem; }
+.nomina-candidato-cabecera { justify-content: space-between; }
+.nomina-seleccionar, .nomina-confirmar { display: flex; gap: .65rem; align-items: flex-start; line-height: 1.5; }
+.nomina-seleccionar { font-size: 1.05rem; font-weight: 700; }
+.nomina-seleccionar input, .nomina-confirmar input { margin-top: .25rem; width: 1.05rem; height: 1.05rem; flex-shrink: 0; }
+.nomina-candidato dl { margin: 1rem 0; }
+.nomina-candidato dl > div { display: grid; grid-template-columns: 8rem 1fr; gap: .5rem; margin: .45rem 0; }
+.nomina-candidato dt { color: #556360; }
+.nomina-candidato dd { margin: 0; overflow-wrap: anywhere; }
+.nomina-verificaciones { padding-left: 1.2rem; font-size: .9rem; color: #40534c; line-height: 1.6; }
+.nomina-cupos-corte { line-height: 1.55; margin: .8rem 0; }
+.nomina-cupos-corte ul { padding-left: 1.2rem; }
+.nomina-cupo-confirmado { display: block; color: #40534c; font-size: .9rem; margin: .2rem 0; }
+.nomina-bloqueos { padding: .75rem .75rem .75rem 1.8rem; border-radius: .4rem; background: #fff8e8; color: #7d5514; line-height: 1.5; }
+.nomina-confirmacion, .nomina-resultados { padding: 1.2rem; border: 1px solid #97b8b0; border-radius: .65rem; margin: 1.2rem 0; background: #f4faf7; scroll-margin-top: 1rem; }
+.nomina-confirmacion h3, .nomina-resultados h3 { margin-top: 0; }
+.nomina-confirmacion ul, .nomina-resultados ul { padding-left: 1.3rem; line-height: 1.7; }
+.nomina-confirmar { margin: 1rem 0; }
+.nomina-confirmacion > label:not(.nomina-confirmar) { max-width: 34rem; }
+.nomina-confirmacion #referencia-revision-ayuda { color: #53635e; font-size: .88rem; }
+.nomina-paginacion { justify-content: center; margin: 1.25rem 0; }
+.nomina-vinculaciones button { white-space: normal; }
+@media (max-width: 600px) { .nomina-filtros > *, .nomina-toolbar > *, .nomina-confirmacion-acciones > * { width: 100%; } .nomina-candidato dl > div { grid-template-columns: 1fr; gap: .1rem; } }
