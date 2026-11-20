@@ -1,4 +1,6 @@
 using System.Net;
+using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Primitives;
@@ -67,6 +69,35 @@ public class MiDecisorTokenProviderTests
         Assert.Contains("\"password\":\"test-password\"", handler.LastRequestBody!);
         // El body NO debe llevar las credenciales de cliente.
         Assert.DoesNotContain("test-secret", handler.LastRequestBody!);
+    }
+
+    [Fact]
+    public async Task Auth_ExactJsonContentType_AcceptsUtf8CredentialsWithoutCharset()
+    {
+        byte[]? receivedBody = null;
+        var handler = new FakeHttpMessageHandler(async (request, ct) =>
+        {
+            // El gateway UAT devuelve 415 si el tipo incluye parámetros como charset.
+            if (request.Content?.Headers.ContentType?.ToString() != "application/json")
+                return FakeHttpMessageHandler.Json(HttpStatusCode.UnsupportedMediaType, "{}");
+
+            receivedBody = await request.Content.ReadAsByteArrayAsync(ct);
+            return FakeHttpMessageHandler.Json(HttpStatusCode.OK, TokenBody("test-token", "3600"));
+        });
+        var config = ValidConfig();
+        config[MiDecisorOptions.EnvPassword] = "test-contraseña-á";
+        var provider = CreateProvider(handler, config, new TestTimeProvider(T0));
+
+        var token = await provider.GetAccessTokenAsync();
+
+        Assert.Equal("test-token", token);
+        Assert.Equal(1, handler.CallCount);
+        Assert.NotNull(receivedBody);
+        var jsonUtf8 = new UTF8Encoding(false, true).GetString(receivedBody!);
+        using var json = JsonDocument.Parse(jsonUtf8);
+        Assert.Equal("test-user", json.RootElement.GetProperty("username").GetString());
+        Assert.Equal("test-contraseña-á", json.RootElement.GetProperty("password").GetString());
+        Assert.Equal(2, json.RootElement.EnumerateObject().Count());
     }
 
     // 2 ─────────────────────────────────────────────────────────────────────
