@@ -107,8 +107,10 @@ public sealed class MiDecisorClient : IMiDecisorClient
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, queryUri);
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        // El gateway exige el media type exacto; JsonContent conserva la serialización UTF-8.
         httpRequest.Content = JsonContent.Create(
-            new MiDecisorConsultaRequest(tipoCodigo, numero, apellido));
+            new MiDecisorConsultaRequest(tipoCodigo, numero, apellido),
+            mediaType: new MediaTypeHeaderValue("application/json"));
 
         HttpResponseMessage response;
         try

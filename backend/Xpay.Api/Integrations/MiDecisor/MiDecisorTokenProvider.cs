@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
@@ -108,7 +109,9 @@ public sealed class MiDecisorTokenProvider : IMiDecisorTokenProvider
         using var request = new HttpRequestMessage(HttpMethod.Post, authUri);
         request.Headers.TryAddWithoutValidation("Client_id",     options.ClientId);
         request.Headers.TryAddWithoutValidation("Client_secret", options.ClientSecret);
-        request.Content = JsonContent.Create(new MiDecisorAuthRequest(options.Username!, options.Password!));
+        // El gateway exige el media type exacto; JsonContent conserva la serialización UTF-8.
+        request.Content = JsonContent.Create(new MiDecisorAuthRequest(options.Username!, options.Password!),
+            mediaType: new MediaTypeHeaderValue("application/json"));
 
         var startedAt = _timeProvider.GetTimestamp();
         HttpResponseMessage response;
