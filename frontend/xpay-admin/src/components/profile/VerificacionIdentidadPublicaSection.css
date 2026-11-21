@@ -1,0 +1,17 @@
+.identidad-publica { background: #fff; color: #243c35; border: 1px solid #dce7e3; border-radius: 1rem; padding: 1rem; }
+.identidad-publica p { line-height: 1.55; }
+.identidad-publica-pasos { list-style: none; counter-reset: identidad; padding: 0; display: grid; gap: .75rem; margin: 1.25rem 0; }
+.identidad-publica-pasos li { counter-increment: identidad; display: grid; grid-template-columns: 1.75rem 1fr; gap: .15rem .65rem; align-items: start; }
+.identidad-publica-pasos li::before { content: counter(identidad); width: 1.65rem; height: 1.65rem; display: grid; place-items: center; border-radius: 50%; background: #e5f3f2; color: #125b56; font-weight: 700; grid-row: span 2; }
+.identidad-publica-pasos span { grid-column: 2; color: #52605f; }
+.identidad-publica-autorizacion { border-top: 1px solid #e1e8e7; margin: 1.25rem 0; padding-top: 1rem; }
+.identidad-publica-autorizacion h4 { margin: 0 0 .5rem; font-size: 1.1rem; }
+.identidad-publica-consentimiento { margin: 1rem 0; align-items: flex-start; line-height: 1.5; }
+.identidad-publica-consentimiento input { flex: 0 0 auto; margin-top: .25rem; }
+.identidad-publica-continuar { display: inline-block; text-decoration: none; margin: .6rem 0; }
+.identidad-publica .profile-btn-primary, .identidad-publica .profile-btn-secondary { padding: .75rem 1rem; border-radius: .55rem; font-size: .95rem; font-weight: 600; cursor: pointer; line-height: 1.4; max-width: 100%; white-space: normal; }
+.identidad-publica .profile-btn-primary { background: #0d828e; color: white; border: 1px solid #0d828e; }
+.identidad-publica .profile-btn-secondary { background: white; color: #0b6b75; border: 1px solid #82b9bc; }
+.identidad-publica button:disabled { opacity: .55; cursor: not-allowed; }
+.identidad-publica :is(button, a, input):focus-visible { outline: 3px solid #207dce; outline-offset: 3px; }
+@media (max-width: 520px) { .identidad-publica button, .identidad-publica-continuar { width: 100%; box-sizing: border-box; text-align: center; } }
