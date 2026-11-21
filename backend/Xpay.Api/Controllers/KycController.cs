@@ -85,14 +85,15 @@ public class KycController : ControllerBase
 
     /// <summary>
     /// POST /api/kyc/veriff/session
-    /// Crea sesión real en Veriff sandbox.
+    /// Crea o retoma una sesión del usuario en la integración Veriff configurada.
     /// Lee VERIFF_API_KEY / VERIFF_SHARED_SECRET / VERIFF_BASE_URL desde Azure App Settings.
     /// No guarda ni retorna API keys. No envía datos personales.
-    /// VendorData = XPAY-QA-USUARIO-{idUsuario} — tracking interno sin PII.
+    /// VendorData distingue QA/PROD con un id interno, sin PII.
     /// Guarda en kyc_verificaciones y actualiza usuarios.estado_kyc_actual = PENDIENTE.
     /// </summary>
     [HttpPost("veriff/session")]
     [Authorize]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> VeriffSession()
     {
         if (!long.TryParse(User.FindFirst("idUsuario")?.Value, out var idUsuario) || idUsuario <= 0)

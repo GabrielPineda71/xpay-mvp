@@ -29,6 +29,8 @@ public sealed class BloqueoFinancieroArquitecturaTests
         "UsuariosController.ActualizarMiPerfil",
         "KycController.VeriffSession", "KycController.VeriffWebhook", "KycController.ReconciliarVeriff",
         "KycController.SimularEstadoQa",
+        // Consentimiento propio separado; no crea una Wallet ni asigna cupos.
+        "ConsentimientoBiometricoController.Autorizar",
         // Administración de usuarios (el alta del piloto crea una wallet con saldo 0).
         "UsuariosAdminController.AltaUsuarioPiloto", "UsuariosAdminController.Activar",
         "UsuariosAdminController.Inactivar", "UsuariosAdminController.Desbloquear",

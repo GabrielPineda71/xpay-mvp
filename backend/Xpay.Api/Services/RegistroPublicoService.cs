@@ -41,8 +41,11 @@ public sealed class RegistroPublicoService(
     // Las dos evidencias se guardan juntas con la cuenta. La autorización de
     // tratamiento en el registro no habilita por sí misma la captura de KYC.
     internal static Task<bool> EsCuentaLimitadaAsync(XpayDbContext db, long idUsuario) =>
+        EsAutorregistroAsync(db, idUsuario);
+
+    internal static Task<bool> EsAutorregistroAsync(XpayDbContext db, long idUsuario, CancellationToken ct = default) =>
         db.Auditorias.AnyAsync(a => a.IdUsuario == idUsuario && a.Modulo == "USUARIOS"
-            && a.Accion == AccionAceptarTerminos && a.Resultado == "EXITOSO");
+            && a.Accion == AccionAceptarTerminos && a.Resultado == "EXITOSO", ct);
 
     public RegistroPublicoConfiguracionResponse? ObtenerConfiguracion() =>
         ObtenerRegistroHabilitado()?.Documentos.DatosPublicos;

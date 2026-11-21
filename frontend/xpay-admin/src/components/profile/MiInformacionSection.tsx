@@ -58,7 +58,7 @@ function formDesdePerfil(p: MiPerfil): FormEditable {
 // Identidad legal (nombre/apellido/documento/fecha de nacimiento/país) es
 // SIEMPRE de solo lectura aquí — no existe ningún camino en este componente
 // para enviarla al backend (el estado de edición ni siquiera la incluye).
-export function MiInformacionSection() {
+export function MiInformacionSection({ whatsAppPendiente = false }: { whatsAppPendiente?: boolean }) {
   const { perfil, loading, loadError, guardando, mensaje, setMensaje, cargar, actualizar } = useMiPerfil();
   const [editando, setEditando] = useState(false);
   const [form, setForm] = useState<FormEditable | null>(null);
@@ -157,7 +157,9 @@ export function MiInformacionSection() {
             <dd>
               {perfil.celular}{' '}
               <span className="profile-verificado-badge">{perfil.celularVerificado ? 'Verificado' : 'No verificado'}</span>
-              {!perfil.celularVerificado && <VerificarContacto canal="celular" onVerificado={() => void cargar()} />}
+              {!perfil.celularVerificado && (whatsAppPendiente
+                ? <span>Verificación de WhatsApp pendiente para una próxima etapa.</span>
+                : <VerificarContacto canal="celular" onVerificado={() => void cargar()} />)}
             </dd>
             <dt>Email</dt>
             <dd>

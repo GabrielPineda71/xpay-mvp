@@ -62,6 +62,7 @@ beforeEach(() => {
   mockPatch.mockReset();
   mockGet.mockImplementation((path: string) => {
     if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc: 'APROBADO' } });
+    if (path === '/api/usuarios/alta-publica/consentimiento-kyc') return Promise.resolve({ success: true, data: { documento: null, textoCasilla: '', aceptado: false, habilitado: false } });
     if (path === '/api/breb/mi-llave') return Promise.resolve({ success: true, data: null });
     if (path === '/api/usuarios/mi-perfil') return Promise.resolve({ success: true, data: MI_PERFIL_BASE });
     return Promise.reject(new Error(`unmocked GET ${path}`));
@@ -162,6 +163,8 @@ describe('ProfilePage (XPAY-392/401)', () => {
     expect(await screen.findByRole('heading', { name: 'Mi información' })).toBeInTheDocument();
     expect(screen.getByText('Tu cuenta está activada. En esta etapa puedes consultar y actualizar tu perfil.')).toBeInTheDocument();
     expect(screen.getByText(/La activación de tu Wallet está pendiente/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Completa tu registro' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Verificar celular' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Iniciar verificación|Activar Wallet/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '← Mi Wallet' })).not.toBeInTheDocument();
     expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');

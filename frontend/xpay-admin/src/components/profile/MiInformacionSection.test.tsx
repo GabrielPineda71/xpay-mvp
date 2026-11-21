@@ -44,6 +44,13 @@ async function renderYEsperarCarga() {
 }
 
 describe('MiInformacionSection (XPAY-401)', () => {
+  it('en el alta pública conserva WhatsApp pendiente y permite verificar correo', async () => {
+    render(<MiInformacionSection whatsAppPendiente />);
+    await screen.findByText('Juana Pérez');
+    expect(screen.getByText('Verificación de WhatsApp pendiente para una próxima etapa.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Verificar celular' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Verificar correo' })).toBeInTheDocument();
+  });
   it('consulta GET /api/usuarios/mi-perfil al montar', async () => {
     await renderYEsperarCarga();
   });

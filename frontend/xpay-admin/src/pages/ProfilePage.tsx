@@ -4,6 +4,7 @@ import { BrebMyKeySection } from '../components/profile/BrebMyKeySection.tsx';
 import { MiInformacionSection } from '../components/profile/MiInformacionSection.tsx';
 import { ComunicacionesSection } from '../components/profile/ComunicacionesSection.tsx';
 import { CambiarContrasenaSection } from '../components/profile/CambiarContrasenaSection.tsx';
+import { VerificacionIdentidadPublicaSection } from '../components/profile/VerificacionIdentidadPublicaSection.tsx';
 import { PinTransaccionalSection } from '../components/profile/PinTransaccionalSection.tsx';
 
 // XPAY-401 (Perfil Fase 2C) — página real de Perfil (ruta mi-wallet/perfil).
@@ -46,8 +47,10 @@ export function ProfilePage() {
       {accesoPerfil && <p className="session-message">Tu cuenta está activada. En esta etapa puedes consultar y actualizar tu perfil.</p>}
       {accesoPerfil && <p>La activación de tu Wallet está pendiente de las verificaciones adicionales y la habilitación de XPAY.</p>}
 
+      {accesoPerfil && <VerificacionIdentidadPublicaSection />}
+
       {/* A. Mi información (incluye verificar correo y celular) */}
-      <MiInformacionSection />
+      <MiInformacionSection whatsAppPendiente={accesoPerfil} />
 
       {/* Preferencias de comunicación (servicio y publicidad, aparte de la verificación). */}
       <ComunicacionesSection />
