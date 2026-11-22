@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import App from './App.tsx';
+import { ApiError } from './api/client.ts';
 
 const mockPost = vi.fn();
 const mockGet = vi.fn();
@@ -22,7 +23,8 @@ const TOKEN = 'Ab3_-'.repeat(8) + 'Xy9';
 beforeEach(() => {
   mockPost.mockReset();
   mockGet.mockReset();
-  mockGet.mockRejectedValue(new Error('Consulta no disponible en esta prueba.'));
+  mockGet.mockImplementation((ruta: string) => Promise.reject(ruta === '/api/usuarios/preparacion-wallet'
+    ? new ApiError('Recorrido cerrado en esta prueba.', 404) : new Error('Consulta no disponible en esta prueba.')));
   localStorage.clear();
   sessionStorage.clear();
 });

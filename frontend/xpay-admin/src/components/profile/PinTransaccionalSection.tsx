@@ -9,6 +9,8 @@ interface Msg { ok: boolean; text: string; }
 interface Props {
   estadoInicial?: EstadoPin;
   obligatorio?: boolean;
+  compacto?: boolean;
+  notificarCargaInicial?: boolean;
   onActualizado?: (estado: EstadoPin) => void;
 }
 
@@ -18,7 +20,7 @@ const VACIO = { claveActual: '', pinActual: '', pin: '', confirmacion: '' };
 // ingreso) o cambiarlo (con el PIN actual). Consume GET /api/pin/estado,
 // POST /api/pin y POST /api/pin/cambiar; el PIN se verifica siempre en el
 // backend. Los campos se limpian al terminar y nunca se guardan en storage.
-export function PinTransaccionalSection({ estadoInicial, obligatorio = false, onActualizado }: Props = {}) {
+export function PinTransaccionalSection({ estadoInicial, obligatorio = false, compacto = false, notificarCargaInicial = true, onActualizado }: Props = {}) {
   const [estado, setEstado] = useState<EstadoPin | null>(estadoInicial ?? null);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [abierto, setAbierto] = useState(obligatorio);
@@ -27,18 +29,18 @@ export function PinTransaccionalSection({ estadoInicial, obligatorio = false, on
   const [enviando, setEnviando] = useState(false);
   const [mensaje, setMensaje] = useState<Msg | null>(null);
 
-  const cargar = useCallback(async () => {
+  const cargar = useCallback(async (notificar = notificarCargaInicial) => {
     try {
       const r = await get<{ success: boolean; data: EstadoPin }>('/api/pin/estado');
       if (!r.success || !estadoPinValido(r.data)) throw new Error('No se pudo confirmar el estado de tu PIN. Actualiza para volver a consultar.');
       setEstado(r.data);
       setErrorCarga(null);
-      if (r.data.configurado && !r.data.requiereActualizacion && !r.data.bloqueado) onActualizado?.(r.data);
+      if (notificar && r.data.configurado && !r.data.requiereActualizacion && !r.data.bloqueado) onActualizado?.(r.data);
       return r.data;
     } catch (err) {
       setErrorCarga(err instanceof Error ? err.message : 'No se pudo consultar tu PIN.');
     }
-  }, [onActualizado]);
+  }, [onActualizado, notificarCargaInicial]);
 
   useEffect(() => { if (!estadoInicial) void cargar(); }, [cargar, estadoInicial]);
 
@@ -90,7 +92,7 @@ export function PinTransaccionalSection({ estadoInicial, obligatorio = false, on
     } finally {
       // Los secretos se borran también al fallar, sin persistirlos en storage.
       setForm(VACIO);
-      const actualizado = await cargar();
+      const actualizado = await cargar(true);
       if (actualizado?.bloqueado) setMensaje({ ok: false, text: 'Tu PIN está bloqueado. Solicita a XPAY su restablecimiento antes de operar.' });
       setEnviando(false);
     }
@@ -98,15 +100,17 @@ export function PinTransaccionalSection({ estadoInicial, obligatorio = false, on
 
   return (
     <section className="profile-section" aria-label="PIN transaccional">
-      <h3 className="profile-section-title">PIN transaccional</h3>
+      {!compacto && <h3 className="profile-section-title">PIN transaccional</h3>}
       <p className="profile-placeholder-note">
+        {compacto ? 'Con este PIN de 6 dígitos confirmarás las transacciones monetarias. Es diferente de tu contraseña de ingreso.' : <>
         Es un PIN de 6 dígitos exclusivo para confirmar transacciones monetarias: enviar dinero, pagar con QR,
         solicitar anticipos y retirar a tu llave Bre-B. No reemplaza tu contraseña de ingreso.
-        Tras 5 intentos fallidos se bloquea y debes pedir a XPAY su restablecimiento.
+        Tras 5 intentos fallidos se bloquea y debes pedir a XPAY su restablecimiento.</>}
       </p>
+      {compacto && <small>Tras 5 intentos fallidos se bloquea. XPAY debe restablecerlo.</small>}
 
       {errorCarga && <><span className="breb-msg-err">{errorCarga}</span><button type="button" className="wallet-send-link-btn" onClick={() => void cargar()}>Actualizar estado del PIN</button></>}
-      {estado && (
+      {estado && (!compacto || estado.bloqueado || estado.restablecido) && (
         <p className="profile-placeholder-note" data-testid="pin-estado">
           {estado.bloqueado
             ? 'Tu PIN está bloqueado por intentos fallidos. Solicita a XPAY su restablecimiento.'

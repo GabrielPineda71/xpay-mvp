@@ -40,8 +40,29 @@ public sealed class RegistroPublicoService(
 
     // Las dos evidencias se guardan juntas con la cuenta. La autorización de
     // tratamiento en el registro no habilita por sí misma la captura de KYC.
-    internal static Task<bool> EsCuentaLimitadaAsync(XpayDbContext db, long idUsuario) =>
-        EsAutorregistroAsync(db, idUsuario);
+    internal static async Task<bool> EsCuentaLimitadaAsync(XpayDbContext db, long idUsuario)
+    {
+        if (!await EsAutorregistroAsync(db, idUsuario)) return false;
+        var habilitada = await (from p in db.WalletPreparaciones.AsNoTracking()
+            join u in db.Usuarios.AsNoTracking() on p.IdUsuario equals u.IdUsuario
+            join persona in db.Personas.AsNoTracking() on p.IdPersona equals persona.IdPersona
+            join w in db.Wallets.AsNoTracking() on p.IdWallet equals (long?)w.IdWallet
+            where p.IdUsuario == idUsuario && p.IdPersona == u.IdPersona && w.IdPersona == p.IdPersona
+                && w.IdUnidadNegocio == persona.IdUnidadNegocio && w.TipoWallet == "PERSONA" && w.Estado == "ACTIVA"
+                && p.FechaActivacion != null && p.CriteriosVersion == PreparacionWalletService.CriteriosVersion
+                && p.CondicionesVersion == CondicionesWalletPiloto.Version && p.CondicionesSha256 == CondicionesWalletPiloto.Sha256
+                && (p.OpcionLlave == "OMITIDA" || (p.OpcionLlave == "REGISTRADA" && p.PropiedadConfirmada))
+                && u.Estado == "ACTIVO" && u.EmailVerificado && !u.RequiereCambioClave && u.EstadoKycActual == "APROBADO"
+                && persona.Estado == "ACTIVA" && persona.IdentidadVerificada
+                && persona.IdentidadVerificadaProveedor == "VERIFF" && persona.IdentidadVerificadaFecha != null
+            select new { u, persona }).SingleOrDefaultAsync();
+        if (habilitada is null || !await PreparacionWalletService.IdentidadAprobadaAsync(db, habilitada.u, habilitada.persona)) return true;
+        var entidad = idUsuario.ToString(CultureInfo.InvariantCulture);
+        // La prueba durable y la evidencia de aceptación deben existir juntas.
+        return !await db.Auditorias.AnyAsync(a => a.IdUsuario == idUsuario && a.IdPersona == habilitada.persona.IdPersona
+            && a.Modulo == "USUARIOS" && a.Entidad == "usuarios" && a.IdEntidad == entidad
+            && a.Accion == PreparacionWalletService.AccionActivar && a.Resultado == "EXITOSO");
+    }
 
     internal static Task<bool> EsAutorregistroAsync(XpayDbContext db, long idUsuario, CancellationToken ct = default) =>
         db.Auditorias.AnyAsync(a => a.IdUsuario == idUsuario && a.Modulo == "USUARIOS"

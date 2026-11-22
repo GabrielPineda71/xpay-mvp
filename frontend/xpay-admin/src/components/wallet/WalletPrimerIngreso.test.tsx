@@ -55,6 +55,7 @@ beforeEach(() => {
   estadoKyc = 'APROBADO';
   onAction.mockReset(); onNavigate.mockReset(); onLogout.mockReset(); onProfile.mockReset();
   mockGet.mockReset().mockImplementation((path: string) => {
+    if (path === '/api/usuarios/preparacion-wallet') return Promise.reject(new ApiError('Recorrido no disponible', 404));
     if (path === '/api/wallets/mi-wallet') return Promise.resolve({ success: true, data: { idWallet: 2, idPersona: 5, nombreWallet: 'Wallet de prueba', estado: 'ACTIVA' } });
     if (path === '/api/pin/estado') return errorPin ? Promise.reject(new ApiError('Estado no disponible', 404)) : Promise.resolve({ success: true, data: pin });
     if (path === '/api/breb/mi-llave') return Promise.resolve({ success: true, data: llave });
@@ -85,6 +86,26 @@ async function crearPin(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe('WalletPrimerIngreso', () => {
+  it('respeta la llave OMITIDA guardada en el servidor al entrar y tras actualizar PIN, sin pedirla otra vez', async () => {
+    const original = mockGet.getMockImplementation()!;
+    mockGet.mockImplementation((path: string) => path === '/api/usuarios/preparacion-wallet' ? Promise.resolve({ success: true, data: {
+      habilitado: true, esRegistroPublico: true, emailVerificado: true, estadoKyc: 'APROBADO', identidadVerificada: true,
+      perfilCompleto: true, walletHabilitada: true, puedeActivar: false, siguientePaso: 'WALLET',
+      llave: { opcion: 'OMITIDA' }, pin: { configurado: false, bloqueado: false, longitudRequerida: 6 },
+      condiciones: { version: '1.0', fecha: '2026-11-21', url: 'https://app.xpaycol.com/legal/wallet/v1.0/condiciones.pdf', sha256: 'a'.repeat(64) },
+    } }) : original(path));
+    const user = userEvent.setup(); mostrar();
+    await user.type(await screen.findByLabelText('Contraseña de ingreso'), 'Clave-sintetica-1');
+    await user.type(screen.getByLabelText('Nuevo PIN (6 dígitos)'), '025801');
+    await user.type(screen.getByLabelText('Confirmar PIN'), '025801');
+    await user.click(screen.getByRole('button', { name: 'Crear PIN' }));
+    expect(await screen.findByText('WALLET_LISTA')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Valor de la llave')).not.toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Llave Bre-B para retiros' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Registrar más tarde' })).not.toBeInTheDocument();
+    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/api/pin', expect.anything());
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+  });
   it('primer ingreso sin KYC: guarda el PIN y guía a identidad sin consultar ni registrar llaves', async () => {
     estadoKyc = 'NO_INICIADO';
     const user = userEvent.setup();

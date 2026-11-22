@@ -31,6 +31,8 @@ public class MiPerfilResponseDto
     public string? Direccion { get; set; }
     public string? Ciudad { get; set; }
     public string? Departamento { get; set; }
+    public long? IdCiudadDane { get; set; }
+    public long? IdDepartamentoDane { get; set; }
     public string Pais { get; set; } = string.Empty;
 
     // Resumen de identidad — nunca el detalle crudo de Veriff.
@@ -71,4 +73,11 @@ public record ActualizarMiPerfilRequest(
     string? Direccion,
     string? Ciudad,
     string? Departamento
+);
+
+// Endpoint de domicilio guiado; los nombres nunca proceden del cliente.
+public sealed record GuardarDomicilioDaneRequest(
+    string Direccion,
+    long IdDepartamentoDane,
+    long IdCiudadDane
 );

@@ -17,6 +17,10 @@ interface UsuarioItem {
   intentosFallidos: number;
   ultimoIngreso:    string | null;
   roles:            string[];
+  nombreFuente?: 'DECLARADO' | 'VERIFF' | 'SIN_DATOS';
+  documentoFuente?: 'DECLARADO' | 'VERIFF' | 'SIN_DATOS';
+  identidadVerificada?: boolean;
+  documentoVerificado?: boolean;
 }
 
 interface ListaData {
@@ -198,8 +202,8 @@ export function AdminUsuariosListPage() {
                       <tr key={u.idUsuario}>
                         <td className="mono">{u.idUsuario}</td>
                         <td>{u.usuario}</td>
-                        <td>{u.nombreCompleto}</td>
-                        <td className="mono">{u.tipoDocumento} {u.numeroDocumento}</td>
+                        <td>{u.nombreCompleto || '—'}{u.nombreFuente === 'VERIFF' && <small style={{ display: 'block' }}>Nombre de Veriff</small>}</td>
+                        <td className="mono">{u.tipoDocumento} {u.numeroDocumento || '—'}{u.documentoFuente === 'VERIFF' && <small style={{ display: 'block' }}>{u.documentoVerificado ? 'Verificado con Veriff' : 'Dato de Veriff'}</small>}</td>
                         <td>{u.email ?? '—'}</td>
                         <td>{u.celular}</td>
                         <td>{estadoBadge(u.estado)}</td>

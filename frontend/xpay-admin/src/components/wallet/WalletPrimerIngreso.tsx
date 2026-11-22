@@ -4,6 +4,7 @@ import { estadoPinValido, type EstadoPin } from '../../utils/pinTransaccional.ts
 import { PinTransaccionalSection } from '../profile/PinTransaccionalSection.tsx';
 import { BrebMyKeySection } from '../profile/BrebMyKeySection.tsx';
 import { WalletLlaveBrebAviso } from './WalletLlaveBrebAviso.tsx';
+import { preparacionWalletValida } from '../profile/preparacionWallet.ts';
 
 type Paso = 'cargando' | 'pin' | 'llave' | 'listo' | 'error';
 
@@ -20,12 +21,14 @@ export function WalletPrimerIngreso({ children, perfil = false, envolver }: {
   const [error, setError] = useState<string | null>(null);
   const [identidadLlave, setIdentidadLlave] = useState<'cargando' | 'aprobada' | 'pendiente' | 'error'>('cargando');
   const generacion = useRef(0);
+  const eleccionLlave = useRef<'OMITIDA' | 'REGISTRADA' | null>(null);
 
   const cargar = useCallback(async () => {
     const actual = ++generacion.current;
     setPaso('cargando');
     setError(null);
     setWalletDisponible(false);
+    eleccionLlave.current = null;
     let walletEncontrada = false;
     try {
       const wallet = await get<{ success: boolean; data: { idWallet: number } }>('/api/wallets/mi-wallet');
@@ -36,6 +39,14 @@ export function WalletPrimerIngreso({ children, perfil = false, envolver }: {
       const respuesta = await get<{ success: boolean; data: EstadoPin }>('/api/pin/estado');
       if (actual !== generacion.current) return;
       if (!respuesta.success || !estadoPinValido(respuesta.data)) throw new Error('No pudimos confirmar el estado de tu PIN.');
+      try {
+        const preparacion = await get<{ success: boolean; data: unknown }>('/api/usuarios/preparacion-wallet');
+        if (actual !== generacion.current) return;
+        if (!preparacion.success || !preparacionWalletValida(preparacion.data)) throw new Error('No pudimos confirmar tu registro.');
+        if (preparacion.data.habilitado && preparacion.data.esRegistroPublico && preparacion.data.walletHabilitada
+          && ['OMITIDA', 'REGISTRADA'].includes(preparacion.data.llave.opcion))
+          eleccionLlave.current = preparacion.data.llave.opcion as 'OMITIDA' | 'REGISTRADA';
+      } catch (err) { if (!(err instanceof ApiError && err.status === 404)) throw err; }
       setEstado(respuesta.data);
       setPaso(!respuesta.data.configurado || respuesta.data.requiereActualizacion ? 'pin' : 'listo');
     } catch (err) {
@@ -73,14 +84,14 @@ export function WalletPrimerIngreso({ children, perfil = false, envolver }: {
   const actualizado = useCallback((nuevo: EstadoPin) => {
     if (estadoPinValido(nuevo) && nuevo.configurado && !nuevo.requiereActualizacion && !nuevo.bloqueado) {
       setEstado(nuevo);
-      setPaso('llave');
+      setPaso(eleccionLlave.current ? 'listo' : 'llave');
     }
   }, []);
 
   const mostrar = (contenido: ReactNode) => envolver ? envolver(contenido, paso !== 'listo') : contenido;
   // Perfil y salida siguen disponibles mientras se prepara el PIN.
   if (perfil) return mostrar(children);
-  if (paso === 'listo') return mostrar(<>{walletDisponible && <WalletLlaveBrebAviso />}{children}</>);
+  if (paso === 'listo') return mostrar(<>{walletDisponible && eleccionLlave.current !== 'OMITIDA' && <WalletLlaveBrebAviso />}{children}</>);
   if (paso === 'cargando') return mostrar(<p role="status">Consultando la preparación de tu Wallet...</p>);
   if (paso === 'error') return mostrar(<section className="profile-section" aria-label="Preparar mi Wallet">
     <p className="breb-msg-err" role="alert">{error}</p>

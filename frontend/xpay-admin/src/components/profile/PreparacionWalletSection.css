@@ -1,0 +1,66 @@
+.wallet-onboarding-shell {
+  --xpay-teal: #0d828e; --xpay-black: #000; --xpay-gray-light: #d8d8d8;
+  --xpay-surface: #fff; --xpay-page-bg: #f4f7f7; --xpay-text-primary: #171d23;
+  --xpay-text-secondary: #58666a; --xpay-border: #d6e0e1; --xpay-border-soft: #e7eded;
+  --fn-success: #16794f; --fn-success-bg: #e6f6ef; --fn-error: #b3261e; --fn-error-bg: #fce9e8;
+  --fn-warning: #a15c00; --fn-warning-bg: #fdf1df; --fn-info: #35618a; --fn-info-bg: #e9f1f8;
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px;
+  --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+  min-height: 100dvh; background: #f4f7f7; color: #171d23;
+}
+.wallet-onboarding-shell *, .onboarding-page * { box-sizing: border-box; }
+.onboarding-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px max(20px, calc((100vw - 1120px) / 2)); border-bottom: 1px solid #e1e9e9; background: #fff; }
+.onboarding-header .onboarding-brand { width: 115px; height: auto; }
+.onboarding-header > div { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.onboarding-user { font-size: 14px; color: #58666a; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.onboarding-header button { background: transparent; color: #28545a; border: 1px solid #c3d7d9; border-radius: 10px; min-height: 42px; padding: 8px 12px; }
+.onboarding-page { width: min(100%, 608px); margin: 0 auto; padding: 36px 20px 40px; color: #171d23; }
+.onboarding-intro h1 { margin: 10px 0 8px; font-size: clamp(27px, 5vw, 34px); line-height: 1.18; }
+.onboarding-page p { line-height: 1.55; margin: 0 0 18px; }
+.onboarding-intro > p { color: #58666a; }
+.onboarding-eyebrow, .onboarding-step { font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #096775; }
+.onboarding-progress { margin: 28px 0 24px; }
+.onboarding-progress ol { display: grid; grid-template-columns: repeat(6, 1fr); padding: 0; margin: 0; list-style: none; gap: 4px; }
+.onboarding-progress li { display: flex; flex-direction: column; align-items: center; gap: 7px; color: #657577; text-align: center; }
+.onboarding-progress li > span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #c9d6d8; border-radius: 50%; background: #fff; font-size: 12px; }
+.onboarding-progress small { font-size: 10px; line-height: 1.2; }
+.onboarding-progress .completo > span { color: #126e55; background: #e6f6ef; border-color: #c0dfd2; }
+.onboarding-progress [aria-current="step"] { color: #096775; font-weight: 700; }
+.onboarding-progress [aria-current="step"] > span { color: #fff; background: #0d828e; border-color: #0d828e; }
+.onboarding-card { background: #fff; border: 1px solid #dbe5e5; border-radius: 20px; padding: 28px; box-shadow: 0 6px 22px #173e4707; }
+.onboarding-card .onboarding-step { margin-bottom: 10px; }
+.onboarding-card h2 { margin: 0 0 16px; font-size: 25px; line-height: 1.2; }
+.onboarding-page small { display: block; color: #58666a; line-height: 1.5; }
+.onboarding-form, .onboarding-page .profile-edit-form { display: grid; gap: 18px; }
+.onboarding-form > label, .onboarding-page .profile-edit-form label { display: grid; gap: 8px; font-weight: 600; line-height: 1.4; }
+.onboarding-form input:not([type="checkbox"]), .onboarding-form select, .onboarding-page .profile-edit-form input:not([type="checkbox"]) { display: block; width: 100%; min-width: 0; min-height: 48px; padding: 12px; border: 1px solid #bfced1; border-radius: 10px; background: #fff; font: inherit; color: #171d23; }
+.onboarding-page .onboarding-check, .onboarding-page .profile-checkbox { display: flex; align-items: flex-start; gap: 10px; font-weight: 400; }
+.onboarding-page input[type="checkbox"] { width: 20px; height: 20px; min-width: 20px; flex-shrink: 0; margin: 2px 0 0; accent-color: #0d828e; }
+.onboarding-page button, .onboarding-page a { overflow-wrap: anywhere; }
+.onboarding-primary, .onboarding-secondary, .onboarding-page .profile-btn-primary, .onboarding-page .btn-breb { display: block; width: 100%; min-height: 48px; padding: 13px 16px; border: 1px solid #0d828e; border-radius: 11px; background: #0d828e; color: #fff; font: inherit; font-weight: 650; line-height: 1.4; text-align: center; text-decoration: none; cursor: pointer; }
+.onboarding-secondary { margin: 12px 0; background: #fff; color: #096775; border-color: #b4d2d6; }
+.onboarding-page .onboarding-link, .onboarding-refresh, .onboarding-page .profile-btn-secondary, .onboarding-page .wallet-send-link-btn { background: transparent; border: 0; min-height: 44px; color: #096775; font: inherit; text-decoration: underline; cursor: pointer; }
+.onboarding-refresh { display: block; margin: 16px auto 0; }
+.onboarding-page button:disabled { opacity: .5; cursor: default; }
+.onboarding-page :is(button,input,select,a):focus-visible { outline: 3px solid #50bfc9; outline-offset: 3px; }
+.onboarding-page :is(.profile-section,.identidad-publica-autorizacion) { border: 0; margin: 0; padding: 0; border-radius: 0; background: transparent; }
+.onboarding-page .profile-edit-actions { display: grid; gap: 8px; }
+.onboarding-page .profile-placeholder-note { line-height: 1.5; }
+.onboarding-page .identidad-publica-autorizacion > a { display: block; margin: 12px 0; color: #096775; }
+.onboarding-page .identidad-publica-autorizacion > .profile-btn-primary { color: #fff; }
+.onboarding-page .identidad-publica-consentimiento { margin: 18px 0; }
+.onboarding-page .breb-msg-err, .onboarding-alert { display: block; color: #a62a24; line-height: 1.5; }
+.onboarding-alert { margin-top: 18px; padding: 16px; border: 1px solid #ebc9c4; border-radius: 12px; background: #fff0ee; }
+.onboarding-status { margin-top: 16px !important; color: #58666a; }
+.onboarding-footnote { margin-top: 18px !important; text-align: center; font-size: 12px; color: #657577; }
+.onboarding-page .onboarding-primary + small { margin-top: 16px; }
+.onboarding-condiciones { display: grid; gap: 16px; margin: 20px 0; line-height: 1.5; }
+.onboarding-condiciones > a { color: #096775; }
+.onboarding-config { margin-top: 28px; border: 1px solid #dbe5e5; border-radius: 14px; background: #fff; }
+.onboarding-config > summary { padding: 18px; cursor: pointer; color: #28545a; font-weight: 600; line-height: 1.5; }
+.onboarding-config > div { padding: 0 18px 20px; }
+.onboarding-page .onboarding-config .profile-section { padding: 20px 0; border-top: 1px solid #e1e9e9; }
+.onboarding-config .profile-data-list { overflow-wrap: anywhere; }
+.onboarding-config .profile-data-list dd { min-width: 0; }
+.wallet-onboarding-shell > main > .profile-page { max-width: 680px; margin: auto; padding: 24px 20px; }
+@media (max-width: 480px) { .onboarding-page { padding: 28px 16px; } .onboarding-card { padding: 22px 18px; border-radius: 16px; } .onboarding-user { display: none; } .onboarding-header { padding: 14px 18px; } }

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Xpay.Api.Common;
 using Xpay.Api.Services;
 
 namespace Xpay.Api.Controllers;
@@ -12,6 +13,7 @@ namespace Xpay.Api.Controllers;
 public class CatalogosController(CatalogoGeograficoService svc) : ControllerBase
 {
     [HttpGet("paises")]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> Paises()
     {
         var data = await svc.GetPaisesAsync();
@@ -19,6 +21,7 @@ public class CatalogosController(CatalogoGeograficoService svc) : ControllerBase
     }
 
     [HttpGet("departamentos")]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> Departamentos([FromQuery] long idPais)
     {
         if (idPais <= 0)
@@ -29,6 +32,7 @@ public class CatalogosController(CatalogoGeograficoService svc) : ControllerBase
     }
 
     [HttpGet("ciudades")]
+    [CuentaLimitadaPermitida]
     public async Task<IActionResult> Ciudades([FromQuery] long idDepartamento)
     {
         if (idDepartamento <= 0)

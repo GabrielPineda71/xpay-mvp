@@ -57,7 +57,15 @@ public class UsuarioAdminService
                 x.u.NombreUsuario.Contains(t) ||
                 (x.p.NumeroDocumento != null && x.p.NumeroDocumento.Contains(t)) ||
                 (x.p.PrimerNombre != null && x.p.PrimerNombre.Contains(t)) ||
+                (x.p.SegundoNombre != null && x.p.SegundoNombre.Contains(t)) ||
                 (x.p.PrimerApellido != null && x.p.PrimerApellido.Contains(t)) ||
+                (x.p.SegundoApellido != null && x.p.SegundoApellido.Contains(t)) ||
+                (x.p.IdentidadVerificada && x.p.IdentidadVerificadaProveedor == "VERIFF" &&
+                 x.p.IdentidadVerificadaFecha != null && x.u.EstadoKycActual == "APROBADO" &&
+                 ((x.p.NombreVerificadoCompleto != null && x.p.NombreVerificadoCompleto.Contains(t)) ||
+                  (x.p.ApellidoVerificadoCompleto != null && x.p.ApellidoVerificadoCompleto.Contains(t)) ||
+                  ((x.p.NombreVerificadoCompleto ?? "") + " " + (x.p.ApellidoVerificadoCompleto ?? "")).Contains(t) ||
+                  (x.p.NumeroDocumentoVerificado != null && x.p.NumeroDocumentoVerificado.Contains(t)))) ||
                 (x.p.Email != null && x.p.Email.Contains(t)));
         }
 
@@ -104,13 +112,20 @@ public class UsuarioAdminService
             .GroupBy(x => x.IdUsuario)
             .ToDictionary(g => g.Key, g => g.Select(x => x.Codigo).ToList());
 
-        var items = pagina.Select(x => new UsuarioAdminListItemDto
+        var items = pagina.Select(x =>
         {
+            var identidad = IdentidadParaAdministracion(x.p, x.u);
+            return new UsuarioAdminListItemDto
+            {
             IdUsuario           = x.u.IdUsuario,
             Usuario             = x.u.NombreUsuario,
-            NombreCompleto      = NombreCompleto(x.p.PrimerNombre ?? string.Empty, x.p.SegundoNombre, x.p.PrimerApellido ?? string.Empty, x.p.SegundoApellido),
-            TipoDocumento       = x.p.TipoDocumento ?? string.Empty,
-            NumeroDocumento     = x.p.NumeroDocumento ?? string.Empty,
+            NombreCompleto      = identidad.Nombre,
+            TipoDocumento       = identidad.TipoDocumento,
+            NumeroDocumento     = identidad.NumeroDocumento,
+            NombreFuente        = identidad.NombreFuente,
+            DocumentoFuente     = identidad.DocumentoFuente,
+            IdentidadVerificada = identidad.Verificada,
+            DocumentoVerificado = identidad.DocumentoVerificado,
             Email               = x.p.Email,
             Celular             = x.p.Celular,
             Estado              = x.u.Estado,
@@ -121,6 +136,7 @@ public class UsuarioAdminService
             RequiereCambioClave = x.u.RequiereCambioClave,
             Roles               = rolesMap.TryGetValue(x.u.IdUsuario, out var r) ? r : new List<string>(),
             FechaCreacion       = x.u.FechaCreacion
+            };
         }).ToList();
 
         return new { items, total, page, pageSize };
@@ -155,14 +171,19 @@ public class UsuarioAdminService
 
         var usuarioEntidad = registro.u;
         var personaEntidad = registro.p;
+        var identidad = IdentidadParaAdministracion(personaEntidad, usuarioEntidad);
         return new UsuarioAdminDetalleDto
         {
             IdUsuario           = usuarioEntidad.IdUsuario,
             IdPersona           = personaEntidad.IdPersona,
             Usuario             = usuarioEntidad.NombreUsuario,
-            NombreCompleto      = NombreCompleto(personaEntidad.PrimerNombre ?? string.Empty, personaEntidad.SegundoNombre, personaEntidad.PrimerApellido ?? string.Empty, personaEntidad.SegundoApellido),
-            TipoDocumento       = personaEntidad.TipoDocumento ?? string.Empty,
-            NumeroDocumento     = personaEntidad.NumeroDocumento ?? string.Empty,
+            NombreCompleto      = identidad.Nombre,
+            TipoDocumento       = identidad.TipoDocumento,
+            NumeroDocumento     = identidad.NumeroDocumento,
+            NombreFuente        = identidad.NombreFuente,
+            DocumentoFuente     = identidad.DocumentoFuente,
+            IdentidadVerificada = identidad.Verificada,
+            DocumentoVerificado = identidad.DocumentoVerificado,
             Email               = personaEntidad.Email,
             Celular             = personaEntidad.Celular,
             Direccion           = personaEntidad.Direccion,
@@ -623,6 +644,42 @@ public class UsuarioAdminService
 
         await GuardarYRevocarAsync(idUsuario);
         return (await ObtenerDetalleAsync(idUsuario))!;
+    }
+
+    internal sealed record IdentidadAdmin(
+        string Nombre, string TipoDocumento, string NumeroDocumento,
+        string NombreFuente, string DocumentoFuente, bool Verificada, bool DocumentoVerificado);
+
+    // Presentación administrativa, nunca consolidación de identidad legal.
+    // ID_CARD no se convierte aquí en CC ni se infiere el país del documento.
+    internal static IdentidadAdmin IdentidadParaAdministracion(Persona persona, Usuario usuario)
+    {
+        var confiable = persona.IdentidadVerificada &&
+                        persona.IdentidadVerificadaProveedor == "VERIFF" &&
+                        persona.IdentidadVerificadaFecha.HasValue && usuario.EstadoKycActual == "APROBADO";
+        var nombre = NombreCompleto(persona.PrimerNombre ?? string.Empty, persona.SegundoNombre,
+            persona.PrimerApellido ?? string.Empty, persona.SegundoApellido);
+        var nombreFuente = nombre.Length > 0 ? "DECLARADO" : "SIN_DATOS";
+        if (nombre.Length == 0 && confiable)
+        {
+            nombre = string.Join(' ', new[] { persona.NombreVerificadoCompleto, persona.ApellidoVerificadoCompleto }
+                .Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s!.Trim()));
+            if (nombre.Length > 0) nombreFuente = "VERIFF";
+        }
+
+        var tipo = (persona.TipoDocumento ?? string.Empty).Trim();
+        var numero = (persona.NumeroDocumento ?? string.Empty).Trim();
+        var documentoFuente = tipo.Length > 0 || numero.Length > 0 ? "DECLARADO" : "SIN_DATOS";
+        if ((tipo.Length == 0 || numero.Length == 0) && confiable &&
+            !string.IsNullOrWhiteSpace(persona.NumeroDocumentoVerificado))
+        {
+            tipo = PerfilService.EtiquetaTipoDocumentoVeriff(persona.TipoDocumentoVeriffRaw) ?? "Documento verificado";
+            numero = persona.NumeroDocumentoVerificado.Trim();
+            documentoFuente = "VERIFF";
+        }
+        var documentoVerificado = confiable && numero.Length > 0 &&
+            string.Equals(numero, persona.NumeroDocumentoVerificado?.Trim(), StringComparison.Ordinal);
+        return new(nombre, tipo, numero, nombreFuente, documentoFuente, confiable, documentoVerificado);
     }
 
     private static string NombreCompleto(string primerNombre, string? segundoNombre, string primerApellido, string? segundoApellido)

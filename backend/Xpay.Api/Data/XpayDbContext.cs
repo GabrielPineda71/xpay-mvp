@@ -107,11 +107,34 @@ public class XpayDbContext : DbContext
     public DbSet<CatalogoCiudad>                          CatalogoCiudades                           => Set<CatalogoCiudad>();
     public DbSet<UsuarioToken> UsuarioTokens => Set<UsuarioToken>();
     public DbSet<PinTransaccional> PinesTransaccionales => Set<PinTransaccional>();
+    public DbSet<WalletPreparacion> WalletPreparaciones => Set<WalletPreparacion>();
     public DbSet<ContactoCodigoVerificacion> ContactoCodigosVerificacion => Set<ContactoCodigoVerificacion>();
     public DbSet<UsuarioConsentimientoComunicacion> ConsentimientosComunicacion => Set<UsuarioConsentimientoComunicacion>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<WalletPreparacion>(e =>
+        {
+            e.ToTable("wallet_preparaciones"); e.HasKey(x => x.IdUsuario);
+            e.Property(x => x.IdUsuario).HasColumnName("id_usuario").ValueGeneratedNever();
+            e.Property(x => x.IdPersona).HasColumnName("id_persona");
+            e.Property(x => x.OpcionLlave).HasColumnName("opcion_llave").HasMaxLength(20).IsUnicode(false);
+            e.Property(x => x.LlaveTipo).HasColumnName("llave_tipo").HasMaxLength(10).IsUnicode(false);
+            e.Property(x => x.LlaveHash).HasColumnName("llave_hash").HasMaxLength(64).IsUnicode(false);
+            e.Property(x => x.LlaveMasked).HasColumnName("llave_masked").HasMaxLength(128);
+            e.Property(x => x.PropiedadConfirmada).HasColumnName("propiedad_confirmada");
+            e.Property(x => x.IdWallet).HasColumnName("id_wallet");
+            e.Property(x => x.FechaActivacion).HasColumnName("fecha_activacion");
+            e.Property(x => x.CriteriosVersion).HasColumnName("criterios_version").HasMaxLength(40).IsUnicode(false);
+            e.Property(x => x.CondicionesVersion).HasColumnName("condiciones_version").HasMaxLength(20).IsUnicode(false);
+            e.Property(x => x.CondicionesSha256).HasColumnName("condiciones_sha256").HasMaxLength(64).IsUnicode(false);
+            e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion");
+            e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion");
+            e.HasOne<Usuario>().WithMany().HasForeignKey(x => x.IdUsuario).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Persona>().WithMany().HasForeignKey(x => x.IdPersona).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Wallet>().WithMany().HasForeignKey(x => x.IdWallet).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.IdWallet).IsUnique().HasFilter("[id_wallet] IS NOT NULL");
+        });
         modelBuilder.Entity<Persona>(e => { e.ToTable("personas"); e.HasKey(x => x.IdPersona); MapPersona(e); });
         modelBuilder.Entity<Usuario>(e => { e.ToTable("usuarios"); e.HasKey(x => x.IdUsuario); MapUsuario(e); });
         modelBuilder.Entity<KycVerificacion>(e => { e.ToTable("kyc_verificaciones"); e.HasKey(x => x.IdKycVerificacion); MapKycVerificacion(e); });
@@ -230,6 +253,10 @@ public class XpayDbContext : DbContext
 
     private static void MapPersona(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Persona> e)
     {
+        e.Property(x => x.IdCiudadDane).HasColumnName("id_ciudad_dane");
+        e.HasIndex(x => x.IdCiudadDane).HasDatabaseName("ix_personas_id_ciudad_dane");
+        e.HasOne<CatalogoCiudad>().WithMany().HasForeignKey(x => x.IdCiudadDane)
+            .OnDelete(DeleteBehavior.Restrict).HasConstraintName("fk_personas_ciudad_dane");
         e.Property(x => x.IdPersona).HasColumnName("id_persona"); e.Property(x => x.IdUnidadNegocio).HasColumnName("id_unidad_negocio"); e.Property(x => x.TipoDocumento).HasColumnName("tipo_documento"); e.Property(x => x.NumeroDocumento).HasColumnName("numero_documento"); e.Property(x => x.PrimerNombre).HasColumnName("primer_nombre"); e.Property(x => x.SegundoNombre).HasColumnName("segundo_nombre"); e.Property(x => x.PrimerApellido).HasColumnName("primer_apellido"); e.Property(x => x.SegundoApellido).HasColumnName("segundo_apellido"); e.Property(x => x.Celular).HasColumnName("celular"); e.Property(x => x.Email).HasColumnName("email"); e.Property(x => x.Direccion).HasColumnName("direccion"); e.Property(x => x.Ciudad).HasColumnName("ciudad"); e.Property(x => x.Departamento).HasColumnName("departamento"); e.Property(x => x.Pais).HasColumnName("pais"); e.Property(x => x.Estado).HasColumnName("estado"); e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion"); e.Property(x => x.FechaActualizacion).HasColumnName("fecha_actualizacion");
         // FechaNacimiento es una fecha de calendario (columna SQL DATE, sin componente
         // horario) — se excluye explícitamente del converter global de UTC de

@@ -15,6 +15,8 @@ public sealed class TipoDocumentoVeriffMapperTests
     [InlineData("id_card",  "co", " 1234567 ",  "CC",        "1234567")]
     [InlineData("PASSPORT", "CO", "ab123456",   "PASAPORTE", "AB123456")]
     [InlineData("PASSPORT", "US", "X1234567",   "PASAPORTE", "X1234567")]
+    [InlineData("ID_CARD", "CO", "1.234.567.890", "CC", "1234567890")]
+    [InlineData("ID_CARD", "CO", "123.456", "CC", "123456")]
     public void Combinaciones_cerradas_se_mapean(string tipo, string pais, string numero, string tipoEsperado, string numeroEsperado)
     {
         var r = TipoDocumentoVeriffMapper.Mapear(tipo, pais, numero);
@@ -45,7 +47,6 @@ public sealed class TipoDocumentoVeriffMapperTests
     [InlineData("ID_CARD",  "CO", "")]
     [InlineData("ID_CARD",  "CO", null)]
     [InlineData("ID_CARD",  "CO", "12345A")]       // CC solo dígitos
-    [InlineData("ID_CARD",  "CO", "1.234.567")]
     [InlineData("PASSPORT", "CO", "AB-123")]
     [InlineData("PASSPORT", "CO", "A123456789012345678901234567890")] // 31: no se trunca
     public void Numero_invalido_o_largo_se_rechaza_sin_truncar(string tipo, string pais, string? numero)
@@ -62,6 +63,44 @@ public sealed class TipoDocumentoVeriffMapperTests
         var r = TipoDocumentoVeriffMapper.Mapear("ID_CARD", "CO", numero);
         Assert.Equal(R.Mapeado, r.Resultado);
         Assert.Equal(numero, r.NumeroDocumento);
+    }
+
+    [Theory]
+    [InlineData("1.23.456")]
+    [InlineData("1234.567")]
+    [InlineData("1..234")]
+    [InlineData("1.234.")]
+    [InlineData(".123")]
+    [InlineData("1 234")]
+    [InlineData("1-234")]
+    [InlineData("1,234")]
+    [InlineData("１.２３４")]
+    [InlineData("١.٢٣٤")]
+    [InlineData("A.123")]
+    [InlineData("ſ123")]
+    public void No_elimina_separadores_arbitrarios_ni_acepta_digitos_Unicode(string numero)
+    {
+        Assert.Equal(R.NumeroInvalido, TipoDocumentoVeriffMapper.Mapear("ID_CARD", "CO", numero).Resultado);
+        Assert.Null(TipoDocumentoVeriffMapper.NumeroComparable(numero));
+    }
+
+    [Fact]
+    public void Puntos_no_se_habilitan_para_pasaporte_ni_pais_desconocido()
+    {
+        Assert.Equal(R.NumeroInvalido, TipoDocumentoVeriffMapper.Mapear("PASSPORT", "CO", "1.234").Resultado);
+        Assert.Equal(R.TipoNoMapeable, TipoDocumentoVeriffMapper.Mapear("ID_CARD", "COL", "1.234").Resultado);
+        Assert.Equal(R.TipoNoMapeable, TipoDocumentoVeriffMapper.Mapear("ID_CARD", null, "1.234").Resultado);
+    }
+
+    [Fact]
+    public void Canonico_largo_y_raw_excesivo_se_rechazan_sin_truncar()
+    {
+        var treinta = string.Join(".", Enumerable.Repeat("123", 10));
+        Assert.Equal(30, TipoDocumentoVeriffMapper.Mapear("ID_CARD", "CO", treinta).NumeroDocumento!.Length);
+        Assert.Equal(R.NumeroInvalido, TipoDocumentoVeriffMapper.Mapear("ID_CARD", "CO", "1." + treinta).Resultado);
+        Assert.Null(TipoDocumentoVeriffMapper.NumeroComparable(new string(' ', 65) + "1"));
+        Assert.Equal("AB123", TipoDocumentoVeriffMapper.NumeroComparable(" ab123 "));
+        Assert.Equal(R.NumeroInvalido, TipoDocumentoVeriffMapper.Mapear("PASSPORT", "CO", "ſ123").Resultado);
     }
 
     [Fact]
