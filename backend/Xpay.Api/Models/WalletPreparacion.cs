@@ -1,21 +1,18 @@
 namespace Xpay.Api.Models;
 
-// Preparación del propio titular. No contiene llaves en claro, credenciales ni
-// biometría; la Wallet solo se crea en el último paso confirmado por el usuario.
+// Prueba durable de activación. Las llaves se registran después en Perfil o al
+// retirar; no forman parte del registro ni se guardan en esta tabla.
 public sealed class WalletPreparacion
 {
     public long IdUsuario { get; set; }
     public long IdPersona { get; set; }
-    public string OpcionLlave { get; set; } = "PENDIENTE";
-    public string? LlaveTipo { get; set; }
-    public string? LlaveHash { get; set; }
-    public string? LlaveMasked { get; set; }
-    public bool PropiedadConfirmada { get; set; }
-    public long? IdWallet { get; set; }
-    public DateTime? FechaActivacion { get; set; }
-    public string? CriteriosVersion { get; set; }
-    public string? CondicionesVersion { get; set; }
-    public string? CondicionesSha256 { get; set; }
+    public long IdWallet { get; set; }
+    public DateTime FechaActivacion { get; set; }
+    public string CriteriosVersion { get; set; } = string.Empty;
+    public string TerminosVersion { get; set; } = string.Empty;
+    public string TerminosSha256 { get; set; } = string.Empty;
+    public string PoliticaDatosVersion { get; set; } = string.Empty;
+    public string PoliticaDatosSha256 { get; set; } = string.Empty;
     public DateTime FechaCreacion { get; set; }
     public DateTime FechaActualizacion { get; set; }
 }

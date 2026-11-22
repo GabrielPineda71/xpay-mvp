@@ -28,12 +28,12 @@ export function urlSesionVeriffPublica(value: unknown): string | null {
     return url.href;
   } catch { return null; }
 }
-function urlDocumento(value: string | undefined): string | null {
+function urlDocumento(value: string | undefined, version: string | undefined): string | null {
   try {
     const url = new URL(value ?? '');
     return url.protocol === 'https:' && !url.username && !url.password && !url.port
       && ['app.xpaycol.com', 'app-qa.xpaycol.com'].includes(url.hostname)
-      && url.pathname === '/legal/v1.2/autorizaciones.pdf'
+      && (version === '1.2' || version === '1.3') && url.pathname === `/legal/v${version}/autorizaciones.pdf`
       && !url.search && !url.hash ? url.href : null;
   } catch { return null; }
 }
@@ -94,7 +94,7 @@ export function VerificacionIdentidadPublicaSection({ guiado = false, onActualiz
     return () => { window.removeEventListener('focus', refrescar); document.removeEventListener('visibilitychange', refrescar); };
   }, [cargar]);
 
-  const documentoUrl = urlDocumento(consentimiento?.documento?.url);
+  const documentoUrl = urlDocumento(consentimiento?.documento?.url, consentimiento?.documento?.version);
   const permiteAutorizacion = consultaVigente && correoVerificado && consentimiento?.habilitado && documentoUrl;
   const permiteVeriff = permiteAutorizacion && consentimiento?.aceptado;
   const sessionUrl = permiteVeriff && kyc?.estadoKyc === 'PENDIENTE' ? urlSesionVeriffPublica(kyc.sessionUrl) : null;
@@ -110,7 +110,7 @@ export function VerificacionIdentidadPublicaSection({ guiado = false, onActualiz
       if (intento !== secuencia.current) return;
       if (!r.success || !r.data?.aceptado || !r.data.habilitado
         || r.data.documento?.version !== consentimiento.documento.version
-        || urlDocumento(r.data.documento?.url) !== documentoUrl) throw new Error('Autorización no confirmada.');
+        || urlDocumento(r.data.documento?.url, r.data.documento?.version) !== documentoUrl) throw new Error('Autorización no confirmada.');
       setConsentimiento(r.data); setAutoriza(false);
       setAviso('Autorización guardada. Ahora puedes iniciar la verificación de identidad.');
     } catch (err) {
@@ -150,7 +150,6 @@ export function VerificacionIdentidadPublicaSection({ guiado = false, onActualiz
     {!guiado && <ol className="identidad-publica-pasos">
       <li><strong>Correo electrónico</strong><span>{consultaVigente ? correoVerificado ? 'Verificado' : 'Pendiente. Confírmalo en Mi información.' : 'Sin confirmar'}</span></li>
       <li><strong>Identidad con Veriff</strong><span>{cargando ? 'Consultando...' : kyc ? ETIQUETAS_KYC[kyc.estadoKyc] : 'Sin confirmar'}</span></li>
-      <li><strong>WhatsApp</strong><span>Verificación pendiente para una próxima etapa. Puedes continuar con Veriff.</span></li>
     </ol>}
     {consentimiento && <div className="identidad-publica-autorizacion">
       {!guiado && <h4>Verifica tu identidad</h4>}

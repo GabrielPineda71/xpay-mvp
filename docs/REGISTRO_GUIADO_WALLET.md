@@ -1,73 +1,71 @@
-# Registro guiado y Wallet del piloto
+# Registro guiado y activación de Wallet
 
-Esta entrega permite que el titular de una cuenta pública solicite habilitar
-su Wallet después de verificar correo e identidad, completar domicilio DANE,
-elegir registrar u omitir su llave propia y configurar un PIN de seis dígitos.
-La acción final exige aceptar un anexo independiente y pulsar Activar mi Wallet.
-No se habilita nada al consultar, regresar de Veriff ni guardar el PIN.
+Recorrido del titular: correo → identidad con Veriff → domicilio DANE → PIN6 →
+Activar mi Wallet. No hay aceptación de piloto, anexo adicional, registro de
+llave durante el alta ni avisos de una etapa futura de WhatsApp.
 
-## Controles
+## Aceptaciones y evidencia
 
-- Actor exclusivamente del JWT; cuenta personal activa, rol único USUARIO_FINAL,
-  contraseña vigente, misma Persona y una única sesión actual VERIFF/approved.
-- Autorización biométrica C1.2 vigente; no se amplía ni sustituye A/B/C existentes.
-- Documento legal consolidado y único. Se conserva el número raw de Veriff.
-  Para CC/CO se reconocen puntos de miles ASCII con grupos exactos; nunca se
-  eliminan separadores arbitrarios ni se infiere el país por la residencia.
-- Domicilio elegido del catálogo activo de Colombia; la ciudad determina el
-  departamento. El PATCH libre histórico invalida el ID si cambia la localidad.
-- PIN BCrypt activo, no bloqueado y de longitud6; contraseña de ingreso para
-  crearlo y el mismo control de intentos para cambiarlo/verificarlo.
-- Transacción Serializable, locks compartidos con KYC y alta administrativa,
-  capacidad conjunta de50 y comprobaciones mantenidas hasta confirmar.
-- Misma Persona/Usuario; una Wallet PERSONA activa, saldo0 y evidencia auditada.
-  No crea movimientos, ledger, cupos, préstamos ni vínculos laborales.
-- Revoca las sesiones anteriores; la respuesta envía una sesión completa para
-  el mismo titular, con requierePerfil=false explícito. Si se pierde, reingresar.
-- WhatsApp aplazado: nunca se marca verificado. Llave propia opcional para
-  activar/enviar/pagar; pendiente de validación bancaria hasta el retiro.
-- Los controladores de crédito/nómina rechazan las cuentas de autorregistro
-  aunque tengan Wallet. La habilitación separada de esos productos se entrega
-  por otro flujo; el piloto administrativo previo mantiene sus controles.
+- A: Términos y Condiciones1.3. B: Política de Tratamiento de Datos1.3. Se
+  solicitan en el registro con casillas separadas vacías y versiones del API.
+- C: autorización biométrica opcional y expresa, antes de iniciar Veriff. El
+  texto C y su finalidad no cambian entre los documentos1.2 y1.3. Se conserva la
+  evidencia histórica1.2 válida sin reetiquetarla, crear una aceptación1.3 ni
+  pedir otra captura. Una última evidencia inválida/revocada no rescata otra.
+- Quien ya aceptó A/B1.3 no vuelve a marcar casillas al activar la Wallet.
+  Las cuentas anteriores renuevan únicamente las categorías A/B pendientes,
+  porque1.2 limitaba el acceso y no autorizaba la nueva operativa de Wallet.
+- Se revalida la última fila del mismo usuario/Persona/acción/entidad con tipo,
+  versión, huella y canal reconocidos. Faltantes o incoherencias cierran el paso.
+  No se sustituyen aceptaciones por el clic de guardar PIN ni un retorno de KYC.
 
-## Identificación existente
+## Habilitación y controles
 
-POST `/api/usuarios/preparacion-wallet/identidad/actualizar` consulta Veriff solo
-por clic explícito y fuera de SQL. Revalida sesión, intento, decisión, titular,
-campos raw y país documental; solo completa los campos legales vacíos, con
-auditoría y comprobación global de unicidad. No inicia una nueva captura, no
-modifica la decisión KYC ni activa Wallet. Una discrepancia requiere revisión.
-GET de preparación no hace esa consulta ni escribe datos.
+Cuenta personal activa, rol único USUARIO_FINAL y contraseña vigente; correo
+confirmado; una única sesión actual VERIFF/approved con identidad real, no QA;
+documento legal consolidado y único; dirección y ciudad/departamento DANE activos;
+PIN BCrypt6 activo y sin bloqueo; A/B1.3 vigentes; solicitud expresa de activación.
 
-## Instalación y cierre
+La transacción Serializable y los bloqueos compartidos con KYC/alta administrativa
+mantienen esos controles frente a cambios concurrentes. La misma Persona/Usuario
+recibe una Wallet PERSONA con saldo0 y una prueba durable idempotente. No genera
+movimientos, ledger, créditos ni vinculaciones laborales. La capacidad interna
+conjunta se conserva en50, sin liberar plazas automáticamente al bloquear cuentas.
 
-1. Aprobar el anexo concreto incluido en la rama. Sus bytes y huella están
-   preparados para revisión; no publicarlos ni habilitarlos antes de la
-   aprobación de XPAY. La configuración debe usar esa misma huella y ruta.
-   Mantener A/B/C1.2 intactos.
-2. Ejecutar y verificar055 y056 antes del backend, incluso con el flujo cerrado:
-   el mapeo Persona y el filtro de cuentas limitadas necesitan las columnas/tablas.
-   Son migraciones aditivas sin backfill.054 pertenece a otra entrega separada.
-3. Publicar solo artefactos del commit revisado y validado en CI; la compilación
-   local ficticia sirve para inspección, nunca para desplegar.
-4. Configurar `XPAY_CONDICIONES_WALLET_VERSION/FECHA/URL/SHA256` y habilitar
-   `XPAY_ALTA_WALLET_GUIADA_HABILITADA=true` únicamente con el documento aprobado.
-   Conservar piloto habilitado y máximo50, y las configuraciones KYC/correo.
-5. Cada titular completa sus pasos y toma la acción final. No activar usuarios,
-   aceptar consentimientos ni crear PIN reales mediante herramientas.
+La sesión nueva revoca los JWT anteriores y debe corresponder al mismo titular.
+Si la respuesta se pierde, reingresar; nunca repetir automáticamente una activación.
+Cambiar correo a uno sin verificar vuelve a limitar el acceso. Los productos de
+crédito/nómina requieren habilitación separada; activar Wallet no los habilita.
 
-El interruptor está cerrado por defecto: faltantes/incoherencias de documento
-devuelven404 y conservan el Perfil anterior. Cerrarlo detiene nuevas solicitudes;
-no borra Wallets ni libera plazas. Para pausar operaciones se conserva el control
-financiero existente. No retirar tablas/columnas para deshacer una publicación.
-Las huellas legales y la evidencia de activación forman parte de la prueba
-durable: una futura versión debe preservar explícitamente las aceptaciones
-anteriores válidas; no cambiar la constante sin planificar esa compatibilidad.
+La llave Bre-B propia se registra en Perfil o desde el aviso del retiro. Solo
+retirar al banco exige que esté activa, validada y con una resolución Passport
+real/vigente a nombre del titular. Enviar entre Wallets y pagar QR no la requieren.
+El proveedor no se consulta automáticamente al montar formularios.
 
-## Verificación
+## Corrección de identificación
 
-Pruebas SQL con cuentas sintéticas: progresión y requisitos, formatos y unicidad,
-rollbacks, idempotencia, carreras por última plaza manual/pública, revocación
-administrativa y separación del crédito. UI con datos ficticios: una tarea por
-pantalla, DANE, llave omitida, PIN6 y final sin aceptación preseleccionada.
-No se hicieron operaciones financieras ni aceptaciones reales en esas pruebas.
+El POST manual identidad/actualizar confirma la decisión actual mediante GET
+fuera de SQL; después revalida titular, sesión/attempt/time y raw idénticos. Solo
+completa el documento legal vacío, con auditoría y unicidad global. Para CC/CO se
+reconocen puntos de miles en grupos ASCII exactos; no se limpian separadores
+arbitrarios ni se infiere país por residencia. Raw y decisión KYC se conservan.
+
+## Instalación y reversión
+
+Aplicar055 y056 antes del backend incluso con el flujo cerrado. Son aditivas,
+sin backfill;056 contiene11columnas de prueba de activación/A/B, ninguna llave.
+054 pertenece a otra entrega. Conservar los PDF1.2 como historia inalterada.
+
+Publicar únicamente artefactos CI del commit revisado, después del respaldo y
+preflight. Activar en un único cambio los metadatos A/B/C1.3 (versión, fecha, URL y
+SHA) y XPAY_ALTA_WALLET_GUIADA_HABILITADA=true. Son13claves; no tocar configuración
+QA, Passport, ACS, callback global, roles ni los demás controles financieros.
+
+El flag está cerrado por defecto y los metadatos1.3 deben coincidir con los bytes
+versionados. Cerrarlo impide nuevas preparaciones, sin borrar Wallets ni plazas.
+No retirar columnas/tablas para deshacer una aplicación; para pausar operaciones
+se conserva el interruptor financiero existente. Los documentos futuros deben
+planificar expresamente la compatibilidad de evidencia anterior válida.
+
+Cada titular confirma sus datos, consentimientos y PIN reales y toma el clic final;
+las herramientas de desarrollo prueban cuentas sintéticas y no operan por él.

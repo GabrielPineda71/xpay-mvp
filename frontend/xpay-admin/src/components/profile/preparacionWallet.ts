@@ -1,6 +1,8 @@
-export const PASOS_PREPARACION = ['CORREO', 'IDENTIDAD', 'DATOS', 'LLAVE', 'PIN', 'ACTIVAR', 'WALLET', 'REVISION'] as const;
+export const PASOS_PREPARACION = ['CORREO', 'IDENTIDAD', 'DATOS', 'PIN', 'ACTIVAR', 'WALLET', 'REVISION'] as const;
 export type PasoPreparacionWallet = typeof PASOS_PREPARACION[number];
-export const TEXTO_CONDICIONES_WALLET = 'He leído y acepto las Condiciones de habilitación de Wallet en el piloto, versión 1.0, y solicito a XPAY habilitar mi Wallet una vez se cumplan los controles y el límite del piloto.';
+export const TEXTO_TERMINOS_WALLET = 'Declaro que tengo dieciocho (18) años cumplidos y he leído y acepto los Términos y Condiciones de XPAY.';
+export const TEXTO_DATOS_WALLET = 'Autorizo el tratamiento de mis datos personales para el registro, la verificación de identidad y las operaciones de mi Wallet, según la Política de Tratamiento de Datos Personales de XPAY.';
+interface DocumentoAceptacion { version: string; fecha: string; url: string; sha256: string; aceptados: boolean; }
 export interface EstadoPreparacionWallet {
   habilitado: boolean;
   esRegistroPublico: boolean;
@@ -13,30 +15,40 @@ export interface EstadoPreparacionWallet {
   idCiudad: number | null;
   departamento: string | null;
   ciudad: string | null;
-  llave: { opcion: 'PENDIENTE' | 'REGISTRADA' | 'OMITIDA'; tipo?: string | null; valorEnmascarado?: string | null };
   pin: { configurado: boolean; bloqueado: boolean; longitudActual?: number | null; longitudRequerida: number };
   walletHabilitada: boolean;
   siguientePaso: PasoPreparacionWallet;
   puedeActivar: boolean;
-  condiciones?: { version: string; fecha: string; url: string; sha256: string };
+  terminos?: DocumentoAceptacion;
+  politicaDatos?: DocumentoAceptacion;
   puedeActualizarIdentidad?: boolean;
   mensaje?: string | null;
 }
 export interface DatosPreparacionWallet { direccion: string; idDepartamento: number; idCiudad: number; }
-export interface LlavePreparacionWallet { omitir: boolean; tipoLlave?: string; valorLlave?: string; confirmaPropiedad: boolean; }
 
-export function urlCondicionesWallet(value: unknown): string | null {
+function urlDocumentoWallet(value: unknown, ruta: string): string | null {
   if (typeof value !== 'string') return null;
   try {
     const url = new URL(value);
     return url.protocol === 'https:' && !url.username && !url.password && !url.port
       && ['app.xpaycol.com', 'app-qa.xpaycol.com'].includes(url.hostname)
-      && url.pathname === '/legal/wallet/v1.0/condiciones.pdf' && !url.search && !url.hash ? url.href : null;
+      && url.pathname === ruta && !url.search && !url.hash ? url.href : null;
   } catch { return null; }
 }
-export function condicionesWalletValidas(c: EstadoPreparacionWallet['condiciones']): boolean {
-  return !!c && c.version === '1.0' && typeof c.fecha === 'string' && c.fecha.length > 0
-    && typeof c.sha256 === 'string' && /^[a-fA-F0-9]{64}$/.test(c.sha256) && !!urlCondicionesWallet(c.url);
+export function urlTerminosWallet(value: unknown): string | null { return urlDocumentoWallet(value, '/legal/v1.3/terminos.pdf'); }
+export function urlPoliticaDatosWallet(value: unknown): string | null { return urlDocumentoWallet(value, '/legal/v1.3/politica.pdf'); }
+export function terminosWalletValidos(t: EstadoPreparacionWallet['terminos']): boolean {
+  return !!t && t.version === '1.3' && typeof t.fecha === 'string' && t.fecha.length > 0
+    && typeof t.aceptados === 'boolean' && typeof t.sha256 === 'string'
+    && /^[a-fA-F0-9]{64}$/.test(t.sha256) && !!urlTerminosWallet(t.url);
+}
+export function politicaDatosWalletValida(p: EstadoPreparacionWallet['politicaDatos']): boolean {
+  return !!p && p.version === '1.3' && typeof p.fecha === 'string' && p.fecha.length > 0
+    && typeof p.aceptados === 'boolean' && typeof p.sha256 === 'string'
+    && /^[a-fA-F0-9]{64}$/.test(p.sha256) && !!urlPoliticaDatosWallet(p.url);
+}
+export function documentosWalletValidos(e: EstadoPreparacionWallet): boolean {
+  return terminosWalletValidos(e.terminos) && politicaDatosWalletValida(e.politicaDatos);
 }
 
 export function preparacionWalletValida(value: unknown): value is EstadoPreparacionWallet {
@@ -48,16 +60,14 @@ export function preparacionWalletValida(value: unknown): value is EstadoPreparac
   return [e.emailVerificado, e.identidadVerificada, e.perfilCompleto, e.walletHabilitada, e.puedeActivar].every(v => typeof v === 'boolean')
     && ['NO_INICIADO', 'PENDIENTE', 'EN_REVISION', 'APROBADO', 'RECHAZADO', 'EXPIRADO', 'ERROR'].includes(e.estadoKyc)
     && PASOS_PREPARACION.includes(e.siguientePaso)
-    && !!e.llave && ['PENDIENTE', 'REGISTRADA', 'OMITIDA'].includes(e.llave.opcion)
     && !!e.pin && typeof e.pin.configurado === 'boolean' && typeof e.pin.bloqueado === 'boolean'
     && e.pin.longitudRequerida === 6
     && (e.puedeActualizarIdentidad === undefined || typeof e.puedeActualizarIdentidad === 'boolean')
-    && (!['DATOS', 'LLAVE', 'PIN', 'ACTIVAR'].includes(e.siguientePaso)
+    && (!['DATOS', 'PIN', 'ACTIVAR'].includes(e.siguientePaso)
       || (e.emailVerificado && e.identidadVerificada && e.estadoKyc === 'APROBADO'))
-    && (!['LLAVE', 'PIN', 'ACTIVAR'].includes(e.siguientePaso) || e.perfilCompleto)
-    && (!['PIN', 'ACTIVAR'].includes(e.siguientePaso) || e.llave.opcion !== 'PENDIENTE')
+    && (!['PIN', 'ACTIVAR'].includes(e.siguientePaso) || e.perfilCompleto)
     && (e.siguientePaso !== 'ACTIVAR' || (e.pin.configurado && !e.pin.bloqueado && e.pin.longitudActual === 6))
-    && (!['ACTIVAR', 'WALLET'].includes(e.siguientePaso) || condicionesWalletValidas(e.condiciones))
+    && (!['ACTIVAR', 'WALLET'].includes(e.siguientePaso) || documentosWalletValidos(e))
     && (e.siguientePaso !== 'WALLET' || e.walletHabilitada);
 }
 
@@ -65,7 +75,7 @@ export function preparacionWalletValida(value: unknown): value is EstadoPreparac
 // Nunca bastan un paso local o un PIN introducido para declarar la Wallet activa.
 export function puedeSolicitarActivacion(e: EstadoPreparacionWallet): boolean {
   return e.habilitado && e.esRegistroPublico && e.emailVerificado && e.identidadVerificada
-    && e.estadoKyc === 'APROBADO' && e.perfilCompleto && e.llave.opcion !== 'PENDIENTE'
+    && e.estadoKyc === 'APROBADO' && e.perfilCompleto
     && e.pin.configurado && !e.pin.bloqueado && e.pin.longitudActual === 6
-    && e.siguientePaso === 'ACTIVAR' && e.puedeActivar && condicionesWalletValidas(e.condiciones);
+    && e.siguientePaso === 'ACTIVAR' && e.puedeActivar && documentosWalletValidos(e);
 }

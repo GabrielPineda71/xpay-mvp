@@ -10,20 +10,20 @@ using Xpay.Api.Models;
 namespace Xpay.Api.Services;
 
 public sealed class PreparacionWalletService(
-    XpayDbContext db, IConfiguration config, CondicionesWalletPiloto condiciones,
+    XpayDbContext db, IConfiguration config, PreparacionWalletConfiguracion configuracion,
     ConsentimientoBiometricoService consentimiento, PerfilService perfil, AuthService auth,
     TimeProvider reloj)
 {
-    public const string CriteriosVersion = "WALLET_PUBLICA_V1";
+    public const string CriteriosVersion = "WALLET_PUBLICA_V2";
     public const string AccionActivar = "ACTIVAR_WALLET_PUBLICA";
     internal const string MensajeRevision = "Tu identidad requiere una revisión de XPAY antes de activar la Wallet.";
 
-    private CondicionesWalletResponse ExigirDisponible() => condiciones.Obtener()
+    private DocumentosRegistroPublico ExigirDisponible() => configuracion.Obtener()
         ?? throw new PreparacionWalletNoDisponibleException();
 
     public async Task<PreparacionWalletResponse> ObtenerAsync(long idUsuario, CancellationToken ct = default)
     {
-        var documento = ExigirDisponible();
+        var documentos = ExigirDisponible();
         var publica = await RegistroPublicoService.EsAutorregistroAsync(db, idUsuario, ct);
         // La preparación nueva no cambia la navegación ni los requisitos de
         // las cuentas históricas del piloto, cualquiera sea su combinación de roles.
@@ -45,68 +45,26 @@ public sealed class PreparacionWalletService(
             || (!activada && await db.Wallets.AnyAsync(w => w.IdPersona == persona.IdPersona, ct));
         var paso = activada ? "WALLET" : !usuario.EmailVerificado ? "CORREO"
             : revision ? "REVISION" : !identidad ? "IDENTIDAD" : !datos ? "DATOS"
-            : preparacion is null || preparacion.OpcionLlave == "PENDIENTE" ? "LLAVE"
             : !pinListo ? (pin?.Bloqueado == true ? "REVISION" : "PIN") : "ACTIVAR";
         var puedeActualizar = paso == "REVISION" && identidad && usuario.EmailVerificado
             && string.IsNullOrWhiteSpace(persona.TipoDocumento) && string.IsNullOrWhiteSpace(persona.NumeroDocumento)
             && persona.TipoDocumentoVeriffRaw is "ID_CARD" or "PASSPORT";
         return new(true, publica, usuario.EmailVerificado, usuario.EstadoKycActual, identidad, datos,
             persona.Direccion, idDepartamento, persona.IdCiudadDane, persona.Departamento, persona.Ciudad,
-            new(preparacion?.OpcionLlave ?? "PENDIENTE", preparacion?.LlaveTipo, preparacion?.LlaveMasked),
             new(pin?.Estado == EstadosPin.Activo, pin?.Bloqueado == true, pin?.LongitudPin),
-            activada, paso, paso == "ACTIVAR", documento,
+            activada, paso, paso == "ACTIVAR",
+            DocumentoRespuesta(documentos.Terminos, await AceptacionesRegistroWallet.VigenteAsync(db, idUsuario, persona.IdPersona, true, ct)),
+            DocumentoRespuesta(documentos.PoliticaDatos, await AceptacionesRegistroWallet.VigenteAsync(db, idUsuario, persona.IdPersona, false, ct)),
             paso == "REVISION" ? (pin?.Bloqueado == true ? "Tu PIN está bloqueado. Solicita a XPAY su restablecimiento." : MensajeRevision) : null,
             puedeActualizar);
     }
 
     public async Task<PreparacionWalletResponse> GuardarDatosAsync(long idUsuario, PreparacionDatosRequest request, CancellationToken ct = default)
     {
-        await ExigirEtapaAsync(idUsuario, ["DATOS", "LLAVE", "PIN", "ACTIVAR"], ct);
+        await ExigirEtapaAsync(idUsuario, ["DATOS", "PIN", "ACTIVAR"], ct);
         var (u, _) = await TitularAsync(idUsuario, ct);
         await perfil.ActualizarDomicilioDaneAsync(idUsuario, u.IdPersona,
             new GuardarDomicilioDaneRequest(request.Direccion ?? "", request.IdDepartamento, request.IdCiudad), ct);
-        return await ObtenerAsync(idUsuario, ct);
-    }
-
-    public async Task<PreparacionWalletResponse> GuardarLlaveAsync(long idUsuario, PreparacionLlaveRequest request, CancellationToken ct = default)
-    {
-        ExigirDisponible();
-        string? tipo = null, hash = null, mascara = null;
-        if (request.Omitir)
-        {
-            if (request.ConfirmaPropiedad || request.TipoLlave is not null || request.ValorLlave is not null)
-                throw new InvalidOperationException("Elige registrar la llave o continuar sin ella.");
-        }
-        else
-        {
-            if (!request.ConfirmaPropiedad) throw new InvalidOperationException("Confirma que la llave es tuya.");
-            tipo = request.TipoLlave?.Trim().ToUpperInvariant() ?? "";
-            BrebService.ValidateKeyType(tipo);
-            var valor = BrebService.NormalizeKeyValue(tipo, request.ValorLlave ?? "");
-            hash = BrebKeyValue.ComputeHash(valor);
-            mascara = BrebService.MaskKeyValue(tipo, valor);
-        }
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        await BloquearTitularAsync(idUsuario, ct);
-        await ExigirEtapaAsync(idUsuario, ["LLAVE", "PIN", "ACTIVAR"], ct);
-        var (usuario, _) = await TitularAsync(idUsuario, ct);
-        var fila = await db.WalletPreparaciones.SingleOrDefaultAsync(p => p.IdUsuario == idUsuario, ct);
-        var ahora = reloj.GetUtcNow().UtcDateTime;
-        if (fila is null)
-        {
-            fila = new() { IdUsuario = idUsuario, IdPersona = usuario.IdPersona, FechaCreacion = ahora };
-            db.WalletPreparaciones.Add(fila);
-        }
-        fila.OpcionLlave = request.Omitir ? "OMITIDA" : "REGISTRADA";
-        fila.LlaveTipo = tipo; fila.LlaveHash = hash; fila.LlaveMasked = mascara;
-        fila.PropiedadConfirmada = !request.Omitir; fila.FechaActualizacion = ahora;
-        db.Auditorias.Add(new Auditoria { IdUsuario = idUsuario, IdPersona = usuario.IdPersona,
-            Modulo = "USUARIOS", Accion = "PREPARAR_LLAVE_WALLET", Entidad = "usuarios",
-            IdEntidad = idUsuario.ToString(CultureInfo.InvariantCulture), Resultado = "EXITOSO", FechaEvento = ahora,
-            ValorNuevo = JsonSerializer.Serialize(new { opcion = fila.OpcionLlave, tipo }),
-            Observacion = "Elección del titular; no valida titularidad bancaria ni llama al proveedor." });
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
         return await ObtenerAsync(idUsuario, ct);
     }
 
@@ -120,9 +78,7 @@ public sealed class PreparacionWalletService(
 
     public async Task<LoginResponse> ActivarAsync(long idUsuario, ActivarWalletRequest request, string? ipSolicitud, CancellationToken ct = default)
     {
-        var documento = ExigirDisponible();
-        if (!request.AceptaCondiciones || request.VersionCondiciones != documento.Version)
-            throw new InvalidOperationException("Revisa y acepta las condiciones de habilitación de Wallet vigentes.");
+        var documentos = ExigirDisponible();
         if (db.Database.CurrentTransaction is not null) throw new InvalidOperationException("La activación requiere su propia transacción.");
         await using (var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct))
         {
@@ -136,7 +92,7 @@ public sealed class PreparacionWalletService(
                 if (!await RegistroPublicoService.EsAutorregistroAsync(db, idUsuario, ct))
                     throw new InvalidOperationException("Esta cuenta no pertenece al registro público.");
                 var fila = await db.WalletPreparaciones.SingleOrDefaultAsync(p => p.IdUsuario == idUsuario, ct);
-                if (fila?.IdWallet is not null)
+                if (fila is not null)
                 {
                     if (await RegistroPublicoService.EsCuentaLimitadaAsync(db, idUsuario))
                         throw new InvalidOperationException(MensajeRevision);
@@ -160,28 +116,30 @@ public sealed class PreparacionWalletService(
                     if (await MotivoIdentidadAsync(persona, ct) is not null) throw new InvalidOperationException(MensajeRevision);
                     var maximo = AltaUsuarioPilotoService.LeerMaximoHabilitado(
                         config[AltaUsuarioPilotoService.ClaveHabilitada], config[AltaUsuarioPilotoService.ClaveMaxUsuarios]);
-                    if (maximo is null) throw new InvalidOperationException("La incorporación al piloto no está disponible.");
+                    if (maximo is null) throw new InvalidOperationException("La activación de Wallet no está disponible en este momento. Contacta a XPAY.");
                     if (await ContarPlazasAsync(db, ct) >= Math.Min(maximo.Value, 50))
-                        throw new InvalidOperationException(AltaUsuarioPilotoService.MensajeMaximoAlcanzado);
+                        throw new InvalidOperationException("La activación de Wallet no está disponible en este momento. Contacta a XPAY.");
                     var ahora = reloj.GetUtcNow().UtcDateTime;
+                    await AceptacionesRegistroWallet.GuardarPendientesAsync(db, idUsuario, persona.IdPersona,
+                        request, documentos, ahora, ipSolicitud, ct);
                     var wallet = new Wallet { IdPersona = persona.IdPersona, IdUnidadNegocio = persona.IdUnidadNegocio,
                         TipoWallet = "PERSONA", NombreWallet = $"Wallet {usuario.NombreUsuario}", Estado = "ACTIVA", FechaCreacion = ahora };
                     db.Wallets.Add(wallet); await db.SaveChangesAsync(ct);
                     db.WalletSaldos.Add(new WalletSaldo { IdWallet = wallet.IdWallet, FechaActualizacion = ahora });
-                    fila!.IdWallet = wallet.IdWallet; fila.FechaActivacion = ahora; fila.FechaActualizacion = ahora;
-                    fila.CriteriosVersion = CriteriosVersion; fila.CondicionesVersion = documento.Version; fila.CondicionesSha256 = documento.Sha256;
-                    if (fila.OpcionLlave == "REGISTRADA") db.PassportBrebLlaves.Add(new PassportBrebLlave {
-                        TipoSujeto = "USUARIO", IdUsuario = idUsuario, IdWallet = wallet.IdWallet, KeyType = fila.LlaveTipo!,
-                        KeyValueHash = fila.LlaveHash!, KeyValueMasked = fila.LlaveMasked!, Estado = "PENDIENTE_VALIDACION",
-                        EsActiva = true, FechaRegistro = ahora, CreatedByUsuario = idUsuario });
+                    fila = new WalletPreparacion { IdUsuario = idUsuario, IdPersona = persona.IdPersona,
+                        IdWallet = wallet.IdWallet, FechaActivacion = ahora, FechaCreacion = ahora, FechaActualizacion = ahora,
+                        CriteriosVersion = CriteriosVersion, TerminosVersion = documentos.Terminos.DatosPublicos.Version,
+                        TerminosSha256 = documentos.Terminos.Sha256, PoliticaDatosVersion = documentos.PoliticaDatos.DatosPublicos.Version,
+                        PoliticaDatosSha256 = documentos.PoliticaDatos.Sha256 };
+                    db.WalletPreparaciones.Add(fila);
                     db.Auditorias.Add(new Auditoria { IdUsuario = idUsuario, IdPersona = persona.IdPersona,
                         Modulo = "USUARIOS", Accion = AccionActivar, Entidad = "usuarios", IdEntidad = idUsuario.ToString(CultureInfo.InvariantCulture),
                         Resultado = "EXITOSO", FechaEvento = ahora, Ip = IPAddress.TryParse(ipSolicitud, out var ip) ? ip.ToString() : null,
                         ValorNuevo = JsonSerializer.Serialize(new { idWallet = wallet.IdWallet, criteriosVersion = CriteriosVersion,
-                            condicionesVersion = documento.Version, condicionesSha256 = documento.Sha256,
-                            aceptaCondiciones = true, canal = "PERFIL_WEB", emailVerificado = true, identidadVerificada = true,
-                            domicilioDane = true, longitudPin = 6, opcionLlave = fila.OpcionLlave, whatsAppPendiente = true }),
-                        Observacion = "Activación solicitada por el titular tras los controles del piloto; saldo inicial cero, sin cupos ni crédito." });
+                            versionTerminos = documentos.Terminos.DatosPublicos.Version, terminosSha256 = documentos.Terminos.Sha256,
+                            versionPoliticaDatos = documentos.PoliticaDatos.DatosPublicos.Version, politicaDatosSha256 = documentos.PoliticaDatos.Sha256, canal = "PERFIL_WEB", emailVerificado = true, identidadVerificada = true,
+                            domicilioDane = true, longitudPin = 6 }),
+                        Observacion = "Activación solicitada por el titular tras los controles de registro; saldo inicial cero, sin cupos ni crédito." });
                     await db.SaveChangesAsync(ct);
                     await VersionSeguridadUsuario.IncrementarAsync(db, idUsuario, ct);
                     await tx.CommitAsync(ct);
@@ -191,6 +149,10 @@ public sealed class PreparacionWalletService(
         }
         return await auth.ReemitirSesionWalletAsync(idUsuario, ct);
     }
+
+    private static DocumentoPreparacionResponse DocumentoRespuesta(DocumentoRegistroPublico documento, bool aceptados) =>
+        new(documento.DatosPublicos.Version, documento.DatosPublicos.Fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            documento.DatosPublicos.Url, documento.Sha256, aceptados);
 
     private async Task ExigirEtapaAsync(long idUsuario, string[] pasos, CancellationToken ct)
     {

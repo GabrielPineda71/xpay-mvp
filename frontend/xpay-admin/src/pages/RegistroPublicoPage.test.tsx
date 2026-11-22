@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from '../api/client.ts';
 import { RegistroPublicoPage } from './RegistroPublicoPage.tsx';
+import { TEXTO_TERMINOS_WALLET, TEXTO_DATOS_WALLET } from '../components/profile/preparacionWallet.ts';
 
 const contrasena = 'ClaveSegura1!';
 const configuracion = {
@@ -49,6 +50,20 @@ afterEach(() => {
 });
 
 describe('Registro público', () => {
+  it('registro1.3 presenta A/B cortas idénticas a la actualización, desmarcadas y sin casillas extra', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: {
+      terminos: { version: '1.3', fecha: '2026-11-21', url: 'https://app.xpaycol.com/legal/v1.3/terminos.pdf' },
+      politicaDatos: { version: '1.3', fecha: '2026-11-21', url: 'https://app.xpaycol.com/legal/v1.3/politica.pdf' },
+    } });
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ success: true }); renderRegistro('PROD');
+    const t = await screen.findByRole('checkbox', { name: TEXTO_TERMINOS_WALLET }); const p = screen.getByRole('checkbox', { name: TEXTO_DATOS_WALLET });
+    expect(t).not.toBeChecked(); expect(p).not.toBeChecked(); expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    expect(screen.queryByText(/piloto|Ambiente de pruebas|WhatsApp pendiente|próxima etapa/i)).not.toBeInTheDocument();
+    await userEvent.click(t); await userEvent.click(p); await completarFormulario(contrasena, false);
+    expect(post).toHaveBeenCalledWith('/api/usuarios/registro', expect.objectContaining({ consentimiento: {
+      aceptaTerminos: true, versionTerminos: '1.3', autorizaTratamientoDatos: true, versionPoliticaDatos: '1.3',
+    } }));
+  });
   it.each(['QA', 'PROD'] as const)('en %s envía los datos y las dos aceptaciones con sus versiones y guía la activación por correo', async ambiente => {
     const post = vi.spyOn(api, 'post').mockResolvedValue({ success: true });
     renderRegistro(ambiente);

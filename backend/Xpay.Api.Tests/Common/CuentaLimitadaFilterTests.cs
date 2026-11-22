@@ -33,7 +33,7 @@ public sealed class CuentaLimitadaFilterTests
             "ConsentimientoBiometricoController.Estado", "ConsentimientoBiometricoController.Autorizar",
             "CatalogosController.Paises", "CatalogosController.Departamentos", "CatalogosController.Ciudades",
             "PreparacionWalletController.Estado", "PreparacionWalletController.Datos",
-            "PreparacionWalletController.Llave", "PreparacionWalletController.Activar",
+            "PreparacionWalletController.Activar",
             "PreparacionWalletController.ActualizarIdentidad",
             "PinController.Estado", "PinController.Crear", "PinController.Cambiar",
         };

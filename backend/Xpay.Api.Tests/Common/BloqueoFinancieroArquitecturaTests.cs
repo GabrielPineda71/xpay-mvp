@@ -27,11 +27,11 @@ public sealed class BloqueoFinancieroArquitecturaTests
         "RegistroPublicoController.ReenviarVerificacion",
         "UsuariosController.RegistrarInicial", "UsuariosController.RegistrarUsuarioFinal",
         "UsuariosController.ActualizarMiPerfil",
-        // Registro guiado: domicilio, elección de llave local y sincronización
+        // Registro guiado: domicilio, aceptaciones A/B y sincronización
         // de identidad no mueven dinero. Activar equivale al alta piloto con
         // Wallet/saldo0: no crea movimientos, ledger, deuda ni cupo; todas las
         // operaciones monetarias conservan su interruptor independiente.
-        "PreparacionWalletController.Datos", "PreparacionWalletController.Llave",
+        "PreparacionWalletController.Datos",
         "PreparacionWalletController.ActualizarIdentidad", "PreparacionWalletController.Activar",
         "KycController.VeriffSession", "KycController.VeriffWebhook", "KycController.ReconciliarVeriff",
         "KycController.SimularEstadoQa",

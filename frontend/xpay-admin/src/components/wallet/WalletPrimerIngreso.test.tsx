@@ -82,224 +82,93 @@ async function crearPin(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Nuevo PIN (6 dígitos)'), '025801');
   await user.type(screen.getByLabelText('Confirmar PIN'), '025801');
   await user.click(screen.getByRole('button', { name: 'Crear PIN' }));
-  await screen.findByText('Tu PIN de 6 dígitos quedó guardado.');
+  await waitFor(() => expect(screen.queryByLabelText('Nuevo PIN (6 dígitos)')).not.toBeInTheDocument());
 }
 
-describe('WalletPrimerIngreso', () => {
-  it('respeta la llave OMITIDA guardada en el servidor al entrar y tras actualizar PIN, sin pedirla otra vez', async () => {
-    const original = mockGet.getMockImplementation()!;
-    mockGet.mockImplementation((path: string) => path === '/api/usuarios/preparacion-wallet' ? Promise.resolve({ success: true, data: {
-      habilitado: true, esRegistroPublico: true, emailVerificado: true, estadoKyc: 'APROBADO', identidadVerificada: true,
-      perfilCompleto: true, walletHabilitada: true, puedeActivar: false, siguientePaso: 'WALLET',
-      llave: { opcion: 'OMITIDA' }, pin: { configurado: false, bloqueado: false, longitudRequerida: 6 },
-      condiciones: { version: '1.0', fecha: '2026-11-21', url: 'https://app.xpaycol.com/legal/wallet/v1.0/condiciones.pdf', sha256: 'a'.repeat(64) },
-    } }) : original(path));
-    const user = userEvent.setup(); mostrar();
-    await user.type(await screen.findByLabelText('Contraseña de ingreso'), 'Clave-sintetica-1');
-    await user.type(screen.getByLabelText('Nuevo PIN (6 dígitos)'), '025801');
-    await user.type(screen.getByLabelText('Confirmar PIN'), '025801');
-    await user.click(screen.getByRole('button', { name: 'Crear PIN' }));
-    expect(await screen.findByText('WALLET_LISTA')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Valor de la llave')).not.toBeInTheDocument();
-    expect(screen.queryByRole('complementary', { name: 'Llave Bre-B para retiros' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Registrar más tarde' })).not.toBeInTheDocument();
-    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/api/pin', expect.anything());
-    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
-  });
-  it('primer ingreso sin KYC: guarda el PIN y guía a identidad sin consultar ni registrar llaves', async () => {
-    estadoKyc = 'NO_INICIADO';
-    const user = userEvent.setup();
-    mostrar(true);
-    await crearPin(user);
-    expect(await screen.findByText(/Antes de registrar tu llave, completa la verificación de identidad en Mi Wallet/)).toBeInTheDocument();
-    expect(screen.queryByLabelText('Valor de la llave')).not.toBeInTheDocument();
-    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
-    await user.click(screen.getByRole('button', { name: 'Continuar a mi Wallet' }));
-    expect(await screen.findByRole('button', { name: 'Iniciar verificación' })).toBeInTheDocument();
-    expect(await screen.findByRole('link', { name: 'Verificar identidad en Mi Wallet' })).toBeInTheDocument();
-    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
-    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mis-retiros');
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave', expect.anything());
-    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave/resolver', expect.anything());
-  });
-
-  it('con PIN6 guardado e identidad pendiente muestra guía inline sin consultar la llave', async () => {
-    pin = { ...PIN_LISTO };
-    estadoKyc = 'PENDIENTE';
-    mostrar();
-    expect(await screen.findByText('WALLET_LISTA')).toBeInTheDocument();
-    expect(await screen.findByRole('link', { name: 'Verificar identidad en Mi Wallet' })).toBeInTheDocument();
-    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
-    expect(mockPost).not.toHaveBeenCalled();
-  });
-  it('antes de conocer el PIN no monta la Wallet ni permite saltar la preparación', async () => {
+describe('WalletPrimerIngreso — PIN sin llave obligatoria', () => {
+  it('antes de conocer el PIN no monta Wallet ni permite saltar la preparación', async () => {
     mockGet.mockImplementation((path: string) => path === '/api/wallets/mi-wallet'
       ? Promise.resolve({ success: true, data: { idWallet: 2 } }) : new Promise(() => {}));
     mostrar();
     expect(await screen.findByRole('status')).toHaveTextContent('Consultando la preparación');
-    expect(screen.queryByText('WALLET_LISTA')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Registrar más tarde' })).not.toBeInTheDocument();
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(screen.queryByText('WALLET_LISTA')).not.toBeInTheDocument(); expect(mockPost).not.toHaveBeenCalled();
   });
-
-  it('crea PIN6 con contraseña, confirma el estado y ofrece la llave sin guardar secretos', async () => {
-    const user = userEvent.setup();
-    mostrar();
-    expect(await screen.findByLabelText('Contraseña de ingreso')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
-    expect(screen.queryByText('WALLET_LISTA')).not.toBeInTheDocument();
-    await crearPin(user);
-    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/api/pin', { claveActual: 'Clave-sintetica-1', pin: '025801', confirmacionPin: '025801' });
-    expect(screen.getByText(/La llave no es necesaria para enviar entre Wallets ni pagar con QR/)).toBeInTheDocument();
-    expect(localStorage.length).toBe(0);
-    expect(sessionStorage.length).toBe(0);
-    expect(mockPost.mock.calls.some(([path]) => path === '/api/breb/mi-llave/resolver')).toBe(false);
-  });
-
-  it.each(['25801', '0258014'])('cambia el PIN anterior %s por seis, sin pedir la contraseña de ingreso', async anterior => {
-    pin = { ...PIN_LISTO, requiereActualizacion: true };
-    const user = userEvent.setup();
-    mostrar();
-    await user.type(await screen.findByLabelText('PIN actual (5, 6 o 7 dígitos)'), anterior);
-    expect(screen.queryByLabelText('Contraseña de ingreso')).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText('PIN nuevo (6 dígitos)'), '369147');
-    await user.type(screen.getByLabelText('Confirmar PIN'), '369147');
-    await user.click(screen.getByRole('button', { name: 'Cambiar PIN' }));
-    await screen.findByRole('heading', { name: 'Mi llave Bre-B' });
-    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/api/pin/cambiar', { pinActual: anterior, pinNuevo: '369147', confirmacionPinNuevo: '369147' });
-  });
-
-  it('con PIN6 existente entra directamente y recuerda la llave pendiente sin bloquear ni volver a registrar', async () => {
-    pin = { ...PIN_LISTO };
-    mostrar();
+  it('crea PIN6 y entra a Wallet sin pedir, consultar ni registrar llave y sin guardar secretos', async () => {
+    const user = userEvent.setup(); mostrar(); await crearPin(user);
     expect(await screen.findByText('WALLET_LISTA')).toBeInTheDocument();
-    expect(await screen.findByRole('link', { name: 'Registrar mi llave en Perfil' })).toBeInTheDocument();
-    expect(mockPost).not.toHaveBeenCalled();
-  });
-
-  it('si se cerró después de guardar PIN6, el próximo ingreso mantiene un aviso de llave sin imponer otro formulario', async () => {
-    const user = userEvent.setup();
-    const first = mostrar();
-    await crearPin(user);
-    first.unmount();
-    mostrar();
-    expect(await screen.findByText('WALLET_LISTA')).toBeInTheDocument();
-    expect(await screen.findByRole('complementary', { name: 'Llave Bre-B para retiros' })).toBeInTheDocument();
     expect(screen.queryByLabelText('Valor de la llave')).not.toBeInTheDocument();
-    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Registrar más tarde' })).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+    expect(mockGet).not.toHaveBeenCalledWith('/api/usuarios/preparacion-wallet');
+    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/api/pin', { claveActual: 'Clave-sintetica-1', pin: '025801', confirmacionPin: '025801' });
+    expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0);
   });
-
-  it('durante la preparación oculta acciones monetarias y QR, conservando Perfil y salir', async () => {
-    const user = userEvent.setup();
-    mostrar(false, true);
-    await screen.findByLabelText('Contraseña de ingreso');
-    expect(screen.queryByRole('group', { name: 'Acciones principales' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'QR' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Perfil' })).toBeEnabled();
-    await user.click(screen.getByRole('button', { name: 'Perfil' }));
-    await user.click(screen.getByRole('button', { name: 'Mi perfil' }));
-    expect(onProfile).toHaveBeenCalledOnce();
-    await user.click(screen.getByRole('button', { name: 'Abrir perfil' }));
-    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' }));
-    expect(onLogout).toHaveBeenCalledOnce();
-    expect(onAction).not.toHaveBeenCalled();
-  });
-
-  it('Perfil sigue disponible aunque el PIN esté pendiente de configuración', async () => {
-    mostrar(false, true, true);
-    expect(await screen.findByText('PERFIL_LISTO')).toBeInTheDocument();
-    expect(screen.queryByRole('group', { name: 'Acciones principales' })).not.toBeInTheDocument();
-  });
-
-  it('no avanza ni celebra una preparación lista si el PIN confirmado está bloqueado', async () => {
-    mockPost.mockImplementationOnce(() => {
-      pin = { ...PIN_LISTO, bloqueado: true, intentosRestantes: 0 };
-      return Promise.resolve({ success: true, message: 'PIN guardado.' });
-    });
-    const user = userEvent.setup();
-    mostrar();
-    await user.type(await screen.findByLabelText('Contraseña de ingreso'), 'Clave-sintetica-1');
-    await user.type(screen.getByLabelText('Nuevo PIN (6 dígitos)'), '025801');
-    await user.type(screen.getByLabelText('Confirmar PIN'), '025801');
-    await user.click(screen.getByRole('button', { name: 'Crear PIN' }));
-    expect(await screen.findByText(/Tu PIN está bloqueado\. Solicita/)).toBeInTheDocument();
-    expect(screen.queryByText('Tu PIN de 6 dígitos quedó guardado.')).not.toBeInTheDocument();
-    expect(screen.queryByText('WALLET_LISTA')).not.toBeInTheDocument();
+  it.each(['25801', '0258014'])('actualiza PIN anterior %s y sigue directamente a Wallet', async anterior => {
+    pin = { ...PIN_LISTO, requiereActualizacion: true }; const user = userEvent.setup(); mostrar();
+    await user.type(await screen.findByLabelText('PIN actual (5, 6 o 7 dígitos)'), anterior);
+    await user.type(screen.getByLabelText('PIN nuevo (6 dígitos)'), '369147');
+    await user.type(screen.getByLabelText('Confirmar PIN'), '369147'); await user.click(screen.getByRole('button', { name: 'Cambiar PIN' }));
+    expect(await screen.findByText('WALLET_LISTA')).toBeInTheDocument();
+    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/api/pin/cambiar', { pinActual: anterior, pinNuevo: '369147', confirmacionPinNuevo: '369147' });
     expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
   });
-
-  it.each(['PENDIENTE_VALIDACION', 'VALIDADA'])('con llave ya registrada %s muestra su estado y evita otro registro', async estado => {
-    llave = { idBrebLlave: 4, keyType: 'ALPHA', keyValueMasked: '***0118', estado };
-    const user = userEvent.setup();
-    mostrar();
-    await crearPin(user);
-    expect(await screen.findByText(estado.replace(/_/g, ' '))).toBeInTheDocument();
-    expect(screen.queryByLabelText('Valor de la llave')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Actualizar llave' })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Continuar a mi Wallet' }));
-    expect(await screen.findByText('WALLET_LISTA')).toBeInTheDocument();
-    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave', expect.anything());
+  it('con PIN6 existente entra sin recordatorio ni formulario de llave', async () => {
+    pin = { ...PIN_LISTO }; mostrar(); expect(await screen.findByText('WALLET_LISTA')).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Llave Bre-B para retiros' })).not.toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave'); expect(mockPost).not.toHaveBeenCalled();
   });
-
-  it('registrar la llave más tarde permite enviar entre Wallets usando PIN6', async () => {
-    const user = userEvent.setup();
-    mostrar(true);
-    await crearPin(user);
-    await user.click(screen.getByRole('button', { name: 'Registrar más tarde' }));
-    await user.click(await screen.findByText('Otras opciones'));
-    await user.click(screen.getByText('Ingresar destino manualmente →'));
-    await user.type(screen.getByLabelText('ID de wallet destino'), '3');
-    await user.click(screen.getByRole('button', { name: 'Confirmar destino' }));
-    await screen.findByText('Destino verificado');
-    await user.type(screen.getByLabelText(/Valor a transferir/), '500');
-    await user.type(screen.getByLabelText(/PIN transaccional/), '025801');
-    await user.click(screen.getByRole('button', { name: 'Enviar dinero' }));
-    expect(await screen.findByRole('dialog', { name: 'Transferencia exitosa' })).toBeInTheDocument();
-    expect(mockPost).toHaveBeenCalledWith('/api/wallets/transferencia', expect.objectContaining({ pin: '025801' }), expect.anything());
-    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave', expect.anything());
-    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave/resolver', expect.anything());
-  });
-
-  it('registrar la llave más tarde también permite pagar con QR usando PIN6', async () => {
-    const user = userEvent.setup();
-    mostrar(true, false, false, 'pagar');
-    await crearPin(user);
-    await user.click(screen.getByRole('button', { name: 'Registrar más tarde' }));
-    await user.click(await screen.findByText('Otras opciones'));
-    await user.type(screen.getByLabelText('Pegar código QR o contenido JSON'), 'QR-PRUEBA-001');
-    await user.click(screen.getByRole('button', { name: 'Usar código pegado' }));
-    await screen.findByText('Comercio de prueba');
-    await user.click(screen.getByRole('button', { name: '💳 Pagar con Wallet' }));
-    await user.type(screen.getByLabelText(/Valor a pagar/), '100');
-    await user.type(screen.getByLabelText(/PIN transaccional/), '025801');
-    await user.click(screen.getByRole('button', { name: 'Pagar QR con Wallet' }));
-    expect(await screen.findByText('✓ Pago realizado')).toBeInTheDocument();
-    expect(mockPost).toHaveBeenCalledWith('/api/qr/pagar', expect.objectContaining({ pin: '025801' }), expect.anything());
-    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave', expect.anything());
-    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave/resolver', expect.anything());
-  });
-
-  it('un 404 al consultar PIN no permite pasar la puerta y puede reintentarse', async () => {
-    const user = userEvent.setup();
-    errorPin = true;
-    mostrar();
-    expect(await screen.findByRole('alert')).toBeInTheDocument();
-    expect(screen.queryByText('WALLET_LISTA')).not.toBeInTheDocument();
-    errorPin = false;
-    await user.click(screen.getByRole('button', { name: 'Actualizar preparación' }));
-    expect(await screen.findByLabelText('Contraseña de ingreso')).toBeInTheDocument();
+  it('con identidad pendiente conserva el control KYC de las operaciones, sin registrar llave', async () => {
+    pin = { ...PIN_LISTO }; estadoKyc = 'NO_INICIADO'; mostrar(true);
+    expect(await screen.findByRole('button', { name: 'Iniciar verificación' })).toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave'); expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mis-retiros');
     expect(mockPost).not.toHaveBeenCalled();
   });
-
-  it('la señal 428 vuelve a consultar y muestra el cambio sin repetir la operación', async () => {
-    pin = { ...PIN_LISTO };
-    mostrar();
-    await screen.findByText('WALLET_LISTA');
-    pin = { ...PIN_LISTO, requiereActualizacion: true };
+  it('durante la preparación oculta acciones monetarias y QR y conserva Perfil y salir', async () => {
+    const user = userEvent.setup(); mostrar(false, true); await screen.findByLabelText('Contraseña de ingreso');
+    expect(screen.queryByRole('group', { name: 'Acciones principales' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'QR' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Perfil' })); await user.click(screen.getByRole('button', { name: 'Mi perfil' }));
+    expect(onProfile).toHaveBeenCalledOnce(); await user.click(screen.getByRole('button', { name: 'Abrir perfil' }));
+    await user.click(screen.getByRole('button', { name: 'Cerrar sesión' })); expect(onLogout).toHaveBeenCalledOnce(); expect(onAction).not.toHaveBeenCalled();
+  });
+  it('Perfil sigue disponible con PIN pendiente', async () => {
+    mostrar(false, true, true); expect(await screen.findByText('PERFIL_LISTO')).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Acciones principales' })).not.toBeInTheDocument();
+  });
+  it('no avanza si el PIN confirmado quedó bloqueado', async () => {
+    mockPost.mockImplementationOnce(() => { pin = { ...PIN_LISTO, bloqueado: true, intentosRestantes: 0 }; return Promise.resolve({ success: true }); });
+    const user = userEvent.setup(); mostrar(); await crearPin(user);
+    expect(await screen.findByText(/Tu PIN está bloqueado. Solicita/)).toBeInTheDocument();
+    expect(screen.queryByText('WALLET_LISTA')).not.toBeInTheDocument(); expect(mockGet).not.toHaveBeenCalledWith('/api/breb/mi-llave');
+  });
+  it('sin llave permite enviar entre Wallets con PIN6, sin resolver ni registrar una llave', async () => {
+    const user = userEvent.setup(); mostrar(true); await crearPin(user);
+    await user.click(await screen.findByText('Otras opciones')); await user.click(screen.getByText('Ingresar destino manualmente →'));
+    await user.type(screen.getByLabelText('ID de wallet destino'), '3'); await user.click(screen.getByRole('button', { name: 'Confirmar destino' }));
+    await screen.findByText('Destino verificado'); await user.type(screen.getByLabelText(/Valor a transferir/), '500');
+    await user.type(screen.getByLabelText(/PIN transaccional/), '025801'); await user.click(screen.getByRole('button', { name: 'Enviar dinero' }));
+    expect(await screen.findByRole('dialog', { name: 'Transferencia exitosa' })).toBeInTheDocument();
+    expect(mockPost).toHaveBeenCalledWith('/api/wallets/transferencia', expect.objectContaining({ pin: '025801' }), expect.anything());
+    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave/resolver', expect.anything());
+  });
+  it('sin llave permite pagar QR con PIN6', async () => {
+    const user = userEvent.setup(); mostrar(true, false, false, 'pagar'); await crearPin(user);
+    await user.click(await screen.findByText('Otras opciones')); await user.type(screen.getByLabelText('Pegar código QR o contenido JSON'), 'QR-PRUEBA-001');
+    await user.click(screen.getByRole('button', { name: 'Usar código pegado' })); await screen.findByText('Comercio de prueba');
+    await user.click(screen.getByRole('button', { name: '💳 Pagar con Wallet' })); await user.type(screen.getByLabelText(/Valor a pagar/), '100');
+    await user.type(screen.getByLabelText(/PIN transaccional/), '025801'); await user.click(screen.getByRole('button', { name: 'Pagar QR con Wallet' }));
+    expect(await screen.findByText('✓ Pago realizado')).toBeInTheDocument();
+    expect(mockPost).toHaveBeenCalledWith('/api/qr/pagar', expect.objectContaining({ pin: '025801' }), expect.anything());
+    expect(mockPost).not.toHaveBeenCalledWith('/api/breb/mi-llave/resolver', expect.anything());
+  });
+  it('404 de PIN no permite pasar la puerta y puede consultarse de nuevo', async () => {
+    errorPin = true; const user = userEvent.setup(); mostrar(); expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText('WALLET_LISTA')).not.toBeInTheDocument(); errorPin = false;
+    await user.click(screen.getByRole('button', { name: 'Actualizar preparación' })); expect(await screen.findByLabelText('Contraseña de ingreso')).toBeInTheDocument(); expect(mockPost).not.toHaveBeenCalled();
+  });
+  it('señal 428 vuelve a consultar y pide actualización sin repetir operación', async () => {
+    pin = { ...PIN_LISTO }; mostrar(); await screen.findByText('WALLET_LISTA'); pin = { ...PIN_LISTO, requiereActualizacion: true };
     act(() => { window.dispatchEvent(new Event('xpay:pin-actualizacion-requerida')); });
-    expect(await screen.findByLabelText('PIN actual (5, 6 o 7 dígitos)')).toBeInTheDocument();
-    expect(screen.queryByText('WALLET_LISTA')).not.toBeInTheDocument();
-    await waitFor(() => expect(mockPost).not.toHaveBeenCalled());
+    expect(await screen.findByLabelText('PIN actual (5, 6 o 7 dígitos)')).toBeInTheDocument(); expect(mockPost).not.toHaveBeenCalled();
   });
 });

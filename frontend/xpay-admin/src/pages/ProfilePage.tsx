@@ -58,7 +58,7 @@ function PerfilActual() {
       {accesoPerfil && <VerificacionIdentidadPublicaSection />}
 
       {/* A. Mi información (incluye verificar correo y celular) */}
-      <MiInformacionSection whatsAppPendiente={accesoPerfil} />
+      <MiInformacionSection whatsAppPendiente />
 
       {/* Preferencias de comunicación (servicio y publicidad, aparte de la verificación). */}
       <ComunicacionesSection />

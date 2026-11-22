@@ -675,7 +675,7 @@ public class BrebService
         ResolutionIdFingerprint = Xpay.Api.Common.Fingerprint.Compute(r.PassportResolutionId),
     };
 
-    internal static string MaskKeyValue(string keyType, string keyValue)
+    private static string MaskKeyValue(string keyType, string keyValue)
     {
         var v = keyValue.Trim();
         return keyType.ToUpperInvariant() switch
@@ -710,14 +710,14 @@ public class BrebService
         return $"***{value[^Math.Min(4, value.Length)..]}";
     }
 
-    internal static void ValidateKeyType(string keyType)
+    private static void ValidateKeyType(string keyType)
     {
         if (!ValidKeyTypes.Contains(keyType))
             throw new InvalidOperationException(
                 $"Tipo de llave inválido: '{keyType}'. Permitidos: ID, PHONE, EMAIL, ALPHA, BCODE.");
     }
 
-    internal static string NormalizeKeyValue(string keyType, string keyValue)
+    private static string NormalizeKeyValue(string keyType, string keyValue)
     {
         if (string.IsNullOrWhiteSpace(keyValue))
             throw new InvalidOperationException("El valor de la llave no puede estar vacío.");

@@ -157,10 +157,8 @@ export function MiInformacionSection({ whatsAppPendiente = false, onActualizado 
             <dt>Celular</dt>
             <dd>
               {perfil.celular}{' '}
-              <span className="profile-verificado-badge">{perfil.celularVerificado ? 'Verificado' : 'No verificado'}</span>
-              {!perfil.celularVerificado && (whatsAppPendiente
-                ? <span>Verificación de WhatsApp pendiente para una próxima etapa.</span>
-                : <VerificarContacto canal="celular" onVerificado={() => void cargar()} />)}
+              {(perfil.celularVerificado || !whatsAppPendiente) && <span className="profile-verificado-badge">{perfil.celularVerificado ? 'Verificado' : 'No verificado'}</span>}
+              {!perfil.celularVerificado && !whatsAppPendiente && <VerificarContacto canal="celular" onVerificado={() => void cargar()} />}
             </dd>
             <dt>Email</dt>
             <dd>

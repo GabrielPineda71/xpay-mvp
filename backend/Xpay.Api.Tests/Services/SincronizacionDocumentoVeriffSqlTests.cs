@@ -153,15 +153,26 @@ public sealed class SincronizacionDocumentoVeriffSqlTests
     private sealed record Cuenta(long Usuario,long Persona,string Session,string Attempt,DateTime Tiempo,string Raw,string Canonico,long Unidad);
     private static string OtroNumero(Cuenta c)=>"8"+c.Canonico[1..];
     private static XpayDbContext Contexto(string cs)=>new(new DbContextOptionsBuilder<XpayDbContext>().UseSqlServer(cs).Options);
-    private static IConfiguration Config()=>new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> {
-        [CondicionesWalletPiloto.ClaveHabilitada]="true", [CondicionesWalletPiloto.Prefijo+"_VERSION"]=CondicionesWalletPiloto.Version,
-        [CondicionesWalletPiloto.Prefijo+"_FECHA"]=CondicionesWalletPiloto.Fecha,[CondicionesWalletPiloto.Prefijo+"_SHA256"]=CondicionesWalletPiloto.Sha256,
-        [CondicionesWalletPiloto.Prefijo+"_URL"]="https://app.xpaycol.com"+CondicionesWalletPiloto.Ruta,
-        [ConsentimientoBiometricoService.ClaveHabilitada]="true",["XPAY_AUTORIZACION_KYC_VERSION"]="1.2",
-        ["XPAY_AUTORIZACION_KYC_FECHA"]="2026-11-18",["XPAY_AUTORIZACION_KYC_SHA256"]=ConsentimientoBiometricoService.ShaDocumentoAprobado,
-        ["XPAY_AUTORIZACION_KYC_URL"]="https://app.xpaycol.com/legal/v1.2/autorizaciones.pdf",
-        [PlantillasEmailIdentidad.ClaveUrlFrontend]="https://app.xpaycol.com",
-        ["VERIFF_API_KEY"]="clave-sintetica",["VERIFF_SHARED_SECRET"]="secreto-sintetico",["VERIFF_BASE_URL"]="https://veriff.example.test" }).Build();
+    private static IConfiguration Config()
+    {
+        // Mantiene C1.2 para comprobar la identidad existente; A/B del
+        // registro y el feature guiado ya pertenecen al bundle activo1.3.
+        var c = ConsentimientoBiometricoTests.Configuracion();
+        c[PreparacionWalletConfiguracion.ClaveHabilitada] = "true";
+        foreach (var (prefijo, archivo, sha) in new[] {
+            (DocumentosRegistroPublico.PrefijoTerminos, "terminos.pdf", PreparacionWalletConfiguracion.TerminosSha256),
+            (DocumentosRegistroPublico.PrefijoPoliticaDatos, "politica.pdf", PreparacionWalletConfiguracion.PoliticaDatosSha256) })
+        {
+            c[prefijo + "_VERSION"] = PreparacionWalletConfiguracion.Version;
+            c[prefijo + "_FECHA"] = PreparacionWalletConfiguracion.Fecha;
+            c[prefijo + "_URL"] = "https://app.xpaycol.com/legal/v1.3/" + archivo;
+            c[prefijo + "_SHA256"] = sha;
+        }
+        c["VERIFF_API_KEY"] = "clave-sintetica";
+        c["VERIFF_SHARED_SECRET"] = "secreto-sintetico";
+        c["VERIFF_BASE_URL"] = "https://veriff.example.test";
+        return c;
+    }
     private static SincronizacionDocumentoVeriffService Servicio(XpayDbContext db,IHttpClientFactory http) {
         var c=Config();var a=Common.AmbienteXpayTests.Ambiente("Production");var consentimiento=new ConsentimientoBiometricoService(db,c,a,TimeProvider.System);
         var kyc=new KycService(db,c,http,NullLogger<KycService>.Instance,a,consentimiento);

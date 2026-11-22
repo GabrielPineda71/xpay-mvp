@@ -73,7 +73,7 @@ builder.Services.AddSingleton<IAmbienteXpay, AmbienteXpay>();
 // configuración en cada llamada; sin estado propio).
 builder.Services.AddSingleton<ControlOperacionesFinancieras>();
 builder.Services.AddScoped<AltaUsuarioPilotoService>();
-builder.Services.AddScoped<CondicionesWalletPiloto>();
+builder.Services.AddScoped<PreparacionWalletConfiguracion>();
 builder.Services.AddScoped<PreparacionWalletService>();
 builder.Services.AddScoped<SincronizacionDocumentoVeriffService>();
 builder.Services.AddScoped<BrebService>();

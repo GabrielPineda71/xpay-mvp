@@ -13,7 +13,7 @@ namespace Xpay.Api.Services;
 // Revalida el GET real sin reabrir la máquina de decisiones A–E. Únicamente
 // completa el documento legal vacío; no modifica evidencia raw, KYC ni Wallet.
 public sealed class SincronizacionDocumentoVeriffService(
-    XpayDbContext db, CondicionesWalletPiloto condiciones,
+    XpayDbContext db, PreparacionWalletConfiguracion configuracion,
     ConsentimientoBiometricoService consentimiento, KycService kyc, TimeProvider reloj)
 {
     internal const string AccionSincronizar = "KYC_DOCUMENTO_LEGAL_SINCRONIZADO";
@@ -132,7 +132,7 @@ public sealed class SincronizacionDocumentoVeriffService(
 
     private void ExigirDisponible()
     {
-        if (condiciones.Obtener() is null || !consentimiento.Habilitado)
+        if (configuracion.Obtener() is null || !consentimiento.Habilitado)
             throw new PreparacionWalletNoDisponibleException();
     }
 

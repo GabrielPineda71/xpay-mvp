@@ -21,11 +21,6 @@ public sealed class PreparacionWalletController(PreparacionWalletService servici
     public Task<IActionResult> Datos(PreparacionDatosRequest request, CancellationToken ct) =>
         Ejecutar(id => servicio.GuardarDatosAsync(id, request, ct));
 
-    [HttpPut("llave")]
-    [CuentaLimitadaPermitida]
-    public Task<IActionResult> Llave(PreparacionLlaveRequest request, CancellationToken ct) =>
-        Ejecutar(id => servicio.GuardarLlaveAsync(id, request, ct));
-
     [HttpPost("identidad/actualizar")]
     [CuentaLimitadaPermitida]
     [EnableRateLimiting("CambiarClavePolicy")]

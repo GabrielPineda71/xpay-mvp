@@ -20,7 +20,7 @@
 .onboarding-intro > p { color: #58666a; }
 .onboarding-eyebrow, .onboarding-step { font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #096775; }
 .onboarding-progress { margin: 28px 0 24px; }
-.onboarding-progress ol { display: grid; grid-template-columns: repeat(6, 1fr); padding: 0; margin: 0; list-style: none; gap: 4px; }
+.onboarding-progress ol { display: grid; grid-template-columns: repeat(5, 1fr); padding: 0; margin: 0; list-style: none; gap: 4px; }
 .onboarding-progress li { display: flex; flex-direction: column; align-items: center; gap: 7px; color: #657577; text-align: center; }
 .onboarding-progress li > span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #c9d6d8; border-radius: 50%; background: #fff; font-size: 12px; }
 .onboarding-progress small { font-size: 10px; line-height: 1.2; }
@@ -54,8 +54,8 @@
 .onboarding-status { margin-top: 16px !important; color: #58666a; }
 .onboarding-footnote { margin-top: 18px !important; text-align: center; font-size: 12px; color: #657577; }
 .onboarding-page .onboarding-primary + small { margin-top: 16px; }
-.onboarding-condiciones { display: grid; gap: 16px; margin: 20px 0; line-height: 1.5; }
-.onboarding-condiciones > a { color: #096775; }
+.onboarding-terminos { display: grid; gap: 16px; margin: 20px 0; line-height: 1.5; }
+.onboarding-terminos > a { color: #096775; }
 .onboarding-config { margin-top: 28px; border: 1px solid #dbe5e5; border-radius: 14px; background: #fff; }
 .onboarding-config > summary { padding: 18px; cursor: pointer; color: #28545a; font-weight: 600; line-height: 1.5; }
 .onboarding-config > div { padding: 0 18px 20px; }

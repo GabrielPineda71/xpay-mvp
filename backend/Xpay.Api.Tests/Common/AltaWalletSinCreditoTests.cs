@@ -38,11 +38,11 @@ public sealed class AltaWalletSinCreditoTests
         var cuenta = await datos.ListaAsync(config);
         await using var db = Contexto(cs);
         var login = await PreparacionWalletSqlTests.Servicio(db, config).ActivarAsync(cuenta.Usuario,
-            new(true, CondicionesWalletPiloto.Version), null);
+            new(), null);
         Assert.False(login.RequierePerfil);
         Assert.False(await RegistroPublicoService.EsCuentaLimitadaAsync(db, cuenta.Usuario));
         Assert.True(await db.Wallets.AnyAsync(w => w.IdPersona == cuenta.Persona && w.Estado == "ACTIVA"));
-        config[CondicionesWalletPiloto.ClaveHabilitada] = flag;
+        config[PreparacionWalletConfiguracion.ClaveHabilitada] = flag;
         var contexto = ContextoFiltro(db, config, cuenta.Usuario, controlador, rolClaim);
         var ejecutoAccion = false;
         await Filtro(controlador).OnResourceExecutionAsync(contexto, () =>

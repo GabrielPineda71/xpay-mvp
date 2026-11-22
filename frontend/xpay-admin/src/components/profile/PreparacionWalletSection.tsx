@@ -1,25 +1,24 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ApiError, get, patch, post, put } from '../../api/client.ts';
+import { ApiError, get, patch, post } from '../../api/client.ts';
 import { useAuth, validarSesionActualizada } from '../../auth/AuthContext.tsx';
 import { PreparacionDatosForm } from './PreparacionDatosForm.tsx';
-import { PreparacionLlaveForm } from './PreparacionLlaveForm.tsx';
 import { PinTransaccionalSection } from './PinTransaccionalSection.tsx';
 import { VerificacionIdentidadPublicaSection } from './VerificacionIdentidadPublicaSection.tsx';
 import { VerificarContacto } from './VerificarContacto.tsx';
 import { MiInformacionSection } from './MiInformacionSection.tsx';
 import { ComunicacionesSection } from './ComunicacionesSection.tsx';
 import { CambiarContrasenaSection } from './CambiarContrasenaSection.tsx';
-import { preparacionWalletValida, puedeSolicitarActivacion, urlCondicionesWallet, condicionesWalletValidas, TEXTO_CONDICIONES_WALLET, type EstadoPreparacionWallet, type PasoPreparacionWallet } from './preparacionWallet.ts';
+import { preparacionWalletValida, puedeSolicitarActivacion, urlTerminosWallet, urlPoliticaDatosWallet, terminosWalletValidos, politicaDatosWalletValida, documentosWalletValidos, TEXTO_TERMINOS_WALLET, TEXTO_DATOS_WALLET, type EstadoPreparacionWallet, type PasoPreparacionWallet } from './preparacionWallet.ts';
 import './PreparacionWalletSection.css';
 
 interface ApiOk<T> { success: boolean; data: T; }
 const RUTA = '/api/usuarios/preparacion-wallet';
-const ETAPAS = ['Correo', 'Identidad', 'Tus datos', 'Llave Bre-B', 'PIN', 'Wallet'];
-const INDICE: Record<PasoPreparacionWallet, number> = { CORREO: 0, IDENTIDAD: 1, DATOS: 2, LLAVE: 3, PIN: 4, ACTIVAR: 5, WALLET: 5, REVISION: 1 };
+const ETAPAS = ['Correo', 'Identidad', 'Tus datos', 'PIN', 'Wallet'];
+const INDICE: Record<PasoPreparacionWallet, number> = { CORREO: 0, IDENTIDAD: 1, DATOS: 2, PIN: 3, ACTIVAR: 4, WALLET: 4, REVISION: 1 };
 const TITULOS: Record<PasoPreparacionWallet, string> = {
   CORREO: 'Confirma tu correo', IDENTIDAD: 'Verifica tu identidad', DATOS: '¿Dónde vives?',
-  LLAVE: 'Agrega tu llave Bre-B', PIN: 'Crea tu PIN de 6 dígitos', ACTIVAR: 'Tu registro está listo',
+  PIN: 'Crea tu PIN de 6 dígitos', ACTIVAR: 'Tu registro está listo',
   WALLET: 'Tu Wallet está habilitada', REVISION: 'Estamos revisando tu registro',
 };
 
@@ -34,7 +33,8 @@ export function PreparacionWalletSection({ fallback }: { fallback: ReactNode }) 
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
   const [reingresar, setReingresar] = useState(false);
-  const [aceptaCondiciones, setAceptaCondiciones] = useState(false);
+  const [aceptaTerminos, setAceptaTerminos] = useState(false);
+  const [autorizaDatos, setAutorizaDatos] = useState(false);
   const [configuracionAbierta, setConfiguracionAbierta] = useState(false);
   const secuencia = useRef(0);
   const enviando = useRef(false);
@@ -66,18 +66,18 @@ export function PreparacionWalletSection({ fallback }: { fallback: ReactNode }) 
     return () => { window.removeEventListener('focus', refrescar); document.removeEventListener('visibilitychange', refrescar); };
   }, [cargar]);
   const pinActualizado = useCallback(() => { void cargar(); }, [cargar]);
-  useEffect(() => { setAceptaCondiciones(false); }, [estado?.condiciones?.version, estado?.condiciones?.url, estado?.condiciones?.sha256]);
+  useEffect(() => { setAceptaTerminos(false); }, [estado?.terminos?.version, estado?.terminos?.url, estado?.terminos?.sha256, estado?.terminos?.aceptados]);
+  useEffect(() => { setAutorizaDatos(false); }, [estado?.politicaDatos?.version, estado?.politicaDatos?.url, estado?.politicaDatos?.sha256, estado?.politicaDatos?.aceptados]);
   useEffect(() => { titulo.current?.focus(); }, [estado?.siguientePaso]);
 
-  async function guardar(tipo: 'datos' | 'llave' | 'identidad', body: unknown): Promise<boolean> {
+  async function guardar(tipo: 'datos' | 'identidad', body: unknown): Promise<boolean> {
     if (!estado || enviando.current || cargando || requiereReingreso.current) return false;
     if (tipo === 'identidad' && (estado.siguientePaso !== 'REVISION' || estado.puedeActualizarIdentidad !== true || estado.estadoKyc !== 'APROBADO')) return false;
     const intento = ++secuencia.current;
     enviando.current = true; setOcupado(true); setError('');
     try {
       const r = tipo === 'datos' ? await patch<ApiOk<unknown>>(`${RUTA}/datos`, body)
-        : tipo === 'llave' ? await put<ApiOk<unknown>>(`${RUTA}/llave`, body)
-          : await post<ApiOk<unknown>>(`${RUTA}/identidad/actualizar`, {});
+        : await post<ApiOk<unknown>>(`${RUTA}/identidad/actualizar`, {});
       if (intento !== secuencia.current) return false;
       if (!r.success || !preparacionWalletValida(r.data) || !r.data.habilitado || !r.data.esRegistroPublico) throw new Error('Estado no confirmado.');
       setEstado(r.data);
@@ -96,12 +96,18 @@ export function PreparacionWalletSection({ fallback }: { fallback: ReactNode }) 
   }
 
   async function activar() {
-    if (!estado || !user || !aceptaCondiciones || !condicionesWalletValidas(estado.condiciones) || enviando.current || cargando || requiereReingreso.current
+    if (!estado || !user || !documentosWalletValidos(estado) || !(estado.terminos!.aceptados || aceptaTerminos)
+      || !(estado.politicaDatos!.aceptados || autorizaDatos) || enviando.current || cargando || requiereReingreso.current
       || !(puedeSolicitarActivacion(estado) || (estado.siguientePaso === 'WALLET' && estado.walletHabilitada))) return;
     const intento = ++secuencia.current;
     enviando.current = true; setOcupado(true); setError('');
     try {
-      const r = await post<ApiOk<unknown>>(`${RUTA}/activar`, { aceptaCondiciones: true, versionCondiciones: estado.condiciones!.version });
+      const r = await post<ApiOk<unknown>>(`${RUTA}/activar`, {
+        aceptaTerminos: !estado.terminos!.aceptados,
+        ...(!estado.terminos!.aceptados ? { versionTerminos: estado.terminos!.version } : {}),
+        autorizaDatos: !estado.politicaDatos!.aceptados,
+        ...(!estado.politicaDatos!.aceptados ? { versionPoliticaDatos: estado.politicaDatos!.version } : {}),
+      });
       if (intento !== secuencia.current) return;
       if (!r.success) throw new Error('Sesión no confirmada.');
       const sesion = validarSesionActualizada(r.data, user);
@@ -109,7 +115,7 @@ export function PreparacionWalletSection({ fallback }: { fallback: ReactNode }) 
       navigate('/mi-wallet', { replace: true });
     } catch (err) {
       if (intento !== secuencia.current) return;
-      setEstado(null); setAceptaCondiciones(false);
+      setEstado(null); setAceptaTerminos(false); setAutorizaDatos(false);
       if (err instanceof ApiError && [400, 403, 409, 422, 429].includes(err.status)) {
         setError(`${err.message} Actualiza el estado antes de continuar.`);
       } else {
@@ -121,10 +127,16 @@ export function PreparacionWalletSection({ fallback }: { fallback: ReactNode }) 
 
   if (anterior) return <>{fallback}</>;
   const paso = estado?.siguientePaso;
-  const condiciones = estado?.condiciones;
-  const autorizacionWallet = condiciones && condicionesWalletValidas(condiciones) ? <div className="onboarding-condiciones">
-    <a href={urlCondicionesWallet(condiciones.url)!} target="_blank" rel="noopener noreferrer">Leer condiciones de habilitación de Wallet · {condiciones.version}</a>
-    <label className="onboarding-check"><input type="checkbox" checked={aceptaCondiciones} disabled={ocupado || cargando} onChange={e => setAceptaCondiciones(e.target.checked)} /><span>{TEXTO_CONDICIONES_WALLET}</span></label>
+  const terminos = estado?.terminos;
+  const politica = estado?.politicaDatos;
+  const aceptacionesListas = (terminos?.aceptados || aceptaTerminos) && (politica?.aceptados || autorizaDatos);
+  const terminosPendientes = terminos && terminosWalletValidos(terminos) && !terminos.aceptados ? <div className="onboarding-terminos">
+    <a href={urlTerminosWallet(terminos.url)!} target="_blank" rel="noopener noreferrer">Leer Términos y Condiciones · {terminos.version}</a>
+    <label className="onboarding-check"><input type="checkbox" checked={aceptaTerminos} disabled={ocupado || cargando} onChange={e => setAceptaTerminos(e.target.checked)} /><span>{TEXTO_TERMINOS_WALLET}</span></label>
+  </div> : null;
+  const datosPendientes = politica && politicaDatosWalletValida(politica) && !politica.aceptados ? <div className="onboarding-terminos">
+    <a href={urlPoliticaDatosWallet(politica.url)!} target="_blank" rel="noopener noreferrer">Leer Política de Tratamiento de Datos Personales · {politica.version}</a>
+    <label className="onboarding-check"><input type="checkbox" checked={autorizaDatos} disabled={ocupado || cargando} onChange={e => setAutorizaDatos(e.target.checked)} /><span>{TEXTO_DATOS_WALLET}</span></label>
   </div> : null;
   return <div className="onboarding-page">
     <div className="onboarding-intro"><span className="onboarding-eyebrow">BIENVENIDO A XPAY</span>
@@ -132,18 +144,18 @@ export function PreparacionWalletSection({ fallback }: { fallback: ReactNode }) 
     {estado && paso && <>
       <nav aria-label="Tu avance" className="onboarding-progress"><ol>{ETAPAS.map((etapa, i) => <li key={etapa} aria-current={i === INDICE[paso] ? 'step' : undefined} className={i < INDICE[paso] ? 'completo' : ''}><span aria-hidden="true">{i < INDICE[paso] ? '✓' : i + 1}</span><small>{etapa}</small></li>)}</ol></nav>
       <section className="onboarding-card" aria-labelledby="onboarding-titulo" aria-busy={ocupado || cargando}>
-        <p className="onboarding-step">{paso === 'REVISION' ? 'REVISIÓN DE XPAY' : `PASO ${INDICE[paso] + 1} DE 6`}</p>
+        <p className="onboarding-step">{paso === 'REVISION' ? 'REVISIÓN DE XPAY' : `PASO ${INDICE[paso] + 1} DE 5`}</p>
         <h2 id="onboarding-titulo" tabIndex={-1} ref={titulo}>{TITULOS[paso]}</h2>
         {paso === 'CORREO' && <><p>Revisa tu correo para confirmar tu cuenta. Si necesitas un nuevo código, solicítalo aquí.</p><VerificarContacto canal="email" onVerificado={() => void cargar()} /></>}
         {paso === 'IDENTIDAD' && <><p>Ten tu documento a mano. Veriff te guiará para verificarlo y tomar una foto de tu rostro.</p><VerificacionIdentidadPublicaSection guiado onActualizado={() => void cargar()} /></>}
         {paso === 'DATOS' && <><p>Tu correo y tu identidad ya están verificados. Completa tu dirección para continuar.</p><PreparacionDatosForm key={`${estado.idDepartamento ?? ''}:${estado.idCiudad ?? ''}`} estado={estado} ocupado={ocupado || cargando} onGuardar={datos => guardar('datos', datos)} /></>}
-        {paso === 'LLAVE' && <PreparacionLlaveForm ocupado={ocupado || cargando} onGuardar={llave => guardar('llave', llave)} />}
         {paso === 'PIN' && <PinTransaccionalSection compacto obligatorio notificarCargaInicial={false} onActualizado={pinActualizado} />}
         {paso === 'ACTIVAR' && <><p>Confirmaste tu correo, verificaste tu identidad y completaste tus datos y tu PIN.</p>
-          {autorizacionWallet}
-          <button type="button" className="onboarding-primary" disabled={ocupado || cargando || !aceptaCondiciones || !puedeSolicitarActivacion(estado)} onClick={() => void activar()}>{ocupado ? 'Habilitando...' : 'Activar mi Wallet'}</button>
+          {terminosPendientes}
+          {datosPendientes}
+          <button type="button" className="onboarding-primary" disabled={ocupado || cargando || !aceptacionesListas || !puedeSolicitarActivacion(estado)} onClick={() => void activar()}>{ocupado ? 'Habilitando...' : 'Activar mi Wallet'}</button>
           <small>Los cupos y anticipos de nómina requieren una aprobación adicional. No se asignan al activar tu Wallet.</small></>}
-        {paso === 'WALLET' && <><p>Vuelve a abrir tu Wallet con tu sesión actualizada.</p>{autorizacionWallet}<button type="button" className="onboarding-primary" disabled={ocupado || cargando || !aceptaCondiciones} onClick={() => void activar()}>{ocupado ? 'Abriendo...' : 'Entrar a mi Wallet'}</button></>}
+        {paso === 'WALLET' && <><p>Vuelve a abrir tu Wallet con tu sesión actualizada.</p>{terminosPendientes}{datosPendientes}<button type="button" className="onboarding-primary" disabled={ocupado || cargando || !aceptacionesListas} onClick={() => void activar()}>{ocupado ? 'Abriendo...' : 'Entrar a mi Wallet'}</button></>}
         {paso === 'REVISION' && (estado.puedeActualizarIdentidad === true && estado.estadoKyc === 'APROBADO'
           ? <><p>Tu verificación está aprobada. Actualiza tu identificación para continuar.</p><button type="button" className="onboarding-primary" disabled={ocupado || cargando} onClick={() => void guardar('identidad', {})}>{ocupado ? 'Actualizando...' : 'Actualizar mi identificación'}</button></>
           : <p>{estado.mensaje || 'XPAY debe revisar tu información antes de continuar. No necesitas repetir la verificación. Contacta a XPAY si necesitas ayuda.'}</p>)}
@@ -153,7 +165,6 @@ export function PreparacionWalletSection({ fallback }: { fallback: ReactNode }) 
     {error && <div className="onboarding-alert" role="alert">{error}</div>}
     {reingresar ? <button type="button" className="onboarding-primary" onClick={() => { logout(); navigate('/login', { replace: true }); }}>Volver a ingresar</button>
       : <button type="button" className="onboarding-refresh" disabled={cargando || ocupado} onClick={() => void cargar()}>Actualizar mi avance</button>}
-    <p className="onboarding-footnote">WhatsApp se verificará en una próxima etapa.</p>
     <details className="onboarding-config" onToggle={e => setConfiguracionAbierta(e.currentTarget.open)}>
       <summary>Mi perfil y configuración</summary>
       {configuracionAbierta && <div>

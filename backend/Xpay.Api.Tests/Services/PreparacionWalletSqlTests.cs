@@ -35,51 +35,39 @@ public sealed class PreparacionWalletSqlTests
 {
     private const string Clave = "Preparacion#2026Prueba";
     private const string Pin = "648291";
-    private static readonly ActivarWalletRequest Aceptacion = new(true, CondicionesWalletPiloto.Version);
+    internal static readonly ActivarWalletRequest Aceptacion = new();
+    private static readonly ActivarWalletRequest AceptacionActualizada = new(true, PreparacionWalletConfiguracion.Version, true, PreparacionWalletConfiguracion.Version);
 
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task Progresion_ExigeCadaPaso_YActivaSoloWalletConSaldoCero(bool omitirLlave)
+    public async Task Progresion_ExigeCadaPaso_YActivaSoloWalletConSaldoCero(bool aceptadasEnRegistro)
     {
         if (!Conexion(out var cs)) return;
         await using var datos = new Semillero(cs);
-        var cuenta = await datos.CuentaAsync();
+        var cuenta = await datos.CuentaAsync(aVigente: aceptadasEnRegistro, bVigente: aceptadasEnRegistro);
         var config = Configuracion();
         await using var db = Contexto(cs);
         var servicio = Servicio(db, config);
         Assert.Equal("CORREO", (await servicio.ObtenerAsync(cuenta.Usuario)).SiguientePaso);
         await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ExigirAccesoPinAsync(cuenta.Usuario));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.GuardarLlaveAsync(cuenta.Usuario, new(true, null, null, false)));
         await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ActivarAsync(cuenta.Usuario, Aceptacion, null));
         Assert.True(await RegistroPublicoService.EsCuentaLimitadaAsync(db, cuenta.Usuario));
-
         await datos.ConfirmarCorreoAsync(cuenta);
         Assert.Equal("IDENTIDAD", (await servicio.ObtenerAsync(cuenta.Usuario)).SiguientePaso);
         await datos.AutorizarBiometriaAsync(cuenta, config);
-        // La casilla C precede a la verificación y no la sustituye.
         Assert.Equal("IDENTIDAD", (await servicio.ObtenerAsync(cuenta.Usuario)).SiguientePaso);
         await datos.AprobarIdentidadAsync(cuenta);
         Assert.Equal("DATOS", (await servicio.ObtenerAsync(cuenta.Usuario)).SiguientePaso);
         Assert.False(await db.Wallets.AnyAsync(w => w.IdPersona == cuenta.Persona));
-
         var lugar = await datos.LugarAsync();
         var conDatos = await servicio.GuardarDatosAsync(cuenta.Usuario, new("Calle sintética 12", lugar.Departamento, lugar.Ciudad));
-        Assert.Equal("LLAVE", conDatos.SiguientePaso);
+        Assert.Equal("PIN", conDatos.SiguientePaso);
         Assert.Equal(lugar.Ciudad, conDatos.IdCiudad);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ExigirAccesoPinAsync(cuenta.Usuario));
-        var alias = "@qa" + Guid.NewGuid().ToString("N")[..10];
-        if (omitirLlave)
-            await servicio.GuardarLlaveAsync(cuenta.Usuario, new(true, null, null, false));
-        else
-        {
-            await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.GuardarLlaveAsync(cuenta.Usuario, new(false, "ALPHA", alias, false)));
-            await servicio.GuardarLlaveAsync(cuenta.Usuario, new(false, "ALPHA", alias, true));
-        }
-        var conLlave = await servicio.ObtenerAsync(cuenta.Usuario);
-        Assert.Equal("PIN", conLlave.SiguientePaso);
-        Assert.Equal(omitirLlave ? "OMITIDA" : "REGISTRADA", conLlave.Llave.Opcion);
-        Assert.DoesNotContain(alias, JsonSerializer.Serialize(conLlave));
+        Assert.Equal(aceptadasEnRegistro, conDatos.Terminos.Aceptados);
+        Assert.Equal(aceptadasEnRegistro, conDatos.PoliticaDatos.Aceptados);
+        Assert.Equal(PreparacionWalletConfiguracion.Version, conDatos.Terminos.Version);
+        Assert.False(await db.WalletPreparaciones.AnyAsync(p => p.IdUsuario == cuenta.Usuario));
         Assert.False(await db.PassportBrebLlaves.AnyAsync(l => l.IdUsuario == cuenta.Usuario));
         await servicio.ExigirAccesoPinAsync(cuenta.Usuario);
         var pines = new PinTransaccionalService(db);
@@ -90,18 +78,17 @@ public sealed class PreparacionWalletSqlTests
         await pines.CrearAsync(cuenta.Usuario, new() { ClaveActual = Clave, Pin = Pin, ConfirmacionPin = Pin });
         Assert.Equal("ACTIVAR", (await servicio.ObtenerAsync(cuenta.Usuario)).SiguientePaso);
         Assert.True((await servicio.ObtenerAsync(cuenta.Usuario)).PuedeActivar);
-
-        foreach (var rechazo in new[] { new ActivarWalletRequest(false, CondicionesWalletPiloto.Version),
-                     new(true, null), new(true, "0.9"), new(true, CondicionesWalletPiloto.Version + " ") })
-            await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ActivarAsync(cuenta.Usuario, rechazo, "203.0.113.41"));
-        Assert.False(await db.Wallets.AnyAsync(w => w.IdPersona == cuenta.Persona));
-        Assert.False(await db.Auditorias.AnyAsync(a => a.IdUsuario == cuenta.Usuario && a.Accion == PreparacionWalletService.AccionActivar));
-
+        if (!aceptadasEnRegistro)
+            await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ActivarAsync(cuenta.Usuario, Aceptacion, null));
         var antes = await FotoSinDineroAsync(db, cuenta);
+        var evidenciasAntes = await db.Auditorias.AsNoTracking().Where(a => a.IdUsuario == cuenta.Usuario &&
+            (a.Accion == RegistroPublicoService.AccionAceptarTerminos || a.Accion == RegistroPublicoService.AccionAutorizarDatos))
+            .Select(a => new { a.IdAuditoria, a.ValorNuevo }).ToListAsync();
         var sesionPrevia = await new AuthService(db, config).LoginAsync(new() { Usuario = cuenta.Nombre, Password = Clave });
         Assert.True(sesionPrevia.RequierePerfil);
         Assert.Equal(0, Version(sesionPrevia.Token, config));
-        var respuesta = await servicio.ActivarAsync(cuenta.Usuario, Aceptacion, "203.0.113.41");
+        var respuesta = await servicio.ActivarAsync(cuenta.Usuario,
+            aceptadasEnRegistro ? Aceptacion : AceptacionActualizada, "203.0.113.41");
         Assert.Equal(cuenta.Usuario, respuesta.IdUsuario);
         Assert.False(respuesta.RequierePerfil);
         Assert.False(respuesta.EsUsuarioEmpresa);
@@ -114,7 +101,6 @@ public sealed class PreparacionWalletSqlTests
         Assert.Equal("WALLET", activa.SiguientePaso);
         Assert.True(activa.WalletHabilitada);
         Assert.False(activa.PuedeActivar);
-
         var wallet = await db.Wallets.AsNoTracking().SingleAsync(w => w.IdPersona == cuenta.Persona);
         Assert.Equal("ACTIVA", wallet.Estado);
         Assert.Equal("PERSONA", wallet.TipoWallet);
@@ -123,36 +109,203 @@ public sealed class PreparacionWalletSqlTests
         Assert.Equal(antes, await FotoSinDineroAsync(db, cuenta));
         var preparacion = await db.WalletPreparaciones.AsNoTracking().SingleAsync(p => p.IdUsuario == cuenta.Usuario);
         Assert.Equal(wallet.IdWallet, preparacion.IdWallet);
-        Assert.Equal(CondicionesWalletPiloto.Sha256, preparacion.CondicionesSha256);
+        Assert.Equal(PreparacionWalletConfiguracion.TerminosSha256, preparacion.TerminosSha256);
+        Assert.Equal(PreparacionWalletConfiguracion.PoliticaDatosSha256, preparacion.PoliticaDatosSha256);
         Assert.Equal(PreparacionWalletService.CriteriosVersion, preparacion.CriteriosVersion);
         var evidencia = await db.Auditorias.AsNoTracking().SingleAsync(a => a.IdUsuario == cuenta.Usuario && a.Accion == PreparacionWalletService.AccionActivar);
         Assert.Equal("203.0.113.41", evidencia.Ip);
         using (var json = JsonDocument.Parse(evidencia.ValorNuevo!))
         {
-            Assert.True(json.RootElement.GetProperty("aceptaCondiciones").GetBoolean());
-            Assert.Equal(CondicionesWalletPiloto.Sha256, json.RootElement.GetProperty("condicionesSha256").GetString());
-            Assert.True(json.RootElement.GetProperty("whatsAppPendiente").GetBoolean());
+            Assert.Equal(PreparacionWalletConfiguracion.TerminosSha256, json.RootElement.GetProperty("terminosSha256").GetString());
+            Assert.Equal(PreparacionWalletConfiguracion.PoliticaDatosSha256, json.RootElement.GetProperty("politicaDatosSha256").GetString());
             Assert.Equal(6, json.RootElement.GetProperty("longitudPin").GetInt32());
+            Assert.False(json.RootElement.TryGetProperty("condicionesSha256", out _));
         }
-        Assert.False((await db.Usuarios.AsNoTracking().SingleAsync(u => u.IdUsuario == cuenta.Usuario)).CelularVerificado);
-        var llaves = await db.PassportBrebLlaves.AsNoTracking().Where(l => l.IdUsuario == cuenta.Usuario).ToListAsync();
-        if (omitirLlave) Assert.Empty(llaves);
-        else
-        {
-            var llave = Assert.Single(llaves);
-            Assert.Equal("ALPHA", llave.KeyType);
-            Assert.Equal("PENDIENTE_VALIDACION", llave.Estado);
-            Assert.Equal(BrebKeyValue.ComputeHash(BrebService.NormalizeKeyValue("ALPHA", alias)), llave.KeyValueHash);
-            Assert.Null(llave.FechaValidacion);
-            Assert.Null(llave.OwnerIdentificationType);
-            Assert.Null(llave.KeyValueEncrypted);
-        }
-
-        var repetida = await servicio.ActivarAsync(cuenta.Usuario, Aceptacion, null);
+        var usuario = await db.Usuarios.AsNoTracking().SingleAsync(u => u.IdUsuario == cuenta.Usuario);
+        Assert.False(usuario.CelularVerificado);
+        Assert.False(await db.PassportBrebLlaves.AnyAsync(l => l.IdUsuario == cuenta.Usuario));
+        var nuevasAb = await db.Auditorias.AsNoTracking().Where(a => a.IdUsuario == cuenta.Usuario &&
+            (a.Accion == RegistroPublicoService.AccionAceptarTerminos || a.Accion == RegistroPublicoService.AccionAutorizarDatos)).ToListAsync();
+        Assert.Equal(aceptadasEnRegistro ? 2 : 4, nuevasAb.Count);
+        foreach (var previa in evidenciasAntes)
+            Assert.Equal(previa.ValorNuevo, nuevasAb.Single(a => a.IdAuditoria == previa.IdAuditoria).ValorNuevo);
+        var repetida = await servicio.ActivarAsync(cuenta.Usuario, new(), null);
         Assert.Equal(1, Version(repetida.Token, config));
         Assert.Single(await db.Wallets.Where(w => w.IdPersona == cuenta.Persona).ToListAsync());
         Assert.Single(await db.Auditorias.Where(a => a.IdUsuario == cuenta.Usuario && a.Accion == PreparacionWalletService.AccionActivar).ToListAsync());
+        Assert.Equal(nuevasAb.Count, await db.Auditorias.CountAsync(a => a.IdUsuario == cuenta.Usuario &&
+            (a.Accion == RegistroPublicoService.AccionAceptarTerminos || a.Accion == RegistroPublicoService.AccionAutorizarDatos)));
         Assert.Equal(antes, await FotoSinDineroAsync(db, cuenta));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task SoloSolicitaLasCategoriasAbPendientes_SinOtraAceptacion(bool aVigente, bool bVigente)
+    {
+        if (!Conexion(out var cs)) return;
+        await using var datos = new Semillero(cs);
+        var config = Configuracion();
+        var cuenta = await datos.ListaAsync(config, aVigente, bVigente);
+        await using var db = Contexto(cs);
+        var servicio = Servicio(db, config);
+        var estado = await servicio.ObtenerAsync(cuenta.Usuario);
+        Assert.Equal(aVigente, estado.Terminos.Aceptados);
+        Assert.Equal(bVigente, estado.PoliticaDatos.Aceptados);
+        var vacio = JsonSerializer.Deserialize<ActivarWalletRequest>("{}", new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.False(vacio.AceptaTerminos);
+        Assert.False(vacio.AutorizaDatos);
+        Assert.Null(vacio.VersionTerminos);
+        Assert.Null(vacio.VersionPoliticaDatos);
+        if (!aVigente || !bVigente)
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.ActivarAsync(cuenta.Usuario, vacio, null));
+            Assert.False(await db.WalletPreparaciones.AnyAsync(p => p.IdUsuario == cuenta.Usuario));
+            Assert.False(await db.Wallets.AnyAsync(w => w.IdPersona == cuenta.Persona));
+        }
+        var request = new ActivarWalletRequest(!aVigente, aVigente ? null : "1.3", !bVigente, bVigente ? null : "1.3");
+        await servicio.ActivarAsync(cuenta.Usuario, request, null);
+        Assert.Equal(aVigente ? 1 : 2, await db.Auditorias.CountAsync(a => a.IdUsuario == cuenta.Usuario && a.Accion == RegistroPublicoService.AccionAceptarTerminos));
+        Assert.Equal(bVigente ? 1 : 2, await db.Auditorias.CountAsync(a => a.IdUsuario == cuenta.Usuario && a.Accion == RegistroPublicoService.AccionAutorizarDatos));
+        Assert.True(await AceptacionesRegistroWallet.VigenteAsync(db, cuenta.Usuario, cuenta.Persona, true));
+        Assert.True(await AceptacionesRegistroWallet.VigenteAsync(db, cuenta.Usuario, cuenta.Persona, false));
+    }
+
+    public static TheoryData<bool, string> EvidenciasAbInvalidas()
+    {
+        var casos = new TheoryData<bool, string>();
+        foreach (var terminos in new[] { true, false })
+        foreach (var problema in new[] { "version", "sha", "canal", "tipo", "falta_sha", "falta_version", "falta_canal",
+                     "actor", "persona", "entidad", "id_entidad", "modulo", "json" }) casos.Add(terminos, problema);
+        return casos;
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task CuentasConAb12_ExigenAmbasManifestacionesExpresas13(bool aceptaTerminos, bool autorizaDatos)
+    {
+        if (!Conexion(out var cs)) return;
+        await using var datos = new Semillero(cs);
+        var config = Configuracion();
+        var cuenta = await datos.ListaAsync(config, aVigente: false, bVigente: false);
+        await using var db = Contexto(cs);
+        var request = new ActivarWalletRequest(aceptaTerminos, aceptaTerminos ? "1.3" : null,
+            autorizaDatos, autorizaDatos ? "1.3" : null);
+        if (aceptaTerminos && autorizaDatos)
+        {
+            await Servicio(db, config).ActivarAsync(cuenta.Usuario, request, null);
+            Assert.True(await db.Wallets.AnyAsync(w => w.IdPersona == cuenta.Persona));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => Servicio(db, config).ActivarAsync(cuenta.Usuario, request, null));
+            Assert.False(await db.Wallets.AnyAsync(w => w.IdPersona == cuenta.Persona));
+            Assert.Equal(2, await db.Auditorias.CountAsync(a => a.IdUsuario == cuenta.Usuario &&
+                (a.Accion == RegistroPublicoService.AccionAceptarTerminos || a.Accion == RegistroPublicoService.AccionAutorizarDatos)));
+            Assert.False(await AceptacionesRegistroWallet.VigenteAsync(db, cuenta.Usuario, cuenta.Persona, true));
+            Assert.False(await AceptacionesRegistroWallet.VigenteAsync(db, cuenta.Usuario, cuenta.Persona, false));
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(EvidenciasAbInvalidas))]
+    public async Task EvidenciaAjenaIncompletaODeOtroDocumento_NoEquivaleAAceptacion(bool terminos, string problema)
+    {
+        if (!Conexion(out var cs)) return;
+        await using var datos = new Semillero(cs);
+        var config = Configuracion();
+        var cuenta = await datos.ListaAsync(config, aVigente: !terminos, bVigente: terminos);
+        var otra = await datos.CuentaAsync(publica: false);
+        var evidencia = EvidenciaRegistro(cuenta, terminos, "1.3");
+        var payload = JsonSerializer.Deserialize<Dictionary<string, object?>>(evidencia.ValorNuevo!)!;
+        switch (problema)
+        {
+            case "version": payload["version"] = "1.2"; break;
+            case "sha": payload["sha256"] = new string('0', 64); break;
+            case "canal": payload["canal"] = "ADMIN"; break;
+            case "tipo": payload["tipoDocumento"] = "OTRO_DOCUMENTO"; break;
+            case "falta_sha": payload.Remove("sha256"); break;
+            case "falta_version": payload.Remove("version"); break;
+            case "falta_canal": payload.Remove("canal"); break;
+            case "actor": evidencia.IdUsuario = otra.Usuario; break;
+            case "persona": evidencia.IdPersona = otra.Persona; break;
+            case "entidad": evidencia.Entidad = "otra_entidad"; break;
+            case "id_entidad": evidencia.IdEntidad = otra.Usuario.ToString(CultureInfo.InvariantCulture); break;
+            case "modulo": evidencia.Modulo = "OTRO_MODULO"; break;
+        }
+        evidencia.ValorNuevo = problema == "json" ? "{" : JsonSerializer.Serialize(payload);
+        await using var db = Contexto(cs);
+        db.Auditorias.Add(evidencia); await db.SaveChangesAsync();
+        var estado = await Servicio(db, config).ObtenerAsync(cuenta.Usuario);
+        Assert.False(terminos ? estado.Terminos.Aceptados : estado.PoliticaDatos.Aceptados);
+        Assert.True(terminos ? estado.PoliticaDatos.Aceptados : estado.Terminos.Aceptados);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Servicio(db, config).ActivarAsync(cuenta.Usuario, new(), null));
+        Assert.False(await db.Wallets.AnyAsync(w => w.IdPersona == cuenta.Persona));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UltimaRevocacionAb_NoRescataAceptacionAnterior(bool terminos)
+    {
+        if (!Conexion(out var cs)) return;
+        await using var datos = new Semillero(cs);
+        var config = Configuracion();
+        var cuenta = await datos.ListaAsync(config);
+        await using var db = Contexto(cs);
+        var ultima = EvidenciaRegistro(cuenta, terminos, "1.3");
+        ultima.Resultado = "REVOCADO";
+        db.Auditorias.Add(ultima); await db.SaveChangesAsync();
+        Assert.False(await AceptacionesRegistroWallet.VigenteAsync(db, cuenta.Usuario, cuenta.Persona, terminos));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Servicio(db, config).ActivarAsync(cuenta.Usuario, new(), null));
+        Assert.False(await db.Wallets.AnyAsync(w => w.IdPersona == cuenta.Persona));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task VersionExpresaEquivocada_NoSeAceptaAunqueExistaEvidenciaVigente(bool terminos)
+    {
+        if (!Conexion(out var cs)) return;
+        await using var datos = new Semillero(cs);
+        var config = Configuracion();
+        var cuenta = await datos.ListaAsync(config);
+        await using var db = Contexto(cs);
+        foreach (var version in new string?[] { null, "1.2", "1.3 " })
+        {
+            var request = terminos ? new ActivarWalletRequest(true, version) : new(false, null, true, version);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => Servicio(db, config).ActivarAsync(cuenta.Usuario, request, null));
+        }
+        Assert.False(await db.Wallets.AnyAsync(w => w.IdPersona == cuenta.Persona));
+    }
+
+    [Fact]
+    public async Task C12VigenteBajoConfiguracion13_SeConservaSinNuevaAceptacionNiCaptura()
+    {
+        if (!Conexion(out var cs)) return;
+        await using var datos = new Semillero(cs);
+        var config = Configuracion();
+        var cuenta = await datos.ListaAsync(config);
+        await using var db = Contexto(cs);
+        var antes = await db.Auditorias.AsNoTracking().SingleAsync(a => a.IdUsuario == cuenta.Usuario && a.Accion == ConsentimientoBiometricoService.AccionAutorizar);
+        var sesiones = await db.KycVerificaciones.CountAsync(k => k.IdUsuario == cuenta.Usuario);
+        Assert.Contains("\"version\":\"1.2\"", antes.ValorNuevo);
+        config[ConsentimientoBiometricoService.PrefijoDocumento + "_VERSION"] = "1.3";
+        config[ConsentimientoBiometricoService.PrefijoDocumento + "_FECHA"] = PreparacionWalletConfiguracion.Fecha;
+        config[ConsentimientoBiometricoService.PrefijoDocumento + "_SHA256"] = PreparacionWalletConfiguracion.AutorizacionSha256;
+        config[ConsentimientoBiometricoService.PrefijoDocumento + "_URL"] = "https://app.xpaycol.com/legal/v1.3/autorizaciones.pdf";
+        Assert.True(await new ConsentimientoBiometricoService(db, config, AmbienteXpayTests.Ambiente("Production"), TimeProvider.System)
+            .TieneConsentimientoVigenteAsync(cuenta.Usuario));
+        await Servicio(db, config).ActivarAsync(cuenta.Usuario, new(), null);
+        var despues = await db.Auditorias.AsNoTracking().SingleAsync(a => a.IdUsuario == cuenta.Usuario && a.Accion == ConsentimientoBiometricoService.AccionAutorizar);
+        Assert.Equal(antes.IdAuditoria, despues.IdAuditoria);
+        Assert.Equal(antes.ValorNuevo, despues.ValorNuevo);
+        Assert.Equal(sesiones, await db.KycVerificaciones.CountAsync(k => k.IdUsuario == cuenta.Usuario));
     }
 
     [Theory]
@@ -230,7 +383,7 @@ public sealed class PreparacionWalletSqlTests
         var resultados = await Task.WhenAll(ActivarConcurrenteAsync(cs, config, primera, inicio), ActivarConcurrenteAsync(cs, config, segunda, inicio));
         var ganador = Assert.Single(resultados, r => r.Error is null);
         var perdedor = Assert.Single(resultados, r => r.Error is not null);
-        Assert.Contains(AltaUsuarioPilotoService.MensajeMaximoAlcanzado, perdedor.Error);
+        Assert.Contains("activación de Wallet no está disponible", perdedor.Error);
         await using var db = Contexto(cs);
         Assert.Equal(50, await PreparacionWalletService.ContarPlazasAsync(db));
         Assert.True(await db.Wallets.AnyAsync(w => w.IdPersona == ganador.Cuenta.Persona));
@@ -266,7 +419,8 @@ public sealed class PreparacionWalletSqlTests
         }
         var resultados = await Task.WhenAll(ActivarConcurrenteAsync(cs, config, publica, inicio), ManualAsync());
         Assert.Single(resultados, r => r.Error is null);
-        Assert.Contains(AltaUsuarioPilotoService.MensajeMaximoAlcanzado, Assert.Single(resultados, r => r.Error is not null).Error);
+        var error = Assert.Single(resultados, r => r.Error is not null).Error;
+        Assert.True(error == AltaUsuarioPilotoService.MensajeMaximoAlcanzado || error?.Contains("activación de Wallet no está disponible", StringComparison.Ordinal) == true);
         await using var consulta = Contexto(cs);
         Assert.Equal(50, await PreparacionWalletService.ContarPlazasAsync(consulta));
         var manualExiste = await consulta.Usuarios.AnyAsync(u => u.NombreUsuario == solicitud.NombreUsuario);
@@ -280,20 +434,19 @@ public sealed class PreparacionWalletSqlTests
         if (!Conexion(out var cs)) return;
         await using var datos = new Semillero(cs);
         var config = Configuracion();
-        var cuenta = await datos.ListaAsync(config);
+        var cuenta = await datos.ListaAsync(config, aVigente: false, bVigente: false);
         int plazasAntes;
         await using (var consulta = Contexto(cs)) plazasAntes = await PreparacionWalletService.ContarPlazasAsync(consulta);
         await using (var falla = Contexto(cs, new FallarRevocacion()))
-            await Assert.ThrowsAsync<RevocacionFallida>(() => Servicio(falla, config).ActivarAsync(cuenta.Usuario, Aceptacion, null));
+            await Assert.ThrowsAsync<RevocacionFallida>(() => Servicio(falla, config).ActivarAsync(cuenta.Usuario, AceptacionActualizada, null));
         await using var db = Contexto(cs);
         Assert.False(await db.Wallets.AnyAsync(w => w.IdPersona == cuenta.Persona));
         Assert.False(await db.Auditorias.AnyAsync(a => a.IdUsuario == cuenta.Usuario && a.Accion == PreparacionWalletService.AccionActivar));
         Assert.Equal(plazasAntes, await PreparacionWalletService.ContarPlazasAsync(db));
         Assert.Equal(0, await db.Usuarios.Where(u => u.IdUsuario == cuenta.Usuario).Select(u => u.VersionSeguridad).SingleAsync());
-        var preparacion = await db.WalletPreparaciones.AsNoTracking().SingleAsync(p => p.IdUsuario == cuenta.Usuario);
-        Assert.Null(preparacion.IdWallet);
-        Assert.Null(preparacion.FechaActivacion);
-        Assert.Null(preparacion.CondicionesSha256);
+        Assert.False(await db.WalletPreparaciones.AnyAsync(p => p.IdUsuario == cuenta.Usuario));
+        Assert.False(await AceptacionesRegistroWallet.VigenteAsync(db, cuenta.Usuario, cuenta.Persona, true));
+        Assert.False(await AceptacionesRegistroWallet.VigenteAsync(db, cuenta.Usuario, cuenta.Persona, false));
         Assert.True(await RegistroPublicoService.EsCuentaLimitadaAsync(db, cuenta.Usuario));
         Assert.Equal("ACTIVAR", (await Servicio(db, config).ObtenerAsync(cuenta.Usuario)).SiguientePaso);
     }
@@ -415,15 +568,17 @@ public sealed class PreparacionWalletSqlTests
         controller.HttpContext.User = new(new ClaimsIdentity());
         Assert.IsType<UnauthorizedObjectResult>(await controller.Activar(Aceptacion, default));
         Assert.NotNull(typeof(PreparacionWalletController).GetCustomAttribute<AuthorizeAttribute>());
-        foreach (var tipo in new[] { typeof(PreparacionDatosRequest), typeof(PreparacionLlaveRequest), typeof(ActivarWalletRequest) })
+        foreach (var tipo in new[] { typeof(PreparacionDatosRequest), typeof(ActivarWalletRequest) })
             Assert.DoesNotContain(tipo.GetProperties(), p => p.Name is "IdUsuario" or "IdPersona" or "IdWallet");
+        Assert.Null(typeof(PreparacionWalletController).GetMethod("Llave"));
+        Assert.DoesNotContain(typeof(PreparacionWalletResponse).GetProperties(), p => p.Name is "Llave" or "Condiciones");
     }
 
     [Theory]
     [InlineData("XPAY_ALTA_WALLET_GUIADA_HABILITADA", "false")]
-    [InlineData("XPAY_CONDICIONES_WALLET_VERSION", "0.9")]
-    [InlineData("XPAY_CONDICIONES_WALLET_SHA256", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
-    [InlineData("XPAY_CONDICIONES_WALLET_URL", "https://otro.example.test/legal/wallet/v1.0/condiciones.pdf")]
+    [InlineData("XPAY_REGISTRO_PUBLICO_TERMINOS_VERSION", "0.9")]
+    [InlineData("XPAY_REGISTRO_PUBLICO_TERMINOS_SHA256", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("XPAY_REGISTRO_PUBLICO_POLITICA_DATOS_URL", "https://otro.example.test/legal/v1.3/politica.pdf")]
     public async Task DocumentoOConfiguracionNoVigente_CierraElFlujoAntesDeConsultarDatos(string clave, string valor)
     {
         var config = Configuracion();
@@ -438,6 +593,22 @@ public sealed class PreparacionWalletSqlTests
     private sealed record ResultadoConcurrente(Cuenta Cuenta, LoginResponse? Sesion, string? Error);
     private sealed record FotoDinero(int Movimientos, int Ledger, int Cupos, int Creditos, int Solicitudes, int Anticipos, int Vinculos, int Empresas);
 
+    private static Auditoria EvidenciaRegistro(Cuenta cuenta, bool terminos, string version)
+    {
+        var sha = version == "1.3"
+            ? terminos ? PreparacionWalletConfiguracion.TerminosSha256 : PreparacionWalletConfiguracion.PoliticaDatosSha256
+            : terminos ? "f5d7450394b3c64284dfdf0d8461341ad2d59f5ac9e907d10f39de245d9fb680"
+                       : "6dba8d16e11168e073b13047ac01fd0df06bc4cb2b57aeec904144add442e534";
+        return new() { IdUsuario = cuenta.Usuario, IdPersona = cuenta.Persona, Modulo = "USUARIOS",
+            Accion = terminos ? RegistroPublicoService.AccionAceptarTerminos : RegistroPublicoService.AccionAutorizarDatos,
+            Entidad = "usuarios", IdEntidad = cuenta.Usuario.ToString(CultureInfo.InvariantCulture),
+            Resultado = "EXITOSO", FechaEvento = DateTime.UtcNow,
+            ValorNuevo = JsonSerializer.Serialize(new {
+                tipoDocumento = terminos ? "TERMINOS_Y_CONDICIONES" : "POLITICA_TRATAMIENTO_DATOS",
+                version, sha256 = sha, canal = "WEB_AUTORREGISTRO"
+            }) };
+    }
+
     private static async Task<FotoDinero> FotoSinDineroAsync(XpayDbContext db, Cuenta cuenta) => new(
         await db.WalletMovimientos.CountAsync(), await db.LedgerTransacciones.CountAsync(),
         await db.CarteraCuposOrdinarios.CountAsync(c => c.IdUsuario == cuenta.Usuario),
@@ -450,11 +621,16 @@ public sealed class PreparacionWalletSqlTests
     internal static IConfigurationRoot Configuracion()
     {
         var config = ConsentimientoBiometricoTests.Configuracion();
-        config[CondicionesWalletPiloto.ClaveHabilitada] = "true";
-        config[CondicionesWalletPiloto.Prefijo + "_VERSION"] = CondicionesWalletPiloto.Version;
-        config[CondicionesWalletPiloto.Prefijo + "_FECHA"] = CondicionesWalletPiloto.Fecha;
-        config[CondicionesWalletPiloto.Prefijo + "_SHA256"] = CondicionesWalletPiloto.Sha256;
-        config[CondicionesWalletPiloto.Prefijo + "_URL"] = "https://app.xpaycol.com" + CondicionesWalletPiloto.Ruta;
+        config[PreparacionWalletConfiguracion.ClaveHabilitada] = "true";
+        foreach (var (prefijo, archivo, sha) in new[] {
+            (DocumentosRegistroPublico.PrefijoTerminos, "terminos.pdf", PreparacionWalletConfiguracion.TerminosSha256),
+            (DocumentosRegistroPublico.PrefijoPoliticaDatos, "politica.pdf", PreparacionWalletConfiguracion.PoliticaDatosSha256) })
+        {
+            config[prefijo + "_VERSION"] = PreparacionWalletConfiguracion.Version;
+            config[prefijo + "_FECHA"] = PreparacionWalletConfiguracion.Fecha;
+            config[prefijo + "_SHA256"] = sha;
+            config[prefijo + "_URL"] = "https://app.xpaycol.com/legal/v1.3/" + archivo;
+        }
         config[AltaUsuarioPilotoService.ClaveHabilitada] = "true";
         config[AltaUsuarioPilotoService.ClaveMaxUsuarios] = "50";
         config["Jwt:Key"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
@@ -577,7 +753,7 @@ public sealed class PreparacionWalletSqlTests
         private readonly string _sufijo = Guid.NewGuid().ToString("N")[..12];
         private int _secuencia;
 
-        public async Task<Cuenta> CuentaAsync(bool publica = true, string rol = "USUARIO_FINAL")
+        public async Task<Cuenta> CuentaAsync(bool publica = true, string rol = "USUARIO_FINAL", bool aVigente = false, bool bVigente = false)
         {
             await using var db = Contexto(cs);
             var n = ++_secuencia;
@@ -593,12 +769,15 @@ public sealed class PreparacionWalletSqlTests
             // cuenta. No se borran ni se atribuyen a un titular de esta prueba.
             if (await db.LibranzaUsuariosEmpresa.AnyAsync(a => a.IdUsuario == usuario.IdUsuario)
                 || await db.LibranzaEmpleadoUsuarios.AnyAsync(a => a.IdUsuario == usuario.IdUsuario))
-                return await CuentaAsync(publica, rol);
+                return await CuentaAsync(publica, rol, aVigente, bVigente);
             var idRol = await db.Roles.Where(r => r.Codigo == rol && r.Estado == "ACTIVO").Select(r => r.IdRol).SingleAsync();
             db.UsuarioRoles.Add(new() { IdUsuario = usuario.IdUsuario, IdRol = idRol, Estado = "ACTIVO", FechaAsignacion = DateTime.UtcNow });
-            if (publica) db.Auditorias.Add(new() { IdUsuario = usuario.IdUsuario, IdPersona = persona.IdPersona, Modulo = "USUARIOS",
-                Accion = RegistroPublicoService.AccionAceptarTerminos, Entidad = "usuarios", IdEntidad = usuario.IdUsuario.ToString(CultureInfo.InvariantCulture),
-                Resultado = "EXITOSO", ValorNuevo = "{\"canal\":\"WEB_AUTORREGISTRO\"}", FechaEvento = DateTime.UtcNow });
+            if (publica)
+            {
+                var cuenta = new Cuenta(usuario.IdUsuario, persona.IdPersona, nombre, numero);
+                db.Auditorias.Add(EvidenciaRegistro(cuenta, true, aVigente ? "1.3" : "1.2"));
+                db.Auditorias.Add(EvidenciaRegistro(cuenta, false, bVigente ? "1.3" : "1.2"));
+            }
             await db.SaveChangesAsync();
             return new(usuario.IdUsuario, persona.IdPersona, nombre, numero);
         }
@@ -613,7 +792,7 @@ public sealed class PreparacionWalletSqlTests
         {
             await using var db = Contexto(cs);
             var respuesta = await new ConsentimientoBiometricoService(db, config, AmbienteXpayTests.Ambiente("Production"), TimeProvider.System)
-                .AutorizarAsync(cuenta.Usuario, new(true, "1.2"), "203.0.113.41");
+                .AutorizarAsync(cuenta.Usuario, new(true, config[ConsentimientoBiometricoService.PrefijoDocumento + "_VERSION"]), "203.0.113.41");
             Assert.True(respuesta.Aceptado);
         }
 
@@ -642,9 +821,9 @@ public sealed class PreparacionWalletSqlTests
                 orderby c.IdCiudad select new Lugar(d.IdDepartamento, c.IdCiudad)).FirstAsync();
         }
 
-        public async Task<Cuenta> ListaAsync(IConfiguration config)
+        public async Task<Cuenta> ListaAsync(IConfiguration config, bool aVigente = true, bool bVigente = true)
         {
-            var cuenta = await CuentaAsync();
+            var cuenta = await CuentaAsync(aVigente: aVigente, bVigente: bVigente);
             await ConfirmarCorreoAsync(cuenta);
             await AutorizarBiometriaAsync(cuenta, config);
             await AprobarIdentidadAsync(cuenta);
@@ -652,7 +831,6 @@ public sealed class PreparacionWalletSqlTests
             await using var db = Contexto(cs);
             var servicio = Servicio(db, config);
             await servicio.GuardarDatosAsync(cuenta.Usuario, new("Calle sintética 12", lugar.Departamento, lugar.Ciudad));
-            await servicio.GuardarLlaveAsync(cuenta.Usuario, new(true, null, null, false));
             await new PinTransaccionalService(db).CrearAsync(cuenta.Usuario, new() { ClaveActual = Clave, Pin = Pin, ConfirmacionPin = Pin });
             Assert.Equal("ACTIVAR", (await servicio.ObtenerAsync(cuenta.Usuario)).SiguientePaso);
             return cuenta;
