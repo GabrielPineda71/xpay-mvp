@@ -11,7 +11,7 @@ public class LoginResponse
     public List<string> Roles { get; set; } = new();
     public string Token { get; set; } = string.Empty;
     public bool RequiereCambioClave { get; set; }
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
     public bool RequierePerfil { get; set; }
     // D10 — tiene una asociación ACTIVA en libranza_usuarios_empresa. Solo
     // orienta la navegación del frontend; la autorización real sigue en

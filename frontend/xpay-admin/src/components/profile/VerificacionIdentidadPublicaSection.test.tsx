@@ -31,11 +31,19 @@ beforeEach(() => {
 });
 function mostrar() { return render(<VerificacionIdentidadPublicaSection />); }
 describe('Correo y Veriff para cuentas públicas limitadas', () => {
+  it('admite documento C1.3 y conserva el texto exacto recibido, sin iniciar otra sesión', async () => {
+    consentimiento = { ...CONSENT, documento: { ...CONSENT.documento, version: '1.3', url: 'https://app.xpaycol.com/legal/v1.3/autorizaciones.pdf' } };
+    mockPost.mockResolvedValue({ success: true, data: { ...consentimiento, aceptado: true } }); mostrar();
+    await userEvent.click(await screen.findByRole('checkbox', { name: CONSENT.textoCasilla }));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar autorización' }));
+    expect(await screen.findByText('Autorización biométrica registrada.')).toBeInTheDocument();
+    expect(mockPost).toHaveBeenCalledExactlyOnceWith('/api/usuarios/alta-publica/consentimiento-kyc', { autorizaBiometria: true, versionDocumento: '1.3' });
+  });
   it('no envía autorizaciones ni abre sesiones al entrar; WhatsApp no bloquea este recorrido', async () => {
     mostrar();
     expect(await screen.findByRole('checkbox', { name: CONSENT.textoCasilla })).not.toBeChecked();
     expect(screen.getByRole('button', { name: 'Guardar autorización' })).toBeDisabled();
-    expect(screen.getByText(/Verificación pendiente para una próxima etapa. Puedes continuar con Veriff/)).toBeInTheDocument();
+    expect(screen.queryByText(/WhatsApp|próxima etapa/)).not.toBeInTheDocument();
     expect(screen.getByText(/Crear la cuenta o aprobar Veriff no activa una Wallet/)).toBeInTheDocument();
     expect(mockPost).not.toHaveBeenCalled();
     expect(mockGet.mock.calls.every(([path]) => !String(path).includes('/alta-publica/estado'))).toBe(true);

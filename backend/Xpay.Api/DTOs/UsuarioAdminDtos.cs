@@ -7,6 +7,10 @@ public class UsuarioAdminListItemDto
     public string NombreCompleto { get; set; } = string.Empty;
     public string TipoDocumento { get; set; } = string.Empty;
     public string NumeroDocumento { get; set; } = string.Empty;
+    public string NombreFuente { get; set; } = "SIN_DATOS";
+    public string DocumentoFuente { get; set; } = "SIN_DATOS";
+    public bool IdentidadVerificada { get; set; }
+    public bool DocumentoVerificado { get; set; }
     public string? Email { get; set; }
     public string Celular { get; set; } = string.Empty;
     public string Estado { get; set; } = string.Empty;
@@ -73,6 +77,10 @@ public class UsuarioAdminDetalleDto
     public string NombreCompleto { get; set; } = string.Empty;
     public string TipoDocumento { get; set; } = string.Empty;
     public string NumeroDocumento { get; set; } = string.Empty;
+    public string NombreFuente { get; set; } = "SIN_DATOS";
+    public string DocumentoFuente { get; set; } = "SIN_DATOS";
+    public bool IdentidadVerificada { get; set; }
+    public bool DocumentoVerificado { get; set; }
     public string? Email { get; set; }
     public string Celular { get; set; } = string.Empty;
     public string? Direccion { get; set; }

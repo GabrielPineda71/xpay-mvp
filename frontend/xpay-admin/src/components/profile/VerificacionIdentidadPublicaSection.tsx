@@ -28,19 +28,19 @@ export function urlSesionVeriffPublica(value: unknown): string | null {
     return url.href;
   } catch { return null; }
 }
-function urlDocumento(value: string | undefined): string | null {
+function urlDocumento(value: string | undefined, version: string | undefined): string | null {
   try {
     const url = new URL(value ?? '');
     return url.protocol === 'https:' && !url.username && !url.password && !url.port
       && ['app.xpaycol.com', 'app-qa.xpaycol.com'].includes(url.hostname)
-      && url.pathname === '/legal/v1.2/autorizaciones.pdf'
+      && (version === '1.2' || version === '1.3') && url.pathname === `/legal/v${version}/autorizaciones.pdf`
       && !url.search && !url.hash ? url.href : null;
   } catch { return null; }
 }
 
 // Esta sección consulta el proceso de la cuenta pública. Solo un clic explícito
 // registra la casilla C o inicia Veriff; no habilita Wallet ni productos.
-export function VerificacionIdentidadPublicaSection() {
+export function VerificacionIdentidadPublicaSection({ guiado = false, onActualizado }: { guiado?: boolean; onActualizado?: () => void } = {}) {
   const [consentimiento, setConsentimiento] = useState<ConsentimientoKyc | null>(null);
   const [kyc, setKyc] = useState<EstadoKyc | null>(null);
   const [correoVerificado, setCorreoVerificado] = useState(false);
@@ -94,7 +94,7 @@ export function VerificacionIdentidadPublicaSection() {
     return () => { window.removeEventListener('focus', refrescar); document.removeEventListener('visibilitychange', refrescar); };
   }, [cargar]);
 
-  const documentoUrl = urlDocumento(consentimiento?.documento?.url);
+  const documentoUrl = urlDocumento(consentimiento?.documento?.url, consentimiento?.documento?.version);
   const permiteAutorizacion = consultaVigente && correoVerificado && consentimiento?.habilitado && documentoUrl;
   const permiteVeriff = permiteAutorizacion && consentimiento?.aceptado;
   const sessionUrl = permiteVeriff && kyc?.estadoKyc === 'PENDIENTE' ? urlSesionVeriffPublica(kyc.sessionUrl) : null;
@@ -110,7 +110,7 @@ export function VerificacionIdentidadPublicaSection() {
       if (intento !== secuencia.current) return;
       if (!r.success || !r.data?.aceptado || !r.data.habilitado
         || r.data.documento?.version !== consentimiento.documento.version
-        || urlDocumento(r.data.documento?.url) !== documentoUrl) throw new Error('Autorización no confirmada.');
+        || urlDocumento(r.data.documento?.url, r.data.documento?.version) !== documentoUrl) throw new Error('Autorización no confirmada.');
       setConsentimiento(r.data); setAutoriza(false);
       setAviso('Autorización guardada. Ahora puedes iniciar la verificación de identidad.');
     } catch (err) {
@@ -142,19 +142,18 @@ export function VerificacionIdentidadPublicaSection() {
   }
 
   return <section className="profile-section identidad-publica" aria-label="Verificación de mi identidad">
-    <h3 className="profile-section-title">Completa tu registro</h3>
-    <p>Confirma tu correo y verifica tu identidad con Veriff. Puedes conservar tu cuenta y consultar Perfil si decides no autorizar la biometría.</p>
+    {!guiado && <><h3 className="profile-section-title">Completa tu registro</h3>
+    <p>Confirma tu correo y verifica tu identidad con Veriff. Puedes conservar tu cuenta y consultar Perfil si decides no autorizar la biometría.</p></>}
     {cargando && <p role="status">Consultando tu verificación...</p>}
     {error && <p role="alert" className="breb-msg-err">{error}</p>}
     {aviso && <p role="status" className="breb-msg-ok">{aviso}</p>}
-    <ol className="identidad-publica-pasos">
+    {!guiado && <ol className="identidad-publica-pasos">
       <li><strong>Correo electrónico</strong><span>{consultaVigente ? correoVerificado ? 'Verificado' : 'Pendiente. Confírmalo en Mi información.' : 'Sin confirmar'}</span></li>
       <li><strong>Identidad con Veriff</strong><span>{cargando ? 'Consultando...' : kyc ? ETIQUETAS_KYC[kyc.estadoKyc] : 'Sin confirmar'}</span></li>
-      <li><strong>WhatsApp</strong><span>Verificación pendiente para una próxima etapa. Puedes continuar con Veriff.</span></li>
-    </ol>
+    </ol>}
     {consentimiento && <div className="identidad-publica-autorizacion">
-      <h4>Verifica tu identidad</h4>
-      <p>La autorización biométrica es opcional para conservar tu cuenta y necesaria para iniciar Veriff. No autoriza consultas de crédito ni publicidad.</p>
+      {!guiado && <h4>Verifica tu identidad</h4>}
+      {(!guiado || !consentimiento.aceptado) && <p>La autorización biométrica es opcional para conservar tu cuenta y necesaria para iniciar Veriff. No autoriza consultas de crédito ni publicidad.</p>}
       {documentoUrl && consentimiento.documento && <a href={documentoUrl} target="_blank" rel="noopener noreferrer">Leer autorizaciones de registro y KYC · {consentimiento.documento.version}</a>}
       {!correoVerificado && consultaVigente && <p>Primero confirma tu correo electrónico en Mi información.</p>}
       {!consentimiento.habilitado && correoVerificado && <p>La verificación de identidad estará disponible cuando XPAY complete su configuración.</p>}
@@ -166,16 +165,16 @@ export function VerificacionIdentidadPublicaSection() {
         </label>
         <button type="button" className="profile-btn-primary" disabled={!autoriza || ocupado || cargando || !consultaVigente} onClick={() => void guardarConsentimiento()}>Guardar autorización</button>
       </>}
-      {consentimiento.aceptado && <p>Autorización biométrica registrada.</p>}
+      {consentimiento.aceptado && !guiado && <p>Autorización biométrica registrada.</p>}
       {permiteVeriff && kyc?.estadoKyc === 'NO_INICIADO' && <button type="button" className="profile-btn-primary" disabled={ocupado || cargando} onClick={() => void iniciarVerificacion()}>Iniciar verificación de identidad</button>}
       {!cargando && consultaVigente && permiteVeriff && kyc?.estadoKyc === 'PENDIENTE' && (sessionUrl
         ? <a className="profile-btn-primary identidad-publica-continuar" href={sessionUrl} target="_blank" rel="noopener noreferrer">Continuar verificación</a>
         : <p>El enlace para continuar no está disponible. Actualiza el estado para recuperar tu sesión; si continúa igual, contacta a XPAY.</p>)}
       {!cargando && kyc?.estadoKyc === 'EN_REVISION' && <p>Veriff está revisando tu información. Consulta nuevamente el estado más adelante.</p>}
-      {!cargando && kyc?.estadoKyc === 'APROBADO' && <p>Tu identidad fue aprobada. La activación de Wallet y productos financieros requiere la habilitación adicional de XPAY.</p>}
+      {!cargando && kyc?.estadoKyc === 'APROBADO' && <p>{guiado ? 'Identidad aprobada. Actualiza el estado para continuar.' : 'Tu identidad fue aprobada. La activación de Wallet y productos financieros requiere la habilitación adicional de XPAY.'}</p>}
       {!cargando && kyc && ['RECHAZADO', 'EXPIRADO', 'ERROR'].includes(kyc.estadoKyc) && <p>Tu verificación requiere revisión de XPAY. Contacta a soporte antes de iniciar otro intento.</p>}
     </div>}
-    <p>Crear la cuenta o aprobar Veriff no activa una Wallet, asigna un cupo ni permite operar automáticamente.</p>
-    <button type="button" className="profile-btn-secondary" disabled={cargando || ocupado} onClick={() => void cargar()}>{cargando ? 'Actualizando verificación...' : 'Actualizar estado de verificación'}</button>
+    {!guiado && <p>Crear la cuenta o aprobar Veriff no activa una Wallet, asigna un cupo ni permite operar automáticamente.</p>}
+    <button type="button" className="profile-btn-secondary" disabled={cargando || ocupado} onClick={() => void cargar().then(() => onActualizado?.())}>{cargando ? 'Actualizando verificación...' : 'Actualizar estado de verificación'}</button>
   </section>;
 }

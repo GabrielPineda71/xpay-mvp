@@ -80,6 +80,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
     } catch {
       msg = `Error HTTP ${res.status}`;
     }
+    if (res.status === 403 && codigo === 'CUENTA_LIMITADA') {
+      // Señal sin datos sensibles: AuthContext restringe la navegación tras
+      // este rechazo autoritativo; no repite la petición ni amplía permisos.
+      window.dispatchEvent(new Event('xpay:cuenta-limitada'));
+    }
     if (res.status === 428 && codigo === 'PIN_ACTUALIZACION_REQUERIDA') {
       // Solo señal de navegación: nunca guarda el PIN ni repite el POST.
       window.dispatchEvent(new Event('xpay:pin-actualizacion-requerida'));

@@ -6,6 +6,8 @@ import { useComercioScope } from '../auth/useComercioScope.ts';
 import { CommerceNotificationsProvider } from './comercio/CommerceNotificationsContext.tsx';
 import { CommerceNotificationBell } from './comercio/CommerceNotificationBell.tsx';
 import { WalletPrimerIngreso } from './wallet/WalletPrimerIngreso.tsx';
+import { BrandMark } from './BrandMark.tsx';
+import './profile/PreparacionWalletSection.css';
 
 function getApiLabel(): string {
   const url = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000';
@@ -35,6 +37,12 @@ export function Layout() {
   }
 
   if (accesoPerfil && pathname !== '/mi-wallet/perfil') return <Navigate to="/mi-wallet/perfil" replace />;
+
+  if (accesoPerfil) return <div className="wallet-onboarding-shell">
+    <header className="onboarding-header"><BrandMark variant="logo" theme="teal" className="onboarding-brand" />
+      <div><span className="onboarding-user">{user?.usuario}</span><button type="button" onClick={handleLogout}>Cerrar sesión</button></div>
+    </header><main><Outlet /></main>
+  </div>;
 
   // ── Vista wallet: shell nuevo (hero verde + bottom nav), aislado de
   // admin/comercio/empresa, que siguen usando el <div className="layout">

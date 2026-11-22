@@ -102,6 +102,21 @@ public class AuthService
     private Task<bool> EsUsuarioEmpresaAsync(long idUsuario) =>
         _db.LibranzaUsuariosEmpresa.AnyAsync(a => a.IdUsuario == idUsuario && a.Estado == "ACTIVO");
 
+    // Solo el servicio autenticado de activación invoca esta emisión después
+    // del commit y de revocar los JWT anteriores. No acepta datos del navegador.
+    internal async Task<LoginResponse> ReemitirSesionWalletAsync(long idUsuario, CancellationToken ct)
+    {
+        var u = await _db.Usuarios.AsNoTracking().SingleAsync(u => u.IdUsuario == idUsuario, ct);
+        if (u.Estado != "ACTIVO" || u.RequiereCambioClave || await RegistroPublicoService.EsCuentaLimitadaAsync(_db, idUsuario))
+            throw new InvalidOperationException("Inicia sesión nuevamente para comprobar la habilitación de tu cuenta.");
+        var roles = await (from ur in _db.UsuarioRoles join r in _db.Roles on ur.IdRol equals r.IdRol
+            where ur.IdUsuario == idUsuario && ur.Estado == "ACTIVO" && r.Estado == "ACTIVO" select r.Codigo).ToListAsync(ct);
+        return new LoginResponse { IdUsuario = u.IdUsuario, IdPersona = u.IdPersona, Usuario = u.NombreUsuario,
+            Estado = u.Estado, Roles = roles, RequiereCambioClave = false, RequierePerfil = false,
+            EsUsuarioEmpresa = await EsUsuarioEmpresaAsync(idUsuario),
+            Token = GenerarJwt(u.IdUsuario, u.IdPersona, u.NombreUsuario, roles, false, u.VersionSeguridad) };
+    }
+
     // Fase USUARIOS-ADMIN-5: cambio obligatorio de contraseña tras un
     // restablecimiento administrativo. Opera siempre sobre el usuario del
     // propio token (idUsuario viene del claim, nunca del body) — no recibe id

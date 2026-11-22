@@ -42,7 +42,7 @@ public class PerfilService
         var usuario = await _db.Usuarios.AsNoTracking().FirstOrDefaultAsync(u => u.IdPersona == idPersona)
             ?? throw new KeyNotFoundException("No se encontró el usuario asociado a esta persona.");
 
-        return MapearRespuesta(persona, usuario);
+        return await MapearRespuestaAsync(persona, usuario);
     }
 
     public async Task<MiPerfilResponseDto> ActualizarAsync(long idUsuario, long idPersona, ActualizarMiPerfilRequest request)
@@ -94,6 +94,16 @@ public class PerfilService
                 despues[campo] = cambio.Despues;
             }
 
+            // El PATCH histórico admite texto libre. Cambiar la localidad no
+            // puede conservar la marca de una selección anterior del catálogo.
+            if (persona.IdCiudadDane.HasValue &&
+                (plan.Cambios.ContainsKey("ciudad") || plan.Cambios.ContainsKey("departamento")))
+            {
+                antes["id_ciudad_dane"] = persona.IdCiudadDane;
+                despues["id_ciudad_dane"] = null;
+                persona.IdCiudadDane = null;
+            }
+
             // Auditoría persistente (tabla `auditoria` ya existente, mismo
             // patrón que UsuarioAdminService.RegistrarAuditoria). Solo los
             // campos que realmente cambiaron — nunca password/tokens/KYC crudo.
@@ -124,8 +134,99 @@ public class PerfilService
         if (transaccion is not null)
             await transaccion.CommitAsync();
 
-        return MapearRespuesta(persona, usuario);
+        return await MapearRespuestaAsync(persona, usuario);
     }
+
+    public async Task<MiPerfilResponseDto> ActualizarDomicilioDaneAsync(
+        long idUsuario, long idPersona, GuardarDomicilioDaneRequest request,
+        CancellationToken ct = default)
+    {
+        var direccion = (request.Direccion ?? string.Empty).Trim();
+        if (direccion.Length is < 1 or > 300)
+            throw new InvalidOperationException("Escribe una dirección de hasta 300 caracteres.");
+        if (request.IdCiudadDane <= 0 || request.IdDepartamentoDane <= 0)
+            throw new InvalidOperationException("Selecciona el departamento y la ciudad de la lista.");
+
+        await using var transaccion = _db.Database.IsSqlServer()
+            ? await _db.Database.BeginTransactionAsync(ct) : null;
+        if (transaccion is not null)
+            await ContactoVerificacionService.BloquearPersonaAsync(_db, idPersona);
+
+        var persona = await _db.Personas.SingleOrDefaultAsync(p => p.IdPersona == idPersona, ct)
+            ?? throw new KeyNotFoundException("No se encontró la persona asociada a este usuario.");
+        var usuario = await _db.Usuarios.SingleOrDefaultAsync(
+            u => u.IdUsuario == idUsuario && u.IdPersona == idPersona, ct)
+            ?? throw new KeyNotFoundException("No se encontró el usuario asociado a esta persona.");
+        if (transaccion is not null)
+        {
+            await _db.Entry(persona).ReloadAsync(ct);
+            await _db.Entry(usuario).ReloadAsync(ct);
+        }
+
+        var lugar = await DomiciliosColombiaActivos()
+            .SingleOrDefaultAsync(x => x.IdCiudad == request.IdCiudadDane &&
+                                      x.IdDepartamento == request.IdDepartamentoDane, ct)
+            ?? throw new InvalidOperationException("Selecciona una ciudad activa que pertenezca al departamento indicado en Colombia.");
+
+        var antes = new { persona.Direccion, persona.Ciudad, persona.Departamento, persona.IdCiudadDane };
+        if (persona.Direccion != direccion || persona.Ciudad != lugar.Ciudad ||
+            persona.Departamento != lugar.Departamento || persona.IdCiudadDane != lugar.IdCiudad)
+        {
+            persona.Direccion = direccion;
+            persona.Ciudad = lugar.Ciudad;
+            persona.Departamento = lugar.Departamento;
+            persona.IdCiudadDane = lugar.IdCiudad;
+            persona.FechaActualizacion = DateTime.UtcNow;
+            _db.Auditorias.Add(new Auditoria
+            {
+                IdUsuario = idUsuario, IdPersona = idPersona,
+                Modulo = "PERFIL", Accion = "ACTUALIZAR_DOMICILIO_DANE", Entidad = "Persona",
+                IdEntidad = idPersona.ToString(), ValorAnterior = JsonSerializer.Serialize(antes),
+                ValorNuevo = JsonSerializer.Serialize(new
+                {
+                    persona.Direccion, persona.Ciudad, persona.Departamento, persona.IdCiudadDane,
+                    IdDepartamentoDane = lugar.IdDepartamento
+                }),
+                Resultado = "EXITOSO", Observacion = "Domicilio elegido del catálogo geográfico activo de Colombia.",
+                FechaEvento = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+        if (transaccion is not null) await transaccion.CommitAsync(ct);
+        return await MapearRespuestaAsync(persona, usuario, ct);
+    }
+
+    // La activación debe volver a validar el catálogo: tener una FK o nombres
+    // históricos no acredita por sí solo un domicilio completo y vigente.
+    public async Task<bool> DomicilioDaneCompletoAsync(long idPersona, CancellationToken ct = default)
+    {
+        return await (from p in _db.Personas.AsNoTracking()
+                      join lugar in DomiciliosColombiaActivos() on p.IdCiudadDane equals (long?)lugar.IdCiudad
+                      where p.IdPersona == idPersona && p.Direccion != null &&
+                            p.Direccion.Trim().Length > 0 && p.Direccion.Length <= 300 &&
+                            p.Ciudad == lugar.Ciudad && p.Departamento == lugar.Departamento
+                      select p.IdPersona).AnyAsync(ct);
+    }
+
+    private sealed class DomicilioCatalogo
+    {
+        public long IdCiudad { get; init; }
+        public long IdDepartamento { get; init; }
+        public string Ciudad { get; init; } = string.Empty;
+        public string Departamento { get; init; } = string.Empty;
+    }
+
+    private IQueryable<DomicilioCatalogo> DomiciliosColombiaActivos() =>
+        from c in _db.CatalogoCiudades.AsNoTracking()
+        join d in _db.CatalogoDepartamentos.AsNoTracking() on c.IdDepartamento equals d.IdDepartamento
+        join p in _db.CatalogoPaises.AsNoTracking() on d.IdPais equals p.IdPais
+        where c.Estado == "ACTIVO" && d.Estado == "ACTIVO" && p.Estado == "ACTIVO" &&
+              (p.Codigo == "CO" || p.Codigo == "COL")
+        select new DomicilioCatalogo
+        {
+            IdCiudad = c.IdCiudad, IdDepartamento = d.IdDepartamento,
+            Ciudad = c.Nombre, Departamento = d.Nombre
+        };
 
     private async Task RevocarContactosAsync(long idPersona, PerfilActualizacionPlanner.Plan plan)
     {
@@ -149,6 +250,18 @@ public class PerfilService
             await ContactoVerificacionService.InvalidarPendientesAsync(codigos.Where(c => c.Canal == CanalContacto.Email),
                 ContactoVerificacionService.MotivoContactoCambio, ahora);
         }
+    }
+
+    private async Task<MiPerfilResponseDto> MapearRespuestaAsync(
+        Persona persona, Usuario usuario, CancellationToken ct = default)
+    {
+        var respuesta = MapearRespuesta(persona, usuario);
+        respuesta.IdCiudadDane = persona.IdCiudadDane;
+        if (persona.IdCiudadDane.HasValue)
+            respuesta.IdDepartamentoDane = await _db.CatalogoCiudades.AsNoTracking()
+                .Where(c => c.IdCiudad == persona.IdCiudadDane.Value)
+                .Select(c => (long?)c.IdDepartamento).SingleOrDefaultAsync(ct);
+        return respuesta;
     }
 
     private static MiPerfilResponseDto MapearRespuesta(Persona persona, Usuario usuario) => new()

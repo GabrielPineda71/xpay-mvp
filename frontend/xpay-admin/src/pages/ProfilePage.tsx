@@ -6,6 +6,7 @@ import { ComunicacionesSection } from '../components/profile/ComunicacionesSecti
 import { CambiarContrasenaSection } from '../components/profile/CambiarContrasenaSection.tsx';
 import { VerificacionIdentidadPublicaSection } from '../components/profile/VerificacionIdentidadPublicaSection.tsx';
 import { PinTransaccionalSection } from '../components/profile/PinTransaccionalSection.tsx';
+import { PreparacionWalletSection } from '../components/profile/PreparacionWalletSection.tsx';
 
 // XPAY-401 (Perfil Fase 2C) — página real de Perfil (ruta mi-wallet/perfil).
 // Misma página de siempre (XPAY-392), ahora con 3 secciones completas:
@@ -19,6 +20,13 @@ import { PinTransaccionalSection } from '../components/profile/PinTransaccionalS
 // NO implementa todavía (fuera de alcance de XPAY-401): foto/avatar real
 // (upload/Blob/endpoint), auditoría visible en UI.
 export function ProfilePage() {
+  const { user } = useAuth();
+  return user?.requierePerfil === true
+    ? <PreparacionWalletSection key={user.idUsuario} fallback={<PerfilActual />} />
+    : <PerfilActual />;
+}
+
+function PerfilActual() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const accesoPerfil = user?.requierePerfil === true;
@@ -50,7 +58,7 @@ export function ProfilePage() {
       {accesoPerfil && <VerificacionIdentidadPublicaSection />}
 
       {/* A. Mi información (incluye verificar correo y celular) */}
-      <MiInformacionSection whatsAppPendiente={accesoPerfil} />
+      <MiInformacionSection whatsAppPendiente />
 
       {/* Preferencias de comunicación (servicio y publicidad, aparte de la verificación). */}
       <ComunicacionesSection />

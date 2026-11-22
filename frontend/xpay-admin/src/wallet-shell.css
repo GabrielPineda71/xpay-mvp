@@ -1347,9 +1347,9 @@
 /* ══════════════════════════════════════════════════════════════════════
    PERFIL (XPAY-392) — ProfilePage.tsx (ruta mi-wallet/perfil) y
    BrebMyKeySection.tsx. Sección completamente nueva, namespace propio
-   (.profile-*/.breb-profile-*) — no reutiliza ni modifica ninguna regla
-   .wallet-receive-*/.wallet-send-*/.wallet-pay-* de XPAY-390 (arriba en
-   este mismo archivo, sin cambios) ni las .breb-*/.btn-breb genéricas ya
+   (prefijos .profile- y .breb-profile-) — no reutiliza ni modifica ninguna regla
+   con prefijo .wallet-receive-, .wallet-send- o .wallet-pay- de XPAY-390 (arriba en
+   este mismo archivo, sin cambios) ni las clases genéricas .breb- y .btn-breb ya
    existentes en index.css (reutilizadas tal cual por BrebMyKeySection,
    sin redefinirlas aquí). ══════════════════════════════════════════════ */
 .profile-page {
@@ -1623,8 +1623,8 @@
 
 /* ══════════════════════════════════════════════════════════════════════
    PERFIL — Mi información / Seguridad (XPAY-401). Namespace propio
-   (.profile-*), no toca ninguna regla .wallet-receive-*/.wallet-send-*/
-   .wallet-pay-*/.breb-profile-* existente — solo reutiliza clases genéricas
+   (prefijo .profile-), no toca ninguna regla de prefijo .wallet-receive- o .wallet-send-
+   ni .wallet-pay- o .breb-profile- existente — solo reutiliza clases genéricas
    ya definidas en index.css (.btn-breb, .breb-msg-ok/.breb-msg-err) tal
    como ya hacía BrebMyKeySection. ══════════════════════════════════════ */
 .profile-load-error {

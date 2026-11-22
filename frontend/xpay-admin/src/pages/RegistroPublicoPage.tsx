@@ -7,6 +7,7 @@ import { type ConfiguracionRegistroPublico, type DocumentoRegistro, useConfigura
 import { mensajeErrorIdentidad } from '../utils/erroresIdentidad.ts';
 import { LONGITUD_MAXIMA_CLAVE, MENSAJE_CONFIRMACION_DISTINTA, validarPoliticaClave } from '../utils/politicaClave.ts';
 import './registro-publico.css';
+import { TEXTO_TERMINOS_WALLET, TEXTO_DATOS_WALLET } from '../components/profile/preparacionWallet.ts';
 
 export function RegistroPublicoPage() {
   const configuracion = useConfiguracionRegistroPublico();
@@ -112,7 +113,9 @@ function FormularioRegistro({ documentos }: { documentos: ConfiguracionRegistroP
         <BrandMark variant="logo" theme="teal" className="registro-publico__marca" />
         <h1 id="registro-titulo">Crear cuenta</h1>
         <p className="registro-publico__nota">
-          {ambienteXpay() === 'QA'
+          {documentos.terminos.version === '1.3' && documentos.politicaDatos.version === '1.3'
+            ? 'Confirma tu correo, verifica tu identidad y completa tus datos y tu PIN para activar tu Wallet.'
+            : ambienteXpay() === 'QA'
             ? 'Ambiente de pruebas. Usa datos de prueba y un correo autorizado de pruebas.'
             : 'Confirma tu correo para activar tu cuenta y entrar a tu perfil. La Wallet y las operaciones financieras requieren verificaciones adicionales y una habilitación posterior.'}
         </p>
@@ -155,18 +158,20 @@ function FormularioRegistro({ documentos }: { documentos: ConfiguracionRegistroP
               <label>
                 <input name="aceptaTerminos" type="checkbox" required />
                 <span>
-                  Declaro que tengo dieciocho (18) años cumplidos, que la información suministrada es veraz y que he leído
-                  y acepto los Términos y Condiciones de XPAY, versión {documentos.terminos.version}.
+                  {documentos.terminos.version === '1.3' ? TEXTO_TERMINOS_WALLET : <>
+                    Declaro que tengo dieciocho (18) años cumplidos, que la información suministrada es veraz y que he leído
+                    y acepto los Términos y Condiciones de XPAY, versión {documentos.terminos.version}.
+                  </>}
                 </span>
               </label>
               <label>
                 <input name="autorizaTratamientoDatos" type="checkbox" required />
                 <span>
-                  He leído la Política de Tratamiento de Datos Personales, versión {documentos.politicaDatos.version} publicada,
+                  {documentos.politicaDatos.version === '1.3' ? TEXTO_DATOS_WALLET : <>He leído la Política de Tratamiento de Datos Personales, versión {documentos.politicaDatos.version} publicada,
                   y autorizo de manera previa, expresa e informada a X PAY S.A.S. para tratar mis datos de identificación,
                   contacto, cuenta y seguridad con el fin de crear y administrar mi acceso, validar mi mayoría de edad,
                   verificar mi correo, prevenir fraude, atender solicitudes y gestionar el proceso de verificación de identidad,
-                  en los términos descritos en dicha política.
+                  en los términos descritos en dicha política.</>}
                 </span>
               </label>
               <p>

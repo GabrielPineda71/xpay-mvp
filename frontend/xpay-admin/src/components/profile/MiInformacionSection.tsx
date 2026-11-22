@@ -58,7 +58,7 @@ function formDesdePerfil(p: MiPerfil): FormEditable {
 // Identidad legal (nombre/apellido/documento/fecha de nacimiento/país) es
 // SIEMPRE de solo lectura aquí — no existe ningún camino en este componente
 // para enviarla al backend (el estado de edición ni siquiera la incluye).
-export function MiInformacionSection({ whatsAppPendiente = false }: { whatsAppPendiente?: boolean }) {
+export function MiInformacionSection({ whatsAppPendiente = false, onActualizado }: { whatsAppPendiente?: boolean; onActualizado?: () => void }) {
   const { perfil, loading, loadError, guardando, mensaje, setMensaje, cargar, actualizar } = useMiPerfil();
   const [editando, setEditando] = useState(false);
   const [form, setForm] = useState<FormEditable | null>(null);
@@ -106,6 +106,7 @@ export function MiInformacionSection({ whatsAppPendiente = false }: { whatsAppPe
     if (ok) {
       setEditando(false);
       setForm(null);
+      onActualizado?.();
     }
     // En error: se mantiene `editando=true` y `form` intacto (XPAY-401 PASO 7).
   }
@@ -156,16 +157,14 @@ export function MiInformacionSection({ whatsAppPendiente = false }: { whatsAppPe
             <dt>Celular</dt>
             <dd>
               {perfil.celular}{' '}
-              <span className="profile-verificado-badge">{perfil.celularVerificado ? 'Verificado' : 'No verificado'}</span>
-              {!perfil.celularVerificado && (whatsAppPendiente
-                ? <span>Verificación de WhatsApp pendiente para una próxima etapa.</span>
-                : <VerificarContacto canal="celular" onVerificado={() => void cargar()} />)}
+              {(perfil.celularVerificado || !whatsAppPendiente) && <span className="profile-verificado-badge">{perfil.celularVerificado ? 'Verificado' : 'No verificado'}</span>}
+              {!perfil.celularVerificado && !whatsAppPendiente && <VerificarContacto canal="celular" onVerificado={() => void cargar()} />}
             </dd>
             <dt>Email</dt>
             <dd>
               {perfil.email ?? '—'}{' '}
               <span className="profile-verificado-badge">{perfil.emailVerificado ? 'Verificado' : 'No verificado'}</span>
-              {!perfil.emailVerificado && perfil.email && <VerificarContacto canal="email" onVerificado={() => void cargar()} />}
+              {!perfil.emailVerificado && perfil.email && <VerificarContacto canal="email" onVerificado={() => { void cargar(); onActualizado?.(); }} />}
             </dd>
             <dt>Dirección</dt><dd>{perfil.direccion ?? '—'}</dd>
             <dt>Ciudad</dt><dd>{perfil.ciudad ?? '—'}</dd>

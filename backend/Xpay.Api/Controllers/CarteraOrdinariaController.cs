@@ -11,6 +11,7 @@ namespace Xpay.Api.Controllers;
 [ApiController]
 [Route("api/cartera-ordinaria")]
 [Authorize]
+[AltaWalletSinCredito]
 public class CarteraOrdinariaController(
     CarteraOrdinariaService svc,
     XpayDbContext db,

@@ -42,6 +42,10 @@ interface UsuarioDetalle {
   roles:               RolDetalle[];
   pinConfigurado:      boolean;
   pinBloqueado:        boolean;
+  nombreFuente?: 'DECLARADO' | 'VERIFF' | 'SIN_DATOS';
+  documentoFuente?: 'DECLARADO' | 'VERIFF' | 'SIN_DATOS';
+  identidadVerificada?: boolean;
+  documentoVerificado?: boolean;
 }
 
 interface ApiResp { success: boolean; data: UsuarioDetalle; }
@@ -226,8 +230,9 @@ export function AdminUsuarioDetallePage() {
             <dl>
               <dt>ID usuario</dt><dd className="mono">{data.idUsuario}</dd>
               <dt>Usuario</dt><dd>{data.usuario}</dd>
-              <dt>Nombre completo</dt><dd>{data.nombreCompleto}</dd>
-              <dt>Documento</dt><dd className="mono">{data.tipoDocumento} {data.numeroDocumento}</dd>
+              <dt>Nombre completo</dt><dd>{data.nombreCompleto || '—'}{data.nombreFuente === 'VERIFF' && <small style={{ display: 'block' }}>Nombre de Veriff</small>}</dd>
+              <dt>Documento</dt><dd className="mono">{data.tipoDocumento} {data.numeroDocumento || '—'}{data.documentoFuente === 'VERIFF' && <small style={{ display: 'block' }}>{data.documentoVerificado ? 'Verificado con Veriff' : 'Dato de Veriff'}</small>}</dd>
+              {typeof data.identidadVerificada === 'boolean' && <><dt>Identidad verificada</dt><dd>{boolTexto(data.identidadVerificada)}</dd></>}
               <dt>Email</dt><dd>{data.email ?? '—'} {data.email && `(${data.emailVerificado ? 'verificado' : 'no verificado'})`}</dd>
               <dt>Celular</dt><dd>{data.celular} ({data.celularVerificado ? 'verificado' : 'no verificado'})</dd>
               <dt>Dirección</dt><dd>{data.direccion ?? '—'}</dd>

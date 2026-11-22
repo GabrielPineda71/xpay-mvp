@@ -500,7 +500,7 @@ public class KycService
     // el futuro orquestador decida si reintentar. Nunca transporta raw JSON,
     // API key, HMAC, shared secret ni sessionId — Decision (cuando existe)
     // ya pasó por ParseVeriffDecision, el mismo parser puro del webhook.
-    private sealed record VeriffDecisionFetchResult(
+    internal sealed record VeriffDecisionFetchResult(
         bool                   Exito,
         bool                   SinDecision,
         bool                   ErrorTransitorio,
@@ -510,8 +510,8 @@ public class KycService
     );
 
     // ── Commit 5 — cliente HTTP puro de GET /v1/sessions/{id}/decision.
-    // Completamente desconectado del flujo funcional en este sub-paso: no
-    // invocado desde ningún otro método todavía. No toca _db, no abre
+    // Compartido por reconciliación y sincronización manual explícita.
+    // No toca _db, no abre
     // transacción, no adquiere ningún AppLock, no decide elegibilidad, no
     // carga ninguna fila KYC — recibe un sessionId y consulta Veriff, nada
     // más. La interpretación de negocio del resultado (MapVeriffDecision,
@@ -524,7 +524,7 @@ public class KycService
     // hace `parsed.Decision ?? rootStatus`: root.status ni siquiera se
     // expone en VeriffDecisionFetchResult, solo se usa para validar que la
     // llamada fue exitosa.
-    private async Task<VeriffDecisionFetchResult> FetchVeriffDecisionAsync(string sessionId, CancellationToken ct)
+    internal async Task<VeriffDecisionFetchResult> FetchVeriffDecisionAsync(string sessionId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
             return new VeriffDecisionFetchResult(false, false, false, null, null, "sessionId vacío.");
@@ -1103,11 +1103,19 @@ public class KycService
                         .Select(p => p.IdUnidadNegocio)
                         .FirstOrDefaultAsync(ct);
 
-                    var documentoNormalizado = parsed.DocumentNumber!.Trim().ToUpperInvariant();
+                    var comparableDocumento = TipoDocumentoVeriffMapper.NumeroComparable(parsed.DocumentNumber);
+                    var documentoNormalizado = comparableDocumento ?? parsed.DocumentNumber!.Trim().ToUpperInvariant();
                     var claveLockDocumento = $"XPAY:IDENTIDAD_DOCUMENTO:{idUnidadNegocioPersona}:{documentoNormalizado}";
 
                     var resultadoLockDocumento = await AppLockHelper.AdquirirAsync(_db, claveLockDocumento, ct);
                     ValidarResultadoLockIdentidad(resultadoLockDocumento);
+                    // La misma identidad canónica se serializa también entre unidades.
+                    // Un raw no comparable conserva la clasificación histórica y
+                    // usa una huella opaca, nunca una limpieza genérica permisiva.
+                    var recursoGlobal = comparableDocumento ?? "RAW:" + Convert.ToHexString(
+                        SHA256.HashData(Encoding.UTF8.GetBytes(documentoNormalizado)));
+                    ValidarResultadoLockIdentidad(await AppLockHelper.AdquirirAsync(_db,
+                        $"XPAY:IDENTIDAD_DOCUMENTO_GLOBAL:{recursoGlobal}", ct));
 
                     // Recarga rastreada de Persona DESPUÉS de adquirir el lock —
                     // ninguna lectura previa de su estado de identidad es de fiar.
@@ -1125,7 +1133,8 @@ public class KycService
                     {
                         // Casos 4, 5, 6 — esta Persona ya estaba verificada. Nunca se
                         // sobrescribe: solo se clasifica para observabilidad.
-                        var documentoExistenteNormalizado = persona.NumeroDocumentoVerificado?.Trim().ToUpperInvariant();
+                        var documentoExistenteNormalizado = TipoDocumentoVeriffMapper.NumeroComparable(persona.NumeroDocumentoVerificado)
+                            ?? persona.NumeroDocumentoVerificado?.Trim().ToUpperInvariant();
                         var mismoDocumento = documentoExistenteNormalizado == documentoNormalizado;
 
                         var mismoNombre   = string.Equals(persona.NombreVerificadoCompleto,   parsed.FirstName,    StringComparison.Ordinal);
@@ -1191,12 +1200,12 @@ public class KycService
                     {
                         // Persona aún no verificada — verificar conflicto de documento
                         // con otra Persona antes de escribir (bajo el lock exclusivo).
-                        var conflicto = await _db.Personas.AnyAsync(p =>
-                            p.IdPersona != persona.IdPersona &&
-                            p.IdUnidadNegocio == persona.IdUnidadNegocio &&
-                            p.NumeroDocumentoVerificado != null &&
-                            p.NumeroDocumentoVerificado.Trim().ToUpper() == documentoNormalizado &&
-                            p.IdentidadVerificada, ct);
+                        var conflicto = comparableDocumento is not null
+                            ? await ExisteDocumentoComparableAsync(_db, persona.IdPersona, comparableDocumento, ct, soloVerificados: true)
+                            : await _db.Personas.AnyAsync(p => p.IdPersona != persona.IdPersona
+                                && p.IdUnidadNegocio == persona.IdUnidadNegocio && p.IdentidadVerificada
+                                && p.NumeroDocumentoVerificado != null
+                                && p.NumeroDocumentoVerificado.Trim().ToUpper() == documentoNormalizado, ct);
 
                         if (conflicto)
                         {
@@ -1211,7 +1220,7 @@ public class KycService
                                 Entidad     = "kyc_verificaciones",
                                 IdEntidad   = kyc.IdKycVerificacion.ToString(),
                                 Resultado   = "EXITOSO",
-                                Observacion = "Identidad no consolidada: el número de documento verificado ya está asociado a otra Persona activa en la misma unidad de negocio.",
+                                Observacion = "Identidad no consolidada: el número de documento verificado ya está asociado a otra Persona verificada.",
                                 FechaEvento = DateTime.UtcNow,
                             });
 
@@ -1482,7 +1491,7 @@ public class KycService
         {
             var coincide = !tipoVacio && !numeroVacio
                 && string.Equals(persona.TipoDocumento!.Trim(), mapeo.TipoDocumento, StringComparison.OrdinalIgnoreCase)
-                && LibranzaAnticipoService.NormalizarDocumento(persona.NumeroDocumento) == mapeo.NumeroDocumento;
+                && TipoDocumentoVeriffMapper.NumeroComparable(persona.NumeroDocumento) == mapeo.NumeroDocumento;
 
             if (!coincide)
                 AuditarDocumentoLegal(persona, idUsuario, idKycVerificacion, "KYC_DOCUMENTO_DECLARADO_DIFIERE", null,
@@ -1490,16 +1499,12 @@ public class KycService
             return null;
         }
 
-        var duplicado = await _db.Personas.AnyAsync(p =>
-            p.IdPersona != persona.IdPersona &&
-            p.IdUnidadNegocio == persona.IdUnidadNegocio &&
-            p.TipoDocumento == mapeo.TipoDocumento &&
-            p.NumeroDocumento == mapeo.NumeroDocumento, ct);
+        var duplicado = await ExisteDocumentoComparableAsync(_db, persona.IdPersona, mapeo.NumeroDocumento!, ct);
 
         if (duplicado)
         {
             AuditarDocumentoLegal(persona, idUsuario, idKycVerificacion, "KYC_DOCUMENTO_LEGAL_DUPLICADO", null,
-                "Documento legal no establecido: ya está asociado a otra Persona de la misma unidad de negocio.");
+                "Documento legal no establecido: ya está asociado a otra Persona.");
             return null;
         }
 
@@ -1508,6 +1513,19 @@ public class KycService
 
         return AuditarDocumentoLegal(persona, idUsuario, idKycVerificacion, "KYC_DOCUMENTO_LEGAL_ESTABLECIDO",
             $"TIPO:{mapeo.TipoDocumento}", "Documento legal establecido desde la identidad verificada por Veriff.");
+    }
+
+    // Prefiltro SQL acotado al número buscado; la comparación final vuelve a
+    // validar la forma completa. Replace no convierte un raw inválido en identidad.
+    internal static async Task<bool> ExisteDocumentoComparableAsync(
+        XpayDbContext db, long idPersona, string comparable, CancellationToken ct, bool soloVerificados = false)
+    {
+        var candidatos = await db.Personas.AsNoTracking().Where(p => p.IdPersona != idPersona && (!soloVerificados || p.IdentidadVerificada) &&
+            ((!soloVerificados && p.NumeroDocumento != null && p.NumeroDocumento.Trim().ToUpper().Replace(".", "") == comparable)
+             || (p.NumeroDocumentoVerificado != null && p.NumeroDocumentoVerificado.Trim().ToUpper().Replace(".", "") == comparable)))
+            .Select(p => new { p.NumeroDocumento, p.NumeroDocumentoVerificado }).ToListAsync(ct);
+        return candidatos.Any(p => (!soloVerificados && TipoDocumentoVeriffMapper.NumeroComparable(p.NumeroDocumento) == comparable)
+            || TipoDocumentoVeriffMapper.NumeroComparable(p.NumeroDocumentoVerificado) == comparable);
     }
 
     private Auditoria AuditarDocumentoLegal(

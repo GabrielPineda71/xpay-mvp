@@ -1975,7 +1975,7 @@ export function UserWalletPage() {
                   extracción, sin ningún formulario que los invocara) fueron
                   eliminados de este archivo en XPAY-392A. */}
               <p className="breb-retiro-note">
-                Gestiona el registro o la actualización de tu llave Bre-B desde{' '}
+                {!brebLlave ? 'Primero registra tu llave Bre-B personal para retirar a tu banco. ' : 'Gestiona el registro o la actualización de tu llave Bre-B desde '}
                 <button
                   type="button"
                   className="wallet-send-link-btn"
@@ -2068,13 +2068,13 @@ export function UserWalletPage() {
             // a cualquier tipo de llave: el backend resuelve ID, PHONE,
             // EMAIL, ALPHA y BCODE (PassportKeyType); antes solo BCODE.
             <div className="breb-no-key-card">
-              <p className="breb-retiro-note">Primero configura tu llave Bre-B.</p>
+              <p className="breb-retiro-note">Primero registra tu llave Bre-B personal para retirar a tu banco.</p>
               <button
                 type="button"
                 className="btn-breb"
                 onClick={() => navigate('/mi-wallet/perfil')}
               >
-                Configurar mi llave Bre-B
+                Registrar mi llave en Perfil
               </button>
             </div>
           ) : (

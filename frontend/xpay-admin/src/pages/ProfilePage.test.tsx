@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { ProfilePage } from './ProfilePage.tsx';
 import type { AuthUser } from '../auth/AuthContext.tsx';
+import { ApiError } from '../api/client.ts';
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -61,6 +62,7 @@ beforeEach(() => {
   mockPost.mockReset();
   mockPatch.mockReset();
   mockGet.mockImplementation((path: string) => {
+    if (path === '/api/usuarios/preparacion-wallet') return Promise.reject(new ApiError('No disponible', 404));
     if (path === '/api/kyc/mi-estado') return Promise.resolve({ success: true, data: { estadoKyc: 'APROBADO' } });
     if (path === '/api/usuarios/alta-publica/consentimiento-kyc') return Promise.resolve({ success: true, data: { documento: null, textoCasilla: '', aceptado: false, habilitado: false } });
     if (path === '/api/breb/mi-llave') return Promise.resolve({ success: true, data: null });

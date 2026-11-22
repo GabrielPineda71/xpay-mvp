@@ -31,6 +31,11 @@ public sealed class CuentaLimitadaFilterTests
             "ContactosController.Verificar", "ContactosController.Preferencias",
             "KycController.MiEstado", "KycController.VeriffSession",
             "ConsentimientoBiometricoController.Estado", "ConsentimientoBiometricoController.Autorizar",
+            "CatalogosController.Paises", "CatalogosController.Departamentos", "CatalogosController.Ciudades",
+            "PreparacionWalletController.Estado", "PreparacionWalletController.Datos",
+            "PreparacionWalletController.Activar",
+            "PreparacionWalletController.ActualizarIdentidad",
+            "PinController.Estado", "PinController.Crear", "PinController.Cambiar",
         };
         var acciones = typeof(UsuariosController).Assembly.GetTypes()
             .Where(t => typeof(ControllerBase).IsAssignableFrom(t))

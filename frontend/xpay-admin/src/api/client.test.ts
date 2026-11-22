@@ -23,6 +23,22 @@ afterEach(() => {
 });
 
 describe('ApiError (XPAY-402 requisito A)', () => {
+  it('403 CUENTA_LIMITADA restringe navegación sin repetir ni conservar la operación', async () => {
+    const listener = vi.fn(); window.addEventListener('xpay:cuenta-limitada', listener);
+    try {
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(403, { codigo: 'CUENTA_LIMITADA', message: 'Completa tu registro.' }));
+      await expect(post('/api/wallets/transferencia', { pin: '025801' })).rejects.toMatchObject({ status: 403, codigo: 'CUENTA_LIMITADA' });
+      expect(listener).toHaveBeenCalledOnce(); expect((listener.mock.calls[0][0] as Event)).not.toHaveProperty('detail');
+      expect(global.fetch).toHaveBeenCalledOnce(); expect(localStorage.length).toBe(0);
+    } finally { window.removeEventListener('xpay:cuenta-limitada', listener); }
+  });
+  it('otros errores 403 no cambian el recorrido de la cuenta', async () => {
+    const listener = vi.fn(); window.addEventListener('xpay:cuenta-limitada', listener);
+    try {
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(jsonResponse(403, { codigo: 'OTRO_CONTROL', message: 'No autorizado.' }));
+      await expect(get('/api/restringido')).rejects.toMatchObject({ status: 403 }); expect(listener).not.toHaveBeenCalled();
+    } finally { window.removeEventListener('xpay:cuenta-limitada', listener); }
+  });
   it('428 de migración solicita actualizar el PIN sin reenviar la operación ni conservar datos sensibles', async () => {
     const listener = vi.fn();
     window.addEventListener('xpay:pin-actualizacion-requerida', listener);

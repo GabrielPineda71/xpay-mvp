@@ -31,28 +31,43 @@ public sealed class ConsentimientoBiometricoService(
     internal static readonly string ShaTextoCasilla = Convert.ToHexString(
         SHA256.HashData(Encoding.UTF8.GetBytes(TextoCasilla))).ToLowerInvariant();
 
-    // Si cambia el documento aprobado hay que versionar también el texto de la
-    // casilla. Una configuración arbitraria no convierte otro PDF en aprobado.
+    // Las versiones de bundle 1.2 y 1.3 conservan exactamente esta casilla
+    // y su finalidad biométrica. La configuración activa elige el PDF que
+    // se ofrece a una nueva aceptación; no reetiqueta evidencia histórica.
     internal DocumentoRegistroPublico? ObtenerDocumento()
     {
-        if (config[PrefijoDocumento + "_VERSION"] != VersionDocumentoAprobado
-            || config[PrefijoDocumento + "_FECHA"] != FechaDocumentoAprobado
-            || !string.Equals(config[PrefijoDocumento + "_SHA256"], ShaDocumentoAprobado, StringComparison.OrdinalIgnoreCase)
-            || !Uri.TryCreate(config[PlantillasEmailIdentidad.ClaveUrlFrontend], UriKind.Absolute, out var frontend)
+        if (!Uri.TryCreate(config[PlantillasEmailIdentidad.ClaveUrlFrontend], UriKind.Absolute, out var frontend)
             || frontend.Scheme != Uri.UriSchemeHttps || !frontend.IsDefaultPort
             || frontend.UserInfo.Length != 0 || frontend.Query.Length != 0 || frontend.Fragment.Length != 0
             || frontend.AbsolutePath != "/"
-            || (ambiente.EsProductivo && frontend.Host != "app.xpaycol.com")
-            || !Uri.TryCreate(config[PrefijoDocumento + "_URL"], UriKind.Absolute, out var documento)
-            || documento.Scheme != Uri.UriSchemeHttps || !documento.IsDefaultPort
-            || !documento.IsWellFormedOriginalString() || documento.Host != frontend.Host
-            || documento.UserInfo.Length != 0 || documento.Query.Length != 0 || documento.Fragment.Length != 0
-            || documento.AbsolutePath != "/legal/v1.2/autorizaciones.pdf")
-            return null;
+            || (ambiente.EsProductivo && frontend.Host != "app.xpaycol.com")) return null;
+        var documento = DocumentoFirme(config[PrefijoDocumento + "_VERSION"], frontend.GetLeftPart(UriPartial.Authority));
+        if (documento is null
+            || config[PrefijoDocumento + "_FECHA"] != documento.DatosPublicos.Fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            || !string.Equals(config[PrefijoDocumento + "_SHA256"], documento.Sha256, StringComparison.OrdinalIgnoreCase)
+            || config[PrefijoDocumento + "_URL"] != documento.DatosPublicos.Url) return null;
+        return documento;
+    }
 
-        return new(new(VersionDocumentoAprobado,
-            DateOnly.ParseExact(FechaDocumentoAprobado, "yyyy-MM-dd", CultureInfo.InvariantCulture), documento.AbsoluteUri),
-            ShaDocumentoAprobado);
+    private static DocumentoRegistroPublico? DocumentoFirme(string? version, string origen)
+    {
+        (string Fecha, string Sha)? datos = version switch
+        {
+            VersionDocumentoAprobado => (FechaDocumentoAprobado, ShaDocumentoAprobado),
+            PreparacionWalletConfiguracion.Version => (PreparacionWalletConfiguracion.Fecha, PreparacionWalletConfiguracion.AutorizacionSha256),
+            _ => null,
+        };
+        if (datos is not { } d || d.Sha is not { Length: 64 } || !d.Sha.All(Uri.IsHexDigit)
+            || !DateOnly.TryParseExact(d.Fecha, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var fecha)) return null;
+        return new(new(version!, fecha, origen + $"/legal/v{version}/autorizaciones.pdf"), d.Sha.ToLowerInvariant());
+    }
+
+    private static bool DocumentoEsFirme(DocumentoRegistroPublico documento)
+    {
+        if (!Uri.TryCreate(documento.DatosPublicos.Url, UriKind.Absolute, out var url)
+            || url.Scheme != Uri.UriSchemeHttps || !url.IsDefaultPort || url.UserInfo.Length != 0
+            || url.Query.Length != 0 || url.Fragment.Length != 0) return false;
+        return documento == DocumentoFirme(documento.DatosPublicos.Version, url.GetLeftPart(UriPartial.Authority));
     }
 
     public bool Habilitado => config[ClaveHabilitada] == "true"
@@ -96,7 +111,7 @@ public sealed class ConsentimientoBiometricoService(
                 {
                     tipoConsentimiento = TipoConsentimiento, tipoDocumento = TipoDocumento,
                     autorizaBiometria = true, version = documento.DatosPublicos.Version,
-                    sha256 = documento.Sha256, fechaDocumento = FechaDocumentoAprobado,
+                    sha256 = documento.Sha256, fechaDocumento = documento.DatosPublicos.Fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                     urlDocumento = documento.DatosPublicos.Url, textoCasillaSha256 = ShaTextoCasilla,
                     fechaAceptacionUtc = ahora.ToString("O", CultureInfo.InvariantCulture), canal = Canal,
                 }),
@@ -133,12 +148,25 @@ public sealed class ConsentimientoBiometricoService(
                 && a.Accion == AccionAutorizar && a.Entidad == "usuarios" && a.IdEntidad == entidad)
             .OrderByDescending(a => a.IdAuditoria)
             .Select(a => new { a.Resultado, a.ValorNuevo }).FirstOrDefaultAsync(ct);
-        return evidencia is not null && EvidenciaVigente(evidencia.Resultado, evidencia.ValorNuevo, documento);
+        return evidencia is not null && EvidenciaCompatible(evidencia.Resultado, evidencia.ValorNuevo, documento);
+    }
+
+    // Solo se prueba la ÚLTIMA fila seleccionada arriba. La compatibilidad
+    // pertenece al propósito/texto fijo de C, no a A/B ni a cualquier versión
+    // enviada por el cliente. Una última revocación o evidencia inválida no
+    // permite rescatar una aceptación anterior de ninguno de los dos bundles.
+    internal static bool EvidenciaCompatible(string resultado, string? valor, DocumentoRegistroPublico documentoActivo)
+    {
+        if (!DocumentoEsFirme(documentoActivo)) return false;
+        var origen = new Uri(documentoActivo.DatosPublicos.Url).GetLeftPart(UriPartial.Authority);
+        return new[] { VersionDocumentoAprobado, PreparacionWalletConfiguracion.Version }
+            .Select(version => DocumentoFirme(version, origen))
+            .Any(documento => documento is not null && EvidenciaVigente(resultado, valor, documento));
     }
 
     internal static bool EvidenciaVigente(string resultado, string? valor, DocumentoRegistroPublico documento)
     {
-        if (resultado != "EXITOSO" || string.IsNullOrWhiteSpace(valor)) return false;
+        if (resultado != "EXITOSO" || string.IsNullOrWhiteSpace(valor) || !DocumentoEsFirme(documento)) return false;
         try
         {
             using var evidencia = JsonDocument.Parse(valor);
@@ -147,7 +175,7 @@ public sealed class ConsentimientoBiometricoService(
                 && e.TryGetProperty("autorizaBiometria", out var autorizado) && autorizado.ValueKind == JsonValueKind.True
                 && Texto(e, "tipoConsentimiento", TipoConsentimiento) && Texto(e, "tipoDocumento", TipoDocumento)
                 && Texto(e, "version", documento.DatosPublicos.Version) && Texto(e, "sha256", documento.Sha256)
-                && Texto(e, "fechaDocumento", FechaDocumentoAprobado) && Texto(e, "urlDocumento", documento.DatosPublicos.Url)
+                && Texto(e, "fechaDocumento", documento.DatosPublicos.Fecha.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)) && Texto(e, "urlDocumento", documento.DatosPublicos.Url)
                 && Texto(e, "textoCasillaSha256", ShaTextoCasilla) && Texto(e, "canal", Canal);
         }
         catch (JsonException) { return false; }

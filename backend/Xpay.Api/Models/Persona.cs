@@ -15,6 +15,9 @@ public class Persona
     public string? Direccion { get; set; }
     public string? Ciudad { get; set; }
     public string? Departamento { get; set; }
+    // Domicilio elegido del catálogo: el departamento se deriva de la ciudad.
+    // NULL conserva los domicilios históricos sin atribuirles una validación DANE.
+    public long? IdCiudadDane { get; set; }
     public string Pais { get; set; } = "Colombia";
     public string Estado { get; set; } = "ACTIVA";
     public DateTime FechaCreacion { get; set; }

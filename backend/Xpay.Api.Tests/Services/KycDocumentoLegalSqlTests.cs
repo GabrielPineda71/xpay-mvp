@@ -51,6 +51,59 @@ public sealed class KycDocumentoLegalSqlTests
     }
 
     [Fact]
+    public async Task CC_con_puntos_de_miles_conserva_raw_y_establece_numero_legal_canonico()
+    {
+        if (!TryConnString(out var cs)) return;
+        var (pe, us) = (new List<long>(), new List<long>());
+        try
+        {
+            var numero = NumeroAleatorio();
+            var raw = $"{numero[..1]}.{numero.Substring(1, 3)}.{numero.Substring(4, 3)}.{numero.Substring(7, 3)}";
+            var titular = await SembrarAsync(cs, pe, us);
+            Assert.True(await WebhookAsync(cs, titular.SessionId, raw));
+            await using var ver = NuevoContexto(cs);
+            var persona = await ver.Personas.SingleAsync(p => p.IdPersona == titular.IdPersona);
+            Assert.Equal(raw, persona.NumeroDocumentoVerificado);
+            Assert.Equal(numero, persona.NumeroDocumento);
+            Assert.Equal("CC", persona.TipoDocumento);
+            Assert.True(persona.IdentidadVerificada);
+            await AssertSinPiiEnAuditoriaAsync(ver, titular.IdPersona, raw, numero);
+        }
+        finally { await LimpiarAsync(cs, pe, us); }
+    }
+
+    [Fact]
+    public async Task Concurrencia_formatos_equivalentes_en_unidades_distintas_consolida_una_sola_identidad()
+    {
+        if (!TryConnString(out var cs)) return;
+        var (pe, us) = (new List<long>(), new List<long>());
+        var codigoUnidad = "KYCFMT_" + Guid.NewGuid().ToString("N")[..12];
+        try
+        {
+            await using var preparar = NuevoContexto(cs);
+            await preparar.Database.ExecuteSqlAsync($"INSERT INTO unidades_negocio(codigo,nombre) VALUES({codigoUnidad},'Prueba sintetica KYC')");
+            var unidad = await preparar.Database.SqlQueryRaw<long>("SELECT id_unidad_negocio AS Value FROM unidades_negocio WHERE codigo={0}", codigoUnidad).SingleAsync();
+            var numero = NumeroAleatorio();
+            var raw = $"{numero[..1]}.{numero.Substring(1, 3)}.{numero.Substring(4, 3)}.{numero.Substring(7, 3)}";
+            var a = await SembrarAsync(cs, pe, us);
+            var b = await SembrarAsync(cs, pe, us, idUnidadOverride: unidad);
+            await Task.WhenAll(WebhookAsync(cs, a.SessionId, raw), WebhookAsync(cs, b.SessionId, numero));
+            await using var ver = NuevoContexto(cs);
+            var filas = await ver.Personas.Where(p => pe.Contains(p.IdPersona)).ToListAsync();
+            Assert.Single(filas, p => p.IdentidadVerificada);
+            Assert.Single(filas, p => p.NumeroDocumento == numero);
+            Assert.Single(await ver.Auditorias.Where(a => a.IdPersona != null && pe.Contains(a.IdPersona.Value)
+                && a.Accion == "KYC_IDENTIDAD_DOCUMENTO_DUPLICADO").ToListAsync());
+        }
+        finally
+        {
+            await LimpiarAsync(cs, pe, us);
+            await using var limpiar = NuevoContexto(cs);
+            await limpiar.Database.ExecuteSqlAsync($"DELETE FROM unidades_negocio WHERE codigo={codigoUnidad}");
+        }
+    }
+
+    [Fact]
     public async Task PrimerApellido_existente_no_se_sobrescribe()
     {
         if (!TryConnString(out var cs)) return;
@@ -349,12 +402,12 @@ public sealed class KycDocumentoLegalSqlTests
     // Persona + usuario + sesión Veriff PENDIENTE, todo SINTÉTICO.
     private static async Task<Semilla> SembrarAsync(
         string cs, List<long> personas, List<long> usuarios,
-        string? tipo = null, string? numero = null, string? primerApellido = null)
+        string? tipo = null, string? numero = null, string? primerApellido = null, long? idUnidadOverride = null)
     {
         await using var ctx = NuevoContexto(cs);
         var ahora = DateTime.UtcNow;
         var sufijo = Guid.NewGuid().ToString("N")[..12];
-        var idUnidad = await ctx.Database.SqlQueryRaw<long>(
+        var idUnidad = idUnidadOverride ?? await ctx.Database.SqlQueryRaw<long>(
             "SELECT id_unidad_negocio AS Value FROM unidades_negocio WHERE codigo = {0}", "XPAY_COL").SingleAsync();
 
         var persona = new Persona
