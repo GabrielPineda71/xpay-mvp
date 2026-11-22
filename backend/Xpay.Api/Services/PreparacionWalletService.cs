@@ -206,6 +206,10 @@ public sealed class PreparacionWalletService(
         var p = await db.Personas.AsNoTracking().SingleAsync(p => p.IdPersona == u.IdPersona, ct);
         if (u.Estado != "ACTIVO" || p.Estado != "ACTIVA" || u.RequiereCambioClave)
             throw new UnauthorizedAccessException("La cuenta debe estar activa y con su contraseña vigente.");
+        if (!await db.Database.SqlQueryRaw<long>(
+            "SELECT id_unidad_negocio AS Value FROM dbo.unidades_negocio WHERE id_unidad_negocio={0} AND codigo='XPAY_COL' AND estado='ACTIVA'",
+            p.IdUnidadNegocio).AnyAsync(ct))
+            throw new UnauthorizedAccessException("La unidad de la cuenta no está disponible.");
         var roles = await (from ur in db.UsuarioRoles join r in db.Roles on ur.IdRol equals r.IdRol
             where ur.IdUsuario == idUsuario && ur.Estado == "ACTIVO" && r.Estado == "ACTIVO" select r.Codigo).ToListAsync(ct);
         if (roles.Count != 1 || roles[0] != "USUARIO_FINAL") throw new UnauthorizedAccessException("Se requiere una cuenta personal de usuario final.");

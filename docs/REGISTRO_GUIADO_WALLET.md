@@ -41,9 +41,10 @@ GET de preparación no hace esa consulta ni escribe datos.
 
 ## Instalación y cierre
 
-1. Aprobar el anexo concreto; la propuesta no aprobada no es un documento de
-   producción. Preparar PDF final, ruta y huella exactos; fijar esa misma huella
-   en CondicionesWalletPiloto y la configuración. Mantener A/B/C1.2 intactos.
+1. Aprobar el anexo concreto incluido en la rama. Sus bytes y huella están
+   preparados para revisión; no publicarlos ni habilitarlos antes de la
+   aprobación de XPAY. La configuración debe usar esa misma huella y ruta.
+   Mantener A/B/C1.2 intactos.
 2. Ejecutar y verificar055 y056 antes del backend, incluso con el flujo cerrado:
    el mapeo Persona y el filtro de cuentas limitadas necesitan las columnas/tablas.
    Son migraciones aditivas sin backfill.054 pertenece a otra entrega separada.

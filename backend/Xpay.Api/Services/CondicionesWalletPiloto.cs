@@ -13,7 +13,7 @@ public sealed class CondicionesWalletPiloto(IConfiguration config, IAmbienteXpay
     public const string Fecha = "2026-11-21";
     public const string Ruta = "/legal/wallet/v1.0/condiciones.pdf";
     // Se fija al PDF revisado antes de preparar el artefacto de publicación.
-    public const string Sha256 = "c3cbbe4c1be895b552143707c5f9990ec362e62f1bc337bbb9b2d847fc2d0152";
+    public const string Sha256 = "4f4c7db02b84b30f9d9d1dcd86b76fc3fbc6dc0fba32f85aed954e086924030c";
 
     public CondicionesWalletResponse? Obtener()
     {
