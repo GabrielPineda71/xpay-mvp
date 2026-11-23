@@ -3,6 +3,8 @@ import { get, post, postForm } from '../api/client.ts';
 import { API_BASE_URL } from '../api/client.ts';
 import { SoloQa } from '../config/SoloQa.tsx';
 import { RecaudoLotesEmpresa } from '../components/RecaudoLotesEmpresa.tsx';
+import { useAuth } from '../auth/AuthContext.tsx';
+import { perfilEmpresaVisible } from '../auth/sessionDisplay.ts';
 
 interface ConvenioItem {
   idConvenio: number;
@@ -16,7 +18,6 @@ interface MiConvenio {
   idConvenio: number;
   nombreEmpresa: string;
   nit: string;
-  representanteLegal?: string;
   emailContacto?: string;
   telefonoContacto?: string;
   estado: string;
@@ -96,6 +97,7 @@ function estadoBadge(e: string) {
 }
 
 export function MiEmpresaLibranzaPage() {
+  const { user } = useAuth();
   const [convenios, setConvenios]         = useState<ConvenioItem[]>([]);
   const [selConvenio, setSelConvenio]     = useState<number | null>(null);
   const [convenio, setConvenio]           = useState<MiConvenio | null>(null);
@@ -260,7 +262,6 @@ export function MiEmpresaLibranzaPage() {
         {convenio.nombreEmpresa}
         {' · '}<span className="badge badge-info">NIT {convenio.nit}</span>
         {' · '}{estadoBadge(convenio.estado)}
-        {' · '}<span style={{ fontSize: '0.8rem', color: '#718096' }}>Rol: {convenio.rolEmpresa}</span>
       </p>
 
       <div className="info-section">
@@ -274,12 +275,13 @@ export function MiEmpresaLibranzaPage() {
           <div className="info-item"><span className="label">Anticipo día pago</span><span className="value">{convenio.permiteAnticipodiaPago ? 'Sí' : 'No'}</span></div>
           <div className="info-item"><span className="label">Empleados activos</span><span className="value">{convenio.empleadosActivos} / {convenio.totalEmpleados}</span></div>
           {convenio.emailContacto && <div className="info-item"><span className="label">Email contacto</span><span className="value">{convenio.emailContacto}</span></div>}
-          {convenio.representanteLegal && <div className="info-item"><span className="label">Representante</span><span className="value">{convenio.representanteLegal}</span></div>}
+          <div className="info-item"><span className="label">Usuario activo</span><span className="value">{user?.usuario ?? '—'}</span></div>
+          <div className="info-item"><span className="label">Perfil</span><span className="value">{perfilEmpresaVisible(convenio.rolEmpresa)}</span></div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.25rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1.25rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0' }}>
         {tabs.map(t => (
           <button key={t} onClick={() => setTab(t)}
             style={{

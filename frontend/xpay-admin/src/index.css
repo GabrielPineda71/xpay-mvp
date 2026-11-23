@@ -13,17 +13,17 @@ body {
 .nav {
   background: #1a1a2e;
   color: white;
-  padding: 0 1.5rem;
+  padding: 0.5rem 1.5rem;
   display: flex;
   align-items: center;
   gap: 1.5rem;
-  height: 54px;
+  min-height: 64px;
   position: sticky;
   top: 0;
   z-index: 100;
 }
 .nav-brand { font-weight: 700; font-size: 1.05rem; color: #63b3ed; white-space: nowrap; }
-.nav-links { display: flex; gap: 0.25rem; flex: 1; }
+.nav-links { display: flex; gap: 0.25rem; flex: 1; min-width: 0; overflow-x: auto; }
 .nav-links a {
   color: #cbd5e0;
   text-decoration: none;
@@ -31,10 +31,16 @@ body {
   border-radius: 4px;
   font-size: 0.9rem;
   transition: background 0.15s;
+  white-space: nowrap;
 }
 .nav-links a:hover { background: rgba(255,255,255,0.1); color: white; }
-.nav-user { display: flex; align-items: center; gap: 0.75rem; }
+.nav-user { display: flex; align-items: center; gap: 0.75rem; min-width: 0; max-width: 100%; flex: 0 1 24rem; }
 .nav-user span { color: #a0aec0; font-size: 0.85rem; }
+.nav-session { display: flex; flex-direction: column; min-width: 0; }
+.nav-user .nav-session-name { color: #f7fafc; font-weight: 600; overflow-wrap: anywhere; }
+.nav-user .nav-session-profile { font-size: 0.75rem; overflow-wrap: anywhere; }
+.nav-user .app-env { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.nav-user .logout-button { flex-shrink: 0; white-space: nowrap; }
 .nav-user button {
   background: transparent;
   border: 1px solid #4a5568;
@@ -63,16 +69,16 @@ body {
   .nav { flex-wrap: wrap; height: auto; padding: 0.5rem 0.75rem; gap: 0.4rem; }
   .nav-links { flex: 1 1 100%; order: 3; overflow-x: auto; -webkit-overflow-scrolling: touch; gap: 0.15rem; }
   .nav-links a { white-space: nowrap; }
+  .nav-user { flex: 1 1 14rem; margin-left: auto; justify-content: flex-end; }
   .main-content { padding: 1rem; }
 }
 
 /* ── XPAY-438 — Notificación operacional de venta QR (vista comercio) ──
    Campana + panel propios (NO WalletHero/.wallet-shell-v2 — esos sólo
    existen en la vista wallet, ver auditoría XPAY-437 §8). Ancla bajo la
-   barra .nav (54px de alto), mismo criterio de anclaje que el panel de
-   Wallet (.wallet-notifications-panel) pero con la paleta oscura de este
-   layout en vez de los tokens --xpay-*. */
-.commerce-notification-bell-wrap { position: relative; display: flex; align-items: center; }
+   barra .nav, cuyo alto se adapta a los datos de sesión, con la paleta
+   oscura de este layout en vez de los tokens --xpay-*. */
+.commerce-notification-bell-wrap { display: flex; align-items: center; }
 .commerce-notification-bell-btn {
   background: transparent;
   border: 1px solid #4a5568;
@@ -106,8 +112,8 @@ body {
   z-index: 99;
 }
 .commerce-notifications-panel {
-  position: fixed;
-  top: 60px;
+  position: absolute;
+  top: calc(100% + 6px);
   right: 1.5rem;
   z-index: 100;
   width: 320px;
@@ -377,8 +383,9 @@ body {
 }
 .info-section h3 { font-size: 0.9rem; color: #718096; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem; }
 .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
-.info-item .label { font-size: 0.78rem; color: #a0aec0; margin-bottom: 0.2rem; }
-.info-item .value { font-size: 0.95rem; font-weight: 600; color: #2d3748; }
+.info-item { min-width: 0; }
+.info-item .label { display: block; font-size: 0.78rem; color: #a0aec0; margin-bottom: 0.2rem; }
+.info-item .value { display: block; font-size: 0.95rem; font-weight: 600; color: #2d3748; overflow-wrap: anywhere; }
 
 .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
 .badge-ok { background: #c6f6d5; color: #276749; }
@@ -499,7 +506,7 @@ tr:hover td { background: #f7fafc; }
 .hint     { color: #a0aec0; text-align: center; padding: 3rem; font-size: 0.95rem; }
 
 /* ── DASHBOARD ── */
-.dashboard-subtitle { color: #718096; font-size: 0.95rem; margin-top: -0.75rem; margin-bottom: 1.5rem; }
+.dashboard-subtitle { color: #718096; font-size: 0.95rem; margin-top: -0.75rem; margin-bottom: 1.5rem; overflow-wrap: anywhere; }
 
 .quick-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.75rem; }
 .quick-card {
