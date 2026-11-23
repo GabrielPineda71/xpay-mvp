@@ -7,6 +7,8 @@ import { CommerceNotificationsProvider } from './comercio/CommerceNotificationsC
 import { CommerceNotificationBell } from './comercio/CommerceNotificationBell.tsx';
 import { WalletPrimerIngreso } from './wallet/WalletPrimerIngreso.tsx';
 import { BrandMark } from './BrandMark.tsx';
+import { perfilSesionVisible } from '../auth/sessionDisplay.ts';
+import { SoloQa } from '../config/SoloQa.tsx';
 import './profile/PreparacionWalletSection.css';
 
 function getApiLabel(): string {
@@ -194,8 +196,11 @@ export function Layout() {
               <CommerceNotificationBell />
             </CommerceNotificationsProvider>
           )}
-          {user && <span>{user.usuario}</span>}
-          {!accesoPerfil && <span className="app-env">API: {getApiLabel()}</span>}
+          {user && <div className="nav-session" role="group" aria-label="Usuario activo">
+            <span className="nav-session-name">{user.usuario}</span>
+            <span className="nav-session-profile">{perfilSesionVisible(user, comercioScope?.rolComercio)}</span>
+          </div>}
+          <SoloQa><span className="app-env">API: {getApiLabel()}</span></SoloQa>
           <button className="logout-button" onClick={handleLogout}>Cerrar sesión</button>
         </div>
       </nav>

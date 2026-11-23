@@ -6,6 +6,10 @@ import userEvent from '@testing-library/user-event';
 import { MiEmpresaLibranzaPage } from './MiEmpresaLibranzaPage.tsx';
 
 const mockGet = vi.fn();
+vi.mock('../auth/AuthContext.tsx', async () => {
+  const actual = await vi.importActual<typeof import('../auth/AuthContext.tsx')>('../auth/AuthContext.tsx');
+  return { ...actual, useAuth: () => ({ user: { usuario: 'operador.empresa.prueba' } }) };
+});
 vi.mock('../api/client.ts', async () => {
   const actual = await vi.importActual<typeof import('../api/client.ts')>('../api/client.ts');
   return { ...actual, get: (...a: unknown[]) => mockGet(...a), post: vi.fn(), postForm: vi.fn() };
@@ -14,6 +18,7 @@ vi.mock('../api/client.ts', async () => {
 const convenio = {
   idConvenio: 3, nombreEmpresa: 'Empresa Prueba', nit: '900000000', estado: 'ACTIVO', periodicidadPago: 'MENSUAL',
   diaPago1: 30, porcentajeMaximoCupo: 30, totalEmpleados: 1, empleadosActivos: 1, rolEmpresa: 'ADMIN_EMPRESA',
+  representanteLegal: 'Representante legal ajeno a la sesión',
 };
 const cobro = {
   idAnticipo: 77, idEmpleado: 1, nombresEmpleado: 'Ana Prueba', numeroDocumento: '1', tipoDocumento: 'CC',
@@ -44,6 +49,15 @@ async function verCobros() {
 describe('MiEmpresaLibranzaPage — D4', () => {
   beforeEach(() => { mockGet.mockReset(); rutas(); });
   afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('identifica al usuario de la sesión y su perfil sin mostrar al representante legal', async () => {
+    vi.stubEnv('VITE_XPAY_ENV', 'PROD');
+    render(<MiEmpresaLibranzaPage />);
+    expect(await screen.findByText('operador.empresa.prueba')).toBeInTheDocument();
+    expect(screen.getByText('Administrador de empresa')).toBeInTheDocument();
+    expect(screen.queryByText('Representante legal ajeno a la sesión')).not.toBeInTheDocument();
+    expect(screen.queryByText('Representante')).not.toBeInTheDocument();
+  });
 
   it('PROD: sin "Aplicar pago QA" y con la pestaña de recaudo real', async () => {
     vi.stubEnv('VITE_XPAY_ENV', 'PROD');
