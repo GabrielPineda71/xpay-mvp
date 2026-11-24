@@ -307,6 +307,11 @@ public class LibranzaAnticipoService
             if (empleado.Estado != "ACTIVO")
                 throw new InvalidOperationException("El empleado no está activo.");
 
+            // Se revalida dentro de la transacción y bajo el mismo UPDLOCK que
+            // autorizar/revocar; la lectura HTTP previa no autoriza el dinero.
+            asoc = await new LibranzaAutorizacionAnticipoService(_db).ExigirEnDesembolsoAsync(
+                idUsuario, empleado.IdEmpleado, asoc.IdEmpleadoUsuario);
+
             var convenio = await _db.LibranzaEmpresasConvenio.FindAsync(empleado.IdConvenio)
                 ?? throw new InvalidOperationException("Convenio no encontrado.");
             if (convenio.Estado != "ACTIVO")
@@ -366,7 +371,7 @@ public class LibranzaAnticipoService
                 .Where(u => u.IdUsuario == idUsuario)
                 .Select(u => (long?)u.IdPersona)
                 .FirstOrDefaultAsync();
-            var idWallet = asoc.IdWallet.Value;
+            var idWallet = asoc.IdWallet ?? throw new InvalidOperationException("El empleado no tiene wallet asociada para el desembolso.");
             var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == idWallet && w.Estado == "ACTIVA")
                 ?? throw new InvalidOperationException("La wallet del empleado no está activa.");
             if (idPersonaUsuario is null || wallet.IdPersona != idPersonaUsuario || wallet.TipoWallet != "PERSONA")

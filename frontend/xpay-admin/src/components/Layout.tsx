@@ -156,6 +156,7 @@ export function Layout() {
               <Link to="/admin/breb-retiros">Retiros Bre-B</Link>
               <Link to="/admin/libranza-convenios">Convenios Libranza</Link>
               {user?.roles.some(rol => rol === 'ADMIN_XPAY' || rol === 'SUPERUSUARIO') && <Link to="/admin/nomina-vinculaciones">Coincidencias de nómina</Link>}
+              {user?.roles.some(rol => rol === 'ADMIN_XPAY' || rol === 'SUPERUSUARIO') && <Link to="/admin/nomina-autorizaciones">Autorizaciones de anticipo</Link>}
               <Link to="/admin/comercios-aliados">Comercios Aliados</Link>
               <Link to="/admin/parametros-liquidacion-comercio">Parámetros Liquidación</Link>
               <Link to="/admin/cartera-ordinaria">Cartera Ordinaria</Link>

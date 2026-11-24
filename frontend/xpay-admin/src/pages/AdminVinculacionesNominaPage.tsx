@@ -146,6 +146,7 @@ export function AdminVinculacionesNominaPage() {
     <Link to="/admin/libranza-convenios">← Convenios de nómina</Link>
     <h2>Coincidencias de nómina</h2>
     <p>XPAY encuentra las cuentas cuyo documento verificado coincide con la base de empleados. Revisa la pertenencia laboral y aprueba una persona o varias.</p>
+    <p><Link to={`/admin/nomina-autorizaciones${idConvenio ? `?idConvenio=${idConvenio}` : ''}`}>Autorizar Anticipo de Nómina para cuentas vinculadas</Link></p>
     <div className="nomina-filtros">
       <label>Empresa<select aria-label="Empresa" value={idConvenio ?? ''} disabled={aprobando || !!revision} onChange={e => { setPagina(1); setResultado(null); setRevision(null); setParams(e.target.value ? { idConvenio: e.target.value } : {}); }}>
         <option value="">Todas las empresas</option>

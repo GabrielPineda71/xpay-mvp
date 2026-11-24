@@ -1,0 +1,15 @@
+.anticipo-autorizaciones .nomina-candidato-cabecera h3 { font-size: 1.08rem; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.anticipo-enlaces, .anticipo-acciones { display: flex; flex-wrap: wrap; gap: .7rem; }
+.anticipo-enlaces a { min-height: 44px; display: inline-flex; align-items: center; }
+.anticipo-acciones { margin-top: 1rem; }
+.anticipo-fecha { font-size: .88rem; color: #53635e; }
+.anticipo-autorizaciones button.anticipo-revocar { color: #9b2c2c; border-color: #9b2c2c; }
+.anticipo-autorizaciones button.anticipo-revocar:hover:not(:disabled) { background: #fff5f5; }
+.anticipo-dialogo-fondo { position: fixed; inset: 0; z-index: 2000; display: flex; justify-content: center; align-items: center; padding: 1rem; background: rgb(15 23 42 / 55%); box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; }
+.anticipo-dialogo { width: min(100%, 620px); max-height: calc(100dvh - 2rem); overflow-y: auto; box-sizing: border-box; margin: auto; box-shadow: 0 12px 40px rgb(0 0 0 / 25%); }
+.anticipo-persona { margin: 1rem 0; }
+.anticipo-persona > div { display: grid; grid-template-columns: 7rem 1fr; gap: .5rem; margin: .5rem 0; }
+.anticipo-persona dt { color: #53635e; }
+.anticipo-persona dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.anticipo-dialogo #anticipo-referencia-ayuda { color: #53635e; font-size: .88rem; }
+@media (max-width: 600px) { .anticipo-acciones > * { width: 100%; } .anticipo-persona > div { grid-template-columns: 1fr; gap: .1rem; } .anticipo-dialogo-fondo { padding: .65rem; } .anticipo-dialogo { max-height: calc(100dvh - 1.3rem); padding: 1rem; } }

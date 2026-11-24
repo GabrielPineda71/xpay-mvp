@@ -10,7 +10,7 @@ namespace Xpay.Api.Controllers;
 [ApiController]
 [Route("api/libranza/cliente")]
 [Authorize]
-[AltaWalletSinCredito]
+[AltaWalletSinCredito(anticipoNomina: true)]
 public class LibranzaClienteController : ControllerBase
 {
     private readonly LibranzaAnticipoService            _svc;
