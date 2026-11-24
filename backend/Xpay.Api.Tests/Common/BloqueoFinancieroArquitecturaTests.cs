@@ -59,6 +59,11 @@ public sealed class BloqueoFinancieroArquitecturaTests
         "LibranzaController.AsociarUsuarioEmpresa", "LibranzaController.AsociarEmpleadoUsuario",
         // Revisión manual: solo vínculo y auditoría, sin Wallet/cupo/dinero nuevos.
         "LibranzaVinculacionController.Aprobar",
+        // Administración del permiso de producto: no mueve dinero ni crea
+        // cupos/obligaciones. Revocar también debe funcionar con el interruptor
+        // financiero cerrado; solicitar el anticipo conserva su propio control.
+        "LibranzaAutorizacionAnticipoController.Autorizar",
+        "LibranzaAutorizacionAnticipoController.Revocar",
         "LibranzaEmpresaController.ImportarEmpleados", "LibranzaEmpresaController.CancelarLote",
         "ComerciosAliadosController.Crear", "ComerciosAliadosController.Actualizar",
         "ComerciosAliadosController.Activar", "ComerciosAliadosController.Inactivar",
