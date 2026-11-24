@@ -41,6 +41,79 @@ public sealed class LibranzaVinculacionSqlTests
     }
 
     [Fact]
+    public async Task Cuenta_historica_sin_legales_lee_Veriff_y_solo_vincula_por_accion_expresa()
+    {
+        if (!Conexion(out var cs)) return;
+        await using var s = new Semillero(cs); await s.IniciarAsync();
+        var cuenta = await s.EmpleadoAsync(cedulaConMiles: true);
+        await using var db = Contexto(cs); var servicio = Servicio(db);
+        await db.Personas.Where(p => p.IdPersona == cuenta.Persona).ExecuteUpdateAsync(set => set
+            .SetProperty(p => p.TipoDocumento, (string?)null).SetProperty(p => p.NumeroDocumento, (string?)null));
+        var foto = await FotoAsync(db);
+        var fila = Assert.Single((await servicio.ListarAsync(s.Admin, s.Convenio)).Items);
+        Assert.True(fila.IdentidadVerificada); Assert.True(fila.Elegible); Assert.Empty(fila.Razones);
+        Assert.False(await db.LibranzaEmpleadoUsuarios.AnyAsync(v => v.IdUsuario == cuenta.Usuario));
+        Assert.Equal(foto, await FotoAsync(db));
+        var peticion = Peticion(fila); peticion.ConfirmaPertenenciaLaboral = false;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => servicio.AprobarAsync(s.Admin, peticion));
+        Assert.False(await db.LibranzaEmpleadoUsuarios.AnyAsync(v => v.IdUsuario == cuenta.Usuario));
+        peticion.ConfirmaPertenenciaLaboral = true;
+        Assert.Equal(1, (await servicio.AprobarAsync(s.Admin, peticion)).Aprobados);
+        Assert.Equal(1, (await servicio.AprobarAsync(s.Admin, peticion)).Aprobados);
+        var propia = await db.LibranzaEmpleadoUsuarios.AsNoTracking().SingleAsync(v => v.IdUsuario == cuenta.Usuario);
+        Assert.Equal(cuenta.Empleado, propia.IdEmpleado); Assert.Equal(cuenta.Wallet, propia.IdWallet);
+        Assert.Equal(1, await db.Auditorias.CountAsync(a => a.IdUsuario == s.Admin && a.Accion == LibranzaVinculacionService.AccionAuditoria));
+        var persona = await db.Personas.AsNoTracking().SingleAsync(p => p.IdPersona == cuenta.Persona);
+        Assert.Null(persona.TipoDocumento); Assert.Null(persona.NumeroDocumento);
+        Assert.Contains('.', persona.NumeroDocumentoVerificado!);
+        Assert.Equal(foto, await FotoAsync(db));
+    }
+
+    [Fact]
+    public async Task Vinculo_historico_activo_con_legales_vacios_no_se_presenta_como_revocado()
+    {
+        if (!Conexion(out var cs)) return;
+        await using var s = new Semillero(cs); await s.IniciarAsync();
+        var cuenta = await s.EmpleadoAsync(cedulaConMiles: true);
+        await using var db = Contexto(cs); var servicio = Servicio(db);
+        await db.Personas.Where(p => p.IdPersona == cuenta.Persona).ExecuteUpdateAsync(set => set
+            .SetProperty(p => p.TipoDocumento, (string?)null).SetProperty(p => p.NumeroDocumento, (string?)null));
+        db.LibranzaEmpleadoUsuarios.Add(new() { IdEmpleado = cuenta.Empleado, IdUsuario = cuenta.Usuario,
+            IdWallet = cuenta.Wallet, Estado = "ACTIVO", CreatedByUsuario = s.Admin, CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        var fila = Assert.Single((await servicio.ListarAsync(s.Admin, s.Convenio)).Items);
+        Assert.Equal("APROBADO", fila.Estado); Assert.False(fila.Elegible); Assert.Empty(fila.Razones);
+        Assert.Equal(1, (await servicio.AprobarAsync(s.Admin, Peticion(fila))).Aprobados);
+        Assert.Equal(1, await db.LibranzaEmpleadoUsuarios.CountAsync(v => v.IdUsuario == cuenta.Usuario));
+        Assert.False(await db.Auditorias.AnyAsync(a => a.IdUsuario == s.Admin && a.Accion == LibranzaVinculacionService.AccionAuditoria));
+    }
+
+    [Theory]
+    [InlineData("solo-tipo")]
+    [InlineData("solo-numero")]
+    [InlineData("numero-distinto")]
+    public async Task Documento_legal_parcial_o_distinto_no_se_sustituye_por_Veriff(string caso)
+    {
+        if (!Conexion(out var cs)) return;
+        await using var s = new Semillero(cs); await s.IniciarAsync();
+        var cuenta = await s.EmpleadoAsync(cedulaConMiles: true);
+        await using var db = Contexto(cs); var servicio = Servicio(db);
+        string? tipo = caso == "solo-numero" ? null : "CC";
+        string? numero = caso == "solo-tipo" ? null : caso == "numero-distinto" ? "9990001111" : cuenta.Documento;
+        await db.Personas.Where(p => p.IdPersona == cuenta.Persona).ExecuteUpdateAsync(set => set
+            .SetProperty(p => p.TipoDocumento, tipo).SetProperty(p => p.NumeroDocumento, numero));
+        var fila = Assert.Single((await servicio.ListarAsync(s.Admin, s.Convenio)).Items);
+        Assert.True(fila.IdentidadVerificada); Assert.False(fila.Elegible);
+        Assert.Contains(fila.Razones, r => r.Contains(caso == "numero-distinto" ? "no coinciden" : "incompleto"));
+        var foto = await FotoAsync(db);
+        Assert.Equal(0, (await servicio.AprobarAsync(s.Admin, Peticion(fila))).Aprobados);
+        Assert.False(await db.LibranzaEmpleadoUsuarios.AnyAsync(v => v.IdUsuario == cuenta.Usuario));
+        var persona = await db.Personas.AsNoTracking().SingleAsync(p => p.IdPersona == cuenta.Persona);
+        Assert.Equal(tipo, persona.TipoDocumento); Assert.Equal(numero, persona.NumeroDocumento);
+        Assert.Equal(foto, await FotoAsync(db));
+    }
+
+    [Fact]
     public async Task Lote_parcial_conserva_pendientes_correo_Wallet_sin_crearlas()
     {
         if (!Conexion(out var cs)) return;

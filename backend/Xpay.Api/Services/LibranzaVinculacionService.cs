@@ -200,8 +200,20 @@ public sealed class LibranzaVinculacionService(XpayDbContext db, ILogger<Libranz
         var clave = p is null ? null : ClaveVeriff(p);
         if (clave is null || e is null || ClaveDocumento(e.TipoDocumento, e.NumeroDocumento) != clave)
             razones.Add("El documento verificado no coincide con el empleado.");
-        if (p is not null && (clave is null || ClaveDocumento(p.TipoDocumento, p.NumeroDocumento) != clave))
-            razones.Add("El documento legal y el documento verificado requieren revisión.");
+        if (p is not null)
+        {
+            var tieneTipoLegal = !string.IsNullOrWhiteSpace(p.TipoDocumento);
+            var tieneNumeroLegal = !string.IsNullOrWhiteSpace(p.NumeroDocumento);
+            // Las cuentas históricas pueden tener ambos campos legales vacíos.
+            // En ese caso se lee la misma identidad Veriff ya aprobada y
+            // comparable con el empleado; no se completan campos ni se inventa
+            // una verificación. Identidad, coincidencia y unicidad se exigen
+            // también para estas cuentas en el resto de esta evaluación.
+            if (tieneTipoLegal != tieneNumeroLegal)
+                razones.Add("El documento legal está incompleto y requiere revisión de XPAY.");
+            else if (tieneTipoLegal && (clave is null || ClaveDocumento(p.TipoDocumento, p.NumeroDocumento) != clave))
+                razones.Add("El documento legal y el documento verificado no coinciden; requieren revisión de XPAY.");
+        }
         if (d.UsuariosMismoDocumento.Distinct().Count() != 1 || !d.UsuariosMismoDocumento.Contains(d.IdUsuario)
             || d.PersonasMismoDocumento.Distinct().Count() != 1 || !d.PersonasMismoDocumento.Contains(p?.IdPersona ?? 0))
             razones.Add("Hay una identidad duplicada o ambigua para ese documento.");
