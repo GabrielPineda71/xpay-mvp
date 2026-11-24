@@ -25,6 +25,7 @@ import { MiEmpresaPage } from './pages/MiEmpresaPage.tsx';
 import { BrebLlavesAdminPage } from './pages/BrebLlavesAdminPage.tsx';
 import { BrebRetirosAdminPage } from './pages/BrebRetirosAdminPage.tsx';
 import { AdminVinculacionesNominaPage } from './pages/AdminVinculacionesNominaPage.tsx';
+import { AdminAutorizacionesAnticipoPage } from './pages/AdminAutorizacionesAnticipoPage.tsx';
 import { LibranzaConveniosAdminPage } from './pages/LibranzaConveniosAdminPage.tsx';
 import { MiEmpresaLibranzaPage } from './pages/MiEmpresaLibranzaPage.tsx';
 import { MiWalletLibranzaPage } from './pages/MiWalletLibranzaPage.tsx';
@@ -97,6 +98,7 @@ export default function App() {
                 <Route path="admin/breb-retiros"        element={<BrebRetirosAdminPage />} />
                 <Route path="admin/libranza-convenios" element={<LibranzaConveniosAdminPage />} />
                 <Route path="admin/nomina-vinculaciones" element={<AdminVinculacionesNominaPage />} />
+                <Route path="admin/nomina-autorizaciones" element={<AdminAutorizacionesAnticipoPage />} />
                 <Route path="admin/comercios-aliados" element={<ComerciosAliadosPage />} />
                 <Route path="admin/parametros-liquidacion-comercio" element={<ParametrosLiquidacionPage />} />
                 <Route path="admin/cartera-ordinaria" element={<CarteraOrdinariaAdminPage />} />

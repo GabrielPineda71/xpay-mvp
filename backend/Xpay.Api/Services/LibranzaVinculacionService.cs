@@ -39,7 +39,7 @@ public sealed class LibranzaVinculacionService(XpayDbContext db, ILogger<Libranz
         var total = await parejas.CountAsync(ct);
         var seleccion = await parejas.OrderBy(x => x.IdEmpleado).ThenBy(x => x.IdUsuario)
             .Skip(checked((pagina - 1) * tamanio)).Take(tamanio).ToListAsync(ct);
-        var datos = await CargarAsync(seleccion.Select(x => (x.IdEmpleado, x.IdUsuario)).ToList(), ct);
+        var datos = await CargarAsync(db, seleccion.Select(x => (x.IdEmpleado, x.IdUsuario)).ToList(), ct);
         // Una preselección SQL puede contener números sintácticamente inválidos;
         // se muestran bloqueados sin exponer su documento completo.
         return new() { Pagina = pagina, Total = total, TotalPaginas = (int)Math.Ceiling(total / (decimal)tamanio),
@@ -78,7 +78,7 @@ public sealed class LibranzaVinculacionService(XpayDbContext db, ILogger<Libranz
                     $"SELECT * FROM dbo.libranza_empleados WITH (UPDLOCK, ROWLOCK) WHERE id_empleado={s.IdEmpleado}")
                     .AsNoTracking().SingleOrDefaultAsync(ct);
                 await ExigirAdministradorAsync(idAdmin, ct);
-                var d = (await CargarAsync([(s.IdEmpleado, s.IdUsuario)], ct)).Single();
+                var d = (await CargarAsync(db, [(s.IdEmpleado, s.IdUsuario)], ct)).Single();
                 if (d.Usuario?.IdPersona != idPersonaPrevia)
                     throw new InvalidOperationException("La identidad de la cuenta cambió. Actualiza las coincidencias.");
                 var actual = Evaluar(d, DateTime.UtcNow);
@@ -263,7 +263,7 @@ public sealed class LibranzaVinculacionService(XpayDbContext db, ILogger<Libranz
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
     }
 
-    private async Task<List<DatosRevision>> CargarAsync(List<(long Empleado, long Usuario)> pares, CancellationToken ct)
+    internal static async Task<List<DatosRevision>> CargarAsync(XpayDbContext db, List<(long Empleado, long Usuario)> pares, CancellationToken ct)
     {
         if (pares.Count == 0) return [];
         var empleadosIds = pares.Select(x => x.Empleado).Distinct().ToArray();

@@ -67,6 +67,7 @@ public class XpayDbContext : DbContext
     public DbSet<LibranzaImportacionEmpleados>   LibranzaImportacionesEmpleados  => Set<LibranzaImportacionEmpleados>();
     public DbSet<LibranzaEmpleadoCortesPago>     LibranzaEmpleadoCortesPago      => Set<LibranzaEmpleadoCortesPago>();
     public DbSet<LibranzaEmpleadoUsuario>        LibranzaEmpleadoUsuarios        => Set<LibranzaEmpleadoUsuario>();
+    public DbSet<LibranzaAutorizacionAnticipo>    LibranzaAutorizacionesAnticipo   => Set<LibranzaAutorizacionAnticipo>();
     public DbSet<LibranzaAnticipo>               LibranzaAnticipos               => Set<LibranzaAnticipo>();
     // P0 anticipo (047) - lotes de recaudo empresarial.
     public DbSet<LibranzaLoteRecaudo>            LibranzaLotesRecaudo            => Set<LibranzaLoteRecaudo>();
@@ -166,6 +167,26 @@ public class XpayDbContext : DbContext
         modelBuilder.Entity<LibranzaImportacionEmpleados>(e => { e.ToTable("libranza_importaciones_empleados"); e.HasKey(x => x.IdImportacion); MapLibranzaImportacion(e); });
         modelBuilder.Entity<LibranzaEmpleadoCortesPago>(e => { e.ToTable("libranza_empleado_cortes_pago"); e.HasKey(x => x.IdCortePago); MapLibranzaEmpleadoCortesPago(e); });
         modelBuilder.Entity<LibranzaEmpleadoUsuario>(e => { e.ToTable("libranza_empleado_usuario"); e.HasKey(x => x.IdEmpleadoUsuario); MapLibranzaEmpleadoUsuario(e); });
+        modelBuilder.Entity<LibranzaAutorizacionAnticipo>(e =>
+        {
+            e.ToTable("libranza_autorizaciones_anticipo");
+            e.HasKey(x => new { x.IdEmpleadoUsuario, x.IdUsuario });
+            e.Property(x => x.IdEmpleadoUsuario).HasColumnName("id_empleado_usuario");
+            e.Property(x => x.IdUsuario).HasColumnName("id_usuario");
+            e.Property(x => x.IdEmpleado).HasColumnName("id_empleado");
+            e.Property(x => x.IdConvenio).HasColumnName("id_convenio");
+            e.Property(x => x.IdWallet).HasColumnName("id_wallet");
+            e.Property(x => x.Estado).HasColumnName("estado").HasMaxLength(20).IsUnicode(false);
+            e.Property(x => x.Revision).HasColumnName("revision").IsConcurrencyToken();
+            e.Property(x => x.HuellaContexto).HasColumnName("huella_contexto").HasMaxLength(64).IsUnicode(false);
+            e.Property(x => x.CreadoPorUsuario).HasColumnName("creado_por_usuario");
+            e.Property(x => x.FechaCreacion).HasColumnName("fecha_creacion");
+            e.Property(x => x.ModificadoPorUsuario).HasColumnName("modificado_por_usuario");
+            e.Property(x => x.FechaCambio).HasColumnName("fecha_cambio");
+            e.Property(x => x.FechaAutorizacion).HasColumnName("fecha_autorizacion");
+            e.Property(x => x.FechaRevocacion).HasColumnName("fecha_revocacion");
+            e.Property(x => x.ReferenciaRevision).HasColumnName("referencia_revision").HasMaxLength(200);
+        });
         modelBuilder.Entity<LibranzaAnticipo>(e => { e.ToTable("libranza_anticipos"); e.HasKey(x => x.IdAnticipo); MapLibranzaAnticipo(e); });
         modelBuilder.Entity<LibranzaLoteRecaudo>(e => { e.ToTable("libranza_lotes_recaudo"); e.HasKey(x => x.IdLote); MapLibranzaLoteRecaudo(e); });
         modelBuilder.Entity<LibranzaLoteRecaudoDetalle>(e => { e.ToTable("libranza_lote_recaudo_detalles"); e.HasKey(x => x.IdDetalle); MapLibranzaLoteRecaudoDetalle(e); });

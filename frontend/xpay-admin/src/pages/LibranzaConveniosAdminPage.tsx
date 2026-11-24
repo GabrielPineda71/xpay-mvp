@@ -765,6 +765,7 @@ export function LibranzaConveniosAdminPage() {
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'.75rem', flexWrap:'wrap', marginBottom:'0.75rem' }}>
             <h3 style={{ margin:0 }}>Empleados del convenio</h3>
             <Link to={`/admin/nomina-vinculaciones?idConvenio=${selected.idConvenio}`}>Revisar coincidencias de empleados</Link>
+            <Link to={`/admin/nomina-autorizaciones?idConvenio=${selected.idConvenio}`}>Autorizaciones de anticipo</Link>
             {btn('↺ Refrescar', () => selected && cargarEmpleados(selected.idConvenio), 'secondary')}
           </div>
           {loadingEmp && <p>Cargando...</p>}
