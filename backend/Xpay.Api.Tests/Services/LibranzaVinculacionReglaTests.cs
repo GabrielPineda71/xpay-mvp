@@ -45,6 +45,110 @@ public sealed class LibranzaVinculacionReglaTests
     }
 
     [Theory]
+    [InlineData(null, null)]
+    [InlineData("", "")]
+    [InlineData("  ", "\t")]
+    public void Historico_con_ambos_legales_vacios_lee_Veriff_aprobado_sin_consolidar(string? tipo, string? numero)
+    {
+        var d = Datos(); d.Persona!.TipoDocumento = tipo; d.Persona.NumeroDocumento = numero;
+        var raw = d.Persona.NumeroDocumentoVerificado;
+        var r = LibranzaVinculacionService.Evaluar(d, Ahora);
+        Assert.True(r.IdentidadVerificada); Assert.True(r.Elegible); Assert.Empty(r.Razones);
+        Assert.Equal("PENDIENTE", r.Estado); // Aún requiere la acción expresa de XPAY.
+        Assert.Empty(d.Vinculos);
+        Assert.Equal(tipo, d.Persona.TipoDocumento); Assert.Equal(numero, d.Persona.NumeroDocumento);
+        Assert.Equal(raw, d.Persona.NumeroDocumentoVerificado);
+    }
+
+    [Fact]
+    public void Vinculo_historico_activo_sin_legales_conserva_su_estado_sin_reaprobar()
+    {
+        var d = Datos(); d.Persona!.TipoDocumento = null; d.Persona.NumeroDocumento = null;
+        d.Vinculos.Add(new() { IdEmpleado = 1, IdUsuario = 2, IdWallet = 6, Estado = "ACTIVO" });
+        var r = LibranzaVinculacionService.Evaluar(d, Ahora);
+        Assert.Equal("APROBADO", r.Estado); Assert.False(r.Elegible); Assert.Empty(r.Razones);
+        Assert.Single(d.Vinculos); Assert.Null(d.Persona.TipoDocumento); Assert.Null(d.Persona.NumeroDocumento);
+    }
+
+    [Theory]
+    [InlineData("CC", null)]
+    [InlineData(null, "9990001234")]
+    [InlineData("CC", "  ")]
+    [InlineData("\t", "9990001234")]
+    public void Documento_legal_parcial_no_usa_fallback_Veriff(string? tipo, string? numero)
+    {
+        var d = Datos(); d.Persona!.TipoDocumento = tipo; d.Persona.NumeroDocumento = numero;
+        var r = LibranzaVinculacionService.Evaluar(d, Ahora);
+        Assert.False(r.Elegible); Assert.Contains(r.Razones, x => x.Contains("legal está incompleto"));
+    }
+
+    [Theory]
+    [InlineData("CC", "9990001111")]
+    [InlineData("PASAPORTE", "9990001234")]
+    [InlineData("CC", "999-0001234")]
+    [InlineData("CC", "9.99.0001.234")]
+    public void Documento_legal_distinto_o_invalido_no_se_ignora(string tipo, string numero)
+    {
+        var d = Datos(); d.Persona!.TipoDocumento = tipo; d.Persona.NumeroDocumento = numero;
+        var r = LibranzaVinculacionService.Evaluar(d, Ahora);
+        Assert.False(r.Elegible); Assert.Contains(r.Razones, x => x.Contains("no coinciden"));
+    }
+
+    [Fact]
+    public void Cedula_legal_y_Veriff_con_miles_estrictos_son_equivalentes()
+    {
+        var d = Datos(); d.Persona!.NumeroDocumento = "9.990.001.234";
+        var r = LibranzaVinculacionService.Evaluar(d, Ahora);
+        Assert.True(r.Elegible); Assert.Empty(r.Razones);
+    }
+
+    [Theory]
+    [InlineData("999/0001234")]
+    [InlineData("999-0001234")]
+    [InlineData("9.99.0001.234")]
+    [InlineData("９９９０００１２３４")]
+    public void Sin_legales_Veriff_con_numero_invalido_no_habilita_la_revision(string raw)
+    {
+        var d = Datos(); d.Persona!.TipoDocumento = null; d.Persona.NumeroDocumento = null;
+        d.Persona.NumeroDocumentoVerificado = raw;
+        var r = LibranzaVinculacionService.Evaluar(d, Ahora);
+        Assert.False(r.Elegible); Assert.Contains(r.Razones, x => x.Contains("verificado no coincide"));
+    }
+
+    [Theory]
+    [InlineData("sin-identidad")]
+    [InlineData("otro-proveedor")]
+    [InlineData("sin-sesion-actual")]
+    [InlineData("sesion-distinta-persona")]
+    [InlineData("decision-no-aprobada")]
+    public void Sin_legales_sigue_exigiendo_prueba_Veriff_actual_aprobada(string caso)
+    {
+        var d = Datos(); d.Persona!.TipoDocumento = null; d.Persona.NumeroDocumento = null;
+        switch (caso)
+        {
+            case "sin-identidad": d.Persona.IdentidadVerificada = false; break;
+            case "otro-proveedor": d.Persona.IdentidadVerificadaProveedor = "SIMULACION_QA"; break;
+            case "sin-sesion-actual": d.Kyc.Clear(); break;
+            case "sesion-distinta-persona": d.Kyc[0].IdPersona = 77; break;
+            case "decision-no-aprobada": d.Kyc[0].Decision = "declined"; break;
+        }
+        var r = LibranzaVinculacionService.Evaluar(d, Ahora);
+        Assert.False(r.IdentidadVerificada); Assert.False(r.Elegible);
+        Assert.Contains(r.Razones, x => x.Contains("identidad", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Sin_legales_no_omite_correo_Wallet_ni_duplicados()
+    {
+        var d = Datos(); d.Persona!.TipoDocumento = null; d.Persona.NumeroDocumento = null;
+        d.Usuario!.EmailVerificado = false; d.Wallets.Clear(); d.PersonasMismoDocumento.Add(77);
+        var r = LibranzaVinculacionService.Evaluar(d, Ahora);
+        Assert.False(r.Elegible); Assert.False(r.EmailVerificado); Assert.False(r.WalletActiva);
+        Assert.Contains(r.Razones, x => x.Contains("correo")); Assert.Contains(r.Razones, x => x.Contains("Wallet"));
+        Assert.Contains(r.Razones, x => x.Contains("ambigua"));
+    }
+
+    [Theory]
     [InlineData("9990001234", "CC:9990001234")]
     [InlineData("9.990.001.234", "CC:9990001234")]
     [InlineData(" 9990001234 ", "CC:9990001234")]
