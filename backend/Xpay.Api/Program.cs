@@ -47,6 +47,7 @@ builder.Services.AddEmailSenderXpay(builder.Environment.EnvironmentName, builder
 builder.Services.AddSingleton<PlantillasEmailIdentidad>();
 builder.Services.AddScoped<RegistroPublicoService>();
 builder.Services.AddScoped<ConsentimientoBiometricoService>();
+builder.Services.AddScoped<LibranzaVinculacionService>();
 // P0-B2 — recuperación universal de contraseña (misma frontera no
 // productiva e IdentidadPublicaPolicy que P0-B1).
 builder.Services.AddScoped<RecuperacionClaveService>();

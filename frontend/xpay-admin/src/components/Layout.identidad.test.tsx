@@ -50,6 +50,8 @@ describe('Identidad de la sesión de escritorio', () => {
     const identidad = within(screen.getByRole('group', { name: 'Usuario activo' }));
     expect(identidad.getByText('administracion.sesion')).toBeInTheDocument();
     expect(identidad.getByText(etiqueta)).toBeInTheDocument();
+    if (rol === 'OPERADOR_XPAY') expect(screen.queryByRole('link', { name: 'Coincidencias de nómina' })).not.toBeInTheDocument();
+    else expect(screen.getByRole('link', { name: 'Coincidencias de nómina' })).toHaveAttribute('href', '/admin/nomina-vinculaciones');
   });
   it('el comercio muestra el perfil operativo de quien usa la caja', () => {
     state.user = { ...state.user!, usuario: 'caja.sesion', roles: ['COMERCIO'], esUsuarioEmpresa: false };

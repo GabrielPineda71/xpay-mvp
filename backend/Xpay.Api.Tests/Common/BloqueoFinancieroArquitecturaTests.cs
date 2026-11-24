@@ -57,6 +57,8 @@ public sealed class BloqueoFinancieroArquitecturaTests
         "LibranzaController.CrearParametros", "LibranzaController.ActualizarParametros",
         "LibranzaController.CrearRango", "LibranzaController.ActualizarRango",
         "LibranzaController.AsociarUsuarioEmpresa", "LibranzaController.AsociarEmpleadoUsuario",
+        // Revisión manual: solo vínculo y auditoría, sin Wallet/cupo/dinero nuevos.
+        "LibranzaVinculacionController.Aprobar",
         "LibranzaEmpresaController.ImportarEmpleados", "LibranzaEmpresaController.CancelarLote",
         "ComerciosAliadosController.Crear", "ComerciosAliadosController.Actualizar",
         "ComerciosAliadosController.Activar", "ComerciosAliadosController.Inactivar",
