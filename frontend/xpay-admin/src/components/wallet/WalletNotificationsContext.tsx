@@ -27,7 +27,7 @@ export interface WalletNotification {
   idMovimiento: number;
   valor: number;
   fecha: string;
-  contraparte: string; // ya resuelto por el caller (username o "Wallet #N") — este contexto no conoce WALLET_USER_MAP.
+  contraparte: string; // Nombre del estado de cuenta o fallback "Wallet #N", resuelto por el caller.
 }
 
 // Forma mínima que este contexto necesita de un movimiento — deliberadamente

@@ -14,10 +14,10 @@ public class ReportesService
         if (idWallet <= 0)
             throw new InvalidOperationException("El identificador de wallet debe ser mayor a cero.");
 
-        var wallet = await _db.Wallets.FirstOrDefaultAsync(w => w.IdWallet == idWallet)
+        var wallet = await _db.Wallets.AsNoTracking().FirstOrDefaultAsync(w => w.IdWallet == idWallet)
             ?? throw new InvalidOperationException($"No existe la wallet con id {idWallet}.");
 
-        var saldo = await _db.WalletSaldos.FirstOrDefaultAsync(s => s.IdWallet == idWallet);
+        var saldo = await _db.WalletSaldos.AsNoTracking().FirstOrDefaultAsync(s => s.IdWallet == idWallet);
 
         var movimientos = await _db.WalletMovimientos
             .Where(m => m.IdWallet == idWallet)
@@ -37,6 +37,40 @@ public class ReportesService
             })
             .ToListAsync();
 
+        // Solo las contrapartes de transferencias que ya pertenecen al estado
+        // de cuenta solicitado. No es una búsqueda libre de personas/wallets.
+        var idsContraparte = movimientos
+            .Select(m => ReferenciaContraparte(m.tipoMovimiento, m.referenciaTipo, m.referenciaId))
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+        var nombresContraparte = new Dictionary<long, string?>();
+        if (idsContraparte.Count > 0)
+        {
+            // Un único lote; el estado actual de la persona/wallet no borra
+            // una relación histórica. Solo se proyectan datos del nombre.
+            var personasContraparte = await (
+                from contraparte in _db.Wallets.AsNoTracking()
+                join persona in _db.Personas.AsNoTracking() on contraparte.IdPersona equals (long?)persona.IdPersona
+                where idsContraparte.Contains(contraparte.IdWallet) && contraparte.TipoWallet == "PERSONA"
+                select new
+                {
+                    contraparte.IdWallet,
+                    persona.IdentidadVerificada,
+                    persona.NombreVerificadoCompleto,
+                    persona.ApellidoVerificadoCompleto,
+                    persona.PrimerNombre,
+                    persona.SegundoNombre,
+                    persona.PrimerApellido,
+                    persona.SegundoApellido
+                }).ToListAsync();
+            nombresContraparte = personasContraparte.ToDictionary(p => p.IdWallet,
+                p => FormatearNombreContraparte(p.IdentidadVerificada,
+                    p.NombreVerificadoCompleto, p.ApellidoVerificadoCompleto,
+                    p.PrimerNombre, p.SegundoNombre, p.PrimerApellido, p.SegundoApellido));
+        }
+
         return new
         {
             idWallet        = wallet.IdWallet,
@@ -49,8 +83,43 @@ public class ReportesService
             // real en curso (XPAY-373). Sólo lectura — este endpoint nunca
             // escribe saldo.
             saldoRetenido   = saldo?.SaldoRetenido ?? 0m,
-            movimientos
+            movimientos = movimientos.Select(m => new
+            {
+                m.idMovimiento,
+                m.fecha,
+                m.tipoMovimiento,
+                m.naturaleza,
+                m.valor,
+                m.saldoAntes,
+                m.saldoDespues,
+                m.descripcion,
+                m.referenciaTipo,
+                m.referenciaId,
+                nombreContraparte = ReferenciaContraparte(m.tipoMovimiento, m.referenciaTipo, m.referenciaId) is long id
+                    ? nombresContraparte.GetValueOrDefault(id)
+                    : null
+            }).ToList()
         };
+    }
+
+    internal static long? ReferenciaContraparte(string tipoMovimiento, string? referenciaTipo, long? referenciaId) =>
+        tipoMovimiento is "TRANSFERENCIA_ENTRADA" or "TRANSFERENCIA_SALIDA"
+            && referenciaTipo == "wallets" && referenciaId is > 0 ? referenciaId : null;
+
+    internal static string? FormatearNombreContraparte(bool identidadVerificada,
+        string? nombreVerificado, string? apellidoVerificado,
+        string? primerNombre, string? segundoNombre, string? primerApellido, string? segundoApellido)
+    {
+        static string Normalizar(params string?[] partes) => string.Join(" ",
+            partes.Where(p => !string.IsNullOrWhiteSpace(p))
+                .SelectMany(p => p!.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)));
+
+        var nombresVerificados = Normalizar(nombreVerificado);
+        if (identidadVerificada && nombresVerificados.Length > 0)
+            return Normalizar(nombresVerificados, apellidoVerificado);
+
+        var nombresPerfil = Normalizar(primerNombre, segundoNombre);
+        return nombresPerfil.Length > 0 ? Normalizar(nombresPerfil, primerApellido, segundoApellido) : null;
     }
 
     public async Task<object> GetResumenComercioAsync(long idComercio)

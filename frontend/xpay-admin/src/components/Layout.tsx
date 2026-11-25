@@ -111,7 +111,7 @@ export function Layout() {
       // ambos compartan el mismo estado de notificaciones — son ramas
       // hermanas del árbol, sin esto no tendrían forma de comunicarse
       // (hallazgo central de la auditoría XPAY-430).
-      <WalletNotificationsProvider>
+      <WalletNotificationsProvider key={user?.idUsuario}>
         <WalletPrimerIngreso key={user?.idUsuario} perfil={pathname === '/mi-wallet/perfil'} envolver={(contenido, preparando) => <WalletShell
           userName={user?.usuario}
           activeNav={activeNav}
