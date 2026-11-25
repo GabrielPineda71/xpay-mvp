@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Xpay.Api.DTOs;
 
 // ── Parámetros de utilización ──────────────────────────────────────────
@@ -17,16 +19,16 @@ public record ParametroUtilizacionDto(
     string  Estado);
 
 public record UpsertParametroUtilizacionRequest(
-    decimal TasaEmv,
-    decimal PorcAval,
-    decimal PorcAdmin,
-    bool    AplicaIva,
-    decimal PorcIva,
-    int     PlazoMin,
-    int     PlazoMax,
-    string  Frecuencia,
-    decimal MontoMin,
-    decimal MontoMax);
+    [property: JsonRequired] decimal TasaEmv,
+    [property: JsonRequired] decimal PorcAval,
+    [property: JsonRequired] decimal PorcAdmin,
+    [property: JsonRequired] bool    AplicaIva,
+    [property: JsonRequired] decimal PorcIva,
+    [property: JsonRequired] int     PlazoMin,
+    [property: JsonRequired] int     PlazoMax,
+    [property: JsonRequired] string  Frecuencia,
+    [property: JsonRequired] decimal MontoMin,
+    [property: JsonRequired] decimal MontoMax);
 
 // ── Gastos de cobranza ─────────────────────────────────────────────────
 public record GastosCobranzaDto(

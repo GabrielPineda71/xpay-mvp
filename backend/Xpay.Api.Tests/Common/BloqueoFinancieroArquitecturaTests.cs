@@ -50,7 +50,8 @@ public sealed class BloqueoFinancieroArquitecturaTests
         "QaClientePruebaController.Crear", "QaIdentidadPruebaController.Preparar",
         "ComerciosAliadosController.BackfillDemoContexto",
         // Configuración y catálogos: no escriben ledger, saldos ni cupos.
-        "CarteraOrdinariaController.UpsertParametro", "CarteraOrdinariaController.UpsertPolitica",
+        "CarteraOrdinariaController.CrearParametro", "CarteraOrdinariaController.UpsertParametro",
+        "CarteraOrdinariaController.UpsertPolitica",
         "CarteraOrdinariaController.CreateGastoCobranza", "CarteraOrdinariaController.UpdateGastoCobranza",
         "CarteraOrdinariaController.SimularUtilizacion", "CarteraOrdinariaController.EjecutarLotePurgaB4",
         "LibranzaController.CrearConvenio", "LibranzaController.ActualizarConvenio",

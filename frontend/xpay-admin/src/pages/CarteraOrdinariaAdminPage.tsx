@@ -1,21 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { get, post, put } from '../api/client.ts';
-
-interface ParametroUtilizacion {
-  idParametro: number;
-  tipoUtilizacion: string;
-  tasaEmv: number;
-  porcAval: number;
-  porcAdmin: number;
-  aplicaIva: boolean;
-  porcIva: number;
-  plazoMin: number;
-  plazoMax: number;
-  frecuencia: string;
-  montoMin: number;
-  montoMax: number;
-  estado: string;
-}
+import { get, post } from '../api/client.ts';
+import { CarteraParametrosSection } from '../components/cartera/CarteraParametrosSection.tsx';
 
 interface GastoCobranza {
   idGasto: number;
@@ -56,7 +41,6 @@ type Tab = 'parametros' | 'gastos' | 'politica' | 'cupos';
 
 const fmt = (v: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v);
-const fmtPct = (v: number) => `${v}%`;
 
 const TAB_LABELS: Record<Tab, string> = {
   parametros: 'Parámetros',
@@ -67,7 +51,6 @@ const TAB_LABELS: Record<Tab, string> = {
 
 export function CarteraOrdinariaAdminPage() {
   const [tab, setTab] = useState<Tab>('parametros');
-  const [parametros, setParametros]   = useState<ParametroUtilizacion[]>([]);
   const [gastos, setGastos]           = useState<GastoCobranza[]>([]);
   const [politica, setPolitica]       = useState<PoliticaCredito | null>(null);
   const [cupos, setCupos]             = useState<CupoOrdinario[]>([]);
@@ -75,8 +58,7 @@ export function CarteraOrdinariaAdminPage() {
   const [busy, setBusy]               = useState(false);
   const [actionMsg, setActionMsg]     = useState('');
 
-  const [editParam, setEditParam] = useState<Partial<ParametroUtilizacion> & { tipo: string }>({ tipo: 'COMPRA_COMERCIO' });
-  const [showParamForm, setShowParamForm] = useState(false);
+  const [parametrosBusy, setParametrosBusy] = useState(false);
   const [cupoForm, setCupoForm] = useState({ idUsuario: '', cupoAprobado: '', observaciones: '' });
 
   const setTabError = (t: Tab, msg: string) =>
@@ -87,9 +69,7 @@ export function CarteraOrdinariaAdminPage() {
   const load = useCallback(async (t: Tab) => {
     clearTabError(t);
     try {
-      if (t === 'parametros') {
-        setParametros(await get<ParametroUtilizacion[]>('/api/cartera-ordinaria/admin/parametros'));
-      } else if (t === 'gastos') {
+      if (t === 'gastos') {
         setGastos(await get<GastoCobranza[]>('/api/cartera-ordinaria/admin/gastos-cobranza'));
       } else if (t === 'politica') {
         try {
@@ -103,30 +83,7 @@ export function CarteraOrdinariaAdminPage() {
     }
   }, []);
 
-  useEffect(() => { load(tab); }, [load, tab]);
-
-  const saveParam = async () => {
-    setBusy(true); setActionMsg('');
-    try {
-      await put(`/api/cartera-ordinaria/admin/parametros/${editParam.tipo}`, {
-        tasaEmv:    editParam.tasaEmv,
-        porcAval:   editParam.porcAval,
-        porcAdmin:  editParam.porcAdmin,
-        aplicaIva:  editParam.aplicaIva,
-        porcIva:    editParam.porcIva,
-        plazoMin:   editParam.plazoMin,
-        plazoMax:   editParam.plazoMax,
-        frecuencia: editParam.frecuencia,
-        montoMin:   editParam.montoMin,
-        montoMax:   editParam.montoMax,
-      });
-      setActionMsg('Parámetros guardados correctamente');
-      setShowParamForm(false);
-      load('parametros');
-    } catch (e: unknown) {
-      setActionMsg(`Error guardando: ${e instanceof Error ? e.message : 'Error desconocido'}`);
-    } finally { setBusy(false); }
-  };
+  useEffect(() => { if (tab !== 'parametros') void load(tab); }, [load, tab]);
 
   const asignarCupo = async () => {
     if (!cupoForm.idUsuario || !cupoForm.cupoAprobado) {
@@ -148,29 +105,23 @@ export function CarteraOrdinariaAdminPage() {
     } finally { setBusy(false); }
   };
 
-  const openEditParam = (p: ParametroUtilizacion) => {
-    setEditParam({ ...p, tipo: p.tipoUtilizacion });
-    setShowParamForm(true);
-    setActionMsg('');
-  };
-
   const tabs = (Object.keys(TAB_LABELS) as Tab[]);
 
   const tabHasError = (t: Tab) => !!tabErrors[t];
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: 980 }}>
+    <div style={{ padding: 'clamp(0.75rem, 3vw, 1.5rem)', maxWidth: 980, minWidth: 0 }}>
       <h2 style={{ marginBottom: '0.25rem' }}>Cartera Ordinaria — Administración</h2>
       <p style={{ fontSize: 13, color: '#666', marginTop: 0, marginBottom: '1rem' }}>
         Parámetros de crédito, gastos de cobranza, políticas y cupos QA.
       </p>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', borderBottom: '2px solid #e0e0e0' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem', borderBottom: '2px solid #e0e0e0' }}>
         {tabs.map(t => (
-          <button key={t}
-            onClick={() => { setTab(t); setActionMsg(''); }}
+          <button key={t} disabled={parametrosBusy}
+            onClick={() => { if (!parametrosBusy) { setTab(t); setActionMsg(''); } }}
             style={{
-              padding: '0.5rem 1.2rem', cursor: 'pointer', border: 'none',
+              padding: '0.5rem 1.2rem', minHeight: 44, cursor: parametrosBusy ? 'default' : 'pointer', border: 'none',
               borderBottom: tab === t ? '2px solid #1976d2' : '2px solid transparent',
               background: 'none', fontWeight: tab === t ? 700 : 400,
               color: tabHasError(t) ? '#c62828' : (tab === t ? '#1976d2' : '#555'),
@@ -193,87 +144,7 @@ export function CarteraOrdinariaAdminPage() {
       )}
 
       {/* ── Tab: Parámetros ─────────────────────────────────────────── */}
-      {tab === 'parametros' && !tabErrors.parametros && (
-        <div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ background: '#f5f5f5' }}>
-                {['Tipo','Tasa EMV','Aval%','Admin%','IVA%','Plazo','Frecuencia','Monto Mín','Monto Máx',''].map(h =>
-                  <th key={h} style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd', whiteSpace: 'nowrap' }}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {parametros.length === 0 ? (
-                <tr><td colSpan={10} style={{ padding: '1rem', color: '#888', textAlign: 'center' }}>Sin parámetros registrados</td></tr>
-              ) : parametros.map(p => (
-                <tr key={p.idParametro}>
-                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{p.tipoUtilizacion}</td>
-                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{fmtPct(p.tasaEmv)}</td>
-                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{fmtPct(p.porcAval)}</td>
-                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{fmtPct(p.porcAdmin)}</td>
-                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{p.aplicaIva ? fmtPct(p.porcIva) : '—'}</td>
-                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{p.plazoMin}–{p.plazoMax} m</td>
-                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{p.frecuencia}</td>
-                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{fmt(p.montoMin)}</td>
-                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{fmt(p.montoMax)}</td>
-                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
-                    <button onClick={() => openEditParam(p)} style={{ fontSize: 12, cursor: 'pointer', padding: '3px 8px' }}>Editar</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {showParamForm && (
-            <div style={{ marginTop: '1.5rem', padding: '1rem', border: '1px solid #ddd', borderRadius: 6, maxWidth: 520, background: '#fafafa' }}>
-              <h4 style={{ marginTop: 0 }}>Editar — {editParam.tipo}</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                {([
-                  ['Tasa EMV (%)', 'tasaEmv'],
-                  ['Aval (%)',     'porcAval'],
-                  ['Admin (%)',    'porcAdmin'],
-                  ['IVA (%)',      'porcIva'],
-                  ['Plazo mín (m)', 'plazoMin'],
-                  ['Plazo máx (m)', 'plazoMax'],
-                  ['Monto mín (COP)', 'montoMin'],
-                  ['Monto máx (COP)', 'montoMax'],
-                ] as [string, keyof ParametroUtilizacion][]).map(([label, field]) => (
-                  <label key={field} style={{ display: 'flex', flexDirection: 'column', fontSize: 13 }}>
-                    {label}
-                    <input type="number" value={(editParam as Record<string, unknown>)[field] as number ?? ''}
-                      onChange={e => setEditParam(prev => ({ ...prev, [field]: e.target.value === '' ? '' : Number(e.target.value) }))}
-                      style={{ marginTop: 4, padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4 }} />
-                  </label>
-                ))}
-                <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13 }}>
-                  Frecuencia
-                  <select value={editParam.frecuencia ?? 'MENSUAL'}
-                    onChange={e => setEditParam(prev => ({ ...prev, frecuencia: e.target.value }))}
-                    style={{ marginTop: 4, padding: '4px 8px', border: '1px solid #ccc', borderRadius: 4 }}>
-                    <option value="MENSUAL">MENSUAL</option>
-                    <option value="QUINCENAL">QUINCENAL</option>
-                  </select>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: 13, marginTop: 4 }}>
-                  <input type="checkbox" checked={editParam.aplicaIva ?? false}
-                    onChange={e => setEditParam(prev => ({ ...prev, aplicaIva: e.target.checked }))} />
-                  Aplica IVA
-                </label>
-              </div>
-              <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem' }}>
-                <button onClick={saveParam} disabled={busy}
-                  style={{ padding: '8px 20px', background: '#1976d2', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
-                  {busy ? 'Guardando…' : 'Guardar'}
-                </button>
-                <button onClick={() => setShowParamForm(false)}
-                  style={{ padding: '8px 16px', background: '#eee', border: 'none', borderRadius: 4, cursor: 'pointer' }}>
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {tab === 'parametros' && <CarteraParametrosSection onBusyChange={setParametrosBusy} />}
 
       {/* ── Tab: Gastos de cobranza ──────────────────────────────────── */}
       {tab === 'gastos' && !tabErrors.gastos && (

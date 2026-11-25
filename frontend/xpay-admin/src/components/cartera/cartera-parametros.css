@@ -1,0 +1,39 @@
+.cartera-parametros { color: #243247; min-width: 0; }
+.cartera-parametros *, .cartera-parametros *::before, .cartera-parametros *::after { box-sizing: border-box; }
+.cartera-parametros h3, .cartera-parametros h4 { margin: 0; }
+.cartera-parametros h3 { font-size: 20px; }
+.cartera-parametros h4 { font-size: 17px; }
+.cartera-parametros p { line-height: 1.5; }
+.cartera-parametros__encabezado { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+.cartera-parametros__encabezado p { color: #56667b; margin: 6px 0 0; }
+.cartera-parametros__acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cartera-parametros button { min-height: 44px; padding: 10px 16px; border: 1px solid #b8c5d4; border-radius: 7px; background: #fff; color: #243247; font-size: 16px; cursor: pointer; }
+.cartera-parametros button.cartera-parametros__principal { border-color: #1762ad; background: #1762ad; color: #fff; font-weight: 600; }
+.cartera-parametros button:disabled { opacity: .55; cursor: default; }
+.cartera-parametros button:focus-visible, .cartera-parametros input:focus-visible, .cartera-parametros select:focus-visible { outline: 3px solid #6ca5e0; outline-offset: 2px; }
+.cartera-parametros__vacio { padding: 18px; border: 1px dashed #b8c5d4; border-radius: 8px; background: #f7f9fc; }
+.cartera-parametros__tarjetas, .cartera-parametros__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.cartera-parametros__tarjeta { border: 1px solid #d5deea; border-radius: 10px; background: #fff; padding: 20px; min-width: 0; }
+.cartera-parametros__tarjeta-titulo { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.cartera-parametros__estado { font-size: 12px; padding: 4px 9px; border-radius: 12px; background: #eef1f5; color: #526174; font-weight: 600; }
+.cartera-parametros__estado--activo { color: #22603b; background: #e8f4ec; }
+.cartera-parametros__codigo { color: #65758b; font-size: 12px; overflow-wrap: anywhere; margin: 8px 0 16px; }
+.cartera-parametros dl { margin: 0 0 18px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px 18px; }
+.cartera-parametros dt { font-size: 13px; color: #56667b; margin-bottom: 4px; }
+.cartera-parametros dd { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.cartera-parametros__formulario { margin-top: 22px; padding: 22px; border: 1px solid #bed0e3; border-radius: 10px; background: #f8fafd; }
+.cartera-parametros__formulario > p { color: #526174; font-size: 14px; }
+.cartera-parametros fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
+.cartera-parametros label { display: flex; flex-direction: column; gap: 7px; color: #293a50; font-size: 14px; font-weight: 600; min-width: 0; }
+.cartera-parametros input, .cartera-parametros select { width: 100%; max-width: 100%; min-width: 0; min-height: 46px; border: 1px solid #adbdce; border-radius: 6px; padding: 10px 12px; color: #243247; background: #fff; font-size: 16px; }
+.cartera-parametros input:disabled, .cartera-parametros select:disabled { background: #edf1f5; color: #56667b; }
+.cartera-parametros [aria-invalid="true"] { border-color: #ad3131; }
+.cartera-parametros__error { color: #a22929; font-size: 13px; font-weight: 400; line-height: 1.4; }
+.cartera-parametros__ayuda { font-size: 13px; color: #5c6d82; font-weight: 400; line-height: 1.5; }
+.cartera-parametros__mensaje { border: 1px solid; border-radius: 7px; padding: 12px 14px; }
+.cartera-parametros__mensaje--ok { color: #215d39; background: #eaf6ee; border-color: #b5d8c0; }
+.cartera-parametros__mensaje--aviso { color: #77531b; background: #fff7e7; border-color: #e7cd98; }
+.cartera-parametros__mensaje--error { color: #9e2828; background: #fff0f0; border-color: #eabbbb; }
+.cartera-parametros__sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (min-width: 720px) { .cartera-parametros__tarjetas, .cartera-parametros__grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+@media (max-width: 479px) { .cartera-parametros__tarjeta, .cartera-parametros__formulario { padding: 16px; } .cartera-parametros__acciones { width: 100%; } .cartera-parametros__acciones button { flex: 1 1 auto; } }
