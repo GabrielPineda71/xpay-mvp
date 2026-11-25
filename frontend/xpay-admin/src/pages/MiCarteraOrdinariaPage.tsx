@@ -217,7 +217,7 @@ export function MiCarteraOrdinariaPage() {
   const cargarCupo = () => {
     get<MiCupo>('/api/cartera-ordinaria/mi-cupo')
       .then(data => { setCupo(data); cargarWalletSaldo(data.idWallet); })
-      .catch(() => setCupoError('No tienes un cupo ordinario activo en este momento.'));
+      .catch(() => setCupoError('No tienes un cupo ordinario activo.'));
   };
 
   const cargarCreditos = () => {
@@ -380,18 +380,14 @@ export function MiCarteraOrdinariaPage() {
   };
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: 900 }}>
+    <div className="cartera-page">
       {/* Acceso al anticipo de nómina desde "Productos": la franja principal
           de la wallet no tiene entrada a /mi-wallet/libranza. */}
       <Link to="/mi-wallet/libranza" className="btn-breb" style={{ display: 'inline-block', marginBottom: '1rem' }}>
-        Anticipo de nómina: ver mi cupo
+        Ver Anticipo de Nómina
       </Link>
 
-      <h2 style={{ marginBottom: '0.25rem' }}>Mi Cartera Ordinaria</h2>
-      <p style={{ fontSize: 13, color: '#666', margin: '0 0 1.5rem' }}>
-        El simulador nunca mueve saldo ni cupo. La confirmación real de "Desembolsar a Wallet" sí acredita
-        tu Wallet y descuenta tu cupo de inmediato. La confirmación de compra en comercio llegará en una próxima fase.
-      </p>
+      <h2 className="cartera-page-title">Mi Cartera Ordinaria</h2>
 
       {/* Contexto QR */}
       {origenQR && qpQrCode && (
@@ -428,48 +424,34 @@ export function MiCarteraOrdinariaPage() {
       )}
 
       {/* Selector de modo */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+      <div className="cartera-mode-selector" role="group" aria-label="Tipo de crédito">
         <button
+          type="button"
+          className="cartera-mode-button"
+          aria-pressed={modo === 'compra'}
           onClick={() => cambiarModo('compra')}
-          style={{
-            padding: '0.5rem 1.25rem', cursor: 'pointer', borderRadius: 6, fontSize: 14,
-            fontWeight: modo === 'compra' ? 700 : 400,
-            background: modo === 'compra' ? '#1976d2' : '#f0f0f0',
-            color: modo === 'compra' ? '#fff' : '#333',
-            border: 'none',
-          }}>
-          🛒 Compra en comercio
+        >
+          Compra en comercio
         </button>
         <button
+          type="button"
+          className="cartera-mode-button"
+          aria-pressed={modo === 'desembolso'}
           onClick={() => cambiarModo('desembolso')}
-          style={{
-            padding: '0.5rem 1.25rem', cursor: 'pointer', borderRadius: 6, fontSize: 14,
-            fontWeight: modo === 'desembolso' ? 700 : 400,
-            background: modo === 'desembolso' ? '#388e3c' : '#f0f0f0',
-            color: modo === 'desembolso' ? '#fff' : '#333',
-            border: 'none',
-          }}>
-          💸 Desembolsar a mi Wallet
+        >
+          Desembolsar a mi Wallet
         </button>
       </div>
 
       {/* Simulador */}
-      <div style={{ padding: '1.25rem', border: '1px solid #ddd', borderRadius: 8, maxWidth: 520, marginBottom: '2rem', background: '#fafafa' }}>
-        <h3 style={{ marginTop: 0, fontSize: 16 }}>
-          {modo === 'compra' ? 'Simular compra en comercio' : 'Simular desembolso a Wallet'}
-        </h3>
-        <p style={{ fontSize: 12, color: '#888', margin: '-8px 0 12px', fontStyle: 'italic' }}>
-          Tipo: <strong>{tipoUtilizacion}</strong> · Simulación — sin movimiento de saldo ni cupo
-        </p>
-
-        {modo === 'desembolso' && (
-          <div style={{ padding: '0.6rem 0.8rem', background: '#e8f5e9', borderRadius: 4, marginBottom: '0.75rem', fontSize: 13 }}>
-            El monto se acredita completo a tu Wallet al confirmar; las cuotas (capital + interés + aval/admin/IVA) se cobran en el plazo elegido.
-          </div>
-        )}
+      <div className="cartera-simulador">
+        <div className="cartera-simulador-heading">
+          <h3>{modo === 'compra' ? 'Simular compra' : 'Simular desembolso'}</h3>
+          <p>Simular no usa saldo ni cupo.</p>
+        </div>
 
         <div className="cartera-grid" style={{ marginBottom: '0.75rem' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13 }}>
+          <label className="cartera-field">
             Monto (COP)
             <input type="number" value={monto} placeholder="Ej: 500000"
               onChange={e => setMonto(e.target.value)}
@@ -479,20 +461,20 @@ export function MiCarteraOrdinariaPage() {
                 borderRadius: 4,
               }} />
             {superaCupo && (
-              <span style={{ fontSize: 11, color: '#e53935', marginTop: 2 }}>
+              <span style={{ fontSize: 14, color: '#c62828', marginTop: 2 }}>
                 El valor supera tu cupo disponible ({fmt(cupoDisponible)})
               </span>
             )}
           </label>
 
-          <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13 }}>
+          <label className="cartera-field">
             Plazo (meses)
             <input type="number" value={plazo} min={1} max={36}
               onChange={e => setPlazo(e.target.value)}
               style={{ marginTop: 4, padding: '6px 8px', border: '1px solid #ccc', borderRadius: 4 }} />
           </label>
 
-          <label style={{ display: 'flex', flexDirection: 'column', fontSize: 13 }}>
+          <label className="cartera-field">
             Frecuencia de pago
             <select value={frecuencia} onChange={e => setFrecuencia(e.target.value)}
               style={{ marginTop: 4, padding: '6px 8px', border: '1px solid #ccc', borderRadius: 4 }}>
@@ -503,7 +485,7 @@ export function MiCarteraOrdinariaPage() {
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <button onClick={simular} disabled={simBusy || !!superaCupo || !cupo}
+          <button className="cartera-simular-button" onClick={simular} disabled={simBusy || !!superaCupo || !cupo}
             style={{
               padding: '8px 24px',
               background: simBusy || !!superaCupo || !cupo ? '#ccc' : (modo === 'desembolso' ? '#388e3c' : '#1976d2'),
@@ -526,9 +508,9 @@ export function MiCarteraOrdinariaPage() {
           background: modo === 'desembolso' ? '#f1f8e9' : '#e3f2fd',
           maxWidth: 700,
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+          <div className="cartera-result-heading">
             <h3 style={{ margin: 0, fontSize: 16, color: modo === 'desembolso' ? '#1b5e20' : '#0d47a1' }}>
-              {confirmResult ? 'Desembolso confirmado' : 'Resultado de simulación'} — {modo === 'desembolso' ? 'Desembolso a Wallet' : 'Compra en comercio'}
+              {confirmResult ? 'Desembolso confirmado' : 'Tus cuotas'}
             </h3>
             <span style={{
               fontSize: 11, padding: '2px 8px', borderRadius: 10,
@@ -606,10 +588,10 @@ export function MiCarteraOrdinariaPage() {
             )
           ) : (
             <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#fff8e1', borderRadius: 6, border: '1px solid #ffe082', fontSize: 13 }}>
-              <strong>Confirmación real:</strong> disponible en una próxima fase. El cargo al cupo y el pago al comercio se activarán cuando el flujo de confirmación esté listo.
+              La compra en comercio está disponible solo para simulación.
               <br />
               <button disabled style={{ marginTop: 8, padding: '8px 24px', background: '#bdbdbd', color: '#fff', border: 'none', borderRadius: 4, cursor: 'not-allowed', fontSize: 14 }}>
-                Confirmar utilización — próxima fase
+                Compra no disponible
               </button>
             </div>
           )}
@@ -653,9 +635,9 @@ export function MiCarteraOrdinariaPage() {
 
       {/* Mis créditos de Cartera Ordinaria — pago manual de cuotas desde Wallet */}
       <div style={{ marginTop: '2.5rem', paddingTop: '1.5rem', borderTop: '2px solid #e0e0e0' }}>
-        <h2 style={{ marginBottom: '0.25rem', fontSize: 18 }}>Mis créditos de Cartera Ordinaria</h2>
+        <h2 style={{ marginBottom: '0.5rem', fontSize: 18 }}>Mis créditos</h2>
         <p style={{ fontSize: 13, color: '#666', margin: '0 0 1rem' }}>
-          Paga tus cuotas manualmente desde tu Wallet. El cupo solo se libera por la parte aplicada a capital.
+          Paga desde tu Wallet. El abono a capital libera cupo.
         </p>
 
         {creditosError && <p style={{ color: '#c62828', fontSize: 13 }}>{creditosError}</p>}
