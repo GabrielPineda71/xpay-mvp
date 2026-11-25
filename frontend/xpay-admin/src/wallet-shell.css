@@ -735,11 +735,14 @@
   gap: var(--sp-3);
 }
 .wallet-movement-desc {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 0.88rem;
   color: var(--xpay-text-primary);
   font-weight: 600;
 }
 .wallet-movement-value {
+  flex-shrink: 0;
   font-size: 0.95rem;
   font-weight: 700;
   white-space: nowrap;

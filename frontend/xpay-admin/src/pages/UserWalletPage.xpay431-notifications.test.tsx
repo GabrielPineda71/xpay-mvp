@@ -57,6 +57,7 @@ interface MovFixture {
   descripcion: string | null;
   referenciaTipo: string | null;
   referenciaId: number | null;
+  nombreContraparte?: string | null;
 }
 
 function mov(overrides: Partial<MovFixture> & { idMovimiento: number }): MovFixture {
@@ -194,21 +195,21 @@ describe('Block C v1 — notificación persistente al receptor (XPAY-431)', () =
     expect(within(getPanel()).getByText('$ 300', { exact: false })).toBeInTheDocument();
   });
 
-  it('D: contraparte conocida (mapeada) muestra el nombre legible, no el ID técnico', async () => {
+  it('D: contraparte conocida en la API muestra su nombre, no el ID técnico', async () => {
     const user = userEvent.setup({ delay: null });
     seedLastSeen(3);
     renderHarness();
     await waitForInitialLoad();
 
-    movimientosState.push(mov({ idMovimiento: 4, tipoMovimiento: 'TRANSFERENCIA_ENTRADA', naturaleza: 'C', valor: 300, referenciaTipo: 'wallets', referenciaId: 3 }));
+    movimientosState.push(mov({ idMovimiento: 4, tipoMovimiento: 'TRANSFERENCIA_ENTRADA', naturaleza: 'C', valor: 300, referenciaTipo: 'wallets', referenciaId: 3, nombreContraparte: 'Persona Ficticia Cedro' }));
     await vi.advanceTimersByTimeAsync(7000);
     await waitFor(() => expect(notifDot()).not.toBeNull());
 
     await user.click(screen.getByRole('button', { name: 'Notificaciones' }));
-    expect(screen.getByText('qa.usuario2', { selector: 'strong' })).toBeInTheDocument();
+    expect(screen.getByText('Persona Ficticia Cedro', { selector: 'strong' })).toBeInTheDocument();
   });
 
-  it('E: contraparte desconocida (sin mapear) cae al fallback "Wallet #N" — nunca inventa un nombre', async () => {
+  it('E: contraparte desconocida en la API cae al fallback "Wallet #N" — nunca inventa un nombre', async () => {
     const user = userEvent.setup({ delay: null });
     seedLastSeen(3);
     renderHarness();

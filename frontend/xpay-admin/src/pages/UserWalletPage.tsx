@@ -16,24 +16,6 @@ import { esPinValido, LONGITUD_PIN, MENSAJE_FORMATO_PIN, soloDigitosPin } from '
 // Fase 71.2-E-C: DEMO_MAP eliminado — la wallet propia se resuelve vía
 // GET /api/wallets/mi-wallet (claim idPersona del JWT), no por username.
 
-// QA wallet-to-username reverse map — used to show counterpart in movement descriptions
-const WALLET_USER_MAP: Record<number, string> = {
-  2: 'qa.usuario1',
-  3: 'qa.usuario2',
-};
-
-// XPAY-431 (Block C v1) — misma fuente que descripcionVisible() usa para
-// TRANSFERENCIA_ENTRADA, extraída como función independiente para que
-// loadCuenta/pollRefresh puedan resolver el nombre de la contraparte al
-// reportar al contexto de notificaciones. Función de módulo (no depende de
-// estado del componente) — deliberadamente NO se amplía WALLET_USER_MAP
-// aquí; si el id no está mapeado, cae al identificador de wallet, nunca se
-// inventa un nombre.
-function resolveContraparte(referenciaId: number | null): string {
-  if (!referenciaId) return 'Wallet desconocida';
-  return WALLET_USER_MAP[referenciaId] ?? `Wallet #${referenciaId}`;
-}
-
 // Polling interval for automatic wallet refresh (QA/Demo phase)
 // Production: replace with SignalR/WebSocket push notifications
 const POLL_INTERVAL_MS = 7000;
@@ -95,6 +77,7 @@ interface Movimiento {
   descripcion:    string | null;
   referenciaTipo: string | null;
   referenciaId:   number | null;
+  nombreContraparte?: string | null;
 }
 
 interface EstadoCuenta {
@@ -259,21 +242,36 @@ const KYC_BADGE_CLASS: Record<string, string> = {
   ERROR:       'kyc-badge kyc-badge-error',
 };
 
-// Computes a human-readable description for a wallet movement.
-// Uses tipoMovimiento + referenciaId (already in the API response) to identify the counterpart.
-// Falls back to the stored descripcion for unknown types.
+function esTransferenciaWallet(m: Movimiento): boolean {
+  return (m.tipoMovimiento === 'TRANSFERENCIA_SALIDA' || m.tipoMovimiento === 'TRANSFERENCIA_ENTRADA')
+    && m.referenciaTipo === 'wallets' && m.referenciaId !== null && m.referenciaId > 0;
+}
+
+// El nombre procede exclusivamente del estado de cuenta autenticado, nunca
+// del alias, una descripción guardada o una tabla local de usuarios.
+function nombreContraparte(m: Movimiento): string | null {
+  return esTransferenciaWallet(m) && typeof m.nombreContraparte === 'string'
+    ? m.nombreContraparte.trim() || null
+    : null;
+}
+
+// Cada carga/poll resuelve las notificaciones desde SU lote actual, sin
+// conservar nombres de una respuesta ni de una sesión anterior.
+function resolverContraparte(movimientos: readonly Movimiento[]) {
+  return (referenciaId: number | null): string => {
+    if (referenciaId === null || referenciaId <= 0) return 'Wallet desconocida';
+    const movimiento = movimientos.find(m => m.referenciaId === referenciaId && nombreContraparte(m));
+    return (movimiento && nombreContraparte(movimiento)) || `Wallet #${referenciaId}`;
+  };
+}
+
 function descripcionVisible(m: Movimiento): string {
-  if (m.tipoMovimiento === 'TRANSFERENCIA_SALIDA' && m.referenciaTipo === 'wallets' && m.referenciaId) {
-    const destUser = WALLET_USER_MAP[m.referenciaId];
-    return destUser
-      ? `Enviado a ${destUser} — Wallet #${m.referenciaId}`
-      : `Enviado a Wallet #${m.referenciaId}`;
-  }
-  if (m.tipoMovimiento === 'TRANSFERENCIA_ENTRADA' && m.referenciaTipo === 'wallets' && m.referenciaId) {
-    const srcUser = WALLET_USER_MAP[m.referenciaId];
-    return srcUser
-      ? `Recibido de ${srcUser} — Wallet #${m.referenciaId}`
-      : `Recibido de Wallet #${m.referenciaId}`;
+  if (esTransferenciaWallet(m)) {
+    const nombre = nombreContraparte(m);
+    if (m.tipoMovimiento === 'TRANSFERENCIA_SALIDA') {
+      return nombre ? `Env. a ${nombre}` : `Enviado a Wallet #${m.referenciaId}`;
+    }
+    return nombre ? `Rec de ${nombre}` : `Recibido de Wallet #${m.referenciaId}`;
   }
   if (m.tipoMovimiento === 'PAGO_QR') {
     return 'Pago a Comercio Demo XPAY QA';
@@ -308,6 +306,10 @@ export function UserWalletPage() {
   const [cuenta,     setCuenta]     = useState<EstadoCuenta | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [dataErr,    setDataErr]    = useState<string | null>(null);
+  // Una lectura iniciada por una página/sesión anterior no vuelve a
+  // reportar nombres al provider después de desmontarse o cambiar de actor.
+  const cuentaScopeRef = useRef(0);
+  useEffect(() => () => { cuentaScopeRef.current += 1; }, [user]);
 
   // ── Auto-refresh state ────────────────────────────────────────────────────
   const [refreshing,  setRefreshing]  = useState(false);
@@ -566,9 +568,11 @@ export function UserWalletPage() {
   // ── Initial load ──────────────────────────────────────────────────────────
   const loadCuenta = useCallback(async () => {
     if (!user) return;
+    const scope = cuentaScopeRef.current;
     setLoading(true); setDataErr(null);
     try {
       const r = await get<{ success: boolean; data: EstadoCuenta }>('/api/reportes/mi-estado-cuenta');
+      if (scope !== cuentaScopeRef.current) return;
       setCuenta(r.data);
       setLastUpdated(new Date());
       // Establish baseline for new-movement detection
@@ -577,18 +581,23 @@ export function UserWalletPage() {
       // cada carga, no solo en el poll: así el badge/panel reflejan el
       // estado correcto también en la carga inicial (montaje/remount), sin
       // esperar al primer tick de 7s.
-      reportMovimientos(r.data.idWallet, r.data.movimientos, resolveContraparte);
-    } catch (e) { setDataErr((e as Error).message); }
-    finally { setLoading(false); }
+      reportMovimientos(r.data.idWallet, r.data.movimientos, resolverContraparte(r.data.movimientos));
+    } catch (e) {
+      if (scope === cuentaScopeRef.current) setDataErr((e as Error).message);
+    } finally {
+      if (scope === cuentaScopeRef.current) setLoading(false);
+    }
   }, [user, reportMovimientos]);
 
   // ── Silent background refresh (polling) ───────────────────────────────────
   const pollRefresh = useCallback(async () => {
     if (!user) return;
     if (opInProgressRef.current) return; // skip during financial transactions
+    const scope = cuentaScopeRef.current;
     setRefreshing(true);
     try {
       const r = await get<{ success: boolean; data: EstadoCuenta }>('/api/reportes/mi-estado-cuenta');
+      if (scope !== cuentaScopeRef.current) return;
       const fresh = r.data;
       const latestId = fresh.movimientos[0]?.idMovimiento ?? -1;
 
@@ -620,16 +629,16 @@ export function UserWalletPage() {
       // recepciones múltiples entre dos polls. Se llama en cada tick,
       // independientemente de si hubo "movimiento nuevo" según el baseline
       // anterior — es idempotente (ver WalletNotificationsContext).
-      reportMovimientos(fresh.idWallet, fresh.movimientos, resolveContraparte);
+      reportMovimientos(fresh.idWallet, fresh.movimientos, resolverContraparte(fresh.movimientos));
 
       lastKnownMovIdRef.current = latestId;
       setCuenta(fresh);
       setLastUpdated(new Date());
       setRefreshErr(null);
     } catch {
-      setRefreshErr('No se pudo actualizar automáticamente. Usa "Actualizar ahora".');
+      if (scope === cuentaScopeRef.current) setRefreshErr('No se pudo actualizar automáticamente. Usa "Actualizar ahora".');
     } finally {
-      setRefreshing(false);
+      if (scope === cuentaScopeRef.current) setRefreshing(false);
     }
   }, [user, reportMovimientos]);
 
