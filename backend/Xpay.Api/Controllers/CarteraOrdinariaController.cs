@@ -72,21 +72,37 @@ public class CarteraOrdinariaController(
     public async Task<IActionResult> GetParametros()
         => Ok(await svc.GetParametrosAsync());
 
+    [HttpPost("admin/parametros/{tipo}")]
+    [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
+    public async Task<IActionResult> CrearParametro(string tipo, [FromBody] UpsertParametroUtilizacionRequest req)
+    {
+        try
+        {
+            var result = await svc.CrearParametroAsync(tipo, req, IdUsuarioActual);
+            return CreatedAtAction(nameof(GetParametroPublico), new { tipo = result.TipoUtilizacion }, result);
+        }
+        catch (CarteraParametroDuplicadoException ex)
+        {
+            return Conflict(new { message = ex.Message, error = ex.Message });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message, error = ex.Message });
+        }
+    }
+
     [HttpPut("admin/parametros/{tipo}")]
     [Authorize(Roles = "ADMIN_XPAY,SUPERUSUARIO")]
     public async Task<IActionResult> UpsertParametro(string tipo, [FromBody] UpsertParametroUtilizacionRequest req)
     {
-        var tipos = new[] { "COMPRA_COMERCIO", "AVANCE_WALLET" };
-        if (!tipos.Contains(tipo.ToUpperInvariant()))
-            return BadRequest(new { error = "tipo_utilizacion debe ser COMPRA_COMERCIO o AVANCE_WALLET" });
         try
         {
-            var result = await svc.UpsertParametroAsync(tipo.ToUpperInvariant(), req, IdUsuarioActual);
+            var result = await svc.UpsertParametroAsync(tipo, req, IdUsuarioActual);
             return Ok(result);
         }
-        catch (Exception ex)
+        catch (ArgumentException ex)
         {
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(new { message = ex.Message, error = ex.Message });
         }
     }
 

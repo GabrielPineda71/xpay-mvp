@@ -1,3 +1,4 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Xpay.Api.Common;
 using Xpay.Api.Data;
@@ -54,6 +55,8 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
 
     public async Task<ParametroUtilizacionDto> UpsertParametroAsync(string tipo, UpsertParametroUtilizacionRequest req, long idUsuario)
     {
+        tipo = CarteraParametrosValidacion.Tipo(tipo);
+        req = CarteraParametrosValidacion.Validar(req);
         var row = await db.CarteraParametrosUtilizacion
             .FirstOrDefaultAsync(x => x.TipoUtilizacion == tipo);
         if (row is null)
@@ -61,6 +64,40 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
             row = new CarteraParametroUtilizacion { TipoUtilizacion = tipo, CreatedAt = DateTime.UtcNow, CreatedByUsuario = idUsuario };
             db.CarteraParametrosUtilizacion.Add(row);
         }
+        AplicarParametro(row, req, idUsuario);
+        await db.SaveChangesAsync();
+        return ToDto(row);
+    }
+
+    // Creación explícita: INSERT directo, sin transformar una carrera de
+    // creación en una edición de las condiciones de otro administrador.
+    public async Task<ParametroUtilizacionDto> CrearParametroAsync(string tipo, UpsertParametroUtilizacionRequest req, long idUsuario)
+    {
+        tipo = CarteraParametrosValidacion.Tipo(tipo);
+        req = CarteraParametrosValidacion.Validar(req);
+        var row = new CarteraParametroUtilizacion
+        {
+            TipoUtilizacion = tipo, Estado = "ACTIVO",
+            CreatedAt = DateTime.UtcNow, CreatedByUsuario = idUsuario,
+        };
+        AplicarParametro(row, req, idUsuario);
+        db.CarteraParametrosUtilizacion.Add(row);
+        try { await db.SaveChangesAsync(); }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException sql
+            && sql.Errors.Cast<SqlError>().Any(e => e.Number is 2601 or 2627))
+        {
+            db.Entry(row).State = EntityState.Detached;
+            // Una colisión de PK u otra clave no equivale por sí sola a un
+            // tipo duplicado. Confirmar el tipo en el estado persistido.
+            if (await db.CarteraParametrosUtilizacion.AsNoTracking().AnyAsync(p => p.TipoUtilizacion == tipo))
+                throw new CarteraParametroDuplicadoException();
+            throw;
+        }
+        return ToDto(row);
+    }
+
+    private static void AplicarParametro(CarteraParametroUtilizacion row, UpsertParametroUtilizacionRequest req, long idUsuario)
+    {
         row.TasaEmv          = req.TasaEmv;
         row.PorcAval         = req.PorcAval;
         row.PorcAdmin        = req.PorcAdmin;
@@ -73,8 +110,6 @@ public class CarteraOrdinariaService(XpayDbContext db, PagoQrService pagoQrServi
         row.MontoMax         = req.MontoMax;
         row.UpdatedAt        = DateTime.UtcNow;
         row.UpdatedByUsuario = idUsuario;
-        await db.SaveChangesAsync();
-        return ToDto(row);
     }
 
     // ── Gastos de cobranza ─────────────────────────────────────────────
