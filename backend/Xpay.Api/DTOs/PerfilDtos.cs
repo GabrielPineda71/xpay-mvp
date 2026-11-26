@@ -48,6 +48,8 @@ public class MiPerfilResponseDto
 
     public bool EmailVerificado { get; set; }
     public bool CelularVerificado { get; set; }
+    // Acción puntual para cuentas históricas: solo el servidor decide si está disponible.
+    public bool PuedeCompletarPrimerApellido { get; set; }
 }
 
 // XPAY-399 — PATCH /api/usuarios/mi-perfil. ÚNICAMENTE los 5 campos
@@ -74,6 +76,12 @@ public record ActualizarMiPerfilRequest(
     string? Ciudad,
     string? Departamento
 );
+
+// Separado del PATCH de contactos. No acepta persona, usuario ni atributos KYC.
+public sealed record CompletarPrimerApellidoRequest(string? PrimerApellido)
+{
+    public override string ToString() => "CompletarPrimerApellidoRequest { PrimerApellido = *** }";
+}
 
 // Endpoint de domicilio guiado; los nombres nunca proceden del cliente.
 public sealed record GuardarDomicilioDaneRequest(

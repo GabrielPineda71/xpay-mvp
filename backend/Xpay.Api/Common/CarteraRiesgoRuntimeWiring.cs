@@ -46,7 +46,14 @@ public static class CarteraRiesgoRuntimeWiring
         // nunca se resuelve a sí mismo.
         services.AddScoped<AutorizacionConsultaRiesgoDurable>();
         // XPAY-717 - lecturas del gate productivo (solo lectura).
-        services.AddScoped<IRiesgoProduccionStore, RiesgoProduccionStore>();
+        services.AddScoped<IRiesgoProduccionStore>(sp =>
+        {
+            if (sp.GetService<IAmbienteXpay>() is { PermiteMecanismosNoProductivos: true })
+                return new RiesgoProduccionNoDisponible();
+            return new RiesgoProduccionStore(sp.GetRequiredService<Xpay.Api.Data.XpayDbContext>(),
+                sp.GetRequiredService<IMiDecisorIdentidadResolver>(),
+                sp.GetRequiredService<IMiDecisorConsultaExternaStore>());
+        });
         services.AddScoped<IConsultaRiesgoAutorizacion>(sp =>
         {
             var ambiente = sp.GetService<IAmbienteXpay>();
@@ -57,12 +64,19 @@ public static class CarteraRiesgoRuntimeWiring
                     sp.GetRequiredService<ILogger<AutorizacionConsultaRiesgoQaGate>>(),
                     sp.GetRequiredService<IQaClienteRiesgoStore>());
 
-            return new AutorizacionConsultaRiesgoProduccion(
+            var produccion = new AutorizacionConsultaRiesgoProduccion(
                 sp.GetRequiredService<AutorizacionConsultaRiesgoDurable>(),
                 sp.GetRequiredService<IRiesgoProduccionStore>(),
                 sp.GetRequiredService<IConfiguration>(),
                 sp.GetService<TimeProvider>() ?? TimeProvider.System,
                 sp.GetRequiredService<ILogger<AutorizacionConsultaRiesgoProduccion>>());
+            return new AutorizacionConsultaRiesgoPiloto(produccion,
+                sp.GetRequiredService<IConfiguration>(), async (idUsuario, ct) =>
+                {
+                    var estado = await sp.GetRequiredService<CarteraPilotoService>()
+                        .ObtenerDisponibilidadAsync(idUsuario, ct).ConfigureAwait(false);
+                    return estado.Disponible && estado.Habilitado;
+                }, sp.GetRequiredService<ILogger<AutorizacionConsultaRiesgoPiloto>>());
         });
 
         // Primitivas downstream del pipeline (M2.4a/b/c) — antes DORMIDAS (0 DI).
@@ -89,5 +103,14 @@ public static class CarteraRiesgoRuntimeWiring
         services.AddScoped<ICarteraConsultaRiesgoPurgaBatchRunner, CarteraConsultaRiesgoPurgaBatchRunner>();
 
         return services;
+    }
+
+    // El gate de producción no se usa como alternativa al gate QA. La cara
+    // opcional del store de consultas puede resolverse sin credenciales,
+    // resolución de identidad productiva ni acceso externo en QA.
+    private sealed class RiesgoProduccionNoDisponible : IRiesgoProduccionStore
+    {
+        public Task<RiesgoProduccionSnapshot?> CargarAsync(long idSolicitud, CancellationToken cancellationToken = default)
+            => Task.FromResult<RiesgoProduccionSnapshot?>(null);
     }
 }

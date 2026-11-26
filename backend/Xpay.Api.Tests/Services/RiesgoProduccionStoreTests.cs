@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.Models;
+using Xpay.Api.Integrations.MiDecisor;
 using Xpay.Api.Services;
 using Xunit;
 
@@ -40,7 +41,7 @@ public sealed class RiesgoProduccionStoreTests
             var solicitudB = await seed.SolicitudAsync(b, "RECIBIDA");
 
             await using var ctx = NuevoContexto(cs);
-            var snap = await new RiesgoProduccionStore(ctx).CargarAsync(solicitudB);
+            var snap = await CrearStore(ctx).CargarAsync(solicitudB);
 
             Assert.NotNull(snap);
             Assert.Equal(fechaFin, snap!.UltimaRespuestaUtc);
@@ -70,7 +71,7 @@ public sealed class RiesgoProduccionStoreTests
             var nueva = await seed.SolicitudAsync(t, "RECIBIDA");
 
             await using var ctx = NuevoContexto(cs);
-            var snap = await new RiesgoProduccionStore(ctx).CargarAsync(nueva);
+            var snap = await CrearStore(ctx).CargarAsync(nueva);
 
             Assert.Equal(abre ? fechaFin : (DateTime?)null, snap!.UltimaRespuestaUtc);
         }
@@ -91,7 +92,7 @@ public sealed class RiesgoProduccionStoreTests
             var nueva = await seed.SolicitudAsync(t, "RECIBIDA");
 
             await using var ctx = NuevoContexto(cs);
-            Assert.Null((await new RiesgoProduccionStore(ctx).CargarAsync(nueva))!.UltimaRespuestaUtc);
+            Assert.Null((await CrearStore(ctx).CargarAsync(nueva))!.UltimaRespuestaUtc);
         }
         finally { await LimpiarAsync(cs, s); }
     }
@@ -115,7 +116,7 @@ public sealed class RiesgoProduccionStoreTests
             var nueva = await seed.SolicitudAsync(t, "RECIBIDA");
 
             await using var ctx = NuevoContexto(cs);
-            Assert.Equal(reciente, (await new RiesgoProduccionStore(ctx).CargarAsync(nueva))!.UltimaRespuestaUtc);
+            Assert.Equal(reciente, (await CrearStore(ctx).CargarAsync(nueva))!.UltimaRespuestaUtc);
         }
         finally { await LimpiarAsync(cs, s); }
     }
@@ -138,7 +139,7 @@ public sealed class RiesgoProduccionStoreTests
             var solicitudB = await seed.SolicitudAsync(b, "RECIBIDA");
 
             await using var ctx = NuevoContexto(cs);
-            Assert.Equal(bloquea, (await new RiesgoProduccionStore(ctx).CargarAsync(solicitudB))!.TieneCupoQueBloquea);
+            Assert.Equal(bloquea, (await CrearStore(ctx).CargarAsync(solicitudB))!.TieneCupoQueBloquea);
         }
         finally { await LimpiarAsync(cs, s); }
     }
@@ -155,7 +156,7 @@ public sealed class RiesgoProduccionStoreTests
             var solicitud = await seed.SolicitudAsync(t, "RECIBIDA");
 
             await using var ctx = NuevoContexto(cs);
-            Assert.Null(await new RiesgoProduccionStore(ctx).CargarAsync(solicitud));
+            Assert.Null(await CrearStore(ctx).CargarAsync(solicitud));
         }
         finally { await LimpiarAsync(cs, s); }
     }
@@ -177,6 +178,28 @@ public sealed class RiesgoProduccionStoreTests
 
     private static XpayDbContext NuevoContexto(string cs)
         => new(new DbContextOptionsBuilder<XpayDbContext>().UseSqlServer(cs).Options);
+
+    private static RiesgoProduccionStore CrearStore(XpayDbContext db)
+        => new(db, new IdentidadSintetica(db), new ExternasVacias());
+
+    // SQL fixtures isolate transversal history from the separately tested
+    // authenticated Veriff resolver; no external endpoint is ever called.
+    private sealed class IdentidadSintetica(XpayDbContext db) : IMiDecisorIdentidadResolver
+    {
+        public async Task<MiDecisorIdentidad?> ResolverAsync(long idUsuario, CancellationToken ct = default)
+        {
+            var p = await (from u in db.Usuarios.AsNoTracking() join persona in db.Personas.AsNoTracking()
+                on u.IdPersona equals persona.IdPersona where u.IdUsuario == idUsuario select persona).SingleOrDefaultAsync(ct);
+            if (p?.TipoDocumento is null || p.NumeroDocumento is null) return null;
+            return new MiDecisorIdentidad { IdUsuario=idUsuario, IdPersona=p.IdPersona, IdKycVerificacion=1,
+                TipoDocumento=p.TipoDocumento, NumeroDocumento=p.NumeroDocumento, TipoVeriff="ID_CARD", PrimerApellido="SINTETICO" };
+        }
+    }
+    private sealed class ExternasVacias : IMiDecisorConsultaExternaStore
+    {
+        public Task<DateTime?> UltimaReferenciaAsync(string tipo, string numero, CancellationToken ct=default) => Task.FromResult<DateTime?>(null);
+        public Task<bool> RegistrarAsync(MiDecisorConsultaExternaRegistro r, CancellationToken ct=default) => throw new NotSupportedException();
+    }
 
     private sealed record Titular(long IdUsuario, long IdPersona, long IdWallet, long IdUnidad);
 

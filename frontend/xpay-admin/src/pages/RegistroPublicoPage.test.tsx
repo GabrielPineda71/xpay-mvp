@@ -26,9 +26,10 @@ function renderRegistro(ambiente: 'QA' | 'PROD') {
   );
 }
 
-async function completarFormulario(confirmacion = contrasena, consentimientos = true) {
+async function completarFormulario(confirmacion = contrasena, consentimientos = true, primerApellido = 'De La Hoz') {
   const user = userEvent.setup();
   await user.type(await screen.findByLabelText('Usuario'), 'persona.prueba');
+  if (primerApellido) await user.type(screen.getByLabelText('Primer apellido'), primerApellido);
   await user.type(screen.getByLabelText('Correo electrónico'), 'persona@example.com');
   await user.type(screen.getByLabelText('Celular'), '3000000000');
   await user.type(screen.getByLabelText('Contraseña', { exact: true }), contrasena);
@@ -50,6 +51,25 @@ afterEach(() => {
 });
 
 describe('Registro público', () => {
+  it('pide el primer apellido explícito sin añadir aceptaciones legales', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ success: true });
+    renderRegistro('QA');
+    await completarFormulario(contrasena, true, '');
+    expect(screen.getByLabelText('Primer apellido')).toBeRequired();
+    expect(screen.getByText(/Si es compuesto, escríbelo completo/)).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('envía la declaración en FormC conservando el apellido compuesto y las tildes', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ success: true });
+    renderRegistro('QA');
+    await completarFormulario(contrasena, true, '  Garci\u0301a de la Hoz  ');
+    expect(post).toHaveBeenCalledExactlyOnceWith('/api/usuarios/registro', expect.objectContaining({
+      primerApellido: 'García de la Hoz',
+    }));
+  });
+
   it('registro1.3 presenta A/B cortas idénticas a la actualización, desmarcadas y sin casillas extra', async () => {
     vi.mocked(api.get).mockResolvedValue({ data: {
       terminos: { version: '1.3', fecha: '2026-11-21', url: 'https://app.xpaycol.com/legal/v1.3/terminos.pdf' },
@@ -74,6 +94,7 @@ describe('Registro público', () => {
       nombreUsuario: 'persona.prueba',
       email: 'persona@example.com',
       celular: '3000000000',
+      primerApellido: 'De La Hoz',
       password: contrasena,
       consentimiento: {
         aceptaTerminos: true, versionTerminos: '1.1',

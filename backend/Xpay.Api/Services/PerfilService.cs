@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.DTOs;
 using Xpay.Api.Models;
@@ -11,7 +12,7 @@ namespace Xpay.Api.Services;
 // (XPAY-398/399, NO reinterpretable por este servicio):
 //
 //   EDITABLE aquí:      Celular, Email, Direccion, Ciudad, Departamento.
-//   NUNCA EDITABLE aquí: PrimerNombre/SegundoNombre/PrimerApellido/
+//   NUNCA EDITABLE en el PATCH de contactos: PrimerNombre/SegundoNombre/PrimerApellido/
 //                        SegundoApellido/TipoDocumento/NumeroDocumento/
 //                        FechaNacimiento/Pais (identidad legal — incluso
 //                        antes de que exista IdentidadVerificada, para no
@@ -32,6 +33,7 @@ namespace Xpay.Api.Services;
 // revocación de códigos en una sola transacción.
 public class PerfilService
 {
+    internal const string AccionPrimerApellido = "COMPLETAR_PRIMER_APELLIDO_DECLARADO";
     private readonly XpayDbContext _db;
     public PerfilService(XpayDbContext db) => _db = db;
 
@@ -136,6 +138,58 @@ public class PerfilService
 
         return await MapearRespuestaAsync(persona, usuario);
     }
+
+    public async Task<MiPerfilResponseDto> CompletarPrimerApellidoAsync(
+        long idUsuario, long idPersona, CompletarPrimerApellidoRequest request, CancellationToken ct = default)
+    {
+        var apellido = PrimerApellidoDeclaradoReglas.Normalizar(request.PrimerApellido);
+        if (_db.Database.CurrentTransaction is not null)
+            throw new InvalidOperationException("Completar el apellido requiere su propia transacción.");
+        await using var tx = await _db.Database.BeginTransactionAsync(ct);
+        // Mismo orden de la sincronización KYC: usuario KYC, después persona/contactos.
+        if (await AppLockHelper.AdquirirAsync(_db, $"XPAY:KYC_USUARIO:{idUsuario}", ct) < 0)
+            throw new InvalidOperationException("Hay una actualización de identidad en curso. Intenta nuevamente.");
+        await ContactoVerificacionService.BloquearPersonaAsync(_db, idPersona, ct);
+        var usuario = await _db.Usuarios.SingleOrDefaultAsync(
+            u => u.IdUsuario == idUsuario && u.IdPersona == idPersona, ct)
+            ?? throw new KeyNotFoundException("No se encontró la cuenta asociada a esta solicitud.");
+        await _db.Entry(usuario).ReloadAsync(ct);
+        if (usuario.IdPersona != idPersona)
+            throw new KeyNotFoundException("No se encontró la cuenta asociada a esta solicitud.");
+        var persona = await _db.Personas.SingleOrDefaultAsync(p => p.IdPersona == idPersona, ct)
+            ?? throw new KeyNotFoundException("No se encontró la persona asociada a esta cuenta.");
+        await _db.Entry(persona).ReloadAsync(ct);
+        var actuales = await KycActualesAsync(idUsuario, ct);
+        if (!PrimerApellidoDeclaradoReglas.TieneIdentidadVigente(usuario, persona, actuales))
+            throw new UnauthorizedAccessException("Confirma tu correo y completa la verificación de identidad antes de continuar.");
+
+        if (!string.IsNullOrWhiteSpace(persona.PrimerApellido))
+        {
+            if (!PrimerApellidoDeclaradoReglas.Equivalentes(persona.PrimerApellido, apellido))
+                throw new PrimerApellidoYaRegistradoException();
+            await tx.CommitAsync(ct);
+            return await MapearRespuestaAsync(persona, usuario, ct);
+        }
+        if (!PrimerApellidoDeclaradoReglas.CoincideConCompleto(apellido, persona.ApellidoVerificadoCompleto, persona.SegundoApellido))
+            throw new InvalidOperationException("El primer apellido no coincide con la identidad verificada. Revísalo tal como aparece en tu documento.");
+
+        persona.PrimerApellido = apellido;
+        persona.FechaActualizacion = DateTime.UtcNow;
+        _db.Auditorias.Add(new Auditoria
+        {
+            IdUsuario = idUsuario, IdPersona = idPersona, Modulo = "PERFIL",
+            Accion = AccionPrimerApellido, Entidad = "Persona", IdEntidad = idPersona.ToString(),
+            Resultado = "EXITOSO", FechaEvento = DateTime.UtcNow,
+            Observacion = "Primer apellido declarado expresamente por el titular y contrastado con el apellido completo verificado. No modifica la identidad KYC.",
+        });
+        await _db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return await MapearRespuestaAsync(persona, usuario, ct);
+    }
+
+    private Task<List<KycVerificacion>> KycActualesAsync(long idUsuario, CancellationToken ct) =>
+        _db.KycVerificaciones.AsNoTracking().Where(k => k.IdUsuario == idUsuario && k.EsActual)
+            .Take(2).ToListAsync(ct);
 
     public async Task<MiPerfilResponseDto> ActualizarDomicilioDaneAsync(
         long idUsuario, long idPersona, GuardarDomicilioDaneRequest request,
@@ -256,6 +310,9 @@ public class PerfilService
         Persona persona, Usuario usuario, CancellationToken ct = default)
     {
         var respuesta = MapearRespuesta(persona, usuario);
+        respuesta.PuedeCompletarPrimerApellido = string.IsNullOrWhiteSpace(persona.PrimerApellido)
+            && PrimerApellidoDeclaradoReglas.TieneIdentidadVigente(usuario, persona,
+                await KycActualesAsync(usuario.IdUsuario, ct));
         respuesta.IdCiudadDane = persona.IdCiudadDane;
         if (persona.IdCiudadDane.HasValue)
             respuesta.IdDepartamentoDane = await _db.CatalogoCiudades.AsNoTracking()

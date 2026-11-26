@@ -13,38 +13,39 @@ namespace Xpay.Api.Services;
 // La búsqueda es transversal: todas las personas con ese documento en
 // cualquier unidad de negocio, sus usuarios y todas sus solicitudes. Así otro
 // usuario, persona, solicitud o unidad no evade la ventana.
-public sealed class RiesgoProduccionStore(XpayDbContext db) : IRiesgoProduccionStore
+public sealed class RiesgoProduccionStore(XpayDbContext db, IMiDecisorIdentidadResolver identidadResolver,
+    IMiDecisorConsultaExternaStore consultasExternas) : IRiesgoProduccionStore
 {
     public async Task<RiesgoProduccionSnapshot?> CargarAsync(
         long idSolicitud, CancellationToken cancellationToken = default)
     {
-        var documento = await (
-            from s in db.CarteraSolicitudesCupo.AsNoTracking()
-            join p in db.Personas.AsNoTracking() on s.IdPersona equals p.IdPersona
-            where s.IdSolicitud == idSolicitud
-            select new { p.TipoDocumento, p.NumeroDocumento }
-        ).FirstOrDefaultAsync(cancellationToken);
-
-        // Identidad documental insuficiente: el gate falla cerrado.
-        if (documento is null
-            || string.IsNullOrWhiteSpace(documento.TipoDocumento)
-            || string.IsNullOrWhiteSpace(documento.NumeroDocumento))
-            return null;
-
-        var tipo   = documento.TipoDocumento;
-        var numero = documento.NumeroDocumento;
-
-        var personas = db.Personas.AsNoTracking()
-            .Where(p => p.TipoDocumento == tipo && p.NumeroDocumento == numero)
-            .Select(p => p.IdPersona);
+        var solicitud = await db.CarteraSolicitudesCupo.AsNoTracking().Where(s => s.IdSolicitud == idSolicitud)
+            .Select(s => new { s.IdUsuario, s.IdPersona }).SingleOrDefaultAsync(cancellationToken);
+        if (solicitud is null) return null;
+        var identidad = await identidadResolver.ResolverAsync(solicitud.IdUsuario, cancellationToken);
+        if (identidad is null || identidad.IdPersona != solicitud.IdPersona) return null;
+        var numero = identidad.NumeroDocumento;
+        // SQL selects a superset; the strict common normalizer decides in RAM.
+        // Contains also preserves candidates with external Unicode whitespace:
+        // SQL TRIM does not match string.Trim(). Partial matches are discarded.
+        var candidatos = await db.Personas.AsNoTracking().Where(p =>
+                (p.NumeroDocumento != null && p.NumeroDocumento.Replace(".", "").Contains(numero)) ||
+                (p.NumeroDocumentoVerificado != null && p.NumeroDocumentoVerificado.Replace(".", "").Contains(numero)))
+            .Select(p => new { p.IdPersona, p.TipoDocumento, p.NumeroDocumento, p.TipoDocumentoVeriffRaw, p.NumeroDocumentoVerificado })
+            .Take(201).ToListAsync(cancellationToken);
+        if (candidatos.Count > 200) return null;
+        var personas = candidatos.Where(p => DocumentoCoincide(identidad, p.TipoDocumento, p.NumeroDocumento,
+                p.TipoDocumentoVeriffRaw, p.NumeroDocumentoVerificado))
+            .Select(p => p.IdPersona).Distinct().ToArray();
+        if (!personas.Contains(identidad.IdPersona)) return null;
 
         var usuarios = db.Usuarios.AsNoTracking()
             .Where(u => personas.Contains(u.IdPersona))
             .Select(u => u.IdUsuario);
 
-        var solicitudes = db.CarteraSolicitudesCupo.AsNoTracking()
-            .Where(s => personas.Contains(s.IdPersona) || usuarios.Contains(s.IdUsuario))
-            .Select(s => s.IdSolicitud);
+        var solicitudesTitular = db.CarteraSolicitudesCupo.AsNoTracking()
+            .Where(s => personas.Contains(s.IdPersona) || usuarios.Contains(s.IdUsuario));
+        var solicitudes = solicitudesTitular.Select(s => s.IdSolicitud);
 
         var finalizado = CarteraIntentoFases.Finalizado;
         var resultados = ReglaReconsultaMiDecisor.ResultadosConRespuesta.ToArray();
@@ -62,6 +63,26 @@ public sealed class RiesgoProduccionStore(XpayDbContext db) : IRiesgoProduccionS
         var tieneCupoQueBloquea = await db.CarteraCuposOrdinarios.AsNoTracking()
             .AnyAsync(c => usuarios.Contains(c.IdUsuario) && estadosQueBloquean.Contains(c.Estado), cancellationToken);
 
-        return new RiesgoProduccionSnapshot(ultimaRespuesta, tieneCupoQueBloquea);
+        var pendiente = await (from intento in db.CarteraSolicitudCupoIntentos.AsNoTracking()
+            join s in solicitudesTitular on intento.IdSolicitud equals s.IdSolicitud
+            where intento.FaseIntento == CarteraIntentoFases.EnvioIncierto
+                || intento.ResultadoTecnico == CarteraConsultaRiesgoResultados.ResultadoIncierto
+                || intento.ResultadoTecnico == CarteraConsultaRiesgoResultados.ErrorProtocolo
+                || (intento.FaseIntento == CarteraIntentoFases.PreCall && s.EstadoSolicitud == CarteraSolicitudCupoEstados.ConsultandoRiesgo)
+            select intento.IdIntento).AnyAsync(cancellationToken);
+        var externa = await consultasExternas.UltimaReferenciaAsync(identidad.TipoDocumento, numero, cancellationToken);
+        return new RiesgoProduccionSnapshot(ultimaRespuesta, tieneCupoQueBloquea)
+        {
+            UltimaConsultaExternaUtc = externa, TieneConsultaPendiente = pendiente,
+        };
+    }
+
+    internal static bool DocumentoCoincide(MiDecisorIdentidad identidad, string? tipo, string? numero, string? tipoVeriff, string? numeroVerificado)
+    {
+        var legal = tipo?.Trim().ToUpperInvariant();
+        if (legal == "PASAPORTE") legal = "PAS";
+        return (legal == identidad.TipoDocumento && TipoDocumentoVeriffMapper.NumeroComparable(numero) == identidad.NumeroDocumento)
+            || (string.Equals(tipoVeriff?.Trim(), identidad.TipoVeriff, StringComparison.OrdinalIgnoreCase)
+                && TipoDocumentoVeriffMapper.NumeroComparable(numeroVerificado) == identidad.NumeroDocumento);
     }
 }

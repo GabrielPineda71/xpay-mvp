@@ -851,8 +851,10 @@ public sealed class PreparacionWalletSqlTests
             var previas = await PreparacionWalletService.ContarPlazasAsync(db);
             Assert.True(previas <= total, "La base de pruebas ya excede la capacidad prevista por el caso.");
             for (var i = previas; i < total; i++) db.Auditorias.Add(new() {
-                IdUsuario = usuario, Modulo = "USUARIOS", Entidad = "usuarios", IdEntidad = $"fixture-{_sufijo}-{i}",
-                Accion = i % 2 == 0 ? AltaUsuarioPilotoService.AccionAuditoria : PreparacionWalletService.AccionActivar,
+                // Capacidad por titular distinto; el actor administrador no
+                // es el usuario dado de alta. IDs sintéticos sin datos reales.
+                IdUsuario = usuario, Modulo = "USUARIOS", Entidad = "usuarios", IdEntidad = (long.MaxValue-i).ToString(CultureInfo.InvariantCulture),
+                Accion = AltaUsuarioPilotoService.AccionAuditoria,
                 Resultado = "EXITOSO", FechaEvento = DateTime.UtcNow, Observacion = Capacidad });
             await db.SaveChangesAsync();
         }

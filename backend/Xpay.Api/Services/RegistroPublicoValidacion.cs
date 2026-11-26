@@ -12,6 +12,7 @@ public static class RegistroPublicoValidacion
 {
     public const int LongitudMaximaUsuario = 100;
     public const int LongitudMaximaCelular = 30;
+    public const int LongitudMaximaPrimerApellido = PrimerApellidoDeclaradoReglas.LongitudMaxima;
 
     public static RegistroPublicoNormalizado Validar(RegistroPublicoRequest request, IAmbienteXpay ambiente)
     {
@@ -39,6 +40,8 @@ public static class RegistroPublicoValidacion
         if (celular.Length > LongitudMaximaCelular)
             throw new InvalidOperationException("El celular no puede superar 30 caracteres.");
 
-        return new RegistroPublicoNormalizado(email, nombreUsuario, celular);
+        var primerApellido = PrimerApellidoDeclaradoReglas.Normalizar(request.PrimerApellido);
+
+        return new RegistroPublicoNormalizado(email, nombreUsuario, celular, primerApellido);
     }
 }

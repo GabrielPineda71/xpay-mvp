@@ -1,0 +1,23 @@
+.cartera-solicitud {
+  margin: 0 0 1.5rem;
+  padding: 1rem;
+  border: 1px solid #d8e3e4;
+  border-radius: 12px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.cartera-solicitud h3 { margin-top: 0; }
+.cartera-solicitud button,
+.cartera-solicitud a { margin: .5rem .75rem .25rem 0; }
+.cartera-solicitud-autorizacion { display: grid; gap: .75rem; max-width: 42rem; }
+.cartera-solicitud-autorizacion label { display: flex; gap: .5rem; align-items: center; }
+.cartera-solicitud-autorizacion input[type="checkbox"] { width: 20px; height: 20px; }
+.cartera-solicitud-texto {
+  max-height: 18rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  padding: .875rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  line-height: 1.55;
+}

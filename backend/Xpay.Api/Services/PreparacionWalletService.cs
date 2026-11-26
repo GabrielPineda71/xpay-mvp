@@ -189,8 +189,8 @@ public sealed class PreparacionWalletService(
     }
 
     internal static Task<int> ContarPlazasAsync(XpayDbContext db, CancellationToken ct = default) =>
-        db.Auditorias.CountAsync(a => a.Resultado == "EXITOSO" &&
-            (a.Accion == AltaUsuarioPilotoService.AccionAuditoria || a.Accion == AccionActivar), ct);
+        db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM (" + CarteraPilotoService.PlazasSql +
+            ") plazas WHERE id_usuario>0").SingleAsync(ct);
 
     internal static async Task<bool> IdentidadAprobadaAsync(XpayDbContext db, Usuario u, Persona p, CancellationToken ct = default)
     {

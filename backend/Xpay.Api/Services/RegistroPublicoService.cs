@@ -143,6 +143,7 @@ public sealed class RegistroPublicoService(
                 var persona = new Persona
                 {
                     IdUnidadNegocio = idUnidad,
+                    PrimerApellido  = datos.PrimerApellido,
                     Celular         = datos.Celular,
                     Email           = datos.Email,
                     Pais            = "Colombia",

@@ -10,7 +10,11 @@ namespace Xpay.Api.Integrations.MiDecisor;
 //                         null si no hay ninguna.
 //   TieneCupoQueBloquea → existe un cupo ordinario en estado ACTIVO o
 //                         SUSPENDIDO de algún usuario del mismo titular.
-public sealed record RiesgoProduccionSnapshot(DateTime? UltimaRespuestaUtc, bool TieneCupoQueBloquea);
+public sealed record RiesgoProduccionSnapshot(DateTime? UltimaRespuestaUtc, bool TieneCupoQueBloquea)
+{
+    public DateTime? UltimaConsultaExternaUtc { get; init; }
+    public bool TieneConsultaPendiente { get; init; }
+}
 
 // Lecturas del gate productivo. Sólo lectura. Devuelve null si la identidad
 // documental de la solicitud es insuficiente (el gate falla cerrado).

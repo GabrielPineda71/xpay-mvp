@@ -49,6 +49,14 @@ public sealed class RegistroPublicoProduccionSqlTests
             var usuario = await consulta.Usuarios.AsNoTracking().SingleAsync(u => u.NombreUsuario == nombre);
             Assert.Equal(EstadosUsuario.PendienteVerificacion, usuario.Estado);
             Assert.False(usuario.EmailVerificado);
+            var persona = await consulta.Personas.AsNoTracking().SingleAsync(p => p.IdPersona == usuario.IdPersona);
+            Assert.Equal("De La Hoz", persona.PrimerApellido);
+            Assert.Null(persona.SegundoApellido);
+            Assert.Null(persona.TipoDocumento);
+            Assert.Null(persona.NumeroDocumento);
+            Assert.False(persona.IdentidadVerificada);
+            Assert.Null(persona.ApellidoVerificadoCompleto);
+            Assert.Null(persona.NumeroDocumentoVerificado);
             Assert.False(await consulta.Wallets.AnyAsync(w => w.IdPersona == usuario.IdPersona));
             Assert.Equal(movimientosAntes, await consulta.WalletMovimientos.CountAsync());
             Assert.Equal(asientosAntes, await consulta.LedgerTransacciones.CountAsync());

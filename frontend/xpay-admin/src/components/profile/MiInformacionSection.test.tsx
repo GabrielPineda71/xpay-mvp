@@ -87,6 +87,20 @@ describe('MiInformacionSection (XPAY-401)', () => {
     expect(screen.getByText('Documento de identidad ***6789')).toBeInTheDocument();
   });
 
+  it('con solo primer apellido declarado conserva el nombre completo verificado', async () => {
+    mockGet.mockImplementation((path: string) =>
+      path === '/api/usuarios/mi-perfil'
+        ? Promise.resolve({ success: true, data: {
+            ...PERFIL, primerNombre: null, primerApellido: 'Pérez',
+            identidadVerificada: true, nombreVerificado: 'JUANA PÉREZ GÓMEZ',
+          } })
+        : Promise.reject(new Error(`unmocked GET ${path}`)));
+    render(<MiInformacionSection />);
+    expect(await screen.findByText('JUANA PÉREZ GÓMEZ')).toBeInTheDocument();
+    expect(screen.queryByText('Pérez', { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/primer.?apellido/i)).not.toBeInTheDocument();
+  });
+
   it('identidadVerificada=true muestra "Identidad verificada"', async () => {
     mockGet.mockImplementation((path: string) =>
       path === '/api/usuarios/mi-perfil'

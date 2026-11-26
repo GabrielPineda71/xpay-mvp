@@ -40,6 +40,19 @@ public class PerfilContractTests
         Assert.NotNull(metodo.GetCustomAttribute<HttpPatchAttribute>());
     }
 
+    [Fact]
+    public void CompletarPrimerApellido_AccionPropiaAutenticadaConKyc_SinIdDelCliente()
+    {
+        var metodo = Metodo(nameof(UsuariosController.CompletarPrimerApellido));
+        Assert.Equal("mi-perfil/primer-apellido", metodo.GetCustomAttribute<HttpPostAttribute>()?.Template);
+        Assert.Contains(metodo.GetCustomAttributes<AuthorizeAttribute>(), a => a.Policy == "KycAprobado");
+        Assert.Contains(metodo.GetCustomAttributes<AuthorizeAttribute>(), a => a.Policy is null);
+        var parametros = metodo.GetParameters();
+        Assert.Equal(new[] { typeof(CompletarPrimerApellidoRequest), typeof(CancellationToken) }, parametros.Select(p => p.ParameterType));
+        Assert.Equal(new[] { "PrimerApellido" }, typeof(CompletarPrimerApellidoRequest).GetProperties().Select(p => p.Name));
+        Assert.DoesNotContain("APELLIDO_PRIVADO", new CompletarPrimerApellidoRequest("APELLIDO_PRIVADO").ToString());
+    }
+
     // ── Protección IDOR: el cliente no puede indicar qué persona/usuario
     //    leer o modificar — ninguno de los dos métodos acepta un parámetro
     //    de tipo numérico (idPersona/idUsuario) proveniente del cliente. ──

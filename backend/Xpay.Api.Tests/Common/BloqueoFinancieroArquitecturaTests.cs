@@ -27,6 +27,9 @@ public sealed class BloqueoFinancieroArquitecturaTests
         "RegistroPublicoController.ReenviarVerificacion",
         "UsuariosController.RegistrarInicial", "UsuariosController.RegistrarUsuarioFinal",
         "UsuariosController.ActualizarMiPerfil",
+        // Declaración propia auditada: completa solo el apellido faltante,
+        // sin crear solicitudes, consultar riesgo ni generar cupos.
+        "UsuariosController.CompletarPrimerApellido",
         // Registro guiado: domicilio, aceptaciones A/B y sincronización
         // de identidad no mueven dinero. Activar equivale al alta piloto con
         // Wallet/saldo0: no crea movimientos, ledger, deuda ni cupo; todas las

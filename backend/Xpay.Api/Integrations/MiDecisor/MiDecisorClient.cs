@@ -31,6 +31,7 @@ public sealed class MiDecisorClient : IMiDecisorClient
     private readonly IMiDecisorTokenProvider   _tokenProvider;
     private readonly IConfiguration            _configuration;
     private readonly ILogger<MiDecisorClient>  _logger;
+    private readonly MiDecisorPostRateLimiter? _rateLimiter;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -41,17 +42,30 @@ public sealed class MiDecisorClient : IMiDecisorClient
         IHttpClientFactory httpClientFactory,
         IMiDecisorTokenProvider tokenProvider,
         IConfiguration configuration,
-        ILogger<MiDecisorClient> logger)
+        ILogger<MiDecisorClient> logger,
+        MiDecisorPostRateLimiter? rateLimiter = null)
     {
         _httpClientFactory = httpClientFactory;
         _tokenProvider     = tokenProvider;
         _configuration     = configuration;
         _logger            = logger;
+        _rateLimiter       = rateLimiter;
     }
 
-    public async Task<MiDecisorResultado> ConsultarPersonaNaturalAsync(
+    public Task<MiDecisorResultado> ConsultarPersonaNaturalAsync(
         MiDecisorConsultaRequest request,
         CancellationToken cancellationToken = default)
+        => ConsultarPersonaNaturalCoreAsync(request, null, cancellationToken);
+
+    public Task<MiDecisorResultado> ConsultarPersonaNaturalAsync(
+        MiDecisorConsultaRequest request,
+        Func<CancellationToken, Task> antesDeEnviarConsulta,
+        CancellationToken cancellationToken = default)
+        => ConsultarPersonaNaturalCoreAsync(request, antesDeEnviarConsulta, cancellationToken);
+
+    private async Task<MiDecisorResultado> ConsultarPersonaNaturalCoreAsync(
+        MiDecisorConsultaRequest request, Func<CancellationToken, Task>? antesDeEnviarConsulta,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -96,10 +110,14 @@ public sealed class MiDecisorClient : IMiDecisorClient
         // ── 3. Token — una sola llamada, sólo tras validar todo lo anterior.
         //    Una MiDecisorException del provider se propaga sin envolver;
         //    la cancelación del caller también.
-        var token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+        using var body = await MiDecisorJsonTransport.CreateContentAsync(
+            new MiDecisorConsultaRequest(tipoCodigo, numero, apellido), MiDecisorJsonTransport.QueryRequestLimit, cancellationToken).ConfigureAwait(false);
+        string token;
+        try { token = await _tokenProvider.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false); }
+        catch (MiDecisorException ex) { ex.Etapa = MiDecisorEtapa.Autenticacion; throw; }
 
         // ── 4. Una única petición HTTP.
-        var client = _httpClientFactory.CreateClient();
+        var client = _httpClientFactory.CreateClient(MiDecisorJsonTransport.ClientName);
 
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(options.TimeoutSeconds));
         using var linkedCts  = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
@@ -107,15 +125,27 @@ public sealed class MiDecisorClient : IMiDecisorClient
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, queryUri);
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        httpRequest.Content = JsonContent.Create(
-            new MiDecisorConsultaRequest(tipoCodigo, numero, apellido));
+        httpRequest.Headers.TransferEncodingChunked = false;
+        httpRequest.Content = body;
 
+        using var rateLease = new MiDecisorPostRateLimiter.LeaseScope();
         HttpResponseMessage response;
         try
         {
-            response = await client
-                .SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token)
-                .ConfigureAwait(false);
+            // Wait for capacity before crossing the durable query boundary.
+            // The start gate remains held through the SQL callback, so actual
+            // POST starts stay separated even when that callback is slow.
+            Task<HttpResponseMessage>? sending = null;
+            if (_rateLimiter is not null)
+                rateLease.Value = await _rateLimiter.EnterAsync(linkedCts.Token, antesDeEnviarConsulta,
+                    () => sending = client.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token)).ConfigureAwait(false);
+            else
+            {
+                if (antesDeEnviarConsulta is not null)
+                    await antesDeEnviarConsulta(linkedCts.Token).ConfigureAwait(false);
+                sending = client.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
+            }
+            response = await sending!.ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -165,9 +195,8 @@ public sealed class MiDecisorClient : IMiDecisorClient
             MiDecisorRespuestaEnvelope? envelope;
             try
             {
-                envelope = await response.Content
-                    .ReadFromJsonAsync<MiDecisorRespuestaEnvelope>(JsonOpts, linkedCts.Token)
-                    .ConfigureAwait(false);
+                envelope = await MiDecisorJsonTransport.ReadJsonAsync<MiDecisorRespuestaEnvelope>(
+                    response.Content, JsonOpts, MiDecisorJsonTransport.QueryResponseLimit, linkedCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -216,9 +245,7 @@ public sealed class MiDecisorClient : IMiDecisorClient
         var riesgo       = content.Respuesta.InformacionRiesgo;
         var alertasCount = riesgo?.Alertas?.Count ?? 0;
 
-        _logger.LogInformation(
-            "midecisor.query: OK envelope={Estado} content={ContentStatus} conInformacion={ConInfo} alertas={Alertas}.",
-            estado, content.Status, riesgo?.ConInformacion, alertasCount);
+        _logger.LogInformation("midecisor.query: respuesta funcional validada HTTP {Status}.", httpStatus);
 
         // ── M2.4a (captura P0) — valores RAW adicionales, verbatim, sin normalizar.
         var validacion    = content.Respuesta.Validacion;
