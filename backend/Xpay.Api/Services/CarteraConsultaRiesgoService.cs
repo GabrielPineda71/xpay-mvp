@@ -7,10 +7,10 @@ namespace Xpay.Api.Services;
 // M2.3a/b1 — orquestación estructural Cartera ↔ MiDecisor (consulta de riesgo PN).
 //
 // Flujo por invocación:
-//   PRE-FLIGHT (sin transacción, sin token, sin HTTP):
+//   PRE-FLIGHT (sin transacción, sin token/POST MiDecisor; GET Veriff en PROD):
 //     cargar contexto → ownership → estado == RECIBIDA → consentimiento
 //     fail-closed → mapear Persona → MiDecisorConsultaRequest.
-//     Cualquier fallo aquí deja la solicitud en RECIBIDA; 0 llamadas al proveedor.
+//     Cualquier fallo aquí deja la solicitud en RECIBIDA; 0 POST MiDecisor.
 //   TX-A: ganar la transición RECIBIDA → CONSULTANDO_RIESGO (applock + re-lectura).
 //     El perdedor NO llama al proveedor.
 //   TX-ENVIO_INCIERTO: marcar el intento numero_intento=1 como ENVIO_INCIERTO
@@ -83,41 +83,39 @@ public sealed class CarteraConsultaRiesgoService(
             throw new InvalidOperationException("La consulta de riesgo ya fue iniciada para esta solicitud.");
         }
 
-        // ── TX-ENVIO_INCIERTO: marcar la frontera de no-retry-automático ──
-        // Si falla, se propaga SIN llamar al proveedor: la solicitud queda
-        // CONSULTANDO_RIESGO y el intento en PRE_CALL (reconciliación externa).
-        await store.MarcarEnvioInciertoAsync(
-            idSolicitud, idUsuario, timeProvider.GetUtcNow().UtcDateTime, cancellationToken).ConfigureAwait(false);
-
         // ── HTTP: exactamente una llamada, sin transacción SQL abierta ────
         var startedAt = timeProvider.GetTimestamp();
         MiDecisorResultado? resultado = null;
         MiDecisorException? falla = null;
+        var envioMarcado = false;
 
         try
         {
-            resultado = await miDecisor.ConsultarPersonaNaturalAsync(request, cancellationToken).ConfigureAwait(false);
+            resultado = await miDecisor.ConsultarPersonaNaturalAsync(request, async ct =>
+            {
+                await store.MarcarEnvioInciertoAsync(idSolicitud, idUsuario,
+                    timeProvider.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
+                envioMarcado = true;
+            }, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Cancelación del caller DESPUÉS de ENVIO_INCIERTO: el proveedor pudo
-            // haber sido contactado / procesado. Se cierra el intento como
-            // RESULTADO_INCIERTO con un token NO cancelable y se re-lanza la
-            // cancelación original. Ningún crudo se persiste.
+            // Before the callback, no bureau query was sent. After the durable
+            // boundary, preserve uncertainty and never retry automatically.
             await store.FinalizarIntentoAsync(
                 idSolicitud,
                 idUsuario,
                 CrearOutcome(
                     CarteraSolicitudCupoEstados.ErrorProveedor,
-                    CarteraConsultaRiesgoResultados.ResultadoIncierto,
+                    envioMarcado ? CarteraConsultaRiesgoResultados.ResultadoIncierto : CarteraConsultaRiesgoResultados.ErrorAutenticacion,
                     httpStatus: null,
                     contentStatus: null,
-                    util: false),
+                    util: false) with { FinalizacionDesdePreCall = !envioMarcado },
                 CancellationToken.None).ConfigureAwait(false);
 
             logger.LogWarning(
-                "midecisor.orq: cancelación del caller durante la consulta (idSolicitud={IdSolicitud}) → RESULTADO_INCIERTO.",
-                idSolicitud);
+                "midecisor.orq: cancelación del caller (idSolicitud={IdSolicitud}, consultaPreparada={ConsultaPreparada}).",
+                idSolicitud, envioMarcado);
             throw;
         }
         catch (MiDecisorException ex)
@@ -146,7 +144,8 @@ public sealed class CarteraConsultaRiesgoService(
 
         var outcome = resultado is not null
             ? ClasificarExito(resultado)
-            : ClasificarFalla(falla!);
+            : ClasificarFalla(falla!, envioMarcado);
+        if (!envioMarcado) outcome = outcome with { FinalizacionDesdePreCall = true };
 
         // ── TX-B: persistir el resultado durable (transición única) ──────
         await store.FinalizarIntentoAsync(idSolicitud, idUsuario, outcome, cancellationToken).ConfigureAwait(false);
@@ -230,15 +229,22 @@ public sealed class CarteraConsultaRiesgoService(
     // configuración NO afirma que el proveedor haya sido consultado por red;
     // sólo describe por qué esta ejecución no obtuvo un resultado útil. Ningún
     // crudo se persiste (no se recibió MiDecisorResultado).
-    private ResultadoIntentoDurable ClasificarFalla(MiDecisorException ex)
+    private ResultadoIntentoDurable ClasificarFalla(MiDecisorException ex, bool envioMarcado)
     {
         var resultadoTecnico = ex switch
         {
+            _ when !envioMarcado && ex.Etapa == MiDecisorEtapa.Autenticacion
+                                               => CarteraConsultaRiesgoResultados.ErrorAutenticacion,
+            MiDecisorAuthenticationException when envioMarcado
+                                               => CarteraConsultaRiesgoResultados.ResultadoIncierto,
             MiDecisorAuthenticationException    => CarteraConsultaRiesgoResultados.ErrorAutenticacion,
             MiDecisorQueryRejectedException     => CarteraConsultaRiesgoResultados.RechazadaProveedor,
             MiDecisorConfigurationException     => CarteraConsultaRiesgoResultados.ErrorConfiguracion,
             MiDecisorRequestValidationException => CarteraConsultaRiesgoResultados.ErrorValidacionLocal,
             MiDecisorProtocolException          => CarteraConsultaRiesgoResultados.ErrorProtocolo,
+            MiDecisorRateLimitException         => CarteraConsultaRiesgoResultados.ErrorValidacionLocal,
+            MiDecisorTransportException when !envioMarcado || ex.Etapa == MiDecisorEtapa.Autenticacion
+                                               => CarteraConsultaRiesgoResultados.ErrorAutenticacion,
             MiDecisorTransportException         => CarteraConsultaRiesgoResultados.ResultadoIncierto,
             _                                   => CarteraConsultaRiesgoResultados.ResultadoIncierto,
         };

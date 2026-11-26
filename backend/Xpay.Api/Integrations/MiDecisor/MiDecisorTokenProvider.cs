@@ -29,8 +29,10 @@ public sealed class MiDecisorTokenProvider : IMiDecisorTokenProvider
     private readonly IConfiguration                  _configuration;
     private readonly ILogger<MiDecisorTokenProvider> _logger;
     private readonly TimeProvider                    _timeProvider;
+    private readonly MiDecisorPostRateLimiter?        _rateLimiter;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private int _queued;
     private volatile CachedToken?  _cache;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -42,12 +44,14 @@ public sealed class MiDecisorTokenProvider : IMiDecisorTokenProvider
         IHttpClientFactory httpClientFactory,
         IConfiguration configuration,
         ILogger<MiDecisorTokenProvider> logger,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        MiDecisorPostRateLimiter? rateLimiter = null)
     {
         _httpClientFactory = httpClientFactory;
         _configuration     = configuration;
         _logger            = logger;
         _timeProvider      = timeProvider;
+        _rateLimiter       = rateLimiter;
     }
 
     public async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default)
@@ -57,9 +61,16 @@ public sealed class MiDecisorTokenProvider : IMiDecisorTokenProvider
         if (cached is not null && _timeProvider.GetUtcNow() < cached.ExpiresAtUtc)
             return cached.AccessToken;
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        if (Interlocked.Increment(ref _queued) > 50)
+        {
+            Interlocked.Decrement(ref _queued);
+            throw new MiDecisorRateLimitException { Etapa = MiDecisorEtapa.Autenticacion };
+        }
+        var entered = false;
         try
         {
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            entered = true;
             // Doble verificación: otro caller pudo refrescar mientras esperábamos.
             cached = _cache;
             if (cached is not null && _timeProvider.GetUtcNow() < cached.ExpiresAtUtc)
@@ -69,9 +80,15 @@ public sealed class MiDecisorTokenProvider : IMiDecisorTokenProvider
             _cache = fresh;
             return fresh.AccessToken;
         }
+        catch (MiDecisorException ex)
+        {
+            ex.Etapa = MiDecisorEtapa.Autenticacion;
+            throw;
+        }
         finally
         {
-            _gate.Release();
+            if (entered) _gate.Release();
+            Interlocked.Decrement(ref _queued);
         }
     }
 
@@ -98,7 +115,7 @@ public sealed class MiDecisorTokenProvider : IMiDecisorTokenProvider
             throw new MiDecisorConfigurationException("MIDECISOR_BASE_URL no es una URL http/https absoluta válida.");
         }
 
-        var client = _httpClientFactory.CreateClient();
+        var client = _httpClientFactory.CreateClient(MiDecisorJsonTransport.ClientName);
 
         // Timeout aplicado vía CTS enlazado — no se toca client.Timeout (el
         // client viene del factory y puede compartirse con otros consumidores).
@@ -108,15 +125,22 @@ public sealed class MiDecisorTokenProvider : IMiDecisorTokenProvider
         using var request = new HttpRequestMessage(HttpMethod.Post, authUri);
         request.Headers.TryAddWithoutValidation("Client_id",     options.ClientId);
         request.Headers.TryAddWithoutValidation("Client_secret", options.ClientSecret);
-        request.Content = JsonContent.Create(new MiDecisorAuthRequest(options.Username!, options.Password!));
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.TransferEncodingChunked = false;
+        request.Content = await MiDecisorJsonTransport.CreateContentAsync(
+            new MiDecisorAuthRequest(options.Username!, options.Password!), MiDecisorJsonTransport.AuthRequestLimit, linkedCts.Token).ConfigureAwait(false);
 
         var startedAt = _timeProvider.GetTimestamp();
+        using var rateLease = new MiDecisorPostRateLimiter.LeaseScope();
         HttpResponseMessage response;
         try
         {
-            response = await client
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token)
-                .ConfigureAwait(false);
+            Task<HttpResponseMessage>? sending = null;
+            if (_rateLimiter is not null)
+                rateLease.Value = await _rateLimiter.EnterAsync(linkedCts.Token, start:
+                    () => sending = client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token)).ConfigureAwait(false);
+            else sending = client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
+            response = await sending!.ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -155,9 +179,8 @@ public sealed class MiDecisorTokenProvider : IMiDecisorTokenProvider
             MiDecisorTokenResponse? payload;
             try
             {
-                payload = await response.Content
-                    .ReadFromJsonAsync<MiDecisorTokenResponse>(JsonOpts, linkedCts.Token)
-                    .ConfigureAwait(false);
+                payload = await MiDecisorJsonTransport.ReadJsonAsync<MiDecisorTokenResponse>(
+                    response.Content, JsonOpts, MiDecisorJsonTransport.AuthResponseLimit, linkedCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

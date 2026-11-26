@@ -13,7 +13,18 @@ namespace Xpay.Api.Integrations.MiDecisor;
 // HTTP y, ante fallo, lanza la excepción correspondiente sin reintentar.
 
 // Base de todos los fallos de la integración MiDecisor.
-public class MiDecisorException(string message) : Exception(message);
+public enum MiDecisorEtapa { Autenticacion, PreparacionConsulta, Consulta }
+
+public class MiDecisorException(string message) : Exception(message)
+{
+    public MiDecisorEtapa Etapa { get; internal set; } = MiDecisorEtapa.Consulta;
+}
+
+public sealed class MiDecisorRateLimitException : MiDecisorException
+{
+    public MiDecisorRateLimitException() : base("La capacidad temporal de MiDecisor está ocupada.")
+        => Etapa = MiDecisorEtapa.PreparacionConsulta;
+}
 
 // Falta configuración obligatoria (base URL o alguna credencial). Se lanza
 // ANTES de cualquier llamada HTTP.

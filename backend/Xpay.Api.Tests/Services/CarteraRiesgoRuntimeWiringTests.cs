@@ -24,6 +24,8 @@ public sealed class CarteraRiesgoRuntimeWiringTests
     private static ServiceCollection Wired()
     {
         var services = new ServiceCollection();
+        services.AddMiDecisorTransport();
+        services.AddMiDecisorIdentidadProduccion();
         services.AddCarteraRiesgoRuntime();
         return services;
     }
@@ -114,11 +116,11 @@ public sealed class CarteraRiesgoRuntimeWiringTests
         await using var provider = ProveedorConVariablesQa(AmbienteXpayTests.Ambiente(nombre));
         await using var scope = provider.CreateAsyncScope();
 
-        var gate = Assert.IsType<AutorizacionConsultaRiesgoProduccion>(
+        var piloto = Assert.IsType<AutorizacionConsultaRiesgoPiloto>(
             scope.ServiceProvider.GetRequiredService<IConsultaRiesgoAutorizacion>());
-
+        var gate = Assert.IsType<AutorizacionConsultaRiesgoProduccion>(piloto.AutorizacionInterna);
         Assert.IsType<AutorizacionConsultaRiesgoDurable>(gate.AutorizacionDurable);
-        Assert.False(await gate.TieneAutorizacionVigenteAsync(1, 1));
+        Assert.False(await piloto.TieneAutorizacionVigenteAsync(1, 1));
     }
 
     [Fact]
@@ -127,7 +129,7 @@ public sealed class CarteraRiesgoRuntimeWiringTests
         await using var provider = ProveedorConVariablesQa(ambiente: null);
         await using var scope = provider.CreateAsyncScope();
 
-        var gate = Assert.IsType<AutorizacionConsultaRiesgoProduccion>(
+        var gate = Assert.IsType<AutorizacionConsultaRiesgoPiloto>(
             scope.ServiceProvider.GetRequiredService<IConsultaRiesgoAutorizacion>());
 
         Assert.False(await gate.TieneAutorizacionVigenteAsync(1, 1));
@@ -151,7 +153,7 @@ public sealed class CarteraRiesgoRuntimeWiringTests
     {
         var store = Assert.Single(Wired(), d => d.ServiceType == typeof(IRiesgoProduccionStore));
 
-        Assert.Equal(typeof(RiesgoProduccionStore), store.ImplementationType);
+        Assert.NotNull(store.ImplementationFactory);
         Assert.Equal(ServiceLifetime.Scoped, store.Lifetime);
     }
 

@@ -49,6 +49,13 @@ public sealed class RegistroPublicoServiceSqlTests
             var p = await v.Personas.AsNoTracking().SingleAsync(x => x.IdPersona == u.IdPersona);
             Assert.Equal(a.Email, p.Email);
             Assert.Equal("3000000000", p.Celular);
+            Assert.Equal("De La Hoz", p.PrimerApellido);
+            Assert.Null(p.SegundoApellido);
+            Assert.Null(p.TipoDocumento);
+            Assert.Null(p.NumeroDocumento);
+            Assert.False(p.IdentidadVerificada);
+            Assert.Null(p.ApellidoVerificadoCompleto);
+            Assert.Null(p.NumeroDocumentoVerificado);
             Assert.Equal(await IdXpayColAsync(v), p.IdUnidadNegocio);
 
             var roles = await (
@@ -419,7 +426,7 @@ public sealed class RegistroPublicoServiceSqlTests
 
     // Email en mayúsculas y celular con espacios: el servicio debe normalizarlos.
     private static RegistroPublicoRequest Request(Alta a)
-        => new(a.Email.ToUpperInvariant(), a.Usuario, Clave, " 3000000000 ");
+        => new(a.Email.ToUpperInvariant(), a.Usuario, Clave, " 3000000000 ", PrimerApellido: " De La Hoz ");
 
     private sealed class Entorno : IAsyncDisposable
     {

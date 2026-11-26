@@ -14,8 +14,8 @@ public class RegistroPublicoValidacionTests
 
     private static RegistroPublicoRequest Request(
         string? email = " Persona.Uno+tag@Example.COM ", string usuario = " Persona_Uno ",
-        string password = ClaveValida, string celular = " 3001234567 ")
-        => new(email!, usuario, password, celular);
+        string password = ClaveValida, string celular = " 3001234567 ", string? primerApellido = " De La Hoz ")
+        => new(email!, usuario, password, celular, PrimerApellido: primerApellido);
 
     private static RegistroPublicoNormalizado Validar(RegistroPublicoRequest r, string ambiente = "Production")
         => RegistroPublicoValidacion.Validar(r, AmbienteXpayTests.Ambiente(ambiente));
@@ -24,14 +24,15 @@ public class RegistroPublicoValidacionTests
     public void Dto_SoloTieneLosCamposPublicosYElConsentimiento()
     {
         var propiedades = typeof(RegistroPublicoRequest).GetProperties().Select(p => p.Name).OrderBy(n => n, StringComparer.Ordinal);
-        Assert.Equal(new[] { "Celular", "Consentimiento", "Email", "NombreUsuario", "Password" }, propiedades);
+        Assert.Equal(new[] { "Celular", "Consentimiento", "Email", "NombreUsuario", "Password", "PrimerApellido" }, propiedades);
 
         var parametros = typeof(RegistroPublicoRequest).GetConstructors().Single().GetParameters().Select(p => p.Name!);
-        Assert.Equal(new[] { "Email", "NombreUsuario", "Password", "Celular", "Consentimiento" }, parametros);
+        Assert.Equal(new[] { "Email", "NombreUsuario", "Password", "Celular", "Consentimiento", "PrimerApellido" }, parametros);
     }
 
     [Theory]
     [InlineData("Id")]
+    [InlineData("Ids")]
     [InlineData("Rol")]
     [InlineData("Unidad")]
     [InlineData("Empresa")]
@@ -41,7 +42,9 @@ public class RegistroPublicoValidacionTests
     [InlineData("Convenio")]
     public void Dto_NoContieneIdentificadoresInternos(string fragmento)
         => Assert.DoesNotContain(typeof(RegistroPublicoRequest).GetProperties(),
-            p => p.Name.Contains(fragmento, StringComparison.OrdinalIgnoreCase));
+            p => string.Equals(p.Name, fragmento, StringComparison.OrdinalIgnoreCase)
+                || p.Name.StartsWith(fragmento, StringComparison.OrdinalIgnoreCase)
+                || p.Name.EndsWith(fragmento, StringComparison.OrdinalIgnoreCase));
 
     [Fact]
     public void Dto_ToString_NoRevelaPasswordNiEmail()
@@ -50,6 +53,8 @@ public class RegistroPublicoValidacionTests
         Assert.True(texto.IndexOf(ClaveValida, StringComparison.Ordinal) < 0);
         Assert.True(texto.IndexOf("Persona.Uno", StringComparison.OrdinalIgnoreCase) < 0);
         Assert.Contains("Password = ***", texto);
+        Assert.DoesNotContain("De La Hoz", texto);
+        Assert.Contains("PrimerApellido = ***", texto);
     }
 
     [Fact]
@@ -59,6 +64,7 @@ public class RegistroPublicoValidacionTests
         Assert.Equal("persona.uno+tag@example.com", n.Email);
         Assert.Equal("persona_uno", n.NombreUsuario);
         Assert.Equal("3001234567", n.Celular);
+        Assert.Equal("De La Hoz", n.PrimerApellido);
     }
 
     [Theory]
@@ -109,4 +115,48 @@ public class RegistroPublicoValidacionTests
     public void CelularObligatorio(string celular)
         => Assert.Equal("El celular es obligatorio.",
             Assert.Throws<InvalidOperationException>(() => Validar(Request(celular: celular))).Message);
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void PrimerApellido_Obligatorio(string? apellido)
+        => Assert.Equal("El primer apellido es obligatorio.",
+            Assert.Throws<InvalidOperationException>(() => Validar(Request(primerApellido: apellido))).Message);
+
+    [Theory]
+    [InlineData("De La Hoz")]
+    [InlineData("O'Connor")]
+    [InlineData("García-López")]
+    public void PrimerApellido_ConservaLaDeclaracionCompuesta(string apellido)
+        => Assert.Equal(apellido, Validar(Request(primerApellido: "  " + apellido + "  ")).PrimerApellido);
+
+    [Fact]
+    public void PrimerApellido_NormalizaFormC_SinQuitarTildesNiCambiarMayusculas()
+        => Assert.Equal("García", Validar(Request(primerApellido: "  Garci\u0301a  ")).PrimerApellido);
+
+    [Fact]
+    public void PrimerApellido_AceptaCienYRechazaCientoUno_SinTruncar()
+    {
+        Assert.Equal(new string('a', 100), Validar(Request(primerApellido: new string('a', 100))).PrimerApellido);
+        Assert.Equal("El primer apellido no puede superar 100 caracteres.",
+            Assert.Throws<InvalidOperationException>(() => Validar(Request(primerApellido: new string('a', 101)))).Message);
+    }
+
+    [Theory]
+    [InlineData("\nPérez")]
+    [InlineData("Pé\trez")]
+    [InlineData("Pérez\u007f")]
+    [InlineData("Pérez\u0085")]
+    public void PrimerApellido_RechazaControles_InclusoAntesDeTrim(string apellido)
+        => Assert.Equal("El primer apellido no puede contener caracteres de control.",
+            Assert.Throws<InvalidOperationException>(() => Validar(Request(primerApellido: apellido))).Message);
+
+    [Fact]
+    public void Normalizado_ToString_NoExponeElApellidoNiContacto()
+    {
+        var texto = Validar(Request()).ToString();
+        Assert.DoesNotContain("De La Hoz", texto);
+        Assert.DoesNotContain("example.com", texto);
+    }
 }

@@ -270,7 +270,9 @@ public class CarteraConsultaRiesgoServiceTests
     public static IEnumerable<object[]> FallasProveedor() => new[]
     {
         new object[] { new MiDecisorQueryRejectedException("x"),     CarteraConsultaRiesgoResultados.RechazadaProveedor },
-        new object[] { new MiDecisorAuthenticationException("x"),    CarteraConsultaRiesgoResultados.ErrorAutenticacion },
+        // This fake crosses the durable query boundary before throwing. A
+        // failed token authentication is covered separately, before PRE_CALL.
+        new object[] { new MiDecisorAuthenticationException("x"),    CarteraConsultaRiesgoResultados.ResultadoIncierto },
         new object[] { new MiDecisorConfigurationException("x"),     CarteraConsultaRiesgoResultados.ErrorConfiguracion },
         new object[] { new MiDecisorProtocolException("x"),          CarteraConsultaRiesgoResultados.ErrorProtocolo },
         new object[] { new MiDecisorTransportException("x"),         CarteraConsultaRiesgoResultados.ResultadoIncierto },

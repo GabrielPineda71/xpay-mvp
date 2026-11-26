@@ -53,11 +53,21 @@ function FormularioRegistro({ documentos }: { documentos: ConfiguracionRegistroP
     const nombreUsuario = String(campos.get('nombreUsuario') ?? '').trim();
     const email = String(campos.get('email') ?? '').trim();
     const celular = String(campos.get('celular') ?? '').trim();
+    const primerApellidoCrudo = String(campos.get('primerApellido') ?? '');
+    const primerApellido = primerApellidoCrudo.normalize('NFC').trim();
     const password = String(campos.get('password') ?? '');
     const confirmacion = String(campos.get('confirmacion') ?? '');
 
-    if (!nombreUsuario || !email || !celular) {
+    if (!nombreUsuario || !email || !celular || !primerApellido) {
       setError('Completa todos los campos.');
+      return;
+    }
+    const contieneControles = Array.from(primerApellidoCrudo).some(caracter => {
+      const codigo = caracter.charCodeAt(0);
+      return codigo <= 31 || (codigo >= 127 && codigo <= 159);
+    });
+    if (primerApellido.length > 100 || contieneControles) {
+      setError('Escribe un primer apellido de hasta 100 caracteres, sin caracteres de control.');
       return;
     }
     if (password !== confirmacion) {
@@ -83,7 +93,7 @@ function FormularioRegistro({ documentos }: { documentos: ConfiguracionRegistroP
     setError('');
     try {
       await post<unknown>('/api/usuarios/registro', {
-        nombreUsuario, email, celular, password,
+        nombreUsuario, email, celular, primerApellido, password,
         consentimiento: {
           aceptaTerminos: true,
           versionTerminos: documentos.terminos.version,
@@ -127,6 +137,14 @@ function FormularioRegistro({ documentos }: { documentos: ConfiguracionRegistroP
               Usuario
               <input name="nombreUsuario" autoComplete="username" autoCapitalize="none" maxLength={100} required />
             </label>
+            <label>
+              Primer apellido
+              <input name="primerApellido" autoComplete="family-name" maxLength={100} required
+                aria-describedby="registro-primer-apellido-ayuda" />
+            </label>
+            <p id="registro-primer-apellido-ayuda" className="registro-publico__ayuda">
+              Escríbelo tal como aparece en tu documento. Si es compuesto, escríbelo completo.
+            </p>
             <label>
               Correo electrónico
               <input name="email" type="email" autoComplete="email" required />

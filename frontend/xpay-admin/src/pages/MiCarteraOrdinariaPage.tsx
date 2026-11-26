@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { get, post } from '../api/client.ts';
 import { esPinValido, LONGITUD_PIN, MENSAJE_FORMATO_PIN, soloDigitosPin } from '../utils/pinTransaccional.ts';
+import { SolicitarCupoPanel } from '../components/cartera/SolicitarCupoPanel.tsx';
 import '../cartera-ordinaria.css';
 
 interface MiCupo {
@@ -216,7 +217,7 @@ export function MiCarteraOrdinariaPage() {
 
   const cargarCupo = () => {
     get<MiCupo>('/api/cartera-ordinaria/mi-cupo')
-      .then(data => { setCupo(data); cargarWalletSaldo(data.idWallet); })
+      .then(data => { setCupoError(''); setCupo(data); cargarWalletSaldo(data.idWallet); })
       .catch(() => setCupoError('No tienes un cupo ordinario activo.'));
   };
 
@@ -422,6 +423,8 @@ export function MiCarteraOrdinariaPage() {
       ) : (
         <p style={{ color: '#888' }}>Cargando cupo…</p>
       )}
+
+      <SolicitarCupoPanel cupoActivo={cupo?.estado === 'ACTIVO'} onCupoActualizado={cargarCupo} />
 
       {/* Selector de modo */}
       <div className="cartera-mode-selector" role="group" aria-label="Tipo de crédito">

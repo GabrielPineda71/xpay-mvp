@@ -19,4 +19,15 @@ public interface IMiDecisorClient
     Task<MiDecisorResultado> ConsultarPersonaNaturalAsync(
         MiDecisorConsultaRequest request,
         CancellationToken cancellationToken = default);
+
+    // The real client invokes this callback only after local preparation and
+    // successful authentication, immediately before its one query SendAsync.
+    async Task<MiDecisorResultado> ConsultarPersonaNaturalAsync(
+        MiDecisorConsultaRequest request,
+        Func<CancellationToken, Task> antesDeEnviarConsulta,
+        CancellationToken cancellationToken = default)
+    {
+        await antesDeEnviarConsulta(cancellationToken).ConfigureAwait(false);
+        return await ConsultarPersonaNaturalAsync(request, cancellationToken).ConfigureAwait(false);
+    }
 }

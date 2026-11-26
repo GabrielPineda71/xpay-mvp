@@ -59,7 +59,7 @@ public sealed class RegistroPublicoProduccionTests
 
     internal static readonly RegistroPublicoConsentimiento Consentimiento = new(true, "1.2", true, "1.2");
     internal static RegistroPublicoRequest Solicitud(RegistroPublicoConsentimiento? consentimiento) =>
-        new("persona@example.test", "persona.registro", "Registro#2026x", "3000000000", consentimiento);
+        new("persona@example.test", "persona.registro", "Registro#2026x", "3000000000", consentimiento, " De La Hoz ");
 
     internal static IConfigurationRoot Configuracion()
     {

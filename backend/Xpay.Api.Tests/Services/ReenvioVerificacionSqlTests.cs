@@ -134,7 +134,7 @@ public sealed class ReenvioVerificacionSqlTests
         try
         {
             await using (var e = new Entorno(cs))
-                await e.Servicio.RegistrarAsync(new RegistroPublicoRequest(email, usuario, Clave, "3000000000"), null);
+                await e.Servicio.RegistrarAsync(new RegistroPublicoRequest(email, usuario, Clave, "3000000000", PrimerApellido: "De La Hoz"), null);
 
             var reenviados = 0;
             for (var i = 0; i < RegistroPublicoService.MaxTokensVerificacionPorVentana; i++)

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Xpay.Api.Common;
 using Xpay.Api.Data;
+using Xpay.Api.Integrations.MiDecisor;
 
 namespace Xpay.Api.Services;
 
@@ -20,7 +21,10 @@ namespace Xpay.Api.Services;
 // M2.4a — también implementa ICarteraResultadoRiesgoConsumo (infraestructura
 // DORMIDA de consumo durable del resultado): igualmente SIN registro en DI y
 // SIN caller de runtime.
-public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
+public sealed class CarteraConsultaRiesgoStore(XpayDbContext db,
+    IMiDecisorIdentidadResolver? identidadResolver = null, IRiesgoProduccionStore? riesgoProduccion = null,
+    AutorizacionConsultaRiesgoDurable? autorizacionDurable = null, CarteraPilotoService? piloto = null,
+    ControlOperacionesFinancieras? controlOperaciones = null)
     : ICarteraConsultaRiesgoStore, ICarteraResultadoRiesgoPurga, ICarteraResultadoRiesgoConsumo
 {
     public async Task<ConsultaRiesgoContexto?> CargarContextoAsync(
@@ -40,6 +44,12 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
             .FirstOrDefaultAsync(p => p.IdPersona == solicitud.IdPersona, cancellationToken)
             .ConfigureAwait(false);
 
+        if (identidadResolver is not null)
+        {
+            var identidad = await identidadResolver.ResolverAsync(idUsuario, cancellationToken).ConfigureAwait(false);
+            persona = identidad?.IdPersona == solicitud.IdPersona ? identidad.ParaConsulta() : null;
+        }
+
         return new ConsultaRiesgoContexto(
             solicitud.IdSolicitud, solicitud.IdUsuario, solicitud.IdPersona, solicitud.EstadoSolicitud, persona);
     }
@@ -50,6 +60,22 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            // The subject lock and fresh history check serialize applications
+            // for one document, across users and business units.
+            if (identidadResolver is not null)
+            {
+                var identidad = await identidadResolver.ResolverAsync(idUsuario, cancellationToken).ConfigureAwait(false);
+                if (identidad is null || riesgoProduccion is null)
+                    return false;
+                ValidarResultadoLock(await AppLockHelper.AdquirirAsync(db,
+                    "XPAY:MIDECISOR:" + MiDecisorSujeto.Huella(identidad.TipoDocumento, identidad.NumeroDocumento), cancellationToken).ConfigureAwait(false));
+                var snapshot = await riesgoProduccion.CargarAsync(idSolicitud, cancellationToken).ConfigureAwait(false);
+                if (snapshot is null || !ReglaReconsultaMiDecisor.Permite(snapshot, fechaUtc))
+                {
+                    await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                    return false;
+                }
+            }
             ValidarResultadoLock(await AppLockHelper
                 .AdquirirAsync(db, $"XPAY:CARTERA_RIESGO:{idSolicitud}", cancellationToken)
                 .ConfigureAwait(false));
@@ -86,6 +112,29 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (identidadResolver is not null)
+            {
+                // Same order as KYC/profile: KYC user, person, then request.
+                // These short locks end before HTTP; the durable boundary is
+                // the final authorization point after waiting for token/rate.
+                ValidarResultadoLock(await AppLockHelper.AdquirirAsync(db, $"XPAY:KYC_USUARIO:{idUsuario}", cancellationToken).ConfigureAwait(false));
+                var idPersona = await db.Usuarios.AsNoTracking().Where(u => u.IdUsuario == idUsuario)
+                    .Select(u => (long?)u.IdPersona).SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+                if (idPersona is null) throw AutorizacionRevocada();
+                await ContactoVerificacionService.BloquearPersonaAsync(db, idPersona.Value, cancellationToken).ConfigureAwait(false);
+                ValidarResultadoLock(await AppLockHelper.AdquirirAsync(db, $"XPAY:CARTERA_RIESGO:{idSolicitud}", cancellationToken).ConfigureAwait(false));
+                // Also protect account state from an admin update until this
+                // boundary commits; admin changes do not take the KYC applock.
+                var usuario = await db.Usuarios.FromSqlInterpolated($"SELECT * FROM dbo.usuarios WITH (UPDLOCK,HOLDLOCK) WHERE id_usuario={idUsuario}")
+                    .AsNoTracking().SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+                if (usuario?.IdPersona != idPersona || controlOperaciones is null || !controlOperaciones.EstaHabilitado() ||
+                    !await identidadResolver.RevalidarAsync(idUsuario, cancellationToken).ConfigureAwait(false))
+                    throw AutorizacionRevocada();
+                if (autorizacionDurable is null || !await autorizacionDurable.TieneAutorizacionVigenteAsync(idUsuario, idSolicitud, cancellationToken).ConfigureAwait(false))
+                    throw AutorizacionRevocada();
+                var estado = piloto is null ? null : await piloto.ObtenerDisponibilidadAsync(idUsuario, cancellationToken).ConfigureAwait(false);
+                if (estado is not { Habilitado: true, Disponible: true }) throw AutorizacionRevocada();
+            }
             var (solicitud, intento) = await CargarSolicitudIntentoAsync(idSolicitud, cancellationToken).ConfigureAwait(false);
 
             ExigirGuard(
@@ -111,9 +160,20 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
         }
     }
 
+    private static MiDecisorRequestValidationException AutorizacionRevocada() => new(
+        "La autorización vigente ya no permite enviar esta consulta de riesgo.") { Etapa = MiDecisorEtapa.PreparacionConsulta };
+
     public async Task FinalizarIntentoAsync(
         long idSolicitud, long idUsuario, ResultadoIntentoDurable outcome, CancellationToken cancellationToken)
     {
+        if (outcome.FinalizacionDesdePreCall && (outcome.EstadoSolicitudFinal != CarteraSolicitudCupoEstados.ErrorProveedor ||
+            outcome.ResultadoTecnico is not (CarteraConsultaRiesgoResultados.ErrorAutenticacion or CarteraConsultaRiesgoResultados.ErrorConfiguracion or
+                CarteraConsultaRiesgoResultados.ErrorValidacionLocal or CarteraConsultaRiesgoResultados.ErrorProtocolo) ||
+            outcome.EsResultadoUtil || outcome.HttpStatusObservado is not null || outcome.ContentStatusObservado is not null ||
+            outcome.ConInformacion is not null || outcome.ScoreRaw is not null || outcome.ViabilidadRaw is not null ||
+            outcome.RatingRecaudosRaw is not null || outcome.MontoSugeridoRaw is not null || outcome.AlertasCount is not null ||
+            outcome.P0ProviderRawJson is not null || outcome.ResultadoTecnico == CarteraConsultaRiesgoResultados.ResultadoIncierto))
+            throw new InvalidOperationException("Una finalización PRE_CALL no puede atribuir respuesta o envío al proveedor.");
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -124,7 +184,7 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db)
                 && solicitud.IdUsuario == idUsuario
                 && string.Equals(solicitud.EstadoSolicitud, CarteraSolicitudCupoEstados.ConsultandoRiesgo, StringComparison.Ordinal)
                 && intento is not null
-                && string.Equals(intento.FaseIntento, CarteraIntentoFases.EnvioIncierto, StringComparison.Ordinal)
+                && string.Equals(intento.FaseIntento, outcome.FinalizacionDesdePreCall ? CarteraIntentoFases.PreCall : CarteraIntentoFases.EnvioIncierto, StringComparison.Ordinal)
                 && intento.FechaFin is null
                 && intento.ResultadoTecnico is null,
                 "No se puede finalizar el intento: estado o fase inesperados.");

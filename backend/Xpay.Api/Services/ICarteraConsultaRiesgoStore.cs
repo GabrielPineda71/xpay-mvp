@@ -78,6 +78,9 @@ public sealed record ResultadoIntentoDurable(
     // de arriba). Propiedad no posicional (default null): no rompe las
     // construcciones existentes de este record.
     public string? P0ProviderRawJson { get; init; }
+    // In-memory transaction guard only. A pre-query failure may close PRE_CALL
+    // without inventing an ENVIO_INCIERTO event or a provider response.
+    public bool FinalizacionDesdePreCall { get; init; }
 }
 
 // M2.3b3 — resultado de un intento de purga de los campos crudos.

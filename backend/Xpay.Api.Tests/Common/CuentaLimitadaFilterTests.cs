@@ -26,6 +26,8 @@ public sealed class CuentaLimitadaFilterTests
         var esperadas = new HashSet<string>
         {
             "UsuariosController.ObtenerMiPerfil", "UsuariosController.ActualizarMiPerfil",
+            "UsuariosController.CompletarPrimerApellido",
+            "CarteraPilotoController.Disponibilidad",
             "AuthController.CambiarClaveObligatoria", "AuthController.CambiarClave",
             "ContactosController.Estado", "ContactosController.SolicitarCodigo",
             "ContactosController.Verificar", "ContactosController.Preferencias",

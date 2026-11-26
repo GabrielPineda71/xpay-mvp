@@ -119,4 +119,32 @@ public class UsuariosController : ControllerBase
             return StatusCode(500, new { success = false, message = "Error interno actualizando el perfil." });
         }
     }
+
+    [HttpPost("mi-perfil/primer-apellido")]
+    [Authorize]
+    [Authorize(Policy = "KycAprobado")]
+    [CuentaLimitadaPermitida]
+    public async Task<IActionResult> CompletarPrimerApellido(
+        [FromBody] CompletarPrimerApellidoRequest? request, CancellationToken ct)
+    {
+        if (!TryGetIdPersona(out var idPersona) || !TryGetIdUsuario(out var idUsuario))
+            return Unauthorized(new { success = false, message = "Token inválido." });
+        if (request is null)
+            return BadRequest(new { success = false, message = "Escribe tu primer apellido." });
+        try
+        {
+            var data = await _perfilService.CompletarPrimerApellidoAsync(idUsuario, idPersona, request, ct);
+            return Ok(new { success = true, message = "Primer apellido guardado.", data });
+        }
+        catch (PrimerApellidoYaRegistradoException ex) { return Conflict(new { success = false, message = ex.Message }); }
+        catch (UnauthorizedAccessException ex) { return StatusCode(403, new { success = false, message = ex.Message }); }
+        catch (KeyNotFoundException ex) { return NotFound(new { success = false, message = ex.Message }); }
+        catch (InvalidOperationException ex) { return BadRequest(new { success = false, message = ex.Message }); }
+        catch (OperationCanceledException) { throw; }
+        catch
+        {
+            _logger.LogError("Error interno completando el primer apellido declarado.");
+            return StatusCode(500, new { success = false, message = "No fue posible confirmar el guardado. Actualiza tu perfil antes de volver a intentarlo." });
+        }
+    }
 }

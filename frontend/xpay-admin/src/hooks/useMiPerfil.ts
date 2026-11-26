@@ -27,6 +27,7 @@ export interface MiPerfil {
   estadoKycActual: string;
   emailVerificado: boolean;
   celularVerificado: boolean;
+  puedeCompletarPrimerApellido?: boolean;
 }
 
 // XPAY-401 — mismos 5 campos editables autorizados por PerfilService

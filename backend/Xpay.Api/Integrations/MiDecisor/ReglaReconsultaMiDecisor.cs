@@ -38,10 +38,13 @@ public static class ReglaReconsultaMiDecisor
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        if (snapshot.TieneCupoQueBloquea)
+        if (snapshot.TieneCupoQueBloquea || snapshot.TieneConsultaPendiente)
             return false;
 
-        return snapshot.UltimaRespuestaUtc is not { } ultima
+        var ultimaReferencia = snapshot.UltimaRespuestaUtc;
+        if (snapshot.UltimaConsultaExternaUtc is { } externa && (ultimaReferencia is null || externa > ultimaReferencia))
+            ultimaReferencia = externa;
+        return ultimaReferencia is not { } ultima
             || ahoraUtc >= Limite(ultima);
     }
 }

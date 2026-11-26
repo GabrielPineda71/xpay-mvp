@@ -184,6 +184,7 @@ public class CarteraOrdinariaController(
     // decisión crediticia, sin cálculo de edad, sin uso de score.
     [Authorize(Policy = "KycAprobado")]
     [OperacionFinanciera]
+    [CarteraPilotoOperacion(habilitar: true)]
     [HttpPost("solicitar-cupo")]
     public async Task<IActionResult> SolicitarCupo()
     {
@@ -234,6 +235,7 @@ public class CarteraOrdinariaController(
 
     [Authorize(Policy = "KycAprobado")]
     [OperacionFinanciera]
+    [CarteraPilotoOperacion]
     [HttpPost("solicitudes/{idSolicitud:long}/autorizar-consulta-riesgo")]
     public async Task<IActionResult> AutorizarConsultaRiesgo(
         long idSolicitud, [FromBody] RegistrarAutorizacionConsultaRiesgoRequest req)
@@ -274,6 +276,7 @@ public class CarteraOrdinariaController(
     // (solicitud en EN_EVALUACION, sin decisión ni cupo).
     [Authorize(Policy = "KycAprobado")]
     [OperacionFinanciera]
+    [CarteraPilotoOperacion]
     [HttpPost("solicitudes/{idSolicitud:long}/iniciar-evaluacion")]
     public async Task<IActionResult> IniciarEvaluacion(long idSolicitud)
     {

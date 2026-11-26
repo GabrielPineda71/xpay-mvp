@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useMiPerfil, type MiPerfil } from '../../hooks/useMiPerfil.ts';
 import { VerificarContacto } from './VerificarContacto.tsx';
+import { CompletarPrimerApellidoSection } from './CompletarPrimerApellidoSection.tsx';
 
 // XPAY-401 — fecha_nacimiento es una columna DATE pura (sin componente
 // horario) — NO debe pasar por fmtDate (utils.ts), que asume timestamps con
@@ -16,9 +17,11 @@ function fmtFechaNacimiento(iso: string | null): string {
   return `${d}/${m}/${y}`;
 }
 
-// Prioridad: dato declarado/legal si existe; si no, el verificado por Veriff
-// (el alta del piloto no captura nombre ni documento).
+// El autorregistro puede tener solo el primer apellido declarado. En ese caso,
+// mostrar la identidad completa verificada en lugar de reducir el nombre al apellido.
 function nombreCompleto(p: MiPerfil): string {
+  const nombreVerificado = p.nombreVerificado?.trim();
+  if (p.identidadVerificada && !p.primerNombre?.trim() && nombreVerificado) return nombreVerificado;
   const partes = [p.primerNombre, p.segundoNombre, p.primerApellido, p.segundoApellido]
     .filter((v): v is string => !!v && v.trim().length > 0);
   if (partes.length > 0) return partes.join(' ');
@@ -55,9 +58,8 @@ function formDesdePerfil(p: MiPerfil): FormEditable {
 
 // XPAY-401 — sección "Mi información" de Perfil. Consume EXCLUSIVAMENTE
 // GET/PATCH /api/usuarios/mi-perfil (XPAY-399, sin cambios de backend).
-// Identidad legal (nombre/apellido/documento/fecha de nacimiento/país) es
-// SIEMPRE de solo lectura aquí — no existe ningún camino en este componente
-// para enviarla al backend (el estado de edición ni siquiera la incluye).
+// El PATCH de contactos conserva su frontera de edición. El apellido faltante
+// se completa por una acción independiente autorizada por el servidor.
 export function MiInformacionSection({ whatsAppPendiente = false, onActualizado }: { whatsAppPendiente?: boolean; onActualizado?: () => void }) {
   const { perfil, loading, loadError, guardando, mensaje, setMensaje, cargar, actualizar } = useMiPerfil();
   const [editando, setEditando] = useState(false);
@@ -138,7 +140,7 @@ export function MiInformacionSection({ whatsAppPendiente = false, onActualizado 
     <section className="profile-section" aria-label="Mi información">
       <h3 className="profile-section-title">Mi información</h3>
 
-      {/* Identidad legal — SIEMPRE solo lectura, sin excepción. */}
+      {/* La identidad verificada se presenta en lectura. */}
       <dl className="profile-data-list">
         <dt>Nombre</dt><dd>{nombreCompleto(perfil)}</dd>
         <dt>Documento</dt><dd>{textoDocumento(perfil)}</dd>
@@ -148,6 +150,8 @@ export function MiInformacionSection({ whatsAppPendiente = false, onActualizado 
       <p className={perfil.identidadVerificada ? 'profile-identity-verified' : 'profile-identity-pending'}>
         {perfil.identidadVerificada ? 'Identidad verificada' : 'Identidad pendiente de verificación'}
       </p>
+
+      <CompletarPrimerApellidoSection perfil={perfil} onActualizado={() => { void cargar(); onActualizado?.(); }} />
 
       <h4 className="profile-section-subtitle">Datos de contacto</h4>
 

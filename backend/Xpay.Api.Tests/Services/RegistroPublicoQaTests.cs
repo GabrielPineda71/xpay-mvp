@@ -86,7 +86,7 @@ public sealed class RegistroPublicoQaTests
     }
 
     private static RegistroPublicoRequest Solicitud(string correo, RegistroPublicoConsentimiento? consentimiento) =>
-        new(correo, "registro.qa", "Registro#2026x", "3000000000", consentimiento);
+        new(correo, "registro.qa", "Registro#2026x", "3000000000", consentimiento, " De La Hoz ");
 
     private static XpayDbContext NuevoContexto() =>
         new(new DbContextOptionsBuilder<XpayDbContext>().Options);

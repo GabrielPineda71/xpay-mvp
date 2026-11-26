@@ -12,6 +12,7 @@ using Xpay.Api.Common;
 using Xpay.Api.Data;
 using Xpay.Api.Middleware;
 using Xpay.Api.Services;
+using Xpay.Api.Integrations.MiDecisor;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -75,6 +76,7 @@ builder.Services.AddSingleton<IAmbienteXpay, AmbienteXpay>();
 // configuración en cada llamada; sin estado propio).
 builder.Services.AddSingleton<ControlOperacionesFinancieras>();
 builder.Services.AddScoped<AltaUsuarioPilotoService>();
+builder.Services.AddScoped<CarteraPilotoService>();
 builder.Services.AddScoped<PreparacionWalletConfiguracion>();
 builder.Services.AddScoped<PreparacionWalletService>();
 builder.Services.AddScoped<SincronizacionDocumentoVeriffService>();
@@ -111,11 +113,14 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 });
 builder.Services.AddHttpClient();
 
-// MiDecisor / DataCrédito — M2.1: sólo el token provider (auth OAuth2 +
-// cache en memoria). NO se registra IMiDecisorClient todavía; la integración
-// real permanece inactiva. El provider hace fail-closed cuando se invoca sin
-// configuración válida — el arranque NUNCA resuelve BASE_URL ni credenciales.
+// MiDecisor: transporte JSON compatible, destinos fijos, sin redirecciones,
+// cola acotada y separación de POST compartida por autenticación/consulta.
+// El arranque no obtiene tokens ni consulta personas. El gate de producción
+// mantiene cohorte, consentimiento, identidad y recencia por separado.
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddMiDecisorTransport();
+if (!AmbienteXpay.EsNoProductivo(builder.Environment.EnvironmentName))
+    builder.Services.AddMiDecisorIdentidadProduccion();
 builder.Services.AddSingleton<
     Xpay.Api.Integrations.MiDecisor.IMiDecisorTokenProvider,
     Xpay.Api.Integrations.MiDecisor.MiDecisorTokenProvider>();
@@ -126,9 +131,8 @@ builder.Services.AddSingleton<
     Xpay.Api.Integrations.MiDecisor.MiDecisorClient>();
 // M2.3a / M2.4d — pipeline de riesgo/decisión de Cartera Ordinaria (orquestador
 // + consumo M2.4a + decisión M2.4b + materialización M2.4c + reconciliación
-// fail-closed). IConsultaRiesgoAutorizacion permanece ligada al stub
-// AutorizacionConsultaRiesgoNoDisponible (fail-closed): con él ningún endpoint
-// puede alcanzar una llamada real a MiDecisor. Ver CarteraRiesgoRuntimeWiring.
+// fail-closed). Producción exige pertenencia al piloto, consentimiento V1,
+// identidad Veriff vigente y recencia documental; QA conserva su gate propio.
 builder.Services.AddCarteraRiesgoRuntime();
 
 // Passport / Bre-B como Servicio — XPAY-272: sólo infraestructura base
