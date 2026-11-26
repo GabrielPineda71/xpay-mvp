@@ -22,7 +22,7 @@ public sealed class CarteraConsultaRiesgoAuthPhaseTests
         Contexto=new(10,7,3,CarteraSolicitudCupoEstados.Recibida,new Persona
         { IdPersona=3,TipoDocumento="CC",NumeroDocumento="1234567",PrimerApellido="SINTETICO" }),
     };
-    private static CarteraConsultaRiesgoService Service(FakeCarteraConsultaRiesgoStore store,IMiDecisorClient client)
+    private static CarteraConsultaRiesgoService Service(ICarteraConsultaRiesgoStore store,IMiDecisorClient client)
         => new(store,client,new FakeConsultaRiesgoAutorizacion(true),TimeProvider.System,NullLogger<CarteraConsultaRiesgoService>.Instance);
 
     [Theory]
@@ -85,5 +85,48 @@ public sealed class CarteraConsultaRiesgoAuthPhaseTests
         var outcome=new ResultadoIntentoDurable(CarteraSolicitudCupoEstados.EnEvaluacion,CarteraConsultaRiesgoResultados.Aceptada,
             null,null,false,DateTime.UtcNow,null,null,null,null,null,null) { FinalizacionDesdePreCall=true };
         await Assert.ThrowsAsync<InvalidOperationException>(()=>store.FinalizarIntentoAsync(10,7,outcome,default));
+    }
+
+    [Fact]
+    public async Task AuthorizationRevokedWhileWaitingForTokenNeverSendsCreditPost()
+    {
+        var inner=Store(); var vigente=true;
+        var store=new RevalidatingStore(inner,()=>vigente);
+        var token=new WaitingToken();
+        var handler=new FakeHttpMessageHandler(()=>throw new InvalidOperationException("Credit POST must not run."));
+        var client=new MiDecisorClient(new FakeHttpClientFactory(handler),token,Config(),NullLogger<MiDecisorClient>.Instance);
+        var execution=Service(store,client).EjecutarConsultaRiesgoAsync(10,7,"synthetic-correlation");
+        await token.Entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        vigente=false;
+        token.Release.TrySetResult();
+        var result=await execution.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(1,token.Calls); Assert.Equal(0,handler.CallCount); Assert.Equal(0,inner.MarcarCalls);
+        Assert.Equal(1,store.RevalidationCalls);
+        Assert.Equal(CarteraConsultaRiesgoResultados.ErrorValidacionLocal,result.ResultadoTecnico);
+        Assert.Equal(CarteraIntentoFases.PreCall,inner.FaseAlFinalizar);
+        Assert.True(inner.UltimoOutcome!.FinalizacionDesdePreCall);
+        Assert.Null(inner.UltimoOutcome.HttpStatusObservado); Assert.Null(inner.UltimoOutcome.ScoreRaw);
+    }
+
+    private sealed class WaitingToken : IMiDecisorTokenProvider
+    {
+        internal readonly TaskCompletionSource Entered=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly TaskCompletionSource Release=new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal int Calls;
+        public async Task<string> GetAccessTokenAsync(CancellationToken ct=default)
+        { Calls++; Entered.TrySetResult(); await Release.Task.WaitAsync(ct); return "synthetic-token"; }
+    }
+    private sealed class RevalidatingStore(FakeCarteraConsultaRiesgoStore inner,Func<bool> vigente) : ICarteraConsultaRiesgoStore
+    {
+        internal int RevalidationCalls;
+        public Task<ConsultaRiesgoContexto?> CargarContextoAsync(long s,long u,CancellationToken ct)=>inner.CargarContextoAsync(s,u,ct);
+        public Task<bool> IntentarIniciarConsultaAsync(long s,long u,DateTime fecha,CancellationToken ct)=>inner.IntentarIniciarConsultaAsync(s,u,fecha,ct);
+        public Task MarcarEnvioInciertoAsync(long s,long u,DateTime fecha,CancellationToken ct)
+        {
+            RevalidationCalls++;
+            if(!vigente())throw new MiDecisorRequestValidationException("Autorización actual no vigente.");
+            return inner.MarcarEnvioInciertoAsync(s,u,fecha,ct);
+        }
+        public Task FinalizarIntentoAsync(long s,long u,ResultadoIntentoDurable outcome,CancellationToken ct)=>inner.FinalizarIntentoAsync(s,u,outcome,ct);
     }
 }

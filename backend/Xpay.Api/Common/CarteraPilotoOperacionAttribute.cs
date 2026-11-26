@@ -30,6 +30,14 @@ public sealed class CarteraPilotoOperacionAttribute(bool habilitar = false)
             context.Result = Error(401, "SESION_NO_VALIDA", "Vuelve a ingresar para continuar.");
             return;
         }
+        // QA conserva su autorización acotada existente. La incorporación
+        // productiva de 50 titulares no sustituye esa compuerta ni necesita
+        // que se active una bandera productiva dentro de QA.
+        if (UsaCompuertaQa(services.GetService<IAmbienteXpay>()))
+        {
+            await next();
+            return;
+        }
         var piloto = services.GetService<CarteraPilotoService>();
         if (piloto is null)
         {
@@ -65,6 +73,9 @@ public sealed class CarteraPilotoOperacionAttribute(bool habilitar = false)
         }
         await next();
     }
+
+    internal static bool UsaCompuertaQa(IAmbienteXpay? ambiente) =>
+        ambiente is { PermiteMecanismosNoProductivos: true };
 
     private static ObjectResult Error(int status, string codigo, string mensaje) =>
         new(new { success = false, codigo, message = mensaje, error = mensaje }) { StatusCode = status };

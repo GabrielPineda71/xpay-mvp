@@ -110,6 +110,43 @@ public sealed class CarteraPilotoSqlTests
         finally { await BorrarMembershipAsync(verificar,uno.Usuario); await BorrarMembershipAsync(verificar,dos.Usuario); }
     }
 
+    [Fact]
+    public async Task SegundoApellidoDeclaradoDiscordanteNoHabilitaNiConsumePlaza()
+    {
+        if (!Conexion(out var cs)) return;
+        await using var datos=new PreparacionWalletSqlTests.Semillero(cs);
+        var config=PreparacionWalletSqlTests.Configuracion(); config["MIDECISOR_PRODUCTION_ENABLED"]="true";
+        var cuenta=await ActivadaAsync(cs,datos,config);
+        await using var db=Contexto(cs);
+        // Esta fixture pasa a ser legacy sin plaza histórica. La identidad y
+        // biometría sintéticas se conservan; no se fabrica aceptación de crédito.
+        await db.Auditorias.Where(a=>a.IdUsuario==cuenta.Usuario &&
+            (a.Accion==RegistroPublicoService.AccionAceptarTerminos || a.Accion==RegistroPublicoService.AccionAutorizarDatos ||
+             a.Accion==PreparacionWalletService.AccionActivar)).ExecuteDeleteAsync();
+        await db.Personas.Where(p=>p.IdPersona==cuenta.Persona)
+            .ExecuteUpdateAsync(s=>s.SetProperty(p=>p.SegundoApellido,"OTRO"));
+        var antes=await PreparacionWalletService.ContarPlazasAsync(db);
+        config[AltaUsuarioPilotoService.ClaveMaxUsuarios]=(antes+1).ToString();
+        try
+        {
+            var servicio=Servicio(db,config);
+            var disponible=await servicio.ObtenerDisponibilidadAsync(cuenta.Usuario);
+            Assert.False(disponible.Disponible); Assert.False(disponible.Habilitado);
+            Assert.Equal("IDENTIDAD_REQUERIDA",disponible.Estado);
+            var resultado=await servicio.AsegurarHabilitacionAsync(cuenta.Usuario);
+            Assert.False(resultado.Disponible); Assert.False(resultado.Habilitado);
+            Assert.Equal("IDENTIDAD_REQUERIDA",resultado.Estado);
+            Assert.False(await servicio.EsHabilitadoAsync(cuenta.Usuario));
+            Assert.Equal(0,await db.Database.SqlQueryRaw<int>(
+                "SELECT COUNT(*) AS Value FROM dbo.cartera_piloto_habilitaciones WHERE id_usuario={0}",cuenta.Usuario).SingleAsync());
+            Assert.Equal(antes,await PreparacionWalletService.ContarPlazasAsync(db));
+            Assert.False(await db.CarteraSolicitudesCupo.AnyAsync(s=>s.IdUsuario==cuenta.Usuario));
+            Assert.False(await db.CarteraCuposOrdinarios.AnyAsync(c=>c.IdUsuario==cuenta.Usuario));
+            Assert.False(await db.CarteraAutorizacionesConsultaRiesgo.AnyAsync(a=>a.IdUsuario==cuenta.Usuario));
+        }
+        finally { await BorrarMembershipAsync(db,cuenta.Usuario); }
+    }
+
     private static async Task<PreparacionWalletSqlTests.Cuenta> ActivadaAsync(string cs,
         PreparacionWalletSqlTests.Semillero datos,IConfiguration config)
     {

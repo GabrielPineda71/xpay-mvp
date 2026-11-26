@@ -273,6 +273,9 @@ public sealed class CarteraPilotoProduccionFullFlowSqlTests
     private static IConfigurationRoot Configuracion()
     {
         var c=PreparacionWalletSqlTests.Configuracion();
+        c[PlantillasEmailIdentidad.ClaveUrlFrontend]="https://app.xpaycol.com";
+        c[PlantillasEmailIdentidad.ClaveRutaVerificacion]="/verificar-email";
+        c[PlantillasEmailIdentidad.ClaveRutaRecuperacion]="/restablecer-clave";
         c[DocumentosRegistroPublico.ClaveHabilitado]="true";c[DocumentosRegistroPublico.ClaveModalidad]="CUENTA_LIMITADA";
         c[ControlOperacionesFinancieras.ClaveInterruptor]="true";c[MiDecisorProduccionConfig.EnvProductionEnabled]="true";
         c["VERIFF_BASE_URL"]="https://api-saas.veriff.com";c["VERIFF_API_KEY"]="synthetic-api-key";

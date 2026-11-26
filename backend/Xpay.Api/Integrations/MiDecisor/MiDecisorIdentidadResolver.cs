@@ -16,6 +16,9 @@ namespace Xpay.Api.Integrations.MiDecisor;
 public interface IMiDecisorIdentidadResolver
 {
     Task<MiDecisorIdentidad?> ResolverAsync(long idUsuario, CancellationToken ct = default);
+    // No new provider request: compare fresh database state with the exact
+    // authenticated decision used to build the pending bureau request.
+    Task<bool> RevalidarAsync(long idUsuario, CancellationToken ct = default) => Task.FromResult(false);
 }
 
 // Sensitive in-memory domain snapshot, deliberately not a record/response DTO.
@@ -44,6 +47,7 @@ public sealed class MiDecisorIdentidadResolver(
 {
     public const string VeriffClientName = "MiDecisorIdentidadVeriff";
     private readonly Dictionary<long, Task<MiDecisorIdentidad?>> _cache = new();
+    private readonly Dictionary<long, VeriffDecisionParsed> _decisiones = new();
 
     public Task<MiDecisorIdentidad?> ResolverAsync(long idUsuario, CancellationToken ct = default)
     {
@@ -53,6 +57,45 @@ public sealed class MiDecisorIdentidadResolver(
                 _cache[idUsuario] = task = ResolverUnaVezAsync(idUsuario, ct);
             return task;
         }
+    }
+
+    public async Task<bool> RevalidarAsync(long idUsuario, CancellationToken ct = default)
+    {
+        Task<MiDecisorIdentidad?>? cached;
+        VeriffDecisionParsed? decision;
+        lock (_cache)
+        {
+            _cache.TryGetValue(idUsuario, out cached);
+            _decisiones.TryGetValue(idUsuario, out decision);
+        }
+        if (cached is null || !cached.IsCompletedSuccessfully || decision is null) return Invalidar(idUsuario);
+        try
+        {
+            var anterior = await cached.ConfigureAwait(false);
+            if (anterior is null) return Invalidar(idUsuario);
+            var u = await db.Usuarios.AsNoTracking().SingleOrDefaultAsync(x => x.IdUsuario == idUsuario, ct);
+            if (u is null || u.IdPersona != anterior.IdPersona || u.Estado != "ACTIVO" || !u.EmailVerificado ||
+                u.RequiereCambioClave || u.EstadoKycActual != "APROBADO") return Invalidar(idUsuario);
+            var p = await db.Personas.AsNoTracking().SingleOrDefaultAsync(x => x.IdPersona == anterior.IdPersona, ct);
+            var actuales = await db.KycVerificaciones.AsNoTracking().Where(x => x.IdUsuario == idUsuario && x.EsActual).Take(2).ToListAsync(ct);
+            if (p is null || actuales.Count != 1 || actuales[0].IdKycVerificacion != anterior.IdKycVerificacion ||
+                CrearDesdeDecision(idUsuario, p, actuales[0], decision) is not { } actual ||
+                actual.TipoDocumento != anterior.TipoDocumento || actual.NumeroDocumento != anterior.NumeroDocumento ||
+                actual.PrimerApellido != anterior.PrimerApellido) return Invalidar(idUsuario);
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch
+        {
+            logger.LogWarning("midecisor.identity: no se pudo revalidar la identidad antes de enviar; no autorizado.");
+            return Invalidar(idUsuario);
+        }
+    }
+
+    private bool Invalidar(long idUsuario)
+    {
+        lock (_cache) { _cache.Remove(idUsuario); _decisiones.Remove(idUsuario); }
+        return false;
     }
 
     private async Task<MiDecisorIdentidad?> ResolverUnaVezAsync(long idUsuario, CancellationToken ct)
@@ -97,6 +140,7 @@ public sealed class MiDecisorIdentidadResolver(
                 CrearDesdeDecision(u.IdUsuario, currentPerson, current[0], decision) is not { } confirmed ||
                 confirmed.TipoDocumento != identity.TipoDocumento || confirmed.NumeroDocumento != identity.NumeroDocumento ||
                 confirmed.PrimerApellido != identity.PrimerApellido) return null;
+            lock (_cache) { _decisiones[idUsuario] = decision!; }
             return identity;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

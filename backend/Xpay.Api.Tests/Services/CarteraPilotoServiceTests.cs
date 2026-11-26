@@ -1,4 +1,5 @@
 using Xpay.Api.Services;
+using Xpay.Api.Models;
 using Xunit;
 
 namespace Xpay.Api.Tests.Services;
@@ -57,6 +58,29 @@ public sealed class CarteraPilotoServiceTests
         Assert.True(falta.RequierePrimerApellido); Assert.False(falta.Disponible); Assert.Equal("REQUIERE_PRIMER_APELLIDO", falta.Estado);
         var distinto = CarteraPilotoService.Evaluar(Lista with { PrimerApellidoCompatible=false }, 50);
         Assert.False(distinto.RequierePrimerApellido); Assert.Equal("IDENTIDAD_REQUERIDA", distinto.Estado);
+    }
+
+    [Fact]
+    public void SegundoApellidoDeclaradoDiscordanteNoPermiteHabilitar()
+    {
+        var persona = new Persona { PrimerApellido="PINEDA", SegundoApellido="LOPEZ", ApellidoVerificadoCompleto="PINEDA GARCIA" };
+        var compatible = CarteraPilotoService.ApellidoCompatible(persona);
+        Assert.False(compatible);
+        var estado = CarteraPilotoService.Evaluar(Lista with { PrimerApellidoCompatible=compatible, Plazas=49 }, 50);
+        Assert.False(estado.Disponible); Assert.False(estado.Habilitado);
+        Assert.Equal("IDENTIDAD_REQUERIDA", estado.Estado);
+        Assert.False(estado.RequierePrimerApellido);
+    }
+
+    [Theory]
+    [InlineData("De la Hoz", "García", "DE LA HOZ GARCÍA")]
+    [InlineData("Pineda", null, "PINEDA GARCIA")]
+    public void ApellidosCompatiblesConservanLaElegibilidad(string primero, string? segundo, string completo)
+    {
+        var persona = new Persona { PrimerApellido=primero, SegundoApellido=segundo, ApellidoVerificadoCompleto=completo };
+        var compatible = CarteraPilotoService.ApellidoCompatible(persona);
+        Assert.True(compatible);
+        Assert.True(CarteraPilotoService.Evaluar(Lista with { PrimerApellidoCompatible=compatible }, 50).Disponible);
     }
 
     [Fact]

@@ -22,7 +22,9 @@ namespace Xpay.Api.Services;
 // DORMIDA de consumo durable del resultado): igualmente SIN registro en DI y
 // SIN caller de runtime.
 public sealed class CarteraConsultaRiesgoStore(XpayDbContext db,
-    IMiDecisorIdentidadResolver? identidadResolver = null, IRiesgoProduccionStore? riesgoProduccion = null)
+    IMiDecisorIdentidadResolver? identidadResolver = null, IRiesgoProduccionStore? riesgoProduccion = null,
+    AutorizacionConsultaRiesgoDurable? autorizacionDurable = null, CarteraPilotoService? piloto = null,
+    ControlOperacionesFinancieras? controlOperaciones = null)
     : ICarteraConsultaRiesgoStore, ICarteraResultadoRiesgoPurga, ICarteraResultadoRiesgoConsumo
 {
     public async Task<ConsultaRiesgoContexto?> CargarContextoAsync(
@@ -110,6 +112,29 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db,
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (identidadResolver is not null)
+            {
+                // Same order as KYC/profile: KYC user, person, then request.
+                // These short locks end before HTTP; the durable boundary is
+                // the final authorization point after waiting for token/rate.
+                ValidarResultadoLock(await AppLockHelper.AdquirirAsync(db, $"XPAY:KYC_USUARIO:{idUsuario}", cancellationToken).ConfigureAwait(false));
+                var idPersona = await db.Usuarios.AsNoTracking().Where(u => u.IdUsuario == idUsuario)
+                    .Select(u => (long?)u.IdPersona).SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+                if (idPersona is null) throw AutorizacionRevocada();
+                await ContactoVerificacionService.BloquearPersonaAsync(db, idPersona.Value, cancellationToken).ConfigureAwait(false);
+                ValidarResultadoLock(await AppLockHelper.AdquirirAsync(db, $"XPAY:CARTERA_RIESGO:{idSolicitud}", cancellationToken).ConfigureAwait(false));
+                // Also protect account state from an admin update until this
+                // boundary commits; admin changes do not take the KYC applock.
+                var usuario = await db.Usuarios.FromSqlInterpolated($"SELECT * FROM dbo.usuarios WITH (UPDLOCK,HOLDLOCK) WHERE id_usuario={idUsuario}")
+                    .AsNoTracking().SingleOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+                if (usuario?.IdPersona != idPersona || controlOperaciones is null || !controlOperaciones.EstaHabilitado() ||
+                    !await identidadResolver.RevalidarAsync(idUsuario, cancellationToken).ConfigureAwait(false))
+                    throw AutorizacionRevocada();
+                if (autorizacionDurable is null || !await autorizacionDurable.TieneAutorizacionVigenteAsync(idUsuario, idSolicitud, cancellationToken).ConfigureAwait(false))
+                    throw AutorizacionRevocada();
+                var estado = piloto is null ? null : await piloto.ObtenerDisponibilidadAsync(idUsuario, cancellationToken).ConfigureAwait(false);
+                if (estado is not { Habilitado: true, Disponible: true }) throw AutorizacionRevocada();
+            }
             var (solicitud, intento) = await CargarSolicitudIntentoAsync(idSolicitud, cancellationToken).ConfigureAwait(false);
 
             ExigirGuard(
@@ -134,6 +159,9 @@ public sealed class CarteraConsultaRiesgoStore(XpayDbContext db,
             throw;
         }
     }
+
+    private static MiDecisorRequestValidationException AutorizacionRevocada() => new(
+        "La autorización vigente ya no permite enviar esta consulta de riesgo.") { Etapa = MiDecisorEtapa.PreparacionConsulta };
 
     public async Task FinalizarIntentoAsync(
         long idSolicitud, long idUsuario, ResultadoIntentoDurable outcome, CancellationToken cancellationToken)

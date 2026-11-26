@@ -104,14 +104,7 @@ public sealed class CarteraPilotoService(
                 && await perfil.DomicilioDaneCompletoAsync(persona.IdPersona, ct);
         }
         var apellidoPresente = !string.IsNullOrWhiteSpace(persona.PrimerApellido);
-        var apellidoCompatible = false;
-        if (apellidoPresente)
-        {
-            try { apellidoCompatible = PrimerApellidoDeclaradoReglas.CoincideConCompleto(
-                PrimerApellidoDeclaradoReglas.Normalizar(persona.PrimerApellido), persona.ApellidoVerificadoCompleto); }
-            catch (ArgumentException) { }
-            catch (InvalidOperationException) { }
-        }
+        var apellidoCompatible = ApellidoCompatible(persona);
         var ocupa = await db.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM (" + PlazasSql +
             ") plazas WHERE id_usuario={0}", idUsuario).SingleAsync(ct) == 1;
         var plazas = await PreparacionWalletService.ContarPlazasAsync(db, ct);
@@ -125,6 +118,18 @@ public sealed class CarteraPilotoService(
     internal static int? Maximo(string? consultas, string? alta, string? maximo) =>
         consultas == "true" && AltaUsuarioPilotoService.LeerMaximoHabilitado(alta, maximo) is { } limite
             ? Math.Min(limite, 50) : null;
+
+    internal static bool ApellidoCompatible(Persona persona)
+    {
+        try
+        {
+            return PrimerApellidoDeclaradoReglas.CoincideConCompleto(
+                PrimerApellidoDeclaradoReglas.Normalizar(persona.PrimerApellido),
+                persona.ApellidoVerificadoCompleto, persona.SegundoApellido);
+        }
+        catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
+    }
 
     internal sealed record Evidencia(bool CuentaActiva, bool CorreoVerificado, bool ClaveVigente, bool RolPersonal,
         bool IdentidadVeriff, bool Biometria, bool WalletActiva, bool PreparacionPublica,
